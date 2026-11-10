@@ -74,7 +74,7 @@ function ConsentInterface() {
             <CookieBanner.Description>
               <p>
                 Allow optional usage measurement? Your reviews work the same either way.{' '}
-                <Link href="/privacy" className="underline">
+                <Link href="https://www.geld.sh/privacy" className="underline">
                   Privacy policy
                 </Link>
               </p>

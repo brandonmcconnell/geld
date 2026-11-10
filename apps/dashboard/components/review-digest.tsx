@@ -1,3 +1,6 @@
+'use client';
+import { useState } from 'react';
+import { Markdown } from './markdown';
 import { REVIEW_BOTS } from '@geld/review/bots';
 import { trustedDigests } from '@/lib/trusted-digest';
 import type { BotVerdictRecord } from '@geld/review/model';
@@ -12,8 +15,11 @@ function safeLink(url: string): string {
   }
 }
 export function ReviewDigest({ data }: { readonly data: ReviewData }) {
+  const [discussionOnly, setDiscussionOnly] = useState(false);
   const summaries = trustedDigests(data.pull.ref.provider, data.comments);
-  const meta = summaries.map((summary) => summary.meta).sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0];
+  const meta = summaries
+    .map((summary) => summary.meta)
+    .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0];
   const summaryIds = new Set(summaries.map((summary) => summary.id));
   const essential = data.files.filter((file) => !file.hidden);
   const hidden = data.files.filter((file) => file.hidden);
@@ -22,13 +28,21 @@ export function ReviewDigest({ data }: { readonly data: ReviewData }) {
     .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
   return (
     <>
+      <div className="digest-view-switch" role="group" aria-label="Conversation view">
+        <button type="button" aria-pressed={!discussionOnly} onClick={() => setDiscussionOnly(false)}>
+          Digest
+        </button>
+        <button type="button" aria-pressed={discussionOnly} onClick={() => setDiscussionOnly(true)}>
+          Discussion
+        </button>
+      </div>
       <section className="digest-overview">
         <div className="digest-description">
           <h2>Summary</h2>
-          <p>
+          <Markdown>
             {(meta?.headSha === data.pull.headSha ? meta.summary?.tldr : null) ??
               (data.pull.body || 'No description provided.')}
-          </p>
+          </Markdown>
         </div>
         <dl className="digest-facts">
           <div>
@@ -49,13 +63,44 @@ export function ReviewDigest({ data }: { readonly data: ReviewData }) {
           </div>
         </dl>
       </section>
-      {meta && (
+      {!discussionOnly && meta && (
         <section className="digest-status">
           <div className="review-section-heading">
             <h2>Review status</h2>
             <span>
-              {meta.headSha !== data.pull.headSha ? 'From an earlier commit' : `At ${meta.headSha.slice(0, 7)}`}
+              {meta.headSha !== data.pull.headSha
+                ? 'From an earlier commit'
+                : `At ${meta.headSha.slice(0, 7)}`}
             </span>
+          </div>
+          <div className="digest-findings">
+            {meta.items.map((item) => (
+              <article key={item.id} data-status={item.status}>
+                <span className="finding-severity">{item.severity}</span>
+                <div>
+                  <Markdown>{item.title}</Markdown>
+                  {item.path && (
+                    <code>
+                      {item.path}
+                      {item.line ? `:${item.line}` : ''}
+                    </code>
+                  )}
+                  {item.context && (
+                    <details>
+                      <summary>Context</summary>
+                      <Markdown>{item.context}</Markdown>
+                    </details>
+                  )}
+                  {item.fix && (
+                    <details>
+                      <summary>Suggested change</summary>
+                      <Markdown>{item.fix.text}</Markdown>
+                    </details>
+                  )}
+                </div>
+                <span>{item.status.replaceAll('_', ' ')}</span>
+              </article>
+            ))}
           </div>
           <div className="digest-status-list">
             {meta.bots.map((bot) => (
@@ -112,14 +157,17 @@ export function ReviewDigest({ data }: { readonly data: ReviewData }) {
                     <span>commented</span>
                     {comment.createdAt && (
                       <time dateTime={comment.createdAt}>
-                        {new Date(comment.createdAt).toLocaleDateString('en', { month: 'short', day: 'numeric' })}
+                        {new Date(comment.createdAt).toLocaleDateString('en', {
+                          month: 'short',
+                          day: 'numeric',
+                        })}
                       </time>
                     )}
                     <a href={safeLink(comment.url)} aria-label={`Open ${comment.author}’s comment`}>
                       <ArrowUpRight size={13} />
                     </a>
                   </header>
-                  <p>{comment.body.length > 1800 ? `${comment.body.slice(0, 1800)}…` : comment.body}</p>
+                  <Markdown>{comment.body}</Markdown>
                 </article>
               </li>
             ))}
@@ -134,7 +182,8 @@ function BotStatus({ bot, head }: { readonly bot: BotVerdictRecord; readonly hea
   const reviewed = bot.reviewedSha.toLowerCase();
   const current = head.toLowerCase();
   const matches =
-    current.length >= 7 && (reviewed === current || reviewed.startsWith(current) || current.startsWith(reviewed));
+    current.length >= 7 &&
+    (reviewed === current || reviewed.startsWith(current) || current.startsWith(reviewed));
   const pending = ['running', 'loading', 'unknown'].includes(bot.verdict);
   const earlier = !pending && !matches;
   const label = earlier

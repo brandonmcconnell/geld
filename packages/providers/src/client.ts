@@ -69,7 +69,8 @@ function parsed<T>(value: T | null): ProviderResult<T> {
   return value === null ? { ok: false, reason: 'invalid_response' } : { ok: true, value };
 }
 function capabilities(permission: RepositorySummary['permission']): readonly Capability[] {
-  if (permission === 'admin') return ['read', 'comment', 'review', 'merge', 'settings', 'manage_access', 'delete'];
+  if (permission === 'admin')
+    return ['read', 'comment', 'review', 'merge', 'settings', 'manage_access', 'delete'];
   if (permission === 'maintain') return ['read', 'comment', 'review', 'merge', 'settings'];
   if (permission === 'write') return ['read', 'comment', 'review', 'merge'];
   return ['read', 'comment', 'review'];
@@ -85,11 +86,13 @@ export interface ProviderClientOptions {
 export function createProviderClient(options: ProviderClientOptions): ProviderClient {
   const { provider } = options;
   const host =
-    options.host ?? (provider === 'github' ? 'github.com' : provider === 'gitlab' ? 'gitlab.com' : 'bitbucket.org');
+    options.host ??
+    (provider === 'github' ? 'github.com' : provider === 'gitlab' ? 'gitlab.com' : 'bitbucket.org');
   if (provider === 'github' && host !== 'github.com' && !validEnterpriseHost(host))
     throw new Error('Invalid Enterprise host');
   if (provider === 'gitlab' && host !== 'gitlab.com') throw new Error('GitLab host is not registered');
-  if (provider === 'bitbucket' && host !== 'bitbucket.org') throw new Error('Bitbucket host is not registered');
+  if (provider === 'bitbucket' && host !== 'bitbucket.org')
+    throw new Error('Bitbucket host is not registered');
   const baseUrl =
     provider === 'github'
       ? githubEndpoints(host).api
@@ -119,7 +122,12 @@ export function createProviderClient(options: ProviderClientOptions): ProviderCl
   return clientFor(api, provider, host, graphql);
 }
 
-function clientFor(api: ApiTransport, provider: Provider, host: string, graphql: ApiTransport): ProviderClient {
+function clientFor(
+  api: ApiTransport,
+  provider: Provider,
+  host: string,
+  graphql: ApiTransport,
+): ProviderClient {
   const owns = (repo: RepositoryRef): boolean => repo.provider === provider && repo.host === host;
   const repoPath = (repo: RepositoryRef): string =>
     provider === 'gitlab'
@@ -175,7 +183,8 @@ function clientFor(api: ApiTransport, provider: Provider, host: string, graphql:
             : `user/permissions/repositories?pagelen=30&page=${page}`;
       const result = await api.request(path);
       if (!result.ok) return result;
-      const list = provider === 'bitbucket' ? bbPageSchema.safeParse(result.value) : ghRepos.safeParse(result.value);
+      const list =
+        provider === 'bitbucket' ? bbPageSchema.safeParse(result.value) : ghRepos.safeParse(result.value);
       if (!list.success) return { ok: false, reason: 'invalid_response' };
       const data = Array.isArray(list.data) ? list.data : list.data.values;
       const items: RepositorySummary[] = [];
@@ -219,7 +228,11 @@ function clientFor(api: ApiTransport, provider: Provider, host: string, graphql:
             private: d.is_private,
             url: d.links.html.href,
             permission:
-              wrapped.data.permission === 'admin' ? 'admin' : wrapped.data.permission === 'write' ? 'write' : 'read',
+              wrapped.data.permission === 'admin'
+                ? 'admin'
+                : wrapped.data.permission === 'write'
+                  ? 'write'
+                  : 'read',
           });
         }
       }
@@ -235,6 +248,32 @@ function clientFor(api: ApiTransport, provider: Provider, host: string, graphql:
         },
       };
     },
+    async fileContent(ref, path, revision) {
+      if (
+        !owns(ref) ||
+        !/^[a-f0-9]{40,64}$/i.test(revision) ||
+        path.split('/').some((part) => !part || part === '.' || part === '..') ||
+        /[\\\x00-\x1f]/.test(path)
+      )
+        return { ok: false, reason: 'invalid_response' };
+      const encoded = path.split('/').map(e).join('/');
+      const endpoint =
+        provider === 'github'
+          ? `repos/${e(ref.owner)}/${e(ref.repo)}/contents/${encoded}?ref=${revision}`
+          : provider === 'gitlab'
+            ? `${repoPath(ref)}/repository/files/${e(path)}/raw?ref=${revision}`
+            : `${repoPath(ref)}/src/${revision}/${encoded}`;
+      const result = await api.request(endpoint, {
+        text: true,
+        ...(provider === 'github' ? { accept: 'application/vnd.github.raw+json' } : {}),
+      });
+      if (!result.ok) return result;
+      return typeof result.value === 'string' &&
+        result.value.length <= 1_000_000 &&
+        !result.value.includes('\0')
+        ? { ok: true, value: result.value }
+        : { ok: false, reason: 'unsupported' };
+    },
     async pulls(repo, cursor) {
       const page = pageNumber(cursor);
       if (!owns(repo) || page === null) return { ok: false, reason: 'invalid_response' };
@@ -244,7 +283,8 @@ function clientFor(api: ApiTransport, provider: Provider, host: string, graphql:
           : `${repoPath(repo)}/${provider === 'gitlab' ? `merge_requests?state=opened&per_page=30` : 'pullrequests?state=OPEN&pagelen=30'}&page=${page}`;
       const result = await api.request(path);
       if (!result.ok) return result;
-      const list = provider === 'bitbucket' ? bbPageSchema.safeParse(result.value) : ghRepos.safeParse(result.value);
+      const list =
+        provider === 'bitbucket' ? bbPageSchema.safeParse(result.value) : ghRepos.safeParse(result.value);
       if (!list.success) return { ok: false, reason: 'invalid_response' };
       const data = Array.isArray(list.data) ? list.data : list.data.values;
       const items: PullSummary[] = [];
@@ -288,11 +328,15 @@ function clientFor(api: ApiTransport, provider: Provider, host: string, graphql:
               r.data.permissions?.project_access?.access_level ?? 0,
               r.data.permissions?.group_access?.access_level ?? 0,
             );
-            caps = capabilities(level >= 50 ? 'admin' : level >= 40 ? 'maintain' : level >= 30 ? 'write' : 'read');
+            caps = capabilities(
+              level >= 50 ? 'admin' : level >= 40 ? 'maintain' : level >= 30 ? 'write' : 'read',
+            );
           }
         }
         if (access.ok && provider === 'bitbucket') {
-          const p = z.object({ values: z.array(z.object({ permission: z.string() })) }).safeParse(access.value);
+          const p = z
+            .object({ values: z.array(z.object({ permission: z.string() })) })
+            .safeParse(access.value);
           const permission = p.success ? p.data.values[0]?.permission : null;
           if (permission)
             caps = capabilities(permission === 'admin' ? 'admin' : permission === 'write' ? 'write' : 'read');
@@ -358,7 +402,8 @@ function clientFor(api: ApiTransport, provider: Provider, host: string, graphql:
             : `${pullBase(ref)}/${provider === 'gitlab' ? `notes?per_page=100&page=${page}` : `comments?pagelen=100&page=${page}`}`;
         const result = await api.request(path);
         if (!result.ok) return result;
-        const list = provider === 'bitbucket' ? bbPageSchema.safeParse(result.value) : ghRepos.safeParse(result.value);
+        const list =
+          provider === 'bitbucket' ? bbPageSchema.safeParse(result.value) : ghRepos.safeParse(result.value);
         if (!list.success) return { ok: false, reason: 'invalid_response' };
         const values = Array.isArray(list.data) ? list.data : list.data.values;
         data.push(...values);
@@ -395,7 +440,9 @@ function clientFor(api: ApiTransport, provider: Provider, host: string, graphql:
               : typeof r.data.html_url === 'string'
                 ? r.data.html_url
                 : '',
-          ...(typeof r.data.id === 'number' && Number.isSafeInteger(r.data.id) ? { databaseId: r.data.id } : {}),
+          ...(typeof r.data.id === 'number' && Number.isSafeInteger(r.data.id)
+            ? { databaseId: r.data.id }
+            : {}),
           ...(typeof r.data.created_at === 'string'
             ? { createdAt: r.data.created_at }
             : typeof r.data.created_on === 'string'
@@ -414,7 +461,8 @@ function clientFor(api: ApiTransport, provider: Provider, host: string, graphql:
       return write(path, 'POST', provider === 'bitbucket' ? { content: { raw: body } } : { body });
     },
     async lineComment(ref: PullRef, comment: LineComment) {
-      if (!owns(ref) || comment.line < 1 || !comment.body.trim()) return { ok: false, reason: 'invalid_response' };
+      if (!owns(ref) || comment.line < 1 || !comment.body.trim())
+        return { ok: false, reason: 'invalid_response' };
       if (provider === 'github')
         return write(`${pullBase(ref)}/comments`, 'POST', {
           body: comment.body,
@@ -434,7 +482,8 @@ function clientFor(api: ApiTransport, provider: Provider, host: string, graphql:
       const detail = await api.request(pullBase(ref));
       if (!detail.ok) return detail;
       const pull = gitlabPull(detail.value, ref);
-      if (!pull?.startSha || pull.headSha !== comment.headSha) return { ok: false, reason: 'invalid_response' };
+      if (!pull?.startSha || pull.headSha !== comment.headSha)
+        return { ok: false, reason: 'invalid_response' };
       return write(`${pullBase(ref)}/discussions`, 'POST', {
         body: comment.body,
         position: {
@@ -453,7 +502,11 @@ function clientFor(api: ApiTransport, provider: Provider, host: string, graphql:
       if (provider === 'github')
         return write(`${pullBase(ref)}/reviews`, 'POST', {
           event:
-            review.event === 'approve' ? 'APPROVE' : review.event === 'request_changes' ? 'REQUEST_CHANGES' : 'COMMENT',
+            review.event === 'approve'
+              ? 'APPROVE'
+              : review.event === 'request_changes'
+                ? 'REQUEST_CHANGES'
+                : 'COMMENT',
           body: review.body,
           commit_id: review.headSha,
         });

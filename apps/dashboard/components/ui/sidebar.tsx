@@ -277,8 +277,24 @@ function SidebarFooter({ className, ...props }: React.ComponentProps<'div'>) {
 }
 
 function SidebarContent({ className, ...props }: React.ComponentProps<'div'>) {
+  const scroll = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    const element = scroll.current;
+    if (!element) return;
+    const update = () => {
+      element.dataset.fadeTop = String(element.scrollTop > 1);
+      element.dataset.fadeBottom = String(element.scrollTop + element.clientHeight < element.scrollHeight - 1);
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    for (const child of element.children) observer.observe(child);
+    element.addEventListener('scroll', update, { passive: true });
+    update();
+    return () => { observer.disconnect(); element.removeEventListener('scroll', update); };
+  }, [props.children]);
   return (
     <div
+      ref={scroll}
       data-slot="sidebar-content"
       data-sidebar="content"
       className={cn(

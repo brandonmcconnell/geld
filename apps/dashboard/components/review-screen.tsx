@@ -56,7 +56,9 @@ export function ReviewScreen({ reference }: { readonly reference: PullRef }) {
   if (loading && !owner)
     return (
       <div className="page" role="status">
-        Loading your review workspace...
+        <span className="review-loading-skeleton" aria-label="Loading review workspace">
+          <span /><span /><span />
+        </span>
       </div>
     );
   return (
@@ -67,10 +69,18 @@ export function ReviewScreen({ reference }: { readonly reference: PullRef }) {
     />
   );
 }
-function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; readonly owner: string | null }) {
-  const { session, teams, activeTeam, setActiveTeam, assistantOpen, setAssistantOpen } = useDashboard();
+function ReviewWorkspace({
+  reference,
+  owner,
+}: {
+  readonly reference: PullRef;
+  readonly owner: string | null;
+}) {
+  const { session, cache, teams, activeTeam, setActiveTeam, assistantOpen, setAssistantOpen } =
+    useDashboard();
   const teamId = activeTeam;
-  const [data, setData] = useState<ReviewData | null>(null);
+  const reviewCacheKey = `${owner}:${activeTeam}:${pullPath(reference)}`;
+  const [data, setData] = useState<ReviewData | null>(() => cache?.reviews.get(reviewCacheKey) ?? null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
@@ -102,8 +112,9 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
   const loadedKey = useRef('');
   const current = plan?.steps[stepIndex];
   const completed =
-    plan?.steps.filter((step) => progress[step.id]?.state === 'accepted' || progress[step.id]?.state === 'flagged')
-      .length ?? 0;
+    plan?.steps.filter(
+      (step) => progress[step.id]?.state === 'accepted' || progress[step.id]?.state === 'flagged',
+    ).length ?? 0;
   const finished = !!plan?.steps.length && completed === plan.steps.length;
   const stale = !!data && !!plan && data.pull.headSha !== plan.headSha;
   const params = new URLSearchParams({
@@ -125,11 +136,16 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
         if (abort.signal.aborted) return;
         const parsed = reviewContextSchema.safeParse(value);
         if (!response.ok || !parsed.success) {
+          if (response.status === 401 || response.status === 403 || response.status === 404) {
+            cache?.reviews.clear();
+            setData(null);
+          }
           const failure = failureSchema.safeParse(value);
           setError(failure.success ? failure.data.error : 'The pull request could not be loaded.');
           setLoading(false);
           return;
         }
+        cache?.reviews.set(reviewCacheKey, parsed.data);
         setData(parsed.data);
         setError('');
         setLoading(false);
@@ -159,7 +175,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
         }
       });
     return () => abort.abort();
-  }, [params, key, revision, reference]);
+  }, [params, key, revision, reference, cache, reviewCacheKey]);
   useEffect(() => {
     if (!teamId || !data || (plan && plan.headSha === data.pull.headSha)) return;
     const abort = new AbortController();
@@ -274,7 +290,9 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
   }
   async function post() {
     if (!data || !draftHead || draftHead !== data.pull.headSha || error) {
-      setNotice('The pull request changed or could not be verified. Review the current changes and open a new draft.');
+      setNotice(
+        'The pull request changed or could not be verified. Review the current changes and open a new draft.',
+      );
       return;
     }
     const content = JSON.stringify({ reference, event, body, line, head: draftHead });
@@ -311,10 +329,14 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
     }
     setPosting(false);
   }
-  if (loading)
+  if (loading && !data)
     return (
       <div className="page" role="status">
-        Loading the pull request and its changes...
+        <span className="review-loading-skeleton" aria-label="Loading pull request">
+          <span />
+          <span />
+          <span />
+        </span>
       </div>
     );
   if (!data)
@@ -398,7 +420,11 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
               <RefreshCw size={14} />
             </Button>
             {session.user && !session.demo && (
-              <ProviderActions reference={reference} data={data} onChange={() => setRevision((value) => value + 1)} />
+              <ProviderActions
+                reference={reference}
+                data={data}
+                onChange={() => setRevision((value) => value + 1)}
+              />
             )}
             <Button
               size="sm"
@@ -418,7 +444,8 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
       )}
       {session.demo && (
         <p className="review-banner">
-          Local demonstration. The sample guide previews AI output. Provider writes and live AI calls are disabled.
+          Local demonstration. The sample guide previews AI output. Provider writes and live AI calls are
+          disabled.
         </p>
       )}
       {data.settingsWarning && <p className="review-banner">{data.settingsWarning}</p>}
@@ -442,7 +469,13 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
       )}
       <TrackerLinks reference={reference} />
       <Assignments reference={reference} />
-      <div className={cn('review-layout', showAssistant && 'with-assistant', mode === 'files' && 'all-changes-layout')}>
+      <div
+        className={cn(
+          'review-layout',
+          showAssistant && 'with-assistant',
+          mode === 'files' && 'all-changes-layout',
+        )}
+      >
         {mode === 'files' && <FileNavigation files={data.files} />}
         {mode === 'guide' && plan && (
           <aside className="step-sidebar" data-open={stepNavigationOpen}>
@@ -548,11 +581,17 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
                   <h2>Essential</h2>
                   <span>{data.files.filter((file) => !file.hidden).length} files to review</span>
                 </div>
-                <button type="button" className="wrap-toggle" aria-pressed={wrap} onClick={() => setWrap(!wrap)}>
+                <button
+                  type="button"
+                  className="wrap-toggle"
+                  aria-pressed={wrap}
+                  onClick={() => setWrap(!wrap)}
+                >
                   Wrap lines
                 </button>
               </div>
               <DiffView
+                pull={data.pull}
                 wrap={wrap}
                 files={data.files.filter((file) => !file.hidden)}
                 onComment={(selection) => {
@@ -576,7 +615,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
                       {files.length} hidden {files.length === 1 ? 'file' : 'files'}
                     </span>
                   </summary>
-                  <DiffView files={files} supporting wrap={wrap} />
+                  <DiffView pull={data.pull} files={files} supporting wrap={wrap} />
                 </details>
               ))}
             </>
@@ -617,7 +656,11 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
               )}
               <Button data-measure="guide" onClick={generate} disabled={planning || !session.user}>
                 <Sparkles size={15} />
-                {planning ? 'Planning the review...' : session.demo ? 'Preview a sample AI guide' : 'Create guide'}
+                {planning
+                  ? 'Planning the review...'
+                  : session.demo
+                    ? 'Preview a sample AI guide'
+                    : 'Create guide'}
               </Button>
               <p className="guide-cost-note">
                 {session.demo
@@ -659,7 +702,8 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
             <div className="guide-intro">
               <h2>Update this guide before reviewing its changes.</h2>
               <p>
-                The saved story belongs to a previous version. Replan or open All changes to inspect the current diff.
+                The saved story belongs to a previous version. Replan or open All changes to inspect the
+                current diff.
               </p>
             </div>
           ) : (
@@ -690,6 +734,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
                   )}
                 </div>
                 <DiffView
+                  pull={data.pull}
                   wrap={wrap}
                   files={data.files}
                   refs={current.touches}
@@ -706,10 +751,11 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
                     <summary>
                       Supporting changes{' '}
                       <span>
-                        {current.supporting.length} review {current.supporting.length === 1 ? 'item' : 'items'}
+                        {current.supporting.length} review{' '}
+                        {current.supporting.length === 1 ? 'item' : 'items'}
                       </span>
                     </summary>
-                    <DiffView files={data.files} refs={current.supporting} supporting />
+                    <DiffView pull={data.pull} files={data.files} refs={current.supporting} supporting />
                   </details>
                 )}
                 <div className="step-actions">
@@ -735,14 +781,21 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
                       <Flag size={14} />
                       Flag with a note
                     </Button>
-                    <Button size="sm" data-measure="review-step" onClick={() => mark('accepted')} disabled={stale}>
+                    <Button
+                      size="sm"
+                      data-measure="review-step"
+                      onClick={() => mark('accepted')}
+                      disabled={stale}
+                    >
                       <Check size={14} />
                       Accept and next <ArrowRight size={14} />
                     </Button>
                   </div>
                 </div>
                 <ReviewThreads
-                  threads={data.threads.filter((thread) => current.touches.some((ref) => ref.path === thread.path))}
+                  threads={data.threads.filter((thread) =>
+                    current.touches.some((ref) => ref.path === thread.path),
+                  )}
                   reference={reference}
                   headSha={data.pull.headSha}
                   onChange={() => setRevision((value) => value + 1)}
@@ -842,7 +895,12 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
               {!line && (
                 <label>
                   Review decision
-                  <select name="event" className="field" value={event} onChange={(e) => setEvent(e.target.value)}>
+                  <select
+                    name="event"
+                    className="field"
+                    value={event}
+                    onChange={(e) => setEvent(e.target.value)}
+                  >
                     <option value="comment">Comment</option>
                     <option value="approve">Approve</option>
                     <option value="request_changes">Request changes</option>
@@ -862,7 +920,9 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
               <Button
                 data-measure="review-submit"
                 type="submit"
-                disabled={posting || !session.user || session.demo || !!error || draftHead !== data.pull.headSha}
+                disabled={
+                  posting || !session.user || session.demo || !!error || draftHead !== data.pull.headSha
+                }
               >
                 {posting
                   ? 'Posting...'
@@ -879,7 +939,9 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
                   This draft belongs to an older version. Review the current changes and open a new draft.
                 </p>
               )}
-              {session.demo && <p className="muted">Git host writes are disabled in the local demonstration.</p>}
+              {session.demo && (
+                <p className="muted">Git host writes are disabled in the local demonstration.</p>
+              )}
               {notice && (
                 <p className="muted" role="status">
                   {notice}

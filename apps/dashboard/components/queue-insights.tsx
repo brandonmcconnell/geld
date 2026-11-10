@@ -33,9 +33,15 @@ export function useQueueInsights(pulls: readonly PullSummary[], scope: string) {
         if (cached) continue;
         try {
           const query = new URLSearchParams({ ...pull.ref, number: String(pull.ref.number) });
-          const response = await fetch(`/api/queue/insight?${query}`, { signal: abort.signal, cache: 'no-store' });
+          const response = await fetch(`/api/queue/insight?${query}`, {
+            signal: abort.signal,
+            cache: 'no-store',
+          });
           const parsed = queueInsightSchema.safeParse(await response.json());
-          if (response.ok && parsed.success && parsed.data.headSha === pull.headSha) { insight = parsed.data; cache?.insights.set(itemKey, insight); }
+          if (response.ok && parsed.success && parsed.data.headSha === pull.headSha) {
+            insight = parsed.data;
+            cache?.insights.set(itemKey, insight);
+          }
         } catch {}
         if (!abort.signal.aborted)
           setState((previous) => ({
@@ -49,7 +55,16 @@ export function useQueueInsights(pulls: readonly PullSummary[], scope: string) {
     // The serialized key includes the reference, head and account scope.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
-  return Object.fromEntries(pulls.map(pull => { const path = pullPath(pull.ref); return [path, cache?.insights.get(`${scope}:${path}:${pull.headSha}:${pull.updatedAt}`) ?? (state.key === key ? state.values[path] : undefined)]; }));
+  return Object.fromEntries(
+    pulls.map((pull) => {
+      const path = pullPath(pull.ref);
+      return [
+        path,
+        cache?.insights.get(`${scope}:${path}:${pull.headSha}:${pull.updatedAt}`) ??
+          (state.key === key ? state.values[path] : undefined),
+      ];
+    }),
+  );
 }
 export function ChangeCounts({ insight }: { readonly insight: QueueInsight | null | undefined }) {
   if (!insight)
@@ -77,7 +92,8 @@ export function ChangeCounts({ insight }: { readonly insight: QueueInsight | nul
                     <div key={category.id}>
                       <dt>{category.label}</dt>
                       <dd>
-                        {category.files} <span className="muted">{category.files === 1 ? 'file' : 'files'}</span>
+                        {category.files}{' '}
+                        <span className="muted">{category.files === 1 ? 'file' : 'files'}</span>
                       </dd>
                     </div>
                   ))}
@@ -167,7 +183,11 @@ export function QueueDigestSummary({
         </Link>
       ))}
       {digest.open > 0 && bots.length > 1 && (
-        <Link className="queue-digest-more-mobile" href={href} aria-label={`${bots.length - 1} more bot reviews`}>
+        <Link
+          className="queue-digest-more-mobile"
+          href={href}
+          aria-label={`${bots.length - 1} more bot reviews`}
+        >
           +{bots.length - 1}
         </Link>
       )}

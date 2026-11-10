@@ -15,16 +15,16 @@ export function OpenReview() {
   const [error, setError] = useState('');
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
-      <Dialog.Trigger className="workspace-action" aria-label="Open a review">
+      <Dialog.Trigger className="workspace-action" aria-label="Open a pull request by URL">
         <Plus size={16} />
-        <span className="workspace-action-label">Open review</span>
+        <span className="workspace-action-label">Open by URL</span>
         <span className="touch-target" aria-hidden="true" />
       </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Backdrop className="dialog-backdrop" />
         <Dialog.Popup className="dialog-popup">
           <div className="dialog-heading">
-            <Dialog.Title>Open a review</Dialog.Title>
+            <Dialog.Title>Open a pull request</Dialog.Title>
             <Dialog.Close className="icon-button" aria-label="Close">
               <X size={17} />
               <span className="touch-target" aria-hidden="true" />
