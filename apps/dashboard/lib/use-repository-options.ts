@@ -5,7 +5,7 @@ import { queueSchema, type QueueData } from './contracts';
 import { useDashboard } from './dashboard-context';
 
 export function useRepositoryOptions(open: boolean) {
-  const { queue, session, activeTeam } = useDashboard();
+  const { repositories, session, activeTeam } = useDashboard();
   const owner = session.user?.id ?? (session.demo ? 'demo' : null);
   const scope = `${owner ?? 'anonymous'}:${activeTeam}`;
   const [page, setPage] = useState({ scope: '', cursor: '1' });
@@ -64,7 +64,7 @@ export function useRepositoryOptions(open: boolean) {
     return () => abort.abort();
   }, [open, owner, activeTeam, scope, cursor, revision, cached]);
   return {
-    repositories: current?.repositories ?? queue.repositories,
+    repositories: current?.repositories ?? repositories,
     loading: open && !!owner && !cached,
     error: current?.error,
     nextCursor: current?.nextCursor,

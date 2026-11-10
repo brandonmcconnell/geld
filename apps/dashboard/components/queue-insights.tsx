@@ -1,5 +1,6 @@
 'use client';
 import Link from 'next/link';
+import { useDashboard } from '@/lib/dashboard-context';
 import { Check, Flag, RefreshCw } from './icons';
 import { useEffect, useState } from 'react';
 import { Popover } from '@base-ui/react/popover';
@@ -8,6 +9,7 @@ import { pullPath } from '@geld/domain';
 import { hiddenFilesLabel, queueInsightSchema } from '@/lib/queue-insight';
 import type { QueueDigest, QueueInsight } from '@/lib/queue-insight';
 export function useQueueInsights(pulls: readonly PullSummary[], scope: string) {
+  const { cache } = useDashboard();
   const requestKey = JSON.stringify(
     pulls.map((pull) => ({ ref: pull.ref, headSha: pull.headSha, updatedAt: pull.updatedAt })),
   );
@@ -25,12 +27,15 @@ export function useQueueInsights(pulls: readonly PullSummary[], scope: string) {
         const pull = refs[index++];
         if (!pull) return;
         const path = pullPath(pull.ref);
-        let insight: QueueInsight | null = null;
+        const itemKey = `${scope}:${path}:${pull.headSha}:${pull.updatedAt}`;
+        const cached = cache?.insights.get(itemKey);
+        let insight: QueueInsight | null = cached ?? null;
+        if (cached) continue;
         try {
           const query = new URLSearchParams({ ...pull.ref, number: String(pull.ref.number) });
           const response = await fetch(`/api/queue/insight?${query}`, { signal: abort.signal, cache: 'no-store' });
           const parsed = queueInsightSchema.safeParse(await response.json());
-          if (response.ok && parsed.success && parsed.data.headSha === pull.headSha) insight = parsed.data;
+          if (response.ok && parsed.success && parsed.data.headSha === pull.headSha) { insight = parsed.data; cache?.insights.set(itemKey, insight); }
         } catch {}
         if (!abort.signal.aborted)
           setState((previous) => ({
@@ -44,7 +49,7 @@ export function useQueueInsights(pulls: readonly PullSummary[], scope: string) {
     // The serialized key includes the reference, head and account scope.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
-  return state.key === key ? state.values : {};
+  return Object.fromEntries(pulls.map(pull => { const path = pullPath(pull.ref); return [path, cache?.insights.get(`${scope}:${path}:${pull.headSha}:${pull.updatedAt}`) ?? (state.key === key ? state.values[path] : undefined)]; }));
 }
 export function ChangeCounts({ insight }: { readonly insight: QueueInsight | null | undefined }) {
   if (!insight)

@@ -19,7 +19,6 @@ import type { RepositoryRef } from '@geld/domain';
 import { parseQuery } from '@geld/github/query';
 import { Button, buttonVariants } from '@/components/button';
 import { useStarredPulls } from '@/lib/local-preferences';
-import { readyForReview } from '@/lib/queue';
 import { EmptyState, useDashboard } from './app-shell';
 import { ChangeCounts, QueueDigestSummary, useQueueInsights } from './queue-insights';
 const tabs = [
@@ -65,10 +64,10 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
   const explicitState = tokens.some(
     (token) => token.key === 'is' && ['draft', 'closed', 'merged'].includes(token.value),
   );
-  const ready = scoped.filter(readyForReview);
+  const ready = scoped.filter(pull => pull.state === 'open');
   const filtered = scoped
     .filter((pull) => {
-      if (!explicitState && !readyForReview(pull)) return false;
+      if (!explicitState && pull.state !== 'open') return false;
       if (gitHost !== 'all' && pull.ref.provider !== gitHost) return false;
       const viewer = providerViewer(session.viewers, pull.ref);
       if (tab === 'incoming' && (!viewer || !pull.reviewers.includes(viewer))) return false;
@@ -89,7 +88,7 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
       (a, b) =>
         Number(stars.includes(pullPath(b.ref))) - Number(stars.includes(pullPath(a.ref))) ||
         (sort === 'size'
-          ? a.additions + a.deletions - b.additions - b.deletions
+          ? (insights[pullPath(a.ref)] ? insights[pullPath(a.ref)]!.essential.additions + insights[pullPath(a.ref)]!.essential.deletions : Number.POSITIVE_INFINITY) - (insights[pullPath(b.ref)] ? insights[pullPath(b.ref)]!.essential.additions + insights[pullPath(b.ref)]!.essential.deletions : Number.POSITIVE_INFINITY)
           : b.updatedAt.localeCompare(a.updatedAt)),
     );
   const visible = filtered.slice(0, limit);
@@ -180,8 +179,9 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
           Showing verified requests. Request history may be unavailable for some Git connections.
         </p>
       )}
+      {error && scoped.length > 0 && <p role="status" className="inline-note">{error} Cached results remain visible.</p>}
       <section className="pull-list" aria-label="Pull requests" aria-busy={loading}>
-        {!loading && visible.length > 0 && (
+        {visible.length > 0 && (
           <div className="pull-list-heading">
             <input
               name="selectAll"
@@ -226,7 +226,7 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
             )}
           </div>
         )}
-        {loading ? (
+        {loading && !scoped.length ? (
           <div className="queue-loading">
             {[1, 2, 3, 4].map((n) => (
               <div className="skeleton-row" key={n}>
@@ -235,7 +235,7 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
               </div>
             ))}
           </div>
-        ) : error ? (
+        ) : error && !scoped.length ? (
           <EmptyState title="Queue unavailable" action={<Button onClick={refresh}>Try again</Button>}>
             {error}
           </EmptyState>
@@ -341,16 +341,16 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
           })
         )}
       </section>
-      {(filtered.length > limit || queue.sources?.some((source) => source.more)) && (
+      {(filtered.length > limit || !!queue.nextCursor) && (
         <div className="queue-footer">
           <span>
-            {visible.length} of {filtered.length} loaded
+            {visible.length} shown{filtered.length > visible.length ? ` of ${filtered.length} loaded` : ''}{queue.nextCursor ? ' · More available' : ''}
           </span>
           <Button
             size="sm"
             variant="outline"
             disabled={loading}
-            onClick={() => (filtered.length > limit ? setLimit(limit + 20) : loadMore())}
+            onClick={() => { setLimit(limit + 20); if (filtered.length <= limit) loadMore(); }}
           >
             Load more
           </Button>
