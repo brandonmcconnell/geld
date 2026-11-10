@@ -109,5 +109,6 @@ for (const options of [{ stuck: true }, { sourceChanged: true }, { changedEvent:
 test('only absence of observed native preference remains uncovered; disabled plus positive owned ranges fails', () => {
   assert.throws(() => assertBitbucketShellPreference({ status: 'native_disabled' }, { ownedCount: 1 }), /coexist/);
   assert.doesNotThrow(() => assertBitbucketShellPreference({ status: 'native_disabled' }, { ownedCount: 0 }));
-  assert.doesNotThrow(() => assertBitbucketShellPreference({ status: 'unavailable' }, { ownedCount: 1 }));
+  assert.throws(() => assertBitbucketShellPreference({ status: 'unavailable' }, { ownedCount: 1 }), /positively observed/);
+  assert.doesNotThrow(() => assertBitbucketShellPreference({ status: 'unavailable' }, { ownedCount: 0 }));
 });

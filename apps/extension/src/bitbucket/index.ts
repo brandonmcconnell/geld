@@ -1,4 +1,4 @@
-import type { ProviderAdapter } from '../providers/types';
+import type { ProviderAdapter, ProviderDiffView, ProviderDiffSyntax } from '../providers/types';
 import { BitbucketClient } from './api';
 import { describeBitbucketProviderPage } from './page';
 import { fetchBitbucketReview } from './review';
@@ -13,7 +13,29 @@ import { bitbucketThreadActions } from './thread-actions';
 import { bitbucketAuthorPresentation } from './author-presentation';
 import { readBitbucketRequirements } from './requirements';
 import { applyBitbucketWorkflowSyntax, removeBitbucketWorkflowSyntax } from './workflow-syntax';
+import { BitbucketNativeSyntaxPreference } from './native-syntax-preference';
+import type { NativeSyntaxPreferenceEnvironment } from './native-syntax-preference';
 import { bitbucketReferenceAnchor, readBitbucketReferences } from './references';
+
+export function createBitbucketDiffSyntax(environment: NativeSyntaxPreferenceEnvironment = {}): ProviderDiffSyntax {
+  let preference: BitbucketNativeSyntaxPreference | null = null;
+  let owner: Document | null = null;
+  let current: ProviderDiffView | null = null;
+  return {
+    apply(view) {
+      const doc = view.container.ownerDocument;
+      if (preference === null || owner !== doc) {
+        preference?.clear();owner = doc;
+        preference = new BitbucketNativeSyntaxPreference(doc, (capability) => {
+          if (current === null) removeBitbucketWorkflowSyntax();
+          else applyBitbucketWorkflowSyntax(current.entries, capability);
+        }, environment);
+      }
+      current = view;applyBitbucketWorkflowSyntax(view.entries, preference.read());
+    },
+    clear() { current = null;preference?.clear();preference = null;owner = null;removeBitbucketWorkflowSyntax(); },
+  };
+}
 
 export { BitbucketClient, BitbucketApiError, bitbucketCapabilities } from './api';
 export type { BitbucketPullRequest, BitbucketAuthor, BitbucketParticipant, BitbucketComment, BitbucketTask, BitbucketStatus, BitbucketActivity, BitbucketCapabilities } from './api';
@@ -24,7 +46,7 @@ export const bitbucketAdapter: ProviderAdapter = {
   id: 'bitbucket',
   describe: describeBitbucketProviderPage,
   readDiff: readBitbucketDiff,
-  diffSyntax: { apply: (view) => applyBitbucketWorkflowSyntax(view.entries), clear: removeBitbucketWorkflowSyntax },
+  diffSyntax: createBitbucketDiffSyntax(),
   headerTargets: bitbucketHeaderTargets,
   listRows: bitbucketListRows,
   readReferences: readBitbucketReferences,

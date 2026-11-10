@@ -2247,6 +2247,16 @@ The shared controller uses the optional adapter `diffSyntax.apply(view)`/`clear(
 no provider syntax reader is imported by the shared controller.
 Coloring is independent of comment/test folding and pending count fetches;
 master disable, no diff view, navigation and controller stop clear only its owned ranges.
+Bitbucket shell painting additionally requires an enabled native Syntax preference observed in the current document, route and raw bootstrap actor/workspace scope;
+unknown and disabled remove every owned range, including plain ranges, and the unchanged-Text-node cache before any cache reuse, preserving foreign highlights and original native nodes.
+The passive observer never opens Settings or writes preferences, and accepts only a trusted original unique Settings opener, a newly mounted unique original form and untouched initial checkbox, then trusted Cancel followed by actual dialog removal.
+The older source-backed settingsButton/aria-label hook and the current observed Global diff settings aria-live button are bounded to the original Files changed tabpanel, with responsive tabindex-minus-one copies excluded.
+Input, change, submit, unknown closure, form/control remount, ambiguity, actor changes and route changes discard that observation;
+native context expansion and source-node replacement within the same route/actor retain it because Syntax is a global preference rather than acquired count/head state.
+No getter, private store, token-shaped DOM, settings draft or saved result supplies a substitute value, and explicit trust/layout seams exist only in unit protocols.
+The retained public PR242 native-off expansion produced 22 owned ranges, including 13 plain ranges, so both disabled and unknown regressions must clear that exact visible-source projection without recreating cached ranges until a new positive observation.
+Positive native Syntax-on and palette acceptance remain unverified publicly;
+the installed unknown branch reports unavailability and the known-off branch requires zero owned ranges, a pre-paint witness, preserved source/Viewed state, empty invalid ranges and exact context/count/head checks before and after capture.
 The existing GitHub18 regressions plus native-fixture unit checks do not prove installed Bitbucket highlighting, exact native Bash-scope palette mapping or actual Bitbucket dark-theme selection.
 Keep D25 partial until those are verified publicly.
 The dedicated bitbucket-native-bash browser focus is native discovery only and is excluded from regression and all.
