@@ -1,4 +1,4 @@
-import type { GeldSettings } from '@geld/core';
+import type { DigestView, GeldSettings } from '@geld/core';
 import { repositoryKey, trustedReviewAccountFor } from '@geld/core';
 import { botById, buildProviderReviewItems, PROVIDER_BOT_CAPABILITIES, providerBotSupport } from '@geld/review';
 import type { ProviderReviewComment, ProviderReviewInput, ReviewItem } from '@geld/review';
@@ -7,6 +7,7 @@ import { ProviderPublishedReview } from './publication';
 import type { ProviderAiDependencies } from './ai';
 import type { ProviderReviewReference } from './references';
 import { element } from './dom';
+import { providerDigestViewChoice } from './digest-view';
 import { renderProviderReviewPanel } from './review-panel';
 import type { ProviderReviewPanel, ProviderSourceActionContext } from './review-panel';
 import type { ProviderAdapter, ProviderReviewPage, ProviderReviewSnapshot } from './types';
@@ -24,6 +25,7 @@ function hiddenFlag(node: Element, name: string, hidden: boolean): void {
 }
 
 export interface ProviderConversationServices {
+  readonly chooseDigestView?: (view: DigestView) => Promise<void>;
   readonly saveTrustedBot?: (input: ProviderReviewInput, comment: ProviderReviewComment, botId: string) => Promise<void>;
   readonly saveTrustedPublisher?: (input: ProviderReviewInput, comment: ProviderReviewComment) => Promise<void>;
   readonly aiDependencies?: Partial<ProviderAiDependencies>;
@@ -70,6 +72,8 @@ export function providerReviewWithTrustedAccounts(input: ProviderReviewInput, co
 
 export class ProviderConversation {
   private key = '';
+  private viewControls: HTMLElement | null = null;
+  private viewSignature = '';
   private generation = 0;
   private abort: AbortController | null = null;
   private snapshot: ProviderReviewSnapshot | null = null;
@@ -106,7 +110,7 @@ export class ProviderConversation {
 
   apply(page: ProviderReviewPage | null, settings: GeldSettings): void {
     this.latestSettings = settings;
-    if (page === null || !settings.enabled || (!settings.prOverview && !settings.quickReview)) { this.clear(); return; }
+    if (page === null || !settings.enabled) { this.clear(); return; }
     const key = JSON.stringify([repositoryKey(page.repository), page.url]);
     if (key !== this.key) { this.clear(); this.key = key; }
     if (page.headSha !== null && page.headSha !== this.observedHead) {
@@ -122,10 +126,20 @@ export class ProviderConversation {
       this.restoreCompact(); this.restoreDescription();
       this.resetReviewed();
     }
+    const viewHost = page.kind === 'overview' ? this.adapter.reviewHost?.(document) ?? null : null;
+    this.updateViewChoice(viewHost, settings);
+    if (!settings.prOverview && !settings.quickReview) {
+      if (this.abort !== null) { this.generation += 1; this.abort.abort(); this.abort = null; this.nextRefresh = 0; this.snapshotVersion += 1; }
+      if (this.panel !== null) this.panel.element.hidden = true;
+      this.status?.remove(); this.status = null;
+      this.actions?.remove(); this.actions = null; this.signature = '';
+      this.restoreCompact(); this.restoreDescription();
+      return;
+    }
     if (this.adapter.fetchReview === undefined) return;
     const host = page.kind === 'overview' && settings.prOverview ? this.adapter.reviewHost?.(document) ?? null : null;
     const actionHost = settings.quickReview ? this.adapter.actionHost?.(document) ?? null : null;
-    if (host === null) { this.panel?.destroy(); this.panel = null; this.status?.remove(); this.status = null; this.restoreCompact(); this.restoreDescription(); }
+    if (host === null) { if (this.panel !== null) this.panel.element.hidden = true; this.status?.remove(); this.status = null; this.restoreCompact(); this.restoreDescription(); }
     if (actionHost === null) { this.actions?.remove(); this.actions = null; this.signature = ''; }
     if (host === null && actionHost === null) return;
     if (this.abort === null && Date.now() >= this.nextRefresh) {
@@ -215,7 +229,7 @@ export class ProviderConversation {
           target.focus({ preventScroll: true });
           return document.activeElement === target;
         } }),
-        originalConversation: {
+        ...(this.services.chooseDigestView === undefined ? { originalConversation: {
           shown: this.originalsExpanded,
           toggle: (): void => {
             if (this.key !== actionKey || this.generation !== actionGeneration) return;
@@ -227,6 +241,7 @@ export class ProviderConversation {
             this.changed();
           },
         },
+        } : {}),
         updating: this.abort !== null,
         version: this.snapshotVersion,
         ...(snapshot.sourceActions === undefined ? {} : { actionsForSource: (comment: ProviderReviewComment) => snapshot.sourceActions?.(comment).map((action) => ({ ...action, activate: async (context?: ProviderSourceActionContext): Promise<boolean> => {
@@ -312,6 +327,7 @@ export class ProviderConversation {
         this.panel?.destroy();
         this.panel = renderProviderReviewPanel(host, input, options);
       } else this.panel.update(input, options);
+      this.panel.element.hidden = false;
       if (this.panel.element.dataset.state === 'unavailable') { this.restoreCompact();this.restoreDescription(); }
       else this.compact(snapshot, settings);
     } else if (host !== null) {
@@ -365,7 +381,21 @@ export class ProviderConversation {
     }
   }
 
+  private updateViewChoice(host: HTMLElement | null, settings: GeldSettings): void {
+    const choose = this.services.chooseDigestView;
+    if (host === null || choose === undefined) { this.viewControls?.remove(); this.viewControls = null; this.viewSignature = ''; return; }
+    const signature = JSON.stringify([this.key, settings.prOverview, settings.compactTimeline]);
+    if (signature === this.viewSignature && this.viewControls?.parentElement === host) return;
+    const focused = this.viewControls?.contains(document.activeElement) === true ? document.activeElement?.getAttribute('data-geld-digest-view') : null;
+    this.viewControls?.remove();
+    this.viewControls = providerDigestViewChoice(this.adapter.id, settings, choose);
+    this.viewSignature = signature;
+    host.prepend(this.viewControls);
+    if (focused !== null) this.viewControls.querySelector<HTMLButtonElement>(`[data-geld-digest-view="${focused}"]`)?.focus();
+  }
+
   private compact(snapshot: ProviderReviewSnapshot, settings: GeldSettings): void {
+    if (settings.compactTimeline === 'off') { this.restoreCompact(); this.restoreDescription(); return; }
     const eligible = new Set([...this.panel?.element.querySelectorAll<HTMLElement>('[data-geld-source]') ?? []].map((source) => source.dataset.geldSource).filter((anchor): anchor is string => anchor !== undefined));
     for (const reference of this.panel?.element.querySelectorAll<HTMLElement>('[data-geld-reference-source]') ?? []) {
       const anchor = reference.dataset.geldReferenceSource;
@@ -568,6 +598,7 @@ export class ProviderConversation {
   }
 
   clear(): void {
+    this.viewControls?.remove(); this.viewControls = null; this.viewSignature = '';
     this.restoreCompact();
     this.restoreDescription();
     this.originalsShown.clear();

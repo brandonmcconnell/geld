@@ -783,14 +783,14 @@ describe('scoped native review opener lifetime', () => {
 });
 
 
-it('replaces represented human comments even with timeline compaction off and restores originals on request', async () => {
+it('folds represented human comments in the digest and restores originals on request', async () => {
   const human = { ...comment('A human question'), author: { id: 'human', login: 'person' } };
   const native = document.createElement('article');native.id = human.anchor;
   const originalText = document.createTextNode(human.body);native.append(originalText);
   const unknown = document.createElement('article');unknown.id = 'note_999';unknown.textContent = 'New unread comment';
   document.body.append(native, unknown);
   const source = { ...snapshot([human]), input: { ...snapshot().input, threads: [] } };
-  const f = fixture(source, {}, { aiEnabled: false, compactTimeline: 'off' }, { conversationRoots: () => [
+  const f = fixture(source, {}, { aiEnabled: false, compactTimeline: 'compact' }, { conversationRoots: () => [
     { root: native, anchors: [native.id], kind: 'comment' }, { root: unknown, anchors: [unknown.id], kind: 'comment' },
   ] });
   await vi.waitFor(() => expect(native.getAttribute('hidden')).toBe('until-found'));
@@ -808,4 +808,40 @@ it('replaces represented human comments even with timeline compaction off and re
   expect(native.hasAttribute('hidden')).toBe(false);
   expect(unknown.hasAttribute('hidden')).toBe(false);
   expect(native.firstChild).toBe(originalText);
+});
+
+describe('persistent provider conversation views', () => {
+  it('offers re-entry without fetching while off and preserves open threads across all three views', async () => {
+    const native = document.createElement('article');native.id = 'note_1';document.body.append(native);
+    const choose = vi.fn(async () => undefined);
+    const f = fixture(snapshot(), { chooseDigestView: choose }, { aiEnabled: false, quickReview: false, prOverview: false }, {
+      conversationRoots: () => [{ root: native, anchors: ['note_1'], kind: 'comment' }],
+    });
+    expect(f.fetchReview).not.toHaveBeenCalled();
+    const view = (name: string) => f.host.querySelector<HTMLButtonElement>(`[data-geld-digest-view="${name}"]`);
+    expect(view('github')?.getAttribute('aria-pressed')).toBe('true');
+    view('digest')?.click();
+    await vi.waitFor(() => expect(choose).toHaveBeenCalledWith('digest'));
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, quickReview: false, prOverview: true, compactTimeline: 'compact' });
+    await vi.waitFor(() => expect(native.getAttribute('data-geld-provider-native-find')).toBe('folded'));
+    const panel = f.host.querySelector<HTMLElement>('.geld-provider-review');
+    const thread = panel?.querySelector<HTMLDetailsElement>('[data-geld-item]');
+    if (thread === null || thread === undefined) throw new Error('Missing review thread');
+    thread.open = true;
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, quickReview: false, prOverview: false });
+    expect(panel?.hidden).toBe(true);
+    expect(native.hasAttribute('data-geld-provider-native-find')).toBe(false);
+    expect(view('github')).not.toBeNull();
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, quickReview: false, prOverview: true, compactTimeline: 'off' });
+    expect(panel?.hidden).toBe(false);
+    expect(f.host.querySelector('.geld-provider-review')).toBe(panel);
+    expect(panel?.querySelector<HTMLDetailsElement>('[data-geld-item]')?.open).toBe(true);
+    expect(native.hasAttribute('data-geld-provider-native-find')).toBe(false);
+    expect(view('digest-timeline')?.getAttribute('aria-pressed')).toBe('true');
+    f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, quickReview: false, prOverview: true, compactTimeline: 'compact' });
+    expect(native.getAttribute('data-geld-provider-native-find')).toBe('folded');
+    f.conversation.clear();
+    expect(f.host.querySelector('.geld-provider-view')).toBeNull();
+    expect(native.hasAttribute('data-geld-provider-native-find')).toBe(false);
+  });
 });

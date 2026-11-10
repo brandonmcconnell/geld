@@ -3307,7 +3307,8 @@ Count popovers use intrinsic width bounded by their native column and the viewpo
 
 Provider conversation digests render owned dashboard sections with button disclosures, rather than unstyled native details controls.
 Each disclosure keeps its expanded state across refreshed source snapshots and binds an accessible button to one owned content region.
-Digest replacement follows the overview setting independently of timeline compaction, so represented human comments and push or state events do not remain duplicated below the dashboard.
+Digest-only mode folds represented human comments and push or state events below the dashboard.
+The combined digest and provider view keeps that native activity visible, and provider-only mode hides the dashboard.
 Unknown sources, active editors and unsupported native-find layouts remain native until their content can be represented safely.
 The dashboard's explicit original-conversation control and source links reveal retained native nodes without moving them, and disabling the overview restores their original presentation.
 Bitbucket activity cards without native anchors require one uniquely matching exact native timestamp and matching event wording or commit prefix before they can be folded.
@@ -3427,6 +3428,12 @@ Intercept the pull request's document, set `appPayload.enabled_features.prs_over
 a `<meta name="user-login">` puts the review group up.
 The merge box (`page_data/merge_box`) and the sidebar need a session and show GitHub's error box.
 Signed in, a copy of the desktop Chrome's profile (`~/.config/google-chrome`, its `Default` and `Local State`, launched with `--password-store=basic` so its cookies decrypt) serves the real page to the headless browser with the extension, without driving the desktop one.
+
+GitLab and Bitbucket use the shared DigestView preference through a persistent native-themed three-way control.
+The stored `github` value means provider-only on either host, preserving the existing cross-site setting rather than inventing provider-specific preferences.
+The selector remains available when both the overview and quick actions are off, without fetching a review solely to show the way back.
+Turning the digest off hides its existing panel for the same visit, so returning preserves open review threads.
+The public author-style acceptance visits all three real view controls before comparing visible native colors and restores the exact saved shared settings afterward.
 
 Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
 Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
