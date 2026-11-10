@@ -229,6 +229,8 @@ Items 2, 3 and 7 and the Action's stricter read are behaviour changes a GitHub u
 ### 5.1 `DigestDocument`
 
 A pure, zod-validated document in `@geld/review` (`digest-document.ts`), with no DOM and no callbacks, filled by each adapter.
+The first slice is built: subject, reviewers, requirement, bots, checks, items, previews, events, coverage and capabilities, with `digestFromProvider`, `digestFromMeta` and `digestDocumentIssues`.
+Deployments, reports, agent notes, related links and work, mentions and pushes join as the rows that need them move onto the document.
 It holds every fact a row needs:
 
 - `subject`: provider, origin, repository, id, head, state (open, draft, merged, closed), author.

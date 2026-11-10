@@ -19,4 +19,5 @@ export * from './planner';
 export * from './provider-review';
 export * from './provider-bots';
 export * from './native-publication';
+export * from './digest-document';
 export * from './bot-health';
