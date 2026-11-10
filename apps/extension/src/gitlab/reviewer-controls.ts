@@ -84,6 +84,7 @@ function closed(button: HTMLButtonElement, block: HTMLElement, scope: GitLabRevi
     const menus = [...wrapper.children].filter((node): node is HTMLElement => node instanceof HTMLElement && node.matches('.dropdown-menu'));
     return menus.length === 1 && menus[0] !== undefined && hiddenMenu(menus[0]);
   }
+  if (button.matches('button[data-testid="sidebar-reviewers-assign-button"]')) return button.getAttribute('aria-expanded') !== 'true';
   const wrapper = button.closest<HTMLElement>('.reviewers-dropdown.gl-new-dropdown');
   const toggle = button.closest('[data-testid="base-dropdown-toggle"]');
   if (wrapper === null || toggle === null || !wrapper.contains(toggle) || wrapper.closest('[data-testid="reviewers-block-container"]') !== block) return false;
@@ -96,7 +97,8 @@ function control(doc: Document, scope: GitLabReviewerScope): HTMLButtonElement |
   const blocks = [...doc.querySelectorAll<HTMLElement>('aside[data-testid="issuable-sidebar"][data-issuable-type="merge_request"] [data-testid="reviewers-block-container"]')].filter(native);
   const block = blocks.length === 1 ? blocks[0] : undefined;
   if (block === undefined) return null;
-  const controls = [...block.querySelectorAll<HTMLButtonElement>('button[data-testid="reviewers-edit-button"], button.js-reviewer-search[data-toggle="dropdown"]')].filter(presented);
+  const pickers = [...block.querySelectorAll<HTMLButtonElement>('button[data-testid="reviewers-edit-button"], button.js-reviewer-search[data-toggle="dropdown"]')].filter(presented);
+  const controls = pickers.length === 0 ? [...block.querySelectorAll<HTMLButtonElement>('button[data-testid="sidebar-reviewers-assign-button"]')].filter(presented) : pickers;
   const button = controls.length === 1 ? controls[0] : undefined;
   return button !== undefined && button.type === 'button' && !button.disabled && button.tabIndex >= 0 && !button.hasAttribute('readonly')
     && button.closest('[aria-disabled="true"], [aria-readonly="true"], fieldset[disabled]') === null && closed(button, block, scope) ? button : null;

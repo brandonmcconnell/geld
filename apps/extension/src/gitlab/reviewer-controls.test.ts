@@ -9,9 +9,11 @@ const reviewUrl = 'https://gitlab.com/group/subgroup/repo/-/merge_requests/7';
 const subject: ProviderReviewSubject = { provider: 'gitlab', origin: 'https://gitlab.com', repository: 'group/subgroup/repo', id: '7', headSha: head };
 const scope: GitLabReviewerScope = { subject, projectId: '27', noteableId: '81' };
 
-function mount(kind: 'legacy' | 'modern' = 'legacy'): HTMLButtonElement {
+function mount(kind: 'legacy' | 'modern' | 'assign' = 'legacy'): HTMLButtonElement {
   document.body.innerHTML = `<div id="js-vue-mr-discussions" data-current-user-data='{"id":10}' data-noteable-type="MergeRequest"></div>
-    <aside data-testid="issuable-sidebar" data-issuable-type="merge_request"><div data-testid="reviewers-block-container">${kind === 'legacy'
+    <aside data-testid="issuable-sidebar" data-issuable-type="merge_request"><div data-testid="reviewers-block-container">${kind === 'assign'
+      ? '<button type="button" data-testid="sidebar-reviewers-assign-button">Assign</button>'
+      : kind === 'legacy'
       ? `<div class="selectbox"><input type="hidden" name="merge_request[reviewer_ids][]" value="14"><div class="dropdown"><button type="button" class="js-reviewer-search" data-toggle="dropdown" data-current-user="true" data-iid="7" data-issuable-type="merge_request" data-project-id="27" data-field-name="merge_request[reviewer_ids][]" data-issue-update="/group/subgroup/repo/-/merge_requests/7.json" data-ability-name="merge_request">Select reviewers</button><div class="dropdown-menu" style="display:none"><input type="search" data-testid="dropdown-input-field"></div></div></div>`
       : `<div class="reviewers-dropdown gl-new-dropdown"><div data-testid="base-dropdown-toggle"><button type="button" data-testid="reviewers-edit-button">Edit</button></div><div class="gl-new-dropdown-container"><div data-testid="base-dropdown-menu" class="gl-new-dropdown-panel" style="display:none"><input data-testid="listbox-search-input"></div></div></div>`}</div></aside>
     <textarea id="note-body">Existing comment draft</textarea>`;
@@ -39,7 +41,7 @@ beforeEach(() => {
 afterEach(() => { document.body.replaceChildren();vi.restoreAllMocks(); });
 
 describe('GitLab focus-only native reviewer handoff', () => {
-  it.each(['legacy', 'modern'] as const)('focuses the exact closed %s control without opening, saving or modifying native nodes', async (kind) => {
+  it.each(['legacy', 'modern', 'assign'] as const)('focuses the exact %s control without opening, saving or modifying native nodes', async (kind) => {
     const button = mount(kind);
     const original = document.body.innerHTML;
     const events = vi.fn();
@@ -54,6 +56,83 @@ describe('GitLab focus-only native reviewer handoff', () => {
       expect(document.querySelector<HTMLTextAreaElement>('#note-body')?.value).toBe('Existing comment draft');
       expect(button.hasAttribute('tabindex')).toBe(false);expect(button.hasAttribute('role')).toBe(false);
     } finally { for (const type of ['click', 'change', 'input', 'submit', 'hidden.bs.dropdown', 'hidden.gl.dropdown', 'sidebar.saveReviewers']) document.removeEventListener(type, events); }
+  });
+
+  it.each(['legacy', 'modern'] as const)('keeps the existing %s picker when native Assign is also present', async (kind) => {
+    const button = mount(kind);
+    const assign = document.createElement('button');assign.type = 'button';assign.dataset.testid = 'sidebar-reviewers-assign-button';assign.textContent = 'Assign';
+    document.querySelector('[data-testid="reviewers-block-container"]')?.append(assign);
+    const click = vi.fn();assign.addEventListener('click', click);
+    expect(await read().activate()).toBe(true);expect(document.activeElement).toBe(button);expect(click).not.toHaveBeenCalled();
+    button.disabled = true;expect(read().available).toBe(false);
+    button.disabled = false;
+    const menu = document.querySelector('.dropdown-menu, [data-testid="base-dropdown-menu"]');const parent = menu?.parentElement;
+    if (menu === null || parent === null || parent === undefined) throw new Error('Missing native picker menu');
+    menu.remove();expect(read().available).toBe(false);parent.append(menu);
+    button.parentElement?.append(button.cloneNode(true));expect(read().available).toBe(false);
+  });
+
+  it('requires one original Assign fallback and ignores owned or authored replicas', async () => {
+    const button = mount('assign');
+    const owned = document.createElement('div');owned.dataset.geldUi = '';owned.append(button.cloneNode(true));document.body.append(owned);
+    expect(read().available).toBe(true);
+    button.parentElement?.append(button.cloneNode(true));expect(read().available).toBe(false);
+    mount('assign');const original = document.querySelector('aside button');
+    const authored = document.createElement('div');authored.className = 'note-body';original?.replaceWith(authored);if (original !== null) authored.append(original);
+    expect(read().available).toBe(false);expect(await read().activate()).toBe(false);
+  });
+
+  it.each(['menu', 'metadata'] as const)('keeps the legacy %s veto when a picker also carries the Assign marker', async (invalid) => {
+    const button = mount('legacy');button.dataset.testid = 'sidebar-reviewers-assign-button';
+    expect(read().available).toBe(true);
+    if (invalid === 'menu') document.querySelector('.dropdown-menu')?.remove();
+    else button.dataset.projectId = '28';
+    const action = read();expect(action.available).toBe(false);expect(await action.activate()).toBe(false);
+    expect(button.scrollIntoView).not.toHaveBeenCalled();expect(document.activeElement).not.toBe(button);
+  });
+
+  it.each(['disabled', 'readonly', 'hidden', 'inert', 'aria-disabled', 'aria-readonly'])('refuses a native Assign control marked %s', (attribute) => {
+    const button = mount('assign');button.setAttribute(attribute, attribute.startsWith('aria-') ? 'true' : '');expect(read().available).toBe(false);
+  });
+
+  it.each(['account', 'head', 'project', 'noteable', 'permission', 'incomplete', 'generic-viewer', 'unknown-head'] as const)('preserves the native Assign scope boundary for %s', async (change) => {
+    mount('assign');
+    if (change === 'account') document.querySelector('#js-vue-mr-discussions')?.setAttribute('data-current-user-data', '{}');
+    if (change === 'head') setNote({ diff_head_sha: 'b'.repeat(40) });
+    if (change === 'project') setNote({ project_id: 28 });
+    if (change === 'noteable') setNote({ id: 82 });
+    if (change === 'permission') setNote({ current_user: { can_update: false } });
+    if (change === 'unknown-head') setNote({ diff_head_sha: null });
+    if (change === 'generic-viewer') {
+      document.querySelector('#js-vue-mr-discussions')?.removeAttribute('data-current-user-data');
+      document.body.insertAdjacentHTML('beforeend', '<div class="js-mr-title-actions" data-is-signed-in="true"></div>');
+    }
+    const action = read(change !== 'incomplete');expect(action.available).toBe(false);expect(await action.activate()).toBe(false);
+  });
+
+  it.each(['route', 'account', 'head', 'control', 'sidebar', 'overlay', 'expanded'] as const)('retires Assign focus after native %s drift without opening anything', async (change) => {
+    const button = mount('assign');const action = read();expect(action.available).toBe(true);
+    const click = vi.fn();button.addEventListener('click', click);
+    if (change === 'route') window.history.replaceState(null, '', reviewUrl.replace('/7', '/8'));
+    if (change === 'account') document.querySelector('#js-vue-mr-discussions')?.setAttribute('data-current-user-data', '{"id":11}');
+    if (change === 'head') setNote({ diff_head_sha: 'b'.repeat(40) });
+    if (change === 'control') button.replaceWith(button.cloneNode(true));
+    if (change === 'sidebar') {
+      const sidebar = button.closest('aside');if (sidebar === null) throw new Error('Missing native sidebar');
+      sidebar.replaceWith(sidebar.cloneNode(true));document.querySelector('aside button')?.replaceWith(button);
+    }
+    if (change === 'overlay') document.body.insertAdjacentHTML('beforeend', '<div class="gl-drawer"><input value="Keep native assignment"></div>');
+    if (change === 'expanded') button.setAttribute('aria-expanded', 'true');
+    expect(await action.activate()).toBe(false);expect(button.scrollIntoView).not.toHaveBeenCalled();expect(click).not.toHaveBeenCalled();
+  });
+
+  it.each(['scroll', 'focus', 'occluded', 'digest'] as const)('rechecks Assign handoff at the %s boundary', async (phase) => {
+    const button = mount('assign');const action = read();const click = vi.fn();button.addEventListener('click', click);
+    if (phase === 'scroll') vi.spyOn(button, 'scrollIntoView').mockImplementation(() => setNote({ project_id: 28 }));
+    if (phase === 'focus') button.addEventListener('focus', () => button.replaceWith(button.cloneNode(true)));
+    if (phase === 'occluded') vi.spyOn(document, 'elementFromPoint').mockReturnValue(document.body);
+    expect(await action.activate({ current: () => phase !== 'digest' })).toBe(false);expect(click).not.toHaveBeenCalled();
+    if (phase !== 'focus') expect(document.activeElement).not.toBe(button);
   });
 
   it.each(['null', '{}', '{"id":0}', '{"id":"author"}', '{"id":true}'])('rejects nonnumeric viewer data %s despite data-current-user=true', async (viewer) => {
