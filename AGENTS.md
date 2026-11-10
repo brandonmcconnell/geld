@@ -3447,6 +3447,10 @@ Provider native count rewrites use the shared count grammar and preserve the nat
 GitLab's combined Added and Removed label is identified with the same grammar, so dotted, apostrophe and no-break-space grouping cannot split one count into several or leave stale totals.
 Count restoration continues to retain the original text nodes, icons and latest native wording.
 
+Native permission verification normalizes semantic AT-SPI role constants before using role-name fallbacks, including web-document roles that must remain excluded.
+A role-name-only scan can find Geld's native permission alert without identifying its Allow or Cancel controls.
+The bounded native-role census and recognized-label diagnostics distinguish that case without recording arbitrary page or dialog text, and cannot authorize an unknown control.
+
 Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
 Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
 
