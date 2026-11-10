@@ -4,6 +4,7 @@ import { pullRefSchema } from '@geld/domain';
 import { currentActor } from '@/lib/session';
 import { providerClient } from '@/lib/providers';
 import { reviewSettings } from '@/lib/review-settings';
+import { queueDigest } from '@/lib/queue-digest';
 import { json } from '@/lib/http';
 import { auditedRoute } from '@/lib/request-audit';
 async function readGET(request: Request): Promise<Response> {
@@ -16,10 +17,11 @@ async function readGET(request: Request): Promise<Response> {
     const client = await providerClient(ref.data.provider, ref.data.host, ref.data.owner);
     const pull = await client.pull(ref.data);
     if (!pull.ok) return json({ error: pull.reason }, 503);
-    const [diff, settings, requests] = await Promise.all([
+    const [diff, settings, requests, comments] = await Promise.all([
       client.diff(ref.data),
       reviewSettings(ref.data),
       client.reviewRequesters?.(ref.data),
+      ref.data.provider === 'github' ? client.comments(ref.data).catch(() => null) : null,
     ]);
     if (!diff.ok) return json({ error: diff.reason }, 503);
     const current = await client.pull(ref.data);
@@ -64,6 +66,7 @@ async function readGET(request: Request): Promise<Response> {
     }
     return json({
       headSha: pull.value.headSha,
+      digest: comments?.ok ? queueDigest(ref.data, pull.value.headSha, comments.value) : null,
       essential,
       hidden,
       categories: [...categories.values()],
