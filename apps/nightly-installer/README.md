@@ -16,14 +16,14 @@ curl -fsSL https://www.geld.sh/nightly.sh | sh
 irm https://www.geld.sh/nightly.ps1 | iex
 ```
 
-Node.js 20 or newer. Works with Chrome, Chrome Beta, Edge and Brave on macOS, Windows and Linux.
+Node.js 20 or newer, on macOS, Windows and Linux. Works with Chrome (every channel), Chromium, Edge (every channel), Brave (every channel), Helium, Arc, Dia, Comet, Vivaldi, Opera, Opera GX, Thorium and Yandex, wherever each is made for. `--help` lists their ids.
 
 ## What it does
 
 1. Lists your browser profiles by name and lets you pick one or more.
 2. Downloads the latest nightly build from [GitHub Releases](https://github.com/brandonmcconnell/geld/releases/latest) into `~/.geld/downloads` and checks it there before anything goes into a build folder: the release must come from Geld's own CI, the zip must match its published SHA-256, and the manifest must be Geld Nightly at the release's version.
 3. Unzips it into `~/Geld Nightly/<profile>` (on Windows, `Geld Nightly` in your user folder), one folder per profile, and deletes the zip, checked or not.
-4. For each profile, copies the folder's path to the clipboard, opens the browser in that profile and prints the steps: go to `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and paste the path.
+4. For each profile, copies the folder's path to the clipboard, opens the browser in that profile and prints the steps: go to the browser's extensions page (`chrome://extensions`, `edge://extensions` and so on), turn on **Developer mode**, click **Load unpacked** and paste the path.
 
 Then click the Geld Nightly toolbar icon and **Connect folder**, and pick the same folder. Chrome first asks to let Geld edit it: choose **Allow**. That lasts only while a Geld page stays open, and ends when Geld reloads, so a later install asks again, and this time Chrome offers **Allow on every visit**. Choose it, and from then on Geld Nightly installs new builds into its folder by itself, even after Chrome restarts. Until then each install waits for that one click: the toolbar icon shows the build is ready, and **Install** in its popup asks. A folder installed with `--downloads` needs none of this. New builds come with every push to Geld's `main` branch, and Geld Nightly can roll back to the build before.
 
@@ -34,7 +34,7 @@ Do not move or rename the folder once it is loaded: the browser ties the extensi
 ```text
 --profile <name>       A profile to install for, by name or folder (repeatable). Default: ask.
 --all                  Every profile found.
---browser <id>         Only chrome, chrome-beta, edge or brave (repeatable).
+--browser <id>         Only this browser (repeatable). `--help` lists the ids.
 --dir <folder>         Where the build folders go. Default: ~/Geld Nightly.
 --downloads            Put them in the profile's Downloads folder instead, where updates
                        need no folder picker but cleanup tools may empty the folder.
