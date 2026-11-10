@@ -236,7 +236,7 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
     snapshot: () => observedReview,
     retired: () => retired,
   });
-  controller = new ProviderController(sourceAdapter, settings, (state) => publish(badge ? state : { ...state, hiddenCount: 0 }), catalog, configs, choices, { saveTrustedBot, saveTrustedPublisher, ...reviewed, unhidePerson: async (login) => {
+  controller = new ProviderController(sourceAdapter, settings, (state) => publish(badge ? state : { ...state, hiddenCount: 0 }), catalog, configs, choices, { openSettings: async () => { if (!retired) await browser.runtime.sendMessage({ type: 'geld:open-settings' }); }, saveTrustedBot, saveTrustedPublisher, ...reviewed, unhidePerson: async (login) => {
     if (retired) return;
     const wanted = [login, `${adapter.id}:${login}`].map((value) => value.toLowerCase());
     const value = await settingsItem.update((current) => ({ hiddenAuthors: current.hiddenAuthors.filter((line) => !wanted.includes(normalizeAuthorRule(line)?.toLowerCase() ?? '')) }));

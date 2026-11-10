@@ -195,3 +195,11 @@ html[data-geld-provider] [data-geld-provider-person-hidden] { display: none !imp
   cursor: pointer;
 }
 .geld-provider-hidden-people button:focus-visible, .geld-provider-hidden-person button:focus-visible { outline: 2px solid var(--geld-provider-link); outline-offset: 2px; }
+
+.geld-provider-review__header { flex-wrap: wrap; }
+.geld-provider-review__standing[data-geld-bot-health] { color: var(--geld-provider-text); }
+.geld-provider-review__bot-health { margin-inline-end: var(--geld-provider-space-2); font-weight: var(--geld-provider-heading-weight); }
+.geld-provider-review__bot-health[data-health="good"] { color: var(--geld-provider-success); }
+.geld-provider-review__bot-health[data-health="warn"] { color: var(--geld-provider-warning); }
+.geld-provider-review__bot-health[data-health="severe"], .geld-provider-review__bot-health[data-health="bad"] { color: var(--geld-provider-danger); }
+.geld-provider-review__bot-health[data-health="pending"] { color: var(--geld-provider-text-subtle); }

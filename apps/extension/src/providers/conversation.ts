@@ -25,6 +25,7 @@ const actionSubject = (input: ProviderReviewInput): string => JSON.stringify([in
 
 
 export interface ProviderConversationServices {
+  readonly openSettings?: () => Promise<void>;
   readonly unhidePerson?: (login: string) => Promise<void>;
   readonly chooseDigestView?: (view: DigestView) => Promise<void>;
   readonly saveTrustedBot?: (input: ProviderReviewInput, comment: ProviderReviewComment, botId: string) => Promise<void>;
@@ -204,6 +205,7 @@ export class ProviderConversation {
       const references = (this.adapter.readReferences?.(page, document, people.events, [...input.threads.flatMap((thread) => thread.comments), ...comments]) ?? []).filter((reference) => (reference.source.anchor === null || !people.hiddenAnchors.has(reference.source.anchor)) && (reference.source.eventId === undefined || !people.hiddenEvents.has(reference.source.eventId)) && (reference.source.author === undefined || !hiddenIds.has(reference.source.author.id)));
       const reviewerControls = snapshot.reviewerControls;
       const options = {
+        ...(this.services.openSettings === undefined ? {} : { onOpenSettings: this.services.openSettings }),
         ...(hidden ? { sourceInput: originalInput } : {}),
         ...(reviewerControls === undefined ? {} : { reviewerControls: { ...reviewerControls, activate: async (context?: ProviderSourceActionContext): Promise<boolean> => {
           const current = (): boolean => {
