@@ -229,6 +229,7 @@ export interface ProviderAdapter {
   conversationRoots?(doc: Document, snapshot?: ProviderReviewSnapshot): readonly ProviderConversationRoot[];
   personRoots?(doc: Document, snapshot?: ProviderReviewSnapshot): readonly ProviderConversationRoot[];
   descriptionHost?(doc: Document): HTMLElement | null;
+  attachmentLink?(image: HTMLImageElement, page: ProviderReviewPage): HTMLAnchorElement | null;
   actionHost?(doc: Document): HTMLElement | null;
   fetchReview?(page: ProviderReviewPage, signal: AbortSignal, doc: Document): Promise<ProviderReviewSnapshot>;
 }

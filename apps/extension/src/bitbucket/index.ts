@@ -1,3 +1,4 @@
+import { bitbucketAttachmentLink } from './attachment';
 import type { ProviderAdapter } from '../providers/types';
 import { BitbucketClient } from './api';
 import { describeBitbucketProviderPage } from './page';
@@ -28,6 +29,7 @@ export type { BitbucketReviewSnapshot } from './review';
 
 export const bitbucketAdapter: ProviderAdapter = {
   id: 'bitbucket',
+  attachmentLink: bitbucketAttachmentLink,
   createPageMode: createBitbucketWhitespaceMode,
   createNativeView: (doc, changed) => new BitbucketSourceReferences(doc, changed),
   wholeTests: createBitbucketWholeTestAdapter(),
