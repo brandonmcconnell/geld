@@ -42,3 +42,29 @@ it('ignores dependency-update context and preserves Bitbucket sidebar ownership'
   document.body.innerHTML = '<aside><div data-testid="pr-cards-list"><section aria-label="Review status"></section></div></aside>';
   expect(providerRelatedHost('bitbucket', document)).toBe(document.querySelector('[data-testid="pr-cards-list"]'));
 });
+
+it('applies canonical Bitbucket hidden-person rules and visit peeking to bot link sources', () => {
+  const uuid = '7177c565-3bb4-44d3-b17b-e791dfb8fed8';
+  const identity = `bitbucket.org/uuid/${uuid}`;
+  const bbPage: ProviderReviewPage = { ...page, provider: 'bitbucket', repository: { provider: 'bitbucket', origin: 'https://bitbucket.org', path: 'acme/widgets' }, url: 'https://bitbucket.org/acme/widgets/pull-requests/1' };
+  const bot = { ...comment, author: { id: `{${uuid}}`, login: 'readable-bot-name' } };
+  const input = { ...snapshot.input, subject: { ...subject, provider: 'bitbucket' as const, origin: bbPage.repository.origin, repository: bbPage.repository.path }, bots: [{ id: 'coderabbit', authorId: bot.author.id }] };
+  const source = { ...snapshot, input, comments: [bot] };
+  expect(providerRelatedLinks(bbPage, null, source)[0]?.service).toBe('CodeRabbit');
+  for (const rule of [identity.toUpperCase(), `bitbucket:${identity}`, 'bitbucket.org/uuid/7177*']) {
+    expect(providerRelatedLinks(bbPage, null, source, [rule])).toEqual([]);
+    expect(providerRelatedLinks(bbPage, null, source, [rule], new Set([bot.author.id]))[0]?.service).toBe('CodeRabbit');
+    const threaded = { ...source, comments: [], input: { ...input, threads: [{ id: 'thread', anchor: bot.anchor, url: bot.url, comments: [bot], resolved: false, outdated: false }] } };
+    expect(providerRelatedLinks(bbPage, null, threaded, [rule])).toEqual([]);
+    expect(providerRelatedLinks(bbPage, null, threaded, [rule], new Set([bot.author.id]))[0]?.service).toBe('CodeRabbit');
+  }
+  const body = document.createElement('div');body.innerHTML = '<a href="https://linear.app/team/issue/ENG-12/fix-cache">ENG-12</a>';
+  expect(providerRelatedLinks(bbPage, body, source, [identity]).map(link => link.service)).toEqual(['Linear']);
+});
+
+it('does not leak bot reply links from a thread owned by a hidden person', () => {
+  const starter = { ...comment, id: '1', anchor: 'note_1', author: { id: 'person', login: 'hidden-person' }, body: 'Start the thread' };
+  const source = { ...snapshot, comments: [], input: { ...snapshot.input, threads: [{ id: 'thread', anchor: starter.anchor, url: starter.url, comments: [starter, comment], resolved: false, outdated: false }] } };
+  expect(providerRelatedLinks(page, null, source, ['hidden-person'])).toEqual([]);
+  expect(providerRelatedLinks(page, null, source, ['hidden-person'], new Set(['person']))[0]?.service).toBe('CodeRabbit');
+});
