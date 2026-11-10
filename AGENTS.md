@@ -2260,6 +2260,11 @@ blank inline code may have zero width while its native row/file remains visible.
 Plain, mixed, malformed, authored, owned, hidden, editor/dialog or duplicate source never supplies the fallback, and a highlighted sibling file cannot enable a plain pipeline file.
 Initial empty/plain hydration leaves eligibility unknown without inventing disabled, while native Settings opening, dirty/submit/unknown closure, transient/remounted native forms, route/actor/bootstrap/workspace changes and clear latch local fallback closed for the document even across observer recreation or master toggling.
 Only the existing pristine read/Cancel path may then qualify an explicit native preference.
+The exact original passive Atlassian cookie notice is neutral only to still-initial local history/eligibility, with its original layout-slot owner, three known buttons, two legal links and zero form/field/editor/nested-dialog content.
+The two native legal notice IDs are duplicates, so they are not treated as a unique heading.
+Current full shape and original control identities, or exact pending original-owner removal records, are required even when the banner has already detached;
+transient controls/forms/Settings fields, unknown role/label oldValues and incomplete rendering close the latch without async grace, while unrelated source hydration remains neutral.
+This never reopens closed history or overrides Off, never operates consent, and leaves every native dialog counted by the global pristine Settings/read/Cancel qualification.
 Same-route context/source replacement rechecks current original rows and creates fresh ranges without waiting for count or head acquisition, never carrying disconnected Text evidence or inventing a PR full-head witness.
 The retained public PR242 native-off expansion produced 22 owned ranges, including 13 plain ranges, so both disabled and unknown regressions must clear that exact visible-source projection without recreating cached ranges until a new positive observation.
 The dedicated anonymous installed characterization verified native On, fresh pristine On read/Cancel, source-preserving owned painting and exact native Off restoration with the other 12 controls unchanged in the tested light theme.
