@@ -9,7 +9,9 @@ const { chromium } = loadModule(process.env.GELD_PLAYWRIGHT_MODULE || 'playwrigh
 import { configure, teamId } from './design-fixtures.mjs';
 const base = process.env.GELD_DESIGN_URL || 'http://localhost:3001';
 const output = path.resolve(__dirname, '../../../docs/dashboard/design/screenshots');
-const entries = [];
+const groups = (process.env.GELD_CAPTURE_GROUPS || 'desktop,mobile,dark').split(',');
+const previous = process.env.GELD_CAPTURE_GROUPS ? JSON.parse(fs.readFileSync(path.join(output, '../manifest.json'), 'utf8')) : null;
+const entries = previous?.entries.filter(entry => !groups.includes(entry.group)) ?? [];
 const errors = [];
 const browserWarnings = [];
 const fixtureStates = new WeakMap();
@@ -47,6 +49,7 @@ async function go(page, url) {
   await page.evaluate(() => document.fonts.ready);
 }
 async function shot(page, name, label, group) {
+  if (await page.locator('.native-digest').count()) await page.locator('.native-digest[aria-busy=false]').waitFor();
   await page.mouse.move(0, 0);
   await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -89,7 +92,7 @@ let browser;
     executablePath: process.env.GELD_CHROMIUM_PATH || '/usr/bin/chromium',
     args: ['--no-sandbox'],
   });
-  for (const group of ['desktop', 'mobile']) {
+  for (const group of ['desktop', 'mobile'].filter(group => groups.includes(group))) {
     const viewport = group === 'desktop' ? { width: 1440, height: 1000 } : { width: 390, height: 844 };
     const { context, page } = await create(browser, {}, viewport);
     const routes = [
@@ -271,8 +274,11 @@ let browser;
     await page.keyboard.press('Escape');
     await page.getByRole('tab', { name: 'Digest', exact: true }).click();
     await shot(page, 'conversation', 'Pull request digest', group);
-    await page.getByRole('button', { name: 'Discussion', exact: true }).click();
-    await shot(page, 'discussion', 'Pull request description and discussion', group);
+    await page.getByRole('button', { name: 'Read Greptile review', exact: true }).click();
+    await shot(page, 'bot-review', 'Bot report inside the Digest', group);
+    await page.getByRole('button', { name: 'Read Greptile review', exact: true }).click();
+    await page.getByRole('button', { name: 'Timeline', exact: true }).click();
+    await shot(page, 'discussion', 'Native pull request timeline', group);
     await page.getByRole('button', { name: 'Digest', exact: true }).click();
     await page.getByRole('button', { name: 'Toggle assistant', exact: true }).click();
     await shot(page, 'assistant', 'Review assistant', group);
@@ -362,6 +368,8 @@ let browser;
     await auth.context.close();
     for (const [name, label, url, state] of [
       ['review-signed-out', 'Protected review redirects to sign-in', pull, { signedOut: true }],
+      ['digest-native', 'Native Digest without a Geld summary comment', pull, { noSummary: true }],
+      ['digest-unavailable', 'Digest when activity is unavailable', pull, { feedError: true }],
       ['digest-stale', 'Digest with bot reviews from an earlier commit', pull, { staleBot: true }],
       ['team-permission', 'Team admin permission state', '/teams/' + teamId + '?view=advanced', { member: true }],
       ['queue-empty', 'Empty queue', '/', { emptyQueue: true }],
@@ -416,7 +424,10 @@ let browser;
       await menu.context.close();
     }
   }
-  for (const [name, url, state] of [
+  if (groups.includes('dark')) for (const [name, url, state] of [
+    ['digest-native', pull, { noSummary: true }],
+    ['discussion', pull, {}],
+    ['bot-review', pull, {}],
     ['queue', '/', {}],
     ['guided-step', pull, { guided: true }],
     ['changes', pull, {}],
@@ -432,6 +443,8 @@ let browser;
   ]) {
     const dark = await create(browser, state, { width: 1440, height: 1000 }, 'dark');
     await go(dark.page, url);
+    if (name === 'discussion') await dark.page.getByRole('button', { name: 'Timeline', exact: true }).click();
+    if (name === 'bot-review') await dark.page.getByRole('button', { name: 'Read Greptile review', exact: true }).click();
     if (name === 'provider-dialog')
       await dark.page.getByRole('button', { name: 'Add a provider', exact: true }).click();
     if (name === 'queue-starred') await dark.page.locator('.star-button').first().click();

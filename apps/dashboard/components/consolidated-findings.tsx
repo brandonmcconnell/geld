@@ -5,7 +5,12 @@ import { Button } from '@/components/button';
 import type { PullRef } from '@geld/domain';
 import { sanitiseMeasurement } from '@geld/domain';
 import type { ReviewItem } from '@geld/review/model';
-import { providerFindings, findingFingerprint, sourceThreads, agentStructure } from '@geld/review/provider-findings';
+import {
+  providerFindings,
+  findingFingerprint,
+  sourceThreads,
+  agentStructure,
+} from '@geld/review/provider-findings';
 import { botById } from '@geld/review/bots';
 import { findingResponse } from '@/lib/finding-contracts';
 import type { ReviewData } from '@/lib/review-contracts';
@@ -45,7 +50,9 @@ export function ConsolidatedFindings({
   useEffect(() => {
     let cancelled = false;
     void Promise.all(
-      draft.items.map(async (item) => [item.id, await findingFingerprint(draft, item)] satisfies [string, string]),
+      draft.items.map(
+        async (item) => [item.id, await findingFingerprint(draft, item)] satisfies [string, string],
+      ),
     ).then((entries) => {
       if (!cancelled) setSignatureState({ draft, values: Object.fromEntries(entries) });
     });
@@ -83,7 +90,12 @@ export function ConsolidatedFindings({
       const response = await fetch('/api/findings', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ref: reference, headSha: data.pull.headSha, teamId, key: crypto.randomUUID() }),
+        body: JSON.stringify({
+          ref: reference,
+          headSha: data.pull.headSha,
+          teamId,
+          key: crypto.randomUUID(),
+        }),
       });
       const value: unknown = await response.json();
       const parsed = findingResponse.safeParse(value);
@@ -100,7 +112,9 @@ export function ConsolidatedFindings({
         discussion: parsed.data.discussion,
       });
       setMessage(
-        parsed.data.credits ? 'Findings consolidated. 1 credit used.' : 'No open agent findings need consolidation.',
+        parsed.data.credits
+          ? 'Findings consolidated. 1 credit used.'
+          : 'No open agent findings need consolidation.',
       );
       measure('feature_usage', { feature: 'consolidation', stage: 'completed' });
     } catch {
@@ -129,14 +143,14 @@ export function ConsolidatedFindings({
       const error = z.object({ error: z.string() }).safeParse(value);
       setMessage(
         response.ok
-          ? 'Every source thread was resolved on the provider.'
+          ? 'Every source thread was resolved.'
           : error.success
             ? error.data.error
-            : 'Check the provider before retrying resolution.',
+            : 'Refresh before retrying resolution.',
       );
       onChange();
     } catch {
-      setMessage('Resolution could not be confirmed. Refresh the provider state before retrying.');
+      setMessage('Resolution could not be confirmed. Refresh before retrying.');
     } finally {
       setBusy(false);
     }
@@ -168,7 +182,8 @@ export function ConsolidatedFindings({
       </div>
       {draft.omitted > 0 && (
         <p className="inline-note">
-          Some source IDs could not be verified. Open the provider for the complete discussion.
+          Some source IDs could not be verified. These findings are omitted until their sources can be
+          verified.
         </p>
       )}
       {model && <p className="muted">Consolidated by {model}</p>}
@@ -179,7 +194,9 @@ export function ConsolidatedFindings({
       )}
       {items.map((item) => {
         const ids = sourceThreads(draft, item);
-        const unresolved = ids.filter((id) => data.threads.some((thread) => thread.id === id && !thread.resolved));
+        const unresolved = ids.filter((id) =>
+          data.threads.some((thread) => thread.id === id && !thread.resolved),
+        );
         return (
           <article className="finding-item" key={item.id}>
             <div className="finding-badges">
@@ -197,22 +214,8 @@ export function ConsolidatedFindings({
             )}
             <div className="finding-sources">
               {item.sources.map((source) => {
-                const link = draft.sources.find((entry) => entry.anchor === source.anchor);
-                let url: string | null = null;
-                try {
-                  const parsed = new URL(link?.url ?? '');
-                  if (parsed.protocol === 'https:' && parsed.hostname === reference.host) url = parsed.href;
-                } catch {
-                  /* Keep an unlinked byline when the provider has no safe permalink. */
-                }
                 const name = source.bot ? (botById(source.bot)?.title ?? 'Reviewer') : source.author;
-                return url ? (
-                  <a key={source.anchor} href={url} target="_blank" rel="noreferrer">
-                    {name} ↗
-                  </a>
-                ) : (
-                  <span key={source.anchor}>{name}</span>
-                );
+                return <span key={source.anchor}>{name}</span>;
               })}
             </div>
             {unresolved.length > 0 && (
@@ -221,8 +224,8 @@ export function ConsolidatedFindings({
                   Resolve {unresolved.length} source thread{unresolved.length === 1 ? '' : 's'}
                 </summary>
                 <p className="muted my-3">
-                  This resolves every thread behind this item as you. Read all sources first. A changed head or source
-                  comment requires a refresh.
+                  This resolves every thread behind this item as you. Read all sources first. A changed head
+                  or source comment requires a refresh.
                 </p>
                 <Button
                   size="sm"

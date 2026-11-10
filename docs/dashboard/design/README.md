@@ -4,6 +4,8 @@ This gallery shows the actual Geld dashboard with synthetic local fixture respon
 It covers app-owned routes, sign-in and account creation, password recovery, connection setup, review modes, dialogs, and empty, loading and error states.
 No real provider login, email, AI generation, billing or infrastructure operation was performed.
 
+The downloadable ZIP keeps the gallery and all screenshot files together. Extract it before opening index.html. The standalone HTML embeds every image and can be opened without extracting anything.
+
 Open [the visual gallery](./index.html) to filter screenshots by device and view.
 The production application follows the operating system’s color scheme.
 
@@ -14,6 +16,7 @@ Controls, panels and navigation states use square corners. Brand buttons retain 
 The dashboard uses Font Awesome Sharp Regular. Selected controls and navigation switch to Sharp Solid. Private repositories use a lock, and discussion threads use square message icons.
 
 Queue rows show current Digest findings, replies needed, approvals and bot results. Earlier summaries are marked outdated, and partial summaries use lower-bound counts.
+The PR Digest is built from live provider activity, reviews, checks and threads, with optional Geld summaries. The full timeline and bot reports open inside the dashboard. Satin metal action buttons retain the cut-corner brand silhouette.
 Navigation, pagination and refresh retain cached rows and change counts. Descriptions, discussion and assistant messages render Markdown. The diff offers revision-bound source links and expandable context.
 
 ## Screenshots
@@ -85,7 +88,8 @@ Navigation, pagination and refresh retain cached rows and change counts. Descrip
 | Pull request actions | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/provider-actions.png) | [View](./screenshots/mobile/provider-actions.png) | — |
 | Repository action controls | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/repository-actions.png) | [View](./screenshots/mobile/repository-actions.png) | — |
 | Pull request digest | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/conversation.png) | [View](./screenshots/mobile/conversation.png) | — |
-| Pull request description and discussion | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/discussion.png) | [View](./screenshots/mobile/discussion.png) | — |
+| Bot report inside the Digest | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/bot-review.png) | [View](./screenshots/mobile/bot-review.png) | [View](./screenshots/dark/bot-review.png) |
+| Native pull request timeline | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/discussion.png) | [View](./screenshots/mobile/discussion.png) | [View](./screenshots/dark/discussion.png) |
 | Review assistant | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/assistant.png) | [View](./screenshots/mobile/assistant.png) | — |
 | Assistant response in context | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/assistant-response.png) | [View](./screenshots/mobile/assistant-response.png) | — |
 | Privacy preferences | `/` | [View](./screenshots/desktop/privacy-dialog.png) | [View](./screenshots/mobile/privacy-dialog.png) | — |
@@ -106,6 +110,8 @@ Navigation, pagination and refresh retain cached rows and change counts. Descrip
 | Set new password | `/settings/account/reset-password?token=synthetic-only` | [View](./screenshots/desktop/reset-password.png) | [View](./screenshots/mobile/reset-password.png) | — |
 | Password reset success | `/settings/account/reset-password?token=synthetic-only` | [View](./screenshots/desktop/reset-password-saved.png) | [View](./screenshots/mobile/reset-password-saved.png) | — |
 | Protected review redirects to sign-in | `/sign-in` | [View](./screenshots/desktop/review-signed-out.png) | [View](./screenshots/mobile/review-signed-out.png) | — |
+| Native Digest without a Geld summary comment | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/digest-native.png) | [View](./screenshots/mobile/digest-native.png) | [View](./screenshots/dark/digest-native.png) |
+| Digest when activity is unavailable | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/digest-unavailable.png) | [View](./screenshots/mobile/digest-unavailable.png) | — |
 | Digest with bot reviews from an earlier commit | `/github/acme/platform/pull/128` | [View](./screenshots/desktop/digest-stale.png) | [View](./screenshots/mobile/digest-stale.png) | — |
 | Team admin permission state | `/teams/00000000-0000-4000-8000-000000000001?view=advanced` | [View](./screenshots/desktop/team-permission.png) | [View](./screenshots/mobile/team-permission.png) | — |
 | Empty queue | `/` | [View](./screenshots/desktop/queue-empty.png) | [View](./screenshots/mobile/queue-empty.png) | — |
@@ -132,11 +138,14 @@ export GELD_PLAYWRIGHT_MODULE=/path/to/playwright
 export GELD_CHROMIUM_PATH=/path/to/chromium
 node apps/dashboard/scripts/design-icons-verify.mjs
 node apps/dashboard/scripts/design-verify.mjs
+node apps/dashboard/scripts/review-native-verify.mjs
 node apps/dashboard/scripts/queue-continuity-verify.mjs
 node apps/dashboard/scripts/design-capture.mjs
 node apps/dashboard/scripts/design-gallery.mjs
+node apps/dashboard/scripts/design-package.mjs /path/to/output
 ```
 
+`GELD_CAPTURE_GROUPS=dark` regenerates only dark screenshots and retains the other device groups in the manifest.
 `GELD_DESIGN_URL` optionally selects a different local server URL.
 The two module and executable overrides are optional when Playwright and Chromium are already available at the default locations.
 Only synthetic responses are used during capture.

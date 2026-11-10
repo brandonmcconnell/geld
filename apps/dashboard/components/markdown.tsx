@@ -16,7 +16,6 @@ export function Markdown({
       className="review-markdown [&_div]:rounded-none"
       components={components}
       mode={streaming ? 'streaming' : 'static'}
-      skipHtml
       controls={false}
       codeBlockMaxHeight={0}
       tableMaxHeight={0}

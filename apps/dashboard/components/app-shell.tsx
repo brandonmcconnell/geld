@@ -112,6 +112,7 @@ export function AppShell({
       cache.queues.clear();
       cache.insights.clear();
       cache.reviews.clear();
+      cache.feeds.clear();
       setDirectory({ scope: '', items: [] });
       setQueueState({ key: '', data: emptyQueue });
       setTeams([]);
@@ -145,6 +146,7 @@ export function AppShell({
               cache.queues.clear();
               cache.insights.clear();
               cache.reviews.clear();
+              cache.feeds.clear();
               setQueueState({ key: '', data: emptyQueue });
               setDirectory({ scope: '', items: [] });
             }

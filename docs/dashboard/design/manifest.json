@@ -717,8 +717,19 @@
       "route": "/github/acme/platform/pull/128"
     },
     {
+      "name": "bot-review",
+      "label": "Bot report inside the Digest",
+      "file": "desktop/bot-review.png",
+      "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
       "name": "discussion",
-      "label": "Pull request description and discussion",
+      "label": "Native pull request timeline",
       "file": "desktop/discussion.png",
       "group": "desktop",
       "viewport": {
@@ -946,6 +957,28 @@
         "height": 1000
       },
       "route": "/sign-in"
+    },
+    {
+      "name": "digest-native",
+      "label": "Native Digest without a Geld summary comment",
+      "file": "desktop/digest-native.png",
+      "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "digest-unavailable",
+      "label": "Digest when activity is unavailable",
+      "file": "desktop/digest-unavailable.png",
+      "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/github/acme/platform/pull/128"
     },
     {
       "name": "digest-stale",
@@ -1773,8 +1806,19 @@
       "route": "/github/acme/platform/pull/128"
     },
     {
+      "name": "bot-review",
+      "label": "Bot report inside the Digest",
+      "file": "mobile/bot-review.png",
+      "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
       "name": "discussion",
-      "label": "Pull request description and discussion",
+      "label": "Native pull request timeline",
       "file": "mobile/discussion.png",
       "group": "mobile",
       "viewport": {
@@ -2004,6 +2048,28 @@
       "route": "/sign-in"
     },
     {
+      "name": "digest-native",
+      "label": "Native Digest without a Geld summary comment",
+      "file": "mobile/digest-native.png",
+      "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "digest-unavailable",
+      "label": "Digest when activity is unavailable",
+      "file": "mobile/digest-unavailable.png",
+      "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
       "name": "digest-stale",
       "label": "Digest with bot reviews from an earlier commit",
       "file": "mobile/digest-stale.png",
@@ -2145,6 +2211,39 @@
         "height": 844
       },
       "route": "/"
+    },
+    {
+      "name": "digest-native",
+      "label": "Dark mode · digest-native",
+      "file": "dark/digest-native.png",
+      "group": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "discussion",
+      "label": "Dark mode · discussion",
+      "file": "dark/discussion.png",
+      "group": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "bot-review",
+      "label": "Dark mode · bot-review",
+      "file": "dark/bot-review.png",
+      "group": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/github/acme/platform/pull/128"
     },
     {
       "name": "queue",

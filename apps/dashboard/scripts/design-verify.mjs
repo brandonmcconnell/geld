@@ -291,11 +291,14 @@ try {
     'PASS guide accept/flag progression and persistence, completion, categorized hidden-file navigation, code width and actual review payload',
   );
   const staleDigest = await open({ staleBot: true }, 1440, pull);
-  assert.equal(await staleDigest.page.locator('.digest-status-list [data-stale=true]').count(), 2);
-  assert.equal(await staleDigest.page.locator('.digest-verdict').filter({ hasText: '5/5' }).count(), 0);
+  await staleDigest.page.locator('.native-digest[aria-busy=false]').waitFor();
+  assert.equal(await staleDigest.page.locator('.digest-bot[data-stale=true]').count(), 1);
+  await staleDigest.page.getByText('Earlier commit', {exact:true}).waitFor();
   await staleDigest.context.close();
   const untrusted = await open({ untrustedDigest: true }, 1440, pull);
-  assert.equal(await untrusted.page.locator('.digest-status').count(), 0);
+  await untrusted.page.locator('.native-digest[aria-busy=false]').waitFor();
+  assert.equal(await untrusted.page.getByRole('heading', {name:'Review summary',exact:true}).count(), 0);
+  await untrusted.page.getByRole('button', {name:'Timeline',exact:true}).click();
   await untrusted.page.getByText('untrusted-author', { exact: true }).filter({ visible: true }).waitFor();
   await untrusted.context.close();
   const mobileGuide = await open({ guided: true }, 390, pull);

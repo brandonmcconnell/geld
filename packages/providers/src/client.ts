@@ -18,6 +18,7 @@ import { githubEndpoints, validEnterpriseHost } from '@geld/domain';
 import { createApiTransport } from '@geld/github';
 import type { ApiTransport, FetchLike, TokenSource } from '@geld/github';
 import { threadOperations } from './threads';
+import { activityOperations } from './activity';
 import {
   bitbucketPull,
   bitbucketPullSchema,
@@ -172,6 +173,7 @@ function clientFor(
   return {
     provider,
     ...threadOperations(api, graphql, provider, host),
+    ...activityOperations(api, provider, host),
     async repositories(cursor) {
       const page = pageNumber(cursor);
       if (page === null) return { ok: false, reason: 'invalid_response' };

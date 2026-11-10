@@ -133,7 +133,7 @@ async function configure(context, state = {}) {
       })),
     };
   });
-  const activeReview = state.largeGuide
+  const activeReview = state.noSummary ? { ...fixture.review, comments: fixture.review.comments.filter(comment => comment.id !== 'geld-summary') } : state.largeGuide
     ? { ...fixture.review, files: stressFiles }
     : state.staleBot || state.untrustedDigest
       ? {
@@ -284,6 +284,24 @@ async function configure(context, state = {}) {
         if (line.newLine) lines[line.newLine - 1] = line.text;
       }
       data = { lines, revision: activeReview.pull.headSha };
+    } else if (p === '/api/pull/activity') {
+      const sha = activeReview.pull.headSha;
+      const activity = [
+        { id: 'commit:initial', kind: 'commit', actor: 'morgan', title: 'added a commit', body: 'Keep review progress scoped to the account and pull request', state: null, sha, at: '2026-11-02T09:15:00Z', avatar: null },
+        { id: 'event:request', kind: 'event', actor: 'morgan', title: 'requested a review from jordan', body: '', state: null, sha: null, at: '2026-11-02T09:18:00Z', avatar: null },
+        { id: 'review:taylor', kind: 'review', actor: 'taylor', title: 'reviewed the changes', body: '**Verified** the account switch case. The new storage key keeps progress isolated.\n\n- [x] Account isolation\n- [x] Changed fingerprint resets progress', state: 'approved', sha, at: '2026-11-02T10:20:00Z', avatar: null },
+        { id: 'comment:greptile-review', kind: 'comment', actor: 'greptile-apps[bot]', title: 'commented', body: '## Greptile Summary\n\nThe progress restore path now validates the saved fingerprint.\n\n### Confidence Score: 5/5\n\nNo actionable issues found.', state: null, sha: state.staleBot ? 'b'.repeat(40) : sha, at: '2026-11-02T10:24:00Z', avatar: null },
+        { id: 'event:label', kind: 'event', actor: 'morgan', title: 'added the ready for review label', body: '', state: null, sha: null, at: '2026-11-02T10:30:00Z', avatar: null },
+      ];
+      const checks = [
+        ['typecheck', 'TypeScript', 'success'], ['tests', 'Unit tests', 'success'], ['build', 'Dashboard build', 'success'], ['preview', 'Vercel Preview', 'success'], ['review', 'CodeRabbit', 'in_progress'],
+      ].map(([id, name, state]) => ({ id: 'github:check:' + id, name, status: state === 'in_progress' ? state : 'completed', conclusion: state === 'in_progress' ? null : state, sha, description: '', startedAt: '2026-11-02T10:00:00Z', completedAt: state === 'in_progress' ? null : '2026-11-02T10:04:00Z' }));
+      data = { headSha: sha, page: { items: url.searchParams.get('section') === 'checks' ? checks : activity, cursor: null, capped: false } };
+      if (state.feedPartial && url.searchParams.get('section') === 'checks') {
+        const second = url.searchParams.get('cursor') === '2';
+        data = { headSha: sha, page: { items: second ? checks.slice(3) : checks.slice(0, 3), cursor: second ? null : '2', capped: !second } };
+      }
+      if (state.feedError) { status = 503; data = { error: 'Activity unavailable' }; }
     } else if (p === '/api/pull') {
       data = activeReview;
       if (state.pullError) {
