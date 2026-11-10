@@ -2949,6 +2949,9 @@ A captured registration-shaped source slice does not establish loader binding, r
   Native ADS variables and YAML token spans are never reassigned, and comment, grammar, plain and initial-On eligibility remain unchanged.
   Selected-light source/style characterization does not establish enabled embedded-shell palette equivalence, native dark, comment-variable availability or complete classifier equivalence.
 
+Optional module-only research on the explicit native-Bash and initial-On visits selects one already-issued script at the exact public CDN origin and app.<40lowerhex>.js path, retaining its actual URL and body SHA without relaxing frame, redirect, response, size, worker or cleanup guards.
+The default raw collector remains pinned to its original exact URL, and no eligible module response triggers a fetch, retry or change to native preference qualification.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
