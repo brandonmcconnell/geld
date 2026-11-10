@@ -57,6 +57,8 @@ export function gitLabDisplayedOutlineProbe(action = 'read', target = null) {
   const viewed = [...root.querySelectorAll('input[data-viewed-checkbox], [data-testid="fileReviewCheckbox"] input[type="checkbox"]')].filter(native);
   const nativeHunks = [...root.querySelectorAll('tr.rd-hunk-header[data-hunk-header]')].filter(native);
   const headers = [...document.querySelectorAll('.geld-provider-category-header')];
+  // A header runs its count straight after the label ("Tests1"), so its words are the label's.
+  const labelOf = (node) => (node.querySelector('.geld-provider-category-label') ?? node).textContent.trim();
   if (action === 'setup') {
     if (store) throw Error('Displayed source observation already exists');
     store = { url: location.href, root, parent: root.parentElement, data: root.getAttribute('data-file-data'), reading, controls: controls.map((node) => ({ node, parent: node.parentElement, html: node.outerHTML })), nativeHunks: nativeHunks.map((node) => ({ node, parent: node.parentElement, html: node.outerHTML })), viewed: viewed.map((node) => ({ node, checked: node.checked, disabled: node.disabled })), events: [], expected: null };
@@ -71,17 +73,23 @@ export function gitLabDisplayedOutlineProbe(action = 'read', target = null) {
     globalThis[KEY] = store;
   }
   if (!store) return null;
-  const same = location.href === store.url && root === store.root && root.parentElement === store.parent && root.getAttribute('data-file-data') === store.data
-    && reading.length === store.reading.length && reading.every((row, index) => {
-      const old = store.reading[index];return row.row === old.row && row.parent === old.parent && row.html === old.html && JSON.stringify(row.attributes) === JSON.stringify(old.attributes) && row.old === old.old && row.next === old.next
-        && row.cells.length === old.cells.length && row.cells.every((node, at) => node === old.cells[at]) && row.nodes.length === old.nodes.length && row.nodes.every((node, at) => node === old.nodes[at] && node.data === old.texts[at])
-        && JSON.stringify(row.code) === JSON.stringify(old.code) && row.ids.length === old.ids.length && row.ids.every(([node, id], at) => node === old.ids[at][0] && id === old.ids[at][1]) && row.links.length === old.links.length && row.links.every(([node, href], at) => node === old.links[at][0] && href === old.links[at][1]);
-    }) && controls.length === store.controls.length && controls.every((node, index) => node === store.controls[index].node && node.parentElement === store.controls[index].parent && node.outerHTML === store.controls[index].html)
-    && nativeHunks.length === store.nativeHunks.length && nativeHunks.every((node, index) => node === store.nativeHunks[index].node && node.parentElement === store.nativeHunks[index].parent && node.outerHTML === store.nativeHunks[index].html)
-    && viewed.length === store.viewed.length && viewed.every((node, index) => node === store.viewed[index].node && node.checked === store.viewed[index].checked && node.disabled === store.viewed[index].disabled);
+  const rowSame = (row, index) => {
+    const old = store.reading[index];return row.row === old.row && row.parent === old.parent && row.html === old.html && JSON.stringify(row.attributes) === JSON.stringify(old.attributes) && row.old === old.old && row.next === old.next
+      && row.cells.length === old.cells.length && row.cells.every((node, at) => node === old.cells[at]) && row.nodes.length === old.nodes.length && row.nodes.every((node, at) => node === old.nodes[at] && node.data === old.texts[at])
+      && JSON.stringify(row.code) === JSON.stringify(old.code) && row.ids.length === old.ids.length && row.ids.every(([node, id], at) => node === old.ids[at][0] && id === old.ids[at][1]) && row.links.length === old.links.length && row.links.every(([node, href], at) => node === old.links[at][0] && href === old.links[at][1]);
+  };
+  // Which identity broke, so a refused arm says why rather than "false == true".
+  const sameParts = {
+    url: location.href === store.url, root: root === store.root, parent: root.parentElement === store.parent, data: root.getAttribute('data-file-data') === store.data,
+    rows: reading.length === store.reading.length && reading.every(rowSame),
+    controls: controls.length === store.controls.length && controls.every((node, index) => node === store.controls[index].node && node.parentElement === store.controls[index].parent && node.outerHTML === store.controls[index].html),
+    hunks: nativeHunks.length === store.nativeHunks.length && nativeHunks.every((node, index) => node === store.nativeHunks[index].node && node.parentElement === store.nativeHunks[index].parent && node.outerHTML === store.nativeHunks[index].html),
+    viewed: viewed.length === store.viewed.length && viewed.every((node, index) => node === store.viewed[index].node && node.checked === store.viewed[index].checked && node.disabled === store.viewed[index].disabled),
+  };
+  const same = Object.values(sameParts).every(Boolean);
   if (action === 'category-button') {
     if (!same || !['Essential', 'Tests'].includes(target)) return null;
-    const matches = headers.filter((node) => new RegExp(`^${target}\\b`).test(node.textContent.trim()));return matches.length === 1 ? matches[0] : null;
+    const matches = headers.filter((node) => labelOf(node) === target);return matches.length === 1 ? matches[0] : null;
   }
   const folds = [...root.querySelectorAll('[data-geld-provider-fold-row^="test:"]')].map((row) => {
     const button = row.querySelector('button');const next = row.nextElementSibling;const source = reading.find((line) => line.row === next);
@@ -101,13 +109,17 @@ export function gitLabDisplayedOutlineProbe(action = 'read', target = null) {
   });
   if (action === 'fold-button') return same ? folds.find((fold) => Number(fold.source?.next) === target)?.button ?? null : null;
   if (action === 'fold-button-current') return same && folds.some((fold) => fold.button === target && fold.source?.next === '103' && fold.row.parentElement === fold.source.parent);
-  if (action === 'arm') { if (!same || !(target instanceof HTMLButtonElement) || !headers.includes(target) && !folds.some((fold) => fold.button === target)) return false;store.expected = target;store.lastClick = null;return true; }
+  if (action === 'arm') {
+    if (!same) return `changed:${Object.entries(sameParts).filter(([, value]) => !value).map(([key]) => key).join(',')}`;
+    if (!(target instanceof HTMLButtonElement) || !headers.includes(target) && !folds.some((fold) => fold.button === target)) return 'not-a-control';
+    store.expected = target;store.lastClick = null;return true;
+  }
   if (action === 'click-result') return store.lastClick ?? null;
   const rectangle = root.getBoundingClientRect();
   return { url: location.href, path, sameSource: same, sourceHead: { value: null, basis: 'No authoritative source head is read by this bounded displayed-source phase. URL and original native identities/text are retained.' },
     sourceRows: reading.map((row) => ({ old: row.old, next: row.next, code: row.code, newText: row.newText, hidden: row.row.hasAttribute('data-geld-provider-line-hidden') })),
     controls: controls.map((node) => ({ direction: node.dataset.expandDirection, label: node.getAttribute('aria-label') })), viewed: viewed.map((node) => ({ checked: node.checked, disabled: node.disabled })), events: [...store.events],
-    headers: headers.map((node) => ({ text: node.textContent.trim(), expanded: node.getAttribute('aria-expanded') })),
+    headers: headers.map((node) => ({ text: labelOf(node), expanded: node.getAttribute('aria-expanded') })),
     visible: getComputedStyle(root).display !== 'none' && rectangle.width > 0 && rectangle.height > 0,
     viewport: { width: metric(view?.innerWidth), height: metric(view?.innerHeight), scrollX: metric(view?.scrollX), scrollY: metric(view?.scrollY), documentScroll: document.scrollingElement == null ? null : Object.fromEntries(['scrollTop', 'scrollLeft', 'scrollHeight', 'scrollWidth', 'clientHeight', 'clientWidth'].map((key) => [key, metric(document.scrollingElement?.[key])])) },
     folds: folds.map(({ source, ...fold }) => ({ text: fold.text, kind: fold.kind, status: fold.status, label: fold.label, title: fold.title, expanded: fold.expanded, control: fold.control, sourceLine: source?.next ?? null })) };
