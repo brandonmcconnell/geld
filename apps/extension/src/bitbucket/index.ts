@@ -11,7 +11,7 @@ import { fetchBitbucketListAuthors } from './list-authors';
 import { bitbucketConversationRoots, syncBitbucketNativeReviewState } from './conversation';
 import { renderBitbucketComment } from './comment-render';
 import { bitbucketThreadActions } from './thread-actions';
-import { bitbucketAuthorPresentation } from './author-presentation';
+import { beginBitbucketAuthorPresentation } from './author-presentation';
 import { readBitbucketRequirements } from './requirements';
 import { createBitbucketDiffSyntax } from './diff-syntax';
 export { createBitbucketDiffSyntax } from './diff-syntax';
@@ -41,13 +41,19 @@ export const bitbucketAdapter: ProviderAdapter = {
   conversationRoots: bitbucketConversationRoots,
   actionHost: bitbucketActionHost,
   fetchReview: async (page, signal, doc) => {
-    const snapshot = await fetchBitbucketReview(page, signal);
-    return { ...snapshot, get input() { return syncBitbucketNativeReviewState(snapshot.input, doc); }, get actions() { const pending = readBitbucketPendingReview(doc, page, snapshot.input.subject);return [...readBitbucketActions(doc, page), ...(pending === null ? [] : [pending])]; },
-      get requirements() { return readBitbucketRequirements(page, doc); },
-      renderComment: (comment, host) => renderBitbucketComment(comment, host, doc),
-      sourceActions: (comment) => bitbucketThreadActions(comment, doc),
-      authorPresentation: (comment) => bitbucketAuthorPresentation(comment, doc),
-    };
+    const presentation = beginBitbucketAuthorPresentation(doc, page, signal);
+    try {
+      const snapshot = await fetchBitbucketReview(page, signal);
+      return { ...snapshot, get input() { return syncBitbucketNativeReviewState(snapshot.input, doc); }, get actions() { const pending = readBitbucketPendingReview(doc, page, snapshot.input.subject);return [...readBitbucketActions(doc, page), ...(pending === null ? [] : [pending])]; },
+        get requirements() { return readBitbucketRequirements(page, doc); },
+        renderComment: (comment, host) => renderBitbucketComment(comment, host, doc),
+        sourceActions: (comment) => bitbucketThreadActions(comment, doc),
+        authorPresentation: presentation.bind(snapshot),
+      };
+    } catch (error: unknown) {
+      presentation.invalidate();
+      throw error;
+    }
   },
   fetchConfig: fetchBitbucketConfig,
 };
