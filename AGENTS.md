@@ -3271,6 +3271,10 @@ Every prior semantic row must remain uniquely ordered, added rows must be unchan
 Unarmed remounts, changed source identity, duplicate or edited rows, out-of-gap additions and expired transitions still withdraw source authority.
 A ready, still-source-agreeing whole-file intent survives removal of the final native gap so a completed expansion keeps its fold and keyboard focus, but disabled settings, changed revision or mismatched source still remove it.
 
+Bitbucket code cells live inside a separate physical `.lines-wrapper` row that also owns the permalink, so fold presentation uses an adapter-supplied visual root while source custody retains the original inner code cell.
+The shared fold renderer accepts that visual root only as the connected direct parent in the same file and document, places its control before the physical row, and hides or restores the whole row without moving native children.
+This prevents an inner native PRE from intercepting the empty part of a full-width fold button, as observed during the public whole-context acceptance.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 

@@ -26,7 +26,7 @@ function fixture(options: { popup?: 'valid' | 'absent' | 'duplicate' | 'foreign'
   window.location.href = 'https://bitbucket.org/team/repo/pull-requests/27/diff';
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => new DOMRect(10, 10, 200, 24));
   document.body.innerHTML = `<div data-testid="pr-header"><div data-qa="pr-branches-and-state-styles"><div role="button" aria-haspopup="true" aria-expanded="false">source</div><div role="button" aria-haspopup="true" aria-expanded="false">main</div></div><div>#27 • updated</div><a href="/team/repo/src">repo</a></div><button data-selection aria-haspopup="true" aria-expanded="false">All changes</button>
-    <div role="region" aria-label="Diff"><div><div id="chg-${PATH}"></div><div><article data-qa="branch-diff-file"><div data-qa="bk-file__header" data-testid="file-header"><span aria-label="Expand/collapse file"></span><h2 data-qa="bk-filepath">${PATH}</h2><div data-qa="bk-file__actions" data-testid="file-actions"><div data-qa="bk-file__menu"><button type="button" aria-haspopup="true" aria-expanded="false"><span role="img" aria-label="Diff actions"></span></button></div></div><label>Viewed<input type="checkbox" disabled></label></div><div data-qa="bk-file__content" data-testid="file-content"><div class="diff-chunk"><div class="diff-chunk-inner"><div class="chunk-heading-wrapper"><div><button data-qa="pr-diff-show-more-lines-above">Show more</button></div></div><div class="lines-wrapper" role="row" data-key="code-line"><div data-qa="code-line"><div data-key="code-line-number" data-old-line-number="3" data-new-line-number="3"></div><pre><span data-line-type=" ">    last()</span></pre></div></div></div></div></div></article></div></div></div>`;
+    <div role="region" aria-label="Diff"><div><div id="chg-${PATH}"></div><div><article data-qa="branch-diff-file"><div data-qa="bk-file__header" data-testid="file-header"><span aria-label="Expand/collapse file"></span><h2 data-qa="bk-filepath">${PATH}</h2><div data-qa="bk-file__actions" data-testid="file-actions"><div data-qa="bk-file__menu"><button type="button" aria-haspopup="true" aria-expanded="false"><span role="img" aria-label="Diff actions"></span></button></div></div><label>Viewed<input type="checkbox" disabled></label></div><div data-qa="bk-file__content" data-testid="file-content"><div class="diff-chunk"><div class="diff-chunk-inner"><div class="chunk-heading-wrapper"><div><button data-qa="pr-diff-show-more-lines-above">Show more</button></div></div><div class="lines-wrapper" role="row" data-key="code-line"><div class="line-wrapper" data-qa="code-line"><div data-key="code-line-number" data-old-line-number="3" data-new-line-number="3"></div><pre><span data-line-type=" ">    last()</span></pre></div></div></div></div></div></article></div></div></div>`;
   const panel = document.createElement('section');panel.id = 'pull-request-tabs-1-tab';panel.setAttribute('role', 'tabpanel');
   panel.append(document.querySelector('[data-selection]')!, document.querySelector('[role="region"]')!);document.body.append(panel);
   // Actual retained PR header ancestry: 48aQc.ActionsWrapper hides with visibility:hidden at sticky scroll.
@@ -73,7 +73,7 @@ afterEach(() => { clearProviderLineFolds();for (const stop of sessions.splice(0)
 
 function nativeRow(n: number, text: string, old = n, kind = ' '): string {
   const code = document.createElement('span');code.textContent = text;
-  return `<div class="lines-wrapper" role="row" data-key="code-line"><div data-qa="code-line"><div data-key="code-line-number" data-old-line-number="${old}" data-new-line-number="${n}"></div><pre><span data-line-type="${kind}">${code.innerHTML}</span></pre></div></div>`;
+  return `<div class="lines-wrapper" role="row" data-key="code-line"><div class="line-wrapper" data-qa="code-line"><div data-key="code-line-number" data-old-line-number="${old}" data-new-line-number="${n}"></div><pre><span data-line-type="${kind}">${code.innerHTML}</span></pre></div></div>`;
 }
 function nativeGap(): string { return '<div class="chunk-heading-wrapper"><div><button data-qa="pr-diff-show-more-lines-above">Above</button><button data-qa="pr-diff-show-more-lines-below">Below</button></div></div>'; }
 function nativeChunk(content: string): string { return `<div class="diff-chunk"><div class="diff-chunk-inner">${content}</div></div>`; }
@@ -149,7 +149,7 @@ it.each([false, true])('completes two native gap remounts and restores focus/sel
   };
   f.onRefresh(paint);paint();
   const fold = f.entry.root.querySelector<HTMLButtonElement>('[data-geld-provider-fold-row^="test:"] button')!;
-  expect(fold).not.toBeNull();fold.focus();
+  expect(fold).not.toBeNull();expect(fold.parentElement?.parentElement?.matches('.diff-chunk-inner')).toBe(true);expect(f.entry.root.querySelector('.lines-wrapper [data-geld-provider-fold-row]')).toBeNull();fold.focus();
   const content = f.entry.root.querySelector('[data-qa="bk-file__content"]')!, clicks: string[] = [];
   content.addEventListener('click', event => {
     const target = event.target;if (!(target instanceof HTMLButtonElement) || !target.dataset.qa?.startsWith('pr-diff-show-more-lines-')) return;

@@ -79,7 +79,10 @@ function setAttribute(node: HTMLElement, name: string, value: string | null): vo
   } else if (node.getAttribute(name) !== value) node.setAttribute(name, value);
 }
 
-function rowRoot(line: ProviderDiffLine): HTMLElement {
+function rowRoot(line: ProviderDiffLine, file: HTMLElement): HTMLElement {
+  const visual = line.visualRoot;
+  if (visual !== undefined && visual !== file && file.contains(visual) && visual.isConnected && visual.ownerDocument === line.root.ownerDocument && line.root.parentElement === visual
+    && visual.contains(line.root) && visual.closest('[data-geld-ui]') === null) return visual;
   return line.root.closest('tr') ?? line.root;
 }
 
@@ -90,7 +93,7 @@ function readLines(entry: ProviderDiffEntry): Reading {
   let changing = false;
   const signature: string[] = [];
   for (const shown of entry.readLines?.() ?? []) {
-    const root = rowRoot(shown);
+    const root = rowRoot(shown, entry.root);
     if (!entry.root.contains(root) || root.hasAttribute('data-geld-ui')) continue;
     let row = rows.get(root);
     if (row === undefined) {
