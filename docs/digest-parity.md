@@ -179,7 +179,7 @@ Decision needed: keep Merge checks as a provider row, or fold it into CI and the
 | Status pill menu (merge, queue, draft, close, bypass) | partial: opens GitLab's own actions menu | partial: opens Bitbucket's "More actions" | — | the host's menu, acceptable as a slot |
 | Review group (approve, request changes, comment) | match in shape (`renderProviderActionControls`) | match in shape, comment plus verdict hands off to the native writer | — | — |
 | Header counts and breakdown | match: counts in the tab bar on every tab, hover and keyboard focus only | match: same rule for its Files tabs | diff | — |
-| Changes-tab category accordion | partial: §2.4 | partial: same rule | diff | — |
+| Changes-tab category accordion | match: none when nothing is hidden | match: same rule | diff | — |
 
 ### 3.7 Gaps that cannot close
 
