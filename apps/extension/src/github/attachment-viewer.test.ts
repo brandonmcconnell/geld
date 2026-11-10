@@ -5,6 +5,21 @@ import { createAttachmentViewer } from './attachment-viewer';
 let viewer: ReturnType<typeof createAttachmentViewer>;
 let image: HTMLImageElement;
 let dialog: HTMLDialogElement;
+let notifyResize: (() => void) | undefined;
+
+class TestResizeObserver {
+  constructor(private readonly onResize: () => void) {}
+  observe(): void { notifyResize = this.onResize; }
+  disconnect(): void { notifyResize = undefined; }
+}
+
+function sizeStage(width: number, height: number): void {
+  Object.defineProperties(viewer.stage, {
+    clientWidth: { configurable: true, value: width },
+    clientHeight: { configurable: true, value: height },
+  });
+  notifyResize?.();
+}
 
 function button(label: string): HTMLButtonElement {
   const found = viewer.controls.querySelector(`[aria-label="${label}"]`);
@@ -24,8 +39,7 @@ function wheel(deltaY: number): WheelEvent {
 }
 
 beforeEach(() => {
-  vi.stubGlobal('innerWidth', 1200);
-  vi.stubGlobal('innerHeight', 800);
+  vi.stubGlobal('ResizeObserver', TestResizeObserver);
   const source = document.createElement('img');
   source.src = 'https://github.com/user-attachments/assets/example';
   source.alt = 'Screenshot';
@@ -39,6 +53,7 @@ beforeEach(() => {
   Object.defineProperty(image, 'naturalWidth', { configurable: true, value: 1600 });
   Object.defineProperty(image, 'naturalHeight', { configurable: true, value: 900 });
   vi.spyOn(viewer.stage, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100, 960, 540));
+  sizeStage(960, 540);
   image.dispatchEvent(new Event('load'));
 });
 
@@ -50,22 +65,22 @@ afterEach(() => {
 });
 
 describe('attachment image viewer', () => {
-  it('sizes the detached viewer from the displayed attachment before the modal opens', () => {
+  it('fits from the displayed attachment as soon as the modal is measured', () => {
     viewer.dispose();
     const source = document.createElement('img');
     source.src = 'https://github.com/user-attachments/assets/example';
     Object.defineProperties(source, { naturalWidth: { value: 1600 }, naturalHeight: { value: 900 } });
     viewer = createAttachmentViewer(source);
-    expect(viewer.stage.isConnected).toBe(false);
-    expect(viewer.stage.style.width).toBe('960px');
-    expect(viewer.stage.style.height).toBe('540px');
-    expect(viewer.stage.querySelector('[role="status"]')?.hasAttribute('hidden')).toBe(true);
     const preview = viewer.stage.querySelector('img');
+    sizeStage(960, 540);
+    expect(preview?.style.width).toBe('768px');
+    expect(preview?.style.height).toBe('432px');
+    expect(viewer.stage.querySelector('[role="status"]')?.hasAttribute('hidden')).toBe(true);
     expect(preview?.hidden).toBe(false);
     button('Zoom in').click();
     expect(button('Reset zoom').textContent).toBe('150%');
     preview?.dispatchEvent(new Event('load'));
-    expect(viewer.stage.style.height).toBe('540px');
+    expect(preview?.style.height).toBe('432px');
     expect(button('Reset zoom').textContent).toBe('150%');
   });
 
@@ -75,20 +90,21 @@ describe('attachment image viewer', () => {
     source.src = 'https://github.com/user-attachments/assets/loading';
     viewer = createAttachmentViewer(source);
     const preview = viewer.stage.querySelector('img');
+    sizeStage(960, 540);
     expect(preview?.hidden).toBe(true);
     expect(viewer.stage.querySelector('[role="status"]')?.hasAttribute('hidden')).toBe(false);
     if (!(preview instanceof HTMLImageElement)) throw new Error('Missing preview');
     Object.defineProperties(preview, { naturalWidth: { value: 1600 }, naturalHeight: { value: 900 } });
     preview.dispatchEvent(new Event('load'));
     expect(preview.hidden).toBe(false);
-    expect(viewer.stage.style.width).toBe('960px');
-    expect(viewer.stage.style.height).toBe('540px');
+    expect(preview.style.width).toBe('768px');
+    expect(preview.style.height).toBe('432px');
     expect(viewer.stage.querySelector('[role="status"]')?.hasAttribute('hidden')).toBe(true);
   });
 
-  it('opens at a smaller fitted size and enables zoom after loading', () => {
-    expect(viewer.stage.style.width).toBe('960px');
-    expect(viewer.stage.style.height).toBe('540px');
+  it('fits large images with room around them and enables zoom after loading', () => {
+    expect(image.style.width).toBe('768px');
+    expect(image.style.height).toBe('432px');
     expect(button('Zoom in').disabled).toBe(false);
     expect(button('Zoom out').disabled).toBe(true);
     expect(button('Reset zoom').textContent).toBe('Fit');
@@ -100,17 +116,17 @@ describe('attachment image viewer', () => {
     expect(button('Reset zoom').textContent).toBe('150%');
     expect(viewer.stage.hasAttribute('data-zoomed')).toBe(true);
     pointer('pointerdown', 500, 300);
-    pointer('pointermove', 600, 350);
-    pointer('pointerup', 600, 350);
-    expect(image.style.transform).toBe('translate(100px, 50px) scale(1.5)');
+    pointer('pointermove', 580, 350);
+    pointer('pointerup', 580, 350);
+    expect(image.style.transform).toBe('translate(80px, 50px) scale(1.5)');
     button('Reset zoom').click();
     expect(image.style.transform).toBe('translate(0px, 0px) scale(1)');
     expect(viewer.stage.hasAttribute('data-zoomed')).toBe(false);
   });
 
   it('keeps the clicked point stationary while zooming', () => {
-    image.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 900, clientY: 370 }));
-    expect(image.style.transform).toBe('translate(-320px, 0px) scale(2)');
+    image.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 860, clientY: 370 }));
+    expect(image.style.transform).toBe('translate(-280px, 0px) scale(2)');
     expect(dialog.isConnected).toBe(true);
   });
 
@@ -128,7 +144,7 @@ describe('attachment image viewer', () => {
     pointer('pointerdown', 500, 300);
     pointer('pointermove', 10000, -10000);
     pointer('pointerup', 10000, -10000);
-    expect(image.style.transform).toBe('translate(240px, -135px) scale(1.5)');
+    expect(image.style.transform).toBe('translate(96px, -54px) scale(1.5)');
     image.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(button('Reset zoom').textContent).toBe('150%');
     expect(viewer.stage.hasAttribute('data-dragging')).toBe(false);
@@ -164,37 +180,50 @@ describe('attachment image viewer', () => {
 
   it('refits on resize without stretching the image and cleans up its listeners', () => {
     button('Zoom in').click();
-    vi.stubGlobal('innerWidth', 390);
-    window.dispatchEvent(new Event('resize'));
-    expect(viewer.stage.style.width).toBe('358px');
-    expect(viewer.stage.style.height).toBe('201.375px');
+    sizeStage(400, 540);
+    expect(image.style.width).toBe('320px');
+    expect(image.style.height).toBe('180px');
     expect(button('Reset zoom').textContent).toBe('Fit');
     viewer.dispose();
-    vi.stubGlobal('innerWidth', 1200);
-    window.dispatchEvent(new Event('resize'));
-    expect(viewer.stage.style.width).toBe('358px');
+    sizeStage(960, 540);
+    expect(image.style.width).toBe('320px');
     dialog.dispatchEvent(new KeyboardEvent('keydown', { key: '+', bubbles: true }));
     expect(button('Reset zoom').textContent).toBe('Fit');
   });
 
-  it('never enlarges small images at the initial fit', () => {
+  it('enlarges small images up to twice their original size', () => {
     viewer.dispose();
     const source = document.createElement('img');
     source.src = 'https://github.com/user-attachments/assets/small';
-    Object.defineProperties(source, { naturalWidth: { value: 32 }, naturalHeight: { value: 32 } });
+    Object.defineProperties(source, { naturalWidth: { value: 320 }, naturalHeight: { value: 32 } });
     viewer = createAttachmentViewer(source);
-    expect(viewer.stage.style.width).toBe('32px');
-    expect(viewer.stage.style.height).toBe('32px');
+    sizeStage(960, 540);
+    const preview = viewer.stage.querySelector('img');
+    expect(preview?.style.width).toBe('640px');
+    expect(preview?.style.height).toBe('64px');
   });
 
-  it('lets the error message size the stage when the image fails, and keeps it on resize', () => {
-    expect(viewer.stage.style.width).toBe('960px');
+  it('lets a wide image expand into the letterboxed area on zoom', () => {
+    sizeStage(960, 600);
+    button('Zoom in').click();
+    pointer('pointerdown', 500, 300);
+    pointer('pointermove', 500, 600);
+    expect(image.style.transform).toBe('translate(0px, 24px) scale(1.5)');
+  });
+
+  it('keeps an off-centre point stationary when zooming a letterboxed image', () => {
+    vi.spyOn(viewer.stage, 'getBoundingClientRect').mockReturnValue(new DOMRect(100, 100, 960, 600));
+    sizeStage(960, 600);
+    image.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 860, clientY: 300 }));
+    expect(image.style.transform).toBe('translate(-280px, 100px) scale(2)');
+  });
+
+  it('shows the error message and disables zoom when the image fails', () => {
     image.dispatchEvent(new Event('error'));
-    expect(viewer.stage.style.width).toBe('');
-    expect(viewer.stage.style.height).toBe('');
+    expect(image.hidden).toBe(true);
     expect(viewer.stage.querySelector('[role="status"]')?.hasAttribute('hidden')).toBe(false);
-    window.dispatchEvent(new Event('resize'));
-    expect(viewer.stage.style.width).toBe('');
+    sizeStage(1200, 700);
+    expect(image.hidden).toBe(true);
     expect(button('Zoom in').disabled).toBe(true);
     expect(button('Reset zoom').disabled).toBe(true);
   });

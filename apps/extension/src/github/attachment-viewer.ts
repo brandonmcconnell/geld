@@ -7,6 +7,7 @@ interface Point {
 }
 
 const ZOOM_STEP = 1.5;
+const FIT_FRACTION = 0.8;
 
 export function createAttachmentViewer(source: HTMLImageElement): {
   readonly stage: HTMLElement;
@@ -17,7 +18,7 @@ export function createAttachmentViewer(source: HTMLImageElement): {
   const image = createElement('img', {
     class: 'geld-lightbox__image', alt: source.alt, decoding: 'async', draggable: 'false',
   });
-  const stage = createElement('div', { class: 'geld-lightbox__stage' }, [image, status]);
+  const stage = createElement('div', { class: 'geld-lightbox__stage geld-lightbox__stage--large' }, [image, status]);
   const zoomOut = createElement('button', {
     type: 'button', class: 'btn btn-sm BtnGroup-item geld-lightbox__tool', 'aria-label': 'Zoom out', title: 'Zoom out (−)', disabled: '',
   }, [svgFromString(ICON_DASH)]);
@@ -30,6 +31,8 @@ export function createAttachmentViewer(source: HTMLImageElement): {
   const controls = createElement('div', { class: 'BtnGroup geld-lightbox__zoom', role: 'group', 'aria-label': 'Image zoom' }, [zoomOut, reset, zoomIn]);
   let width = 0;
   let height = 0;
+  let availableWidth = 0;
+  let availableHeight = 0;
   let scale = 1;
   let pan: Point = { x: 0, y: 0 };
   let start: Point | null = null;
@@ -39,8 +42,8 @@ export function createAttachmentViewer(source: HTMLImageElement): {
 
   const maxScale = (): number => Math.max(4, Math.min(16, image.naturalWidth / width));
   const render = (): void => {
-    const limitX = width * (scale - 1) / 2;
-    const limitY = height * (scale - 1) / 2;
+    const limitX = Math.max(0, (width * scale - availableWidth) / 2);
+    const limitY = Math.max(0, (height * scale - availableHeight) / 2);
     pan = { x: Math.max(-limitX, Math.min(limitX, pan.x)), y: Math.max(-limitY, Math.min(limitY, pan.y)) };
     image.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${scale})`;
     stage.toggleAttribute('data-zoomed', scale > 1);
@@ -53,7 +56,7 @@ export function createAttachmentViewer(source: HTMLImageElement): {
   const zoom = (next: number, at?: Point): void => {
     if (width === 0) return;
     const rect = stage.getBoundingClientRect();
-    const anchor = at === undefined ? { x: 0, y: 0 } : { x: at.x - rect.left - width / 2, y: at.y - rect.top - height / 2 };
+    const anchor = at === undefined ? { x: 0, y: 0 } : { x: at.x - rect.left - availableWidth / 2, y: at.y - rect.top - availableHeight / 2 };
     const value = Math.max(1, Math.min(maxScale(), next));
     const ratio = value / scale;
     pan = { x: anchor.x - (anchor.x - pan.x) * ratio, y: anchor.y - (anchor.y - pan.y) * ratio };
@@ -64,33 +67,31 @@ export function createAttachmentViewer(source: HTMLImageElement): {
     if (failed) return;
     const naturalWidth = source.naturalWidth || image.naturalWidth;
     const naturalHeight = source.naturalHeight || image.naturalHeight;
-    if (!naturalWidth || !naturalHeight) return;
-    const availableWidth = window.innerWidth <= 600 ? window.innerWidth - 32 : Math.min(1120, window.innerWidth * 0.8);
-    // 200px leaves room for the dialog's header and footer and its margin from the viewport.
-    const availableHeight = Math.min(760, window.innerHeight * 0.72, window.innerHeight - 200);
-    const ratio = Math.min(1, Math.max(1, availableWidth) / naturalWidth, Math.max(1, availableHeight) / naturalHeight);
-    width = naturalWidth * ratio;
-    height = naturalHeight * ratio;
-    stage.style.width = `${width}px`;
-    stage.style.height = `${height}px`;
+    const stageWidth = stage.clientWidth;
+    const stageHeight = stage.clientHeight;
+    if (!naturalWidth || !naturalHeight || !stageWidth || !stageHeight) return;
+    const ratio = Math.min(2, stageWidth * FIT_FRACTION / naturalWidth, stageHeight * FIT_FRACTION / naturalHeight);
+    const fittedWidth = naturalWidth * ratio;
+    const fittedHeight = naturalHeight * ratio;
+    if (fittedWidth === width && fittedHeight === height && stageWidth === availableWidth && stageHeight === availableHeight) return;
+    availableWidth = stageWidth;
+    availableHeight = stageHeight;
+    width = fittedWidth;
+    height = fittedHeight;
+    image.style.width = `${width}px`;
+    image.style.height = `${height}px`;
+    image.hidden = false;
+    status.hidden = true;
     scale = 1;
     pan = { x: 0, y: 0 };
     render();
   };
-  image.addEventListener('load', () => {
-    image.hidden = false;
-    status.hidden = true;
-    if (width === 0) fit();
-    else render();
-  });
+  image.addEventListener('load', fit);
   image.addEventListener('error', () => {
     failed = true;
     image.hidden = true;
     status.hidden = false;
     status.textContent = 'This image could not be loaded. Open the original to view it.';
-    // The stage was fitted to the source image, and a small one would clip the message.
-    stage.style.width = '';
-    stage.style.height = '';
     width = 0;
     height = 0;
     scale = 1;
@@ -172,16 +173,15 @@ export function createAttachmentViewer(source: HTMLImageElement): {
     if (!event.defaultPrevented && stage.closest('dialog')?.contains(event.target instanceof Node ? event.target : null)) onKey(event);
   };
   document.addEventListener('keydown', onDialogKey);
-  window.addEventListener('resize', fit);
-  fit();
-  status.hidden = width > 0;
-  image.hidden = width === 0;
+  const resize = new ResizeObserver(fit);
+  resize.observe(stage);
+  image.hidden = true;
   image.src = source.currentSrc || source.src;
   return {
     stage, controls,
     dispose: () => {
       document.removeEventListener('keydown', onDialogKey);
-      window.removeEventListener('resize', fit);
+      resize.disconnect();
       pointers.clear();
     },
   };

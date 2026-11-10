@@ -9845,11 +9845,9 @@ dialog.geld-lightbox[open]:has(.geld-lightbox__stage--large) {
   position: absolute;
   inset: 0;
   display: block;
-  width: 100%;
-  height: 100%;
   max-width: none;
   max-height: none;
-  object-fit: contain;
+  margin: auto;
   transform-origin: center;
   user-select: none;
   cursor: zoom-in;
