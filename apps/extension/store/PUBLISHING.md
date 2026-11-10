@@ -21,7 +21,7 @@ Nothing fails silently: a skipped store is a warning annotation on the run, and 
 | Chrome Web Store | uploads the zip, publishes to the default (public) target | hours–days |
 | Edge Add-ons | uploads to the draft, submits it with the notes | 1–7 days |
 | Firefox AMO | `web-ext sign --channel listed` with the sources zip | usually minutes (auto-approval) |
-| Safari | macOS runner: `safari:sync` (build number = CI run number), `xcodebuild archive` + export with cloud signing, then `fastlane deliver` uploads the `.pkg`, attaches it to the version, sets the release notes and **submits for review**; skipped while a submission is waiting for or in review (checked with a read-only API call first), never withdrawing it | 1–2 days |
+| Safari | macOS runner: `safari:sync` (build number = CI run number), `xcodebuild archive` + export with cloud signing, then `fastlane deliver` uploads the `.pkg`, attaches it to the version, sets the release notes and the listing text from `store/listing/` and **submits for review**; skipped while a submission is waiting for or in review (checked with a read-only API call first), never withdrawing it | 1–2 days |
 
 ## One-time setup
 
