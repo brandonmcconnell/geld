@@ -3516,6 +3516,12 @@ Original tool blocks stay in their native positions and are hidden only after th
 Native-only mode restores those blocks, and View in description reveals and focuses the existing native source.
 When tool notes remain inline, the overall height cap stays off so it cannot clip a tool summary together with author text.
 
+Provider preview rows parse the shared deployment-service formats from verified automated accounts or explicitly trusted provider bot identities, without substituting GitHub bot logins.
+The rows preserve project, reported status, failure reason, deployment time and the original comment source, and archive earlier reports.
+A failed latest report can link to the same account and project's most recent earlier successful preview, ordered by deployment time rather than the source comment's edit time.
+Unsafe preview destinations are excluded while a separate valid service inspector can remain available.
+These are attributed comment reports, not independently fetched provider deployment records.
+
 Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
 Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
 
