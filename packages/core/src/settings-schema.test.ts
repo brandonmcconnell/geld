@@ -42,6 +42,7 @@ describe('SETTINGS_SCHEMA', () => {
     expect(siteKeys.has('showBadge')).toBe(false);
     expect(siteKeys.has('shortcutEnabled')).toBe(false);
     expect(siteKeys.has('errorReports')).toBe(false);
+    expect(siteKeys.has('usageStats')).toBe(false);
     expect(siteKeys.has('enterpriseHosts')).toBe(false);
     expect(siteKeys.has('attachmentLightbox')).toBe(false);
     expect(siteKeys.has('enabled')).toBe(true);

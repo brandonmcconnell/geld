@@ -10,7 +10,7 @@ import { storage } from 'wxt/utils/storage';
 export interface DiagnosticEvent {
   readonly at: number;
   /** `error`: one of Geld's own errors (`error-capture.ts`); `subject` is where it happened, `outcome` its scrubbed message. */
-  readonly kind: 'fetch' | 'worker-start' | 'rate-limit' | 'busy' | 'cache-clear' | 'inject' | 'error' | 'error-report';
+  readonly kind: 'fetch' | 'worker-start' | 'rate-limit' | 'busy' | 'cache-clear' | 'inject' | 'error' | 'error-report' | 'usage-report';
   readonly subject?: string | undefined;
   /**
    * `ok`, `memory-hit`, `queued`, `rate-limited`, `signed-out`, `not-a-diff`, `http-NNN`, `too-large`, or an error

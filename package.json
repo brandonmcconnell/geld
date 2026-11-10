@@ -34,6 +34,7 @@
     "catalog:keygen": "node scripts/catalog-keygen.mjs",
     "check": "pnpm -r run check && pnpm catalog:check && pnpm docs:lines:check && pnpm test:scripts",
     "docs:lines": "tsx scripts/doc-lines.ts",
+    "posthog:dashboards": "tsx scripts/posthog-dashboards.ts",
     "docs:lines:check": "tsx scripts/doc-lines.ts --check",
     "test": "pnpm -r run test && pnpm test:scripts",
     "test:scripts": "node --test scripts/cla.test.mjs apps/extension/scripts/publish/amo-previews.test.mjs",

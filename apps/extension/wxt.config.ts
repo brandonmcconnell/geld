@@ -61,7 +61,7 @@ export default defineConfig({
   // yourself, create the git-ignored `web-ext.config.ts` with `disabled: false`.
   webExt: { disabled: true },
   ...(nightly ? { outDirTemplate: '{{browser}}-mv{{manifestVersion}}-nightly' } : {}),
-  vite: ({ browser }) => ({ define: { __GELD_NIGHTLY__: JSON.stringify(selfUpdating(browser)) } }),
+  vite: ({ browser }) => ({ define: { __GELD_NIGHTLY__: JSON.stringify(selfUpdating(browser)), __GELD_CHANNEL__: JSON.stringify(nightly ? 'nightly' : 'stable') } }),
   manifest: ({ browser, manifestVersion: mv }) => {
     const updater = selfUpdating(browser);
     const channel = nightly ? 'nightly' : 'build';

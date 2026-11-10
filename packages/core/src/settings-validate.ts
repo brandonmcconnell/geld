@@ -67,6 +67,7 @@ const BOOLEAN_KEYS = [
   'showBadge',
   'autoUpdatePatterns',
   'errorReports',
+  'usageStats',
   'prOverview',
   'quickReview',
   'holdToMerge',
