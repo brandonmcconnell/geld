@@ -181,7 +181,7 @@ jobs:
       - name: Run dashboard checks (advisory)
         id: dashboard-check
         run: |
-          if pnpm --filter @geld/dashboard check; then
+          if pnpm --filter @geld/dashboard verify:icons && pnpm --filter @geld/dashboard check; then
             echo 'result=success' >> "$GITHUB_OUTPUT"
           else
             echo 'result=skipped' >> "$GITHUB_OUTPUT"
