@@ -51,6 +51,89 @@ it('projects complete compact Essential/category trees without moving native rec
   expect(category.textContent).toContain('lazy.test.ts'); // Full inventory despite an unmounted native row.
 });
 
+it.each(['absent', 'closed', 'collapsed-width', 'virtual-list-absent'] as const)('keeps an accessible category switch above the diff when the native tree is %s', (reason) => {
+  document.documentElement.dataset.geldProvider = 'gitlab';
+  const { tree, host, container, row, view, revealPath, setExpanded } = fixture();
+  const diff = document.createElement('main'); document.body.append(diff);
+  if (reason === 'closed') host.hidden = true;
+  if (reason === 'collapsed-width') { host.style.width = '0px'; host.style.overflow = 'hidden'; }
+  const fallbackView = { ...view, container: diff,
+    treeHost: reason === 'absent' ? null : host,
+    treeContainer: reason === 'virtual-list-absent' ? null : container };
+  tree.update(fallbackView, hidden, all, FILES, { subjectKey: 'same-review', revealPath, setExpanded });
+  const fallback = required(document.querySelector<HTMLElement>('[data-geld-provider-category-placement="fallback"]'));
+  expect(diff.previousElementSibling).toBe(fallback);
+  expect(fallback.getAttribute('aria-label')).toBe('Files by category');
+  expect(headers(fallback).map((button) => button.textContent)).toEqual(['Essential (1 file)', 'Tests (2 tests)']);
+  const tests = required(headers(fallback)[1]);
+  tests.focus(); tests.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true, cancelable: true }));
+  expect(document.activeElement).toBe(headers(fallback)[0]);
+  tests.click();
+  expect(tests.getAttribute('aria-expanded')).toBe('true');
+  expect(document.getElementById(required(tests.getAttribute('aria-controls')))?.hidden).toBe(false);
+  required(fallback.querySelector<HTMLElement>('[data-geld-category-path="test/lazy.test.ts"] button')).click();
+  expect(revealPath).toHaveBeenLastCalledWith('test/lazy.test.ts');
+  expect(row.parentElement?.parentElement?.parentElement).toBe(container);
+  expect(container.hasAttribute('data-geld-provider-category-body')).toBe(false);
+  tree.clear();
+  expect(document.querySelector('[data-geld-provider-category-placement="fallback"]')).toBeNull();
+  expect(host.hidden).toBe(reason === 'closed');
+});
+
+it('moves owned presentation between a closed native sidebar and the fallback without losing category or file choices', () => {
+  document.documentElement.dataset.geldProvider = 'gitlab';
+  const { tree, host, container, row, view, revealPath, setExpanded } = fixture();
+  const diff = document.createElement('main'); document.body.append(diff);
+  const current = { ...view, container: diff };
+  const actions = { subjectKey: 'same-review', selectedCategoryId: 'tests', revealPath, setExpanded };
+  tree.update(current, hidden, all, FILES, actions);
+  required(host.querySelector<HTMLElement>('[data-geld-category-path="spec/unit.test.ts"] a')).click();
+  required([...host.querySelectorAll<HTMLButtonElement>('.geld-provider-category-folder')].find((button) => button.textContent === 'spec')).click();
+  const originalParent = row.parentElement;
+  host.hidden = true;
+  tree.update(current, hidden, all, FILES, actions);
+  expect(container.hasAttribute('data-geld-provider-category-body')).toBe(false);
+  const fallback = required(document.querySelector<HTMLElement>('[data-geld-provider-category-placement="fallback"]'));
+  expect(headers(fallback)[1]?.getAttribute('aria-expanded')).toBe('true');
+  expect(fallback.querySelector('[data-geld-category-path="spec/unit.test.ts"] [aria-current="true"]')).not.toBeNull();
+  expect([...fallback.querySelectorAll('.geld-provider-category-folder')].find((button) => button.textContent === 'spec')?.getAttribute('aria-expanded')).toBe('false');
+  host.hidden = false;
+  tree.update(current, hidden, all, FILES, actions);
+  expect(fallback.isConnected).toBe(false);
+  expect(headers(host)[1]?.getAttribute('aria-expanded')).toBe('true');
+  expect(host.querySelector('[data-geld-category-path="spec/unit.test.ts"] [aria-current="true"]')).not.toBeNull();
+  expect(row.parentElement).toBe(originalParent);
+  expect(document.querySelectorAll('.geld-provider-category-header')).toHaveLength(2);
+});
+
+it('shows Essential on a review containing only uncategorized files', () => {
+  const { tree, host, view } = fixture();
+  const files = FILES.slice(0, 1);
+  const counts = breakdownFromFiles(files, createMatcher(DEFAULT_SETTINGS, null, BUNDLED_CATALOG));
+  tree.update(view, counts.hidden, counts.all, files, { revealPath: vi.fn(), setExpanded: vi.fn() });
+  expect(headers(host).map((button) => button.textContent)).toEqual(['Essential (1 file)']);
+  expect(host.querySelector('.geld-provider-essential-content')?.hasAttribute('hidden')).toBe(false);
+});
+
+it('retains native row visuals when the sidebar unmounts without retaining its action authority', () => {
+  document.documentElement.dataset.geldProvider = 'gitlab';
+  const { tree, host, view, revealPath, setExpanded } = fixture();
+  const diff = document.createElement('main'); document.body.append(diff);
+  const actions = { subjectKey: 'same-review', selectedCategoryId: 'tests', revealPath, setExpanded };
+  tree.update({ ...view, container: diff }, hidden, all, FILES, actions);
+  host.remove();
+  tree.update({ ...view, container: diff, treeHost: null, treeContainer: null, tree: [] }, hidden, all, FILES, actions);
+  const fallback = required(document.querySelector('[data-geld-provider-category-placement="fallback"]'));
+  const copy = required(fallback.querySelector('[data-geld-category-path="spec/unit.test.ts"]'));
+  expect(copy.querySelector('.native-added')).not.toBeNull();
+  const comment = required(copy.querySelector<HTMLButtonElement>('button[aria-label="3 unresolved threads"]'));
+  expect(comment.disabled).toBe(true);
+  comment.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  expect(revealPath).not.toHaveBeenCalled();
+  required(copy.querySelector<HTMLAnchorElement>('a')).click();
+  expect(revealPath).toHaveBeenLastCalledWith('spec/unit.test.ts');
+});
+
 it('keeps native status/comment visuals and annotation names, remaps duplicate IDs, and relays native comment controls', () => {
   const { host, row, revealPath, update } = fixture();
   const nativeComment = required(row.querySelector<HTMLButtonElement>('button'));
@@ -384,6 +467,9 @@ it('retains sanitized native presentation when hiding the recycler unmounts the 
   expect(document.getElementById(required(comment.getAttribute('aria-describedby')))?.textContent).toBe('3');
   comment.click();
   expect(originalClick).not.toHaveBeenCalled();
+  expect(comment.disabled).toBe(true);
+  expect(revealPath).not.toHaveBeenCalled();
+  required(retained.querySelector<HTMLAnchorElement>('a')).click();
   expect(revealPath).toHaveBeenCalledExactlyOnceWith('spec/unit.test.ts');
 });
 
@@ -397,11 +483,11 @@ it('never relays a cached comment control to a physical native row recycled for 
   link.setAttribute('aria-label', 'main.ts');
   oldComment.click();
   expect(nativeClick).not.toHaveBeenCalled();
-  expect(revealPath).toHaveBeenLastCalledWith('spec/unit.test.ts');
+  expect(revealPath).not.toHaveBeenCalled();
   tree.update({ ...view, tree: [{ path: 'src/main.ts', root: link, presentationRoot: row, link }] }, hidden, all, FILES, { revealPath, setExpanded: vi.fn() });
   required(host.querySelector<HTMLButtonElement>('.geld-provider-category-content button[aria-label="3 unresolved threads"]')).click();
   expect(nativeClick).not.toHaveBeenCalled();
-  expect(revealPath).toHaveBeenCalledTimes(2);
+  expect(revealPath).not.toHaveBeenCalled();
 });
 
 it('refreshes a retained snapshot when the real path remounts with updated native marks', () => {
