@@ -62,6 +62,7 @@ export interface ProviderNewFileRevision {
 export interface ProviderOutlineContext {
   readonly subjectKey: string;
   readonly newSources: ReadonlyMap<HTMLElement, ProviderNewFileRevision>;
+  readonly commentCoordinateMismatches?: ReadonlySet<HTMLElement>;
 }
 
 function record(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
@@ -172,8 +173,26 @@ export function providerDiffSourceFacts(page: ProviderPage, comparison: Provider
   return page.provider === page.repository.provider ? parseProviderDiffSourceFacts({ schema: 1, subject: providerSourceSubject(page), comparison, newPaths }) : null;
 }
 
+function sameFileWitness(facts: ProviderDiffSourceFacts, newPath: string, witness: ProviderNativeNewSource): boolean {
+  return providerFullSha(witness.headSha) && providerSourceSubjectKey(witness.subject) === providerSourceSubjectKey(facts.subject) && newPath === witness.path && providerSourcePath(witness.path) && repository(witness.repository) !== null;
+}
+
+function commentCoordinatesMismatch(page: ProviderPage, facts: ProviderDiffSourceFacts, newPath: string, witness: ProviderNativeNewSource): boolean {
+  if (!sameFileWitness(facts, newPath, witness)) return false;
+  const acquired = facts.comparison;
+  const native = witness.comparison;
+  // Negative new-side evidence does not require authority for an unseen whole file or its old side.
+  return acquired.kind === 'gitlab-review' && native.kind === 'gitlab-review'
+    && acquired.commitId === null && acquired.diffId !== null && acquired.projectPath === page.repository.path
+    && repositoryKey(witness.repository) === repositoryKey(page.repository)
+    && native.sourceId === acquired.diffId && native.sourceHeadSha === acquired.headSha
+    && providerFullSha(native.baseSha) && providerFullSha(native.startSha)
+    && parseProviderGitLabTarget(native.target) !== null && native.startSha === native.target.startSha
+    && witness.headSha === native.target.headSha && witness.headSha !== acquired.headSha;
+}
+
 function bind(page: ProviderPage, facts: ProviderDiffSourceFacts, newPath: string, witness: ProviderNativeNewSource): ProviderNewFileRevision | null {
-  if (!providerFullSha(witness.headSha) || providerSourceSubjectKey(witness.subject) !== providerSourceSubjectKey(facts.subject) || newPath !== witness.path || !providerSourcePath(witness.path) || repository(witness.repository) === null) return null;
+  if (!sameFileWitness(facts, newPath, witness)) return null;
   const comparison = facts.comparison;
   if (comparison.kind === 'gitlab-review') {
     const native = witness.comparison;
@@ -188,6 +207,7 @@ function bind(page: ProviderPage, facts: ProviderDiffSourceFacts, newPath: strin
 
 export function providerOutlineContext(page: ProviderPage, result: ProviderDiffResult, view: ProviderDiffView): ProviderOutlineContext {
   const sources = new Map<HTMLElement, ProviderNewFileRevision>();
+  const commentCoordinateMismatches = new Set<HTMLElement>();
   const frame = view.readNewSourceFrame?.() ?? null;
   const facts = parseProviderDiffSourceFacts(result.sourceFacts);
   const sameSubject = page.provider === page.repository.provider && facts !== null && providerSourceSubjectKey(facts.subject) === providerSourceSubjectKey(providerSourceSubject(page));
@@ -200,10 +220,11 @@ export function providerOutlineContext(page: ProviderPage, result: ProviderDiffR
       if (newPath === undefined || !present.has(entry.path) || !entry.root.isConnected || view.filteredPaths.has(entry.path)) continue;
       const witness = frame.read(entry);
       if (witness === null || witness.path !== entry.path) continue;
+      if (commentCoordinatesMismatch(page, facts, newPath, witness)) commentCoordinateMismatches.add(entry.root);
       const source = bind(page, facts, newPath, witness);
       if (source !== null) sources.set(entry.root, source);
     }
-    if (!frame.current()) { sources.clear();nativeKey = null; }
+    if (!frame.current()) { sources.clear();commentCoordinateMismatches.clear();nativeKey = null; }
   }
-  return { subjectKey: JSON.stringify([providerSourceSubjectKey(providerSourceSubject(page)), result.revision, nativeKey]), newSources: sources };
+  return { subjectKey: JSON.stringify([providerSourceSubjectKey(providerSourceSubject(page)), result.revision, nativeKey]), newSources: sources, commentCoordinateMismatches };
 }
