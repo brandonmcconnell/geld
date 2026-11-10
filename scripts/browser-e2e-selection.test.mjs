@@ -289,3 +289,8 @@ test('GitLab shell is an independent literal-only acceptance with one pinned pub
   assert.match(harness, /shellPrivacy && focus !== 'gitlab-shell'/);
   assert.match(harness, /await runCase\('gitlab-shell', GITLAB_SHELL.url/);
 });
+
+test('Bitbucket whole context selects one literal full-commit case and never enters other slices',()=>{
+ const literal=/const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];assert.ok(literal);const cases=new vm.Script(`(${literal})`).runInNewContext({}, {timeout:1000});assert.deepEqual(Array.from(cases['bitbucket-whole-context']),['bitbucket-whole-context']);for(const[k,v]of Object.entries(cases))if(k!=='bitbucket-whole-context')assert.equal(v.includes('bitbucket-whole-context'),false);
+ assert.deepEqual(select({body:marker('bitbucket-whole-context'),from:marker('github')}),{focus:'bitbucket-whole-context',run:'true',failures:[]});assert.match(harness,/wholePrivacy && focus !== 'bitbucket-whole-context'/);assert.match(harness,/await runCase\('bitbucket-whole-context', bitbucketWholeURL/);
+});
