@@ -3590,6 +3590,7 @@ The toolbar contains a conditional resolved-thread meter, Flow, grouping, View, 
 Reviewer summaries stay inline with the Reviews row while conversation details remain inside its disclosure, and an unknown pending-request state is not presented as a review verdict.
 The combined view uses the Geld and provider marks with a plus sign and an accessible full label.
 View changes restore focus to the selected native timeline option when the digest is off and to its View control when it returns.
+While review sources load, keep the native conversation visible and mount view choices only in the ready digest toolbar so a temporary standalone button strip does not flash above it.
 GitLab's global SVG fill overrides presentation attributes, so owned outline glyphs explicitly keep `fill: none` in CSS while brand marks retain their fills.
 Flow belongs only in the overview digest toolbar, never in a native Files changed toolbar.
 Bitbucket's owned header counts share the verified native tab row as a flex sibling, because adding a second row changes the height assumed by its sticky header.

@@ -809,6 +809,18 @@ it('folds represented human comments in the digest and restores originals on req
 });
 
 describe('persistent provider conversation views', () => {
+  it('mounts view choices in the ready toolbar without flashing a standalone strip while reading sources', async () => {
+    let finish: ((value: ProviderReviewSnapshot) => void) | undefined;
+    const f = fixture(snapshot(), { chooseDigestView: async () => undefined }, { aiEnabled: false, quickReview: false }, {
+      fetchReview: () => new Promise(resolve => { finish = resolve; }),
+    });
+    expect(f.host.querySelector('.geld-provider-view')).toBeNull();
+    expect(f.host.textContent).toContain('Reading review');
+    finish?.(snapshot());
+    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-view-slot] > .geld-provider-view')).not.toBeNull());
+    expect(f.host.querySelector(':scope > .geld-provider-view')).toBeNull();
+  });
+
   it('returns keyboard focus to the native-view choice and back to the digest View control', async () => {
     const f = fixture(snapshot(), { chooseDigestView: async view => {
       f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, quickReview: false, prOverview: view !== 'github', compactTimeline: view === 'digest-timeline' ? 'off' : 'compact' });

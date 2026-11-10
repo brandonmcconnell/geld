@@ -428,10 +428,11 @@ export class ProviderConversation {
 
   private updateViewChoice(host: HTMLElement | null, settings: GeldSettings): void {
     const choose = this.services.chooseDigestView;
-    if (host === null || choose === undefined) { this.viewControls?.remove(); this.viewControls = null; this.viewSignature = ''; return; }
-    if (settings.prOverview && this.panel?.element.isConnected && this.panel.element.parentElement === host) {
-      host = this.panel.element.querySelector<HTMLElement>('[data-geld-view-slot]') ?? host;
+    if (settings.prOverview) {
+      host = this.panel?.element.isConnected && this.panel.element.parentElement === host
+        ? this.panel.element.querySelector<HTMLElement>('[data-geld-view-slot]') : null;
     }
+    if (host === null || choose === undefined) { this.viewControls?.remove(); this.viewControls = null; this.viewSignature = ''; return; }
     const signature = JSON.stringify([this.key, settings.prOverview, settings.compactTimeline]);
     if (signature === this.viewSignature && this.viewControls?.parentElement === host) { this.restoreViewFocus(settings);return; }
     const focused = this.viewControls?.contains(document.activeElement) === true ? document.activeElement?.getAttribute('data-geld-digest-view') : null;
