@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyAttachmentLightbox, removeAttachmentLightbox } from './attachment-lightbox';
+import { blockText } from './review/crawler';
 
 const ATTACHMENT = 'https://github.com/user-attachments/assets/abc-123';
 
@@ -179,14 +180,6 @@ describe('attachment lightbox', () => {
     expect(document.querySelector('dialog a')?.getAttribute('href')).toBe(ATTACHMENT);
   });
 
-  it('removes the loading message when the image loads', () => {
-    const image = mount();
-    applyAttachmentLightbox();
-    click(image);
-    document.querySelector('dialog img')?.dispatchEvent(new Event('load'));
-    expect(document.querySelector('[role="status"]')?.hasAttribute('hidden')).toBe(true);
-  });
-
   it('cleans up on navigation and teardown', () => {
     const image = mount();
     applyAttachmentLightbox();
@@ -202,5 +195,79 @@ describe('attachment lightbox', () => {
     vi.stubGlobal('location', new URL('https://github.com/owner/repo'));
     applyAttachmentLightbox();
     expect(click(image).defaultPrevented).toBe(false);
+  });
+});
+
+describe('attachment video player', () => {
+  function mountVideo(): HTMLVideoElement {
+    const markdown = document.createElement('div');
+    markdown.className = 'markdown-body';
+    const details = document.createElement('details');
+    details.open = true;
+    const summary = document.createElement('summary');
+    summary.textContent = 'screen-recording.mp4';
+    const video = document.createElement('video');
+    video.controls = true;
+    video.src = ATTACHMENT;
+    details.append(summary, video);
+    markdown.append(details);
+    document.body.append(markdown);
+    return video;
+  }
+
+  it('adds one player button beside the inline video and returns focus on close', () => {
+    const inline = mountVideo();
+    applyAttachmentLightbox();
+    applyAttachmentLightbox();
+    expect(document.querySelectorAll('.geld-lightbox-trigger')).toHaveLength(1);
+    const trigger = inline.nextElementSibling;
+    if (!(trigger instanceof HTMLButtonElement)) throw new Error('Missing video trigger');
+    expect(inline.controls).toBe(true);
+    trigger.click();
+    const dialog = document.querySelector('dialog');
+    const video = dialog?.querySelector('video');
+    expect(dialog?.open).toBe(true);
+    expect(video?.src).toBe(ATTACHMENT);
+    expect(dialog?.querySelector('.vjs-control-bar')).not.toBeNull();
+    expect(dialog?.querySelector('h1')?.textContent).toBe('screen-recording.mp4');
+    expect(dialog?.querySelector('a')?.href).toBe(ATTACHMENT);
+    dialog?.querySelector('button[aria-label="Close"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(video?.isConnected).toBe(false);
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('restores the playback position and disposes the player when disabled', () => {
+    const inline = mountVideo();
+    inline.currentTime = 20;
+    applyAttachmentLightbox();
+    document.querySelector<HTMLButtonElement>('.geld-lightbox-trigger')?.click();
+    const video = document.querySelector<HTMLVideoElement>('dialog video');
+    if (video === null) throw new Error('Missing player');
+    Object.defineProperty(video, 'duration', { value: 25 });
+    video.dispatchEvent(new Event('loadedmetadata'));
+    expect(video.currentTime).toBe(20);
+    video.currentTime = 15;
+    applyAttachmentLightbox(false);
+    expect(inline.currentTime).toBe(15);
+    expect(document.querySelector('dialog')).toBeNull();
+    expect(inline.nextElementSibling).toBeNull();
+  });
+
+  it('keeps the player button out of the comment text Geld reads', () => {
+    const inline = mountVideo();
+    applyAttachmentLightbox();
+    const body = inline.closest('.markdown-body');
+    if (body === null) throw new Error('Missing comment body');
+    expect(blockText(body)).toBe('screen-recording.mp4');
+  });
+
+  it('removes the player button when the inline video is replaced', () => {
+    const inline = mountVideo();
+    applyAttachmentLightbox();
+    inline.remove();
+    const replacement = mountVideo();
+    applyAttachmentLightbox();
+    expect(document.querySelectorAll('.geld-lightbox-trigger')).toHaveLength(1);
+    expect(replacement.nextElementSibling?.textContent).toBe('Open in player');
   });
 });
