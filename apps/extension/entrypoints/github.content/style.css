@@ -8413,6 +8413,37 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
   overflow: visible !important;
 }
 
+/*
+ * An image GitHub left unwrapped is an inline `<a>` straight in the body, and an inline box is only its line's text, so
+ * its rails stopped at the picture's foot: an inline-block spans the picture and keeps its line. One that follows it
+ * stands on that line, inside its rails, and would draw its own between the two pictures.
+ */
+[data-geld-desc] > a[data-geld-desc-depth] {
+  display: inline-block;
+}
+
+[data-geld-desc] > a[data-geld-desc-depth] + a[data-geld-desc-depth]::before {
+  content: none;
+}
+
+/*
+ * A block that scrolls of itself (a bare `<pre>`, whose lines must scroll) is left unpositioned, so it is not its
+ * rails' containing block and neither clips them nor scrolls them. They stand at their static place, the block's
+ * content corner, taken back by its padding and offset, and run as tall as description.ts `measureScrollers` read.
+ */
+[data-geld-desc] > [data-geld-desc-depth][data-geld-desc-scroller]:not([data-geld-desc-cut-edge]) {
+  position: static;
+}
+
+[data-geld-desc] > [data-geld-desc-depth][data-geld-desc-scroller]:not([data-geld-desc-cut-edge])::before {
+  top: auto;
+  bottom: auto;
+  left: auto;
+  height: calc(var(--geld-desc-scroller-height, 0px) + var(--geld-desc-after) + 1px);
+  margin-top: calc(-1 * var(--geld-desc-inset-top, 0px));
+  margin-left: calc(-1 * var(--geld-desc-inset-left, 0px) - var(--geld-desc-depth, 0) * 24px - var(--geld-desc-edge, 0px));
+}
+
 [data-geld-desc-heading] {
   cursor: pointer;
 }

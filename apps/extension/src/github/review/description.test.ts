@@ -371,6 +371,25 @@ describe('shortenDescription', () => {
     expect(body.querySelector('[data-geld-desc-carry]')).toBeNull();
   });
 
+  it('hangs the rails of a block that scrolls of itself outside it, from its padding corner and as tall as it is', () => {
+    // A bare `<pre>` (raw HTML, not a fence) is its own scroll container, and would clip and scroll rails drawn inside it.
+    const body = mountDescription(`${h(2, 'Notes')}<pre style="overflow-x: auto; overflow-y: auto; padding-top: 16px; padding-left: 12px">a long line</pre><p>after</p>`);
+    const [heading, pre, after] = [...body.children];
+    if (heading === undefined || !(pre instanceof HTMLElement) || !(after instanceof HTMLElement)) throw new Error('no blocks');
+    layOut(body, new Map([[heading, 40], [pre, 60], [after, 20]]));
+    shortenDescription(true);
+    expect(pre.hasAttribute('data-geld-desc-depth')).toBe(true);
+    expect(pre.hasAttribute('data-geld-desc-scroller')).toBe(true);
+    expect(pre.style.getPropertyValue('--geld-desc-inset-top')).toBe('16px');
+    expect(pre.style.getPropertyValue('--geld-desc-inset-left')).toBe('12px');
+    expect(pre.style.getPropertyValue('--geld-desc-scroller-height')).toBe('60px');
+    expect(after.hasAttribute('data-geld-desc-scroller')).toBe(false);
+    shortenDescription(false);
+    expect(pre.hasAttribute('data-geld-desc-scroller')).toBe(false);
+    expect(pre.style.getPropertyValue('--geld-desc-scroller-height')).toBe('');
+    expect(pre.style.getPropertyValue('--geld-desc-inset-top')).toBe('');
+  });
+
   it('cuts only the author’s text at 500px, the agents’ summaries below it untouched, and opening an agent keeps the cut', async () => {
     const body = mountDescription(
       `<p>one</p><p>two</p><p>three</p>${h(2, 'Summary by CodeRabbit')}<ul><li>Bug fixes</li></ul>`,

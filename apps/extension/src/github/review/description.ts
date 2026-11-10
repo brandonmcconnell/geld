@@ -65,7 +65,11 @@ const ATTR_TOOLS = 'data-geld-desc-tools';
 const ATTR_TOOL = 'data-geld-desc-tool';
 /** The flex `order` that puts the tools' content after the author's. Mirrored in style.css. */
 const ORDER_PROPERTY = '--geld-desc-order';
-const RAIL_PROPERTIES = ['--geld-desc-depth', '--geld-desc-rails', '--geld-desc-rail-pos', '--geld-desc-rail-size', '--geld-desc-edge'] as const;
+/** On an indented block that is its own scroll container (a bare `<pre>`): its rails hang outside it (style.css). */
+const ATTR_SCROLLER = 'data-geld-desc-scroller';
+const SCROLLER_HEIGHT_PROPERTY = '--geld-desc-scroller-height';
+const CLIPPING_OVERFLOW: ReadonlySet<string> = new Set(['auto', 'scroll', 'hidden', 'clip']);
+const RAIL_PROPERTIES = ['--geld-desc-depth', '--geld-desc-rails', '--geld-desc-rail-pos', '--geld-desc-rail-size', '--geld-desc-edge', '--geld-desc-inset-top', '--geld-desc-inset-left', SCROLLER_HEIGHT_PROPERTY] as const;
 
 /** One level of indentation, and the chevron's centre within it. Mirrored in style.css (description outline). */
 const INDENT_PX = 24;
@@ -558,6 +562,7 @@ function keepMetaRoom(body: HTMLElement): void {
 
 function measure(body: HTMLElement): void {
   clearCut(body);
+  measureScrollers(body);
   keepMetaRoom(body);
   const author = blocksOf(body).filter((block) => !block.hasAttribute(ATTR_AGENT) && !block.hasAttribute(ATTR_TOOL) && !block.hasAttribute(ATTR_BLANK));
   const top = body.getBoundingClientRect().top;
@@ -655,6 +660,7 @@ const RAIL_LINE = 'linear-gradient(var(--geld-desc-rail), var(--geld-desc-rail))
 function dressRails(block: HTMLElement, rails: BlockRails | null): void {
   if (rails === null) {
     setFlag(block, ATTR_DEPTH, null);
+    setFlag(block, ATTR_SCROLLER, null);
     for (const name of RAIL_PROPERTIES) setProperty(block, name, null);
     return;
   }
@@ -672,10 +678,26 @@ function dressRails(block: HTMLElement, rails: BlockRails | null): void {
       ? null
       : lines.map((rail) => (rail.kind === 'through' ? '1px 100%' : rail.kind === 'end' ? '1px calc(100% - var(--geld-desc-after) - 1px)' : '1px calc(100% - var(--geld-desc-chevron-y))')).join(', '),
   );
+  const style = lines.length === 0 ? null : getComputedStyle(block);
   // The rails' ::before is placed from the padding edge, so a left border (an alert's, a quote's) would push them
   // right of the heading's. Chrome snaps that border to device pixels, so only its used width lines them up.
-  const edge = lines.length === 0 ? '0px' : getComputedStyle(block).borderLeftWidth;
+  const edge = style?.borderLeftWidth ?? '0px';
   setProperty(block, '--geld-desc-edge', edge === '0px' ? null : edge);
+  // The cut clips the block it runs through, so while it does, whether the block scrolls of itself is what it was.
+  const scrolls = style !== null && (block.hasAttribute(ATTR_CUT_EDGE) ? block.hasAttribute(ATTR_SCROLLER) : CLIPPING_OVERFLOW.has(style.overflowX) || CLIPPING_OVERFLOW.has(style.overflowY));
+  setFlag(block, ATTR_SCROLLER, scrolls ? '' : null);
+  setProperty(block, '--geld-desc-inset-top', scrolls ? style.paddingTop : null);
+  setProperty(block, '--geld-desc-inset-left', scrolls ? style.paddingLeft : null);
+  if (!scrolls) setProperty(block, SCROLLER_HEIGHT_PROPERTY, null);
+}
+
+/** How tall each scrolling block's rails run: its padding box, which they would have spanned from inside it. Reads, then writes. */
+function measureScrollers(body: HTMLElement): void {
+  const heights = [...body.querySelectorAll<HTMLElement>(`:scope > [${ATTR_SCROLLER}]`)].map((block) => {
+    const style = getComputedStyle(block);
+    return { block, height: block.getBoundingClientRect().height - pixels(style.borderTopWidth) - pixels(style.borderBottomWidth) };
+  });
+  for (const { block, height } of heights) setProperty(block, SCROLLER_HEIGHT_PROPERTY, `${Math.max(0, height)}px`);
 }
 
 /**
@@ -802,6 +824,8 @@ function applyTo(body: HTMLElement): void {
   blocks.forEach((block, index) => {
     if (block instanceof HTMLElement) dressRails(block, rails.get(index) ?? null);
   });
+  // A block that has just begun to scroll may not change the body's size, which is all that makes `measure` run.
+  if (blocks.some((block) => block instanceof HTMLElement && block.hasAttribute(ATTR_SCROLLER) && block.style.getPropertyValue(SCROLLER_HEIGHT_PROPERTY) === '')) measureScrollers(body);
   setFlag(body, ATTR_ON, '');
   // Folded or not, the description is cut while taller than the cap: a long run of text before a heading near the end
   // folds nothing. Opening a section lifts the cut, so it never hides what the reader opened.
@@ -851,7 +875,7 @@ function clear(): void {
   for (const element of document.querySelectorAll(`[${ATTR_CUT_EDGE}]`)) {
     if (element instanceof HTMLElement) element.style.removeProperty(CUT_HEIGHT_PROPERTY);
   }
-  for (const name of [ATTR_TOOLS, ATTR_TOOL, ATTR_FOLD, ATTR_CUT, ATTR_CUT_EDGE, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG, ATTR_ON, ATTR_DEPTH, ATTR_BLANK, ATTR_AGENTS, ATTR_AGENT, ATTR_AGENT_HIDDEN, ATTR_LAST]) {
+  for (const name of [ATTR_TOOLS, ATTR_TOOL, ATTR_FOLD, ATTR_CUT, ATTR_CUT_EDGE, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG, ATTR_ON, ATTR_DEPTH, ATTR_SCROLLER, ATTR_BLANK, ATTR_AGENTS, ATTR_AGENT, ATTR_AGENT_HIDDEN, ATTR_LAST]) {
     for (const element of document.querySelectorAll(`[${name}]`)) element.removeAttribute(name);
   }
 }
