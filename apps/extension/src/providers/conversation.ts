@@ -1,6 +1,6 @@
 import type { GeldSettings } from '@geld/core';
 import { repositoryKey, trustedReviewAccountFor } from '@geld/core';
-import { botById, buildProviderReviewItems, isOpenStatus, PROVIDER_BOT_CAPABILITIES, providerBotSupport } from '@geld/review';
+import { botById, buildProviderReviewItems, PROVIDER_BOT_CAPABILITIES, providerBotSupport } from '@geld/review';
 import type { ProviderReviewComment, ProviderReviewInput, ReviewItem } from '@geld/review';
 import { ProviderAiTriage } from './ai';
 import { ProviderPublishedReview } from './publication';
@@ -91,6 +91,7 @@ export class ProviderConversation {
   private readonly originalsShown = new Set<string>();
   private description: { readonly host: HTMLElement; readonly control: HTMLButtonElement; readonly hidden: Set<Element> } | null = null;
   private descriptionShown = false;
+  private originalsExpanded = false;
   private reviewedSignature = '';
   private reviewedGeneration = 0;
   private reviewedReady = false;
@@ -214,6 +215,18 @@ export class ProviderConversation {
           target.focus({ preventScroll: true });
           return document.activeElement === target;
         } }),
+        originalConversation: {
+          shown: this.originalsExpanded,
+          toggle: (): void => {
+            if (this.key !== actionKey || this.generation !== actionGeneration) return;
+            this.originalsExpanded = !this.originalsExpanded;
+            if (!this.originalsExpanded) {
+              this.originalsShown.clear();
+              for (const entry of this.nativeEntries) this.nativeFind?.allowCompact(entry.key);
+            }
+            this.changed();
+          },
+        },
         updating: this.abort !== null,
         version: this.snapshotVersion,
         ...(snapshot.sourceActions === undefined ? {} : { actionsForSource: (comment: ProviderReviewComment) => snapshot.sourceActions?.(comment).map((action) => ({ ...action, activate: async (context?: ProviderSourceActionContext): Promise<boolean> => {
@@ -298,7 +311,8 @@ export class ProviderConversation {
         this.panel?.destroy();
         this.panel = renderProviderReviewPanel(host, input, options);
       } else this.panel.update(input, options);
-      this.compact(input, snapshot, settings);
+      if (this.panel.element.dataset.state === 'unavailable') { this.restoreCompact();this.restoreDescription(); }
+      else this.compact(snapshot, settings);
     } else if (host !== null) {
       if (this.status === null || !this.status.isConnected) {
         this.status = element('p', '', 'geld-provider-review__muted');
@@ -350,26 +364,23 @@ export class ProviderConversation {
     }
   }
 
-  private compact(input: ProviderReviewInput, snapshot: ProviderReviewSnapshot, settings: GeldSettings): void {
-    const eligible = new Set<string>();
-    if (settings.compactTimeline !== 'off') {
-      for (const comment of [...input.threads.flatMap((thread) => thread.comments), ...snapshot.comments]) {
-        if (comment.author.automated === true) eligible.add(comment.anchor);
-      }
-      if (settings.compactTimeline === 'minimal') for (const item of buildProviderReviewItems(input)) {
-        if (!isOpenStatus(item.status) || this.reviewed.has(item.id)) for (const source of item.sources) eligible.add(source.anchor);
-      }
-      for (const event of snapshot.events) {
-        if (event.kind !== 'activity' || event.lowSignal !== true) continue;
-        try { const anchor = new URL(event.url).hash.slice(1); if (anchor !== '') eligible.add(anchor); } catch { /* An invalid source cannot hide native activity. */ }
-      }
+  private compact(snapshot: ProviderReviewSnapshot, settings: GeldSettings): void {
+    const eligible = new Set([...this.panel?.element.querySelectorAll<HTMLElement>('[data-geld-source]') ?? []].map((source) => source.dataset.geldSource).filter((anchor): anchor is string => anchor !== undefined));
+    for (const reference of this.panel?.element.querySelectorAll<HTMLElement>('[data-geld-reference-source]') ?? []) {
+      const anchor = reference.dataset.geldReferenceSource;
+      if (anchor !== undefined && anchor !== 'description') eligible.add(anchor);
     }
-    const roots = (this.adapter.conversationRoots?.(document) ?? []).filter((entry) => entry.anchors.length > 0 && entry.anchors.every((anchor) => eligible.has(anchor)) && !entry.root.contains(this.panel?.element ?? null)
+    const renderedEvents = new Set([...this.panel?.element.querySelectorAll<HTMLElement>('[data-geld-event]') ?? []].map((event) => event.dataset.geldEvent));
+    for (const event of snapshot.events.filter((event) => renderedEvents.has(event.id))) {
+      try { const anchor = new URL(event.url).hash.slice(1); if (anchor !== '') eligible.add(anchor); } catch { /* Unreadable event links cannot hide native activity. */ }
+      if (this.adapter.id === 'gitlab' && /^(?:[1-9]\d*|[a-f0-9]{8,64})$/.test(event.id)) eligible.add(`note_${event.id}`);
+    }
+    const roots = (this.adapter.conversationRoots?.(document, snapshot) ?? []).filter((entry) => (entry.anchors.length > 0 && entry.anchors.every((anchor) => eligible.has(anchor)) || entry.eventIds !== undefined && entry.eventIds.length > 0 && entry.eventIds.every((id) => renderedEvents.has(id))) && !entry.root.contains(this.panel?.element ?? null)
       && !entry.root.matches('textarea,[contenteditable="true"],[role="textbox"]') && entry.root.querySelector('textarea,[contenteditable="true"],[role="textbox"]') === null);
-    this.nativeEntries = roots.map((entry) => ({ root: entry.root, key: [...entry.anchors].sort().join('|'), anchors: entry.anchors, compact: true, shown: false }));
+    this.nativeEntries = roots.map((entry) => ({ root: entry.root, key: [...entry.anchors, ...(entry.eventIds ?? [])].sort().join('|'), anchors: entry.anchors, ...(entry.eventIds === undefined ? {} : { eventIds: entry.eventIds }), compact: true, shown: false }));
     if (this.nativeEntries.length === 0) this.restoreCompact();
     else this.syncCompact();
-    const description = settings.compactTimeline === 'minimal' && settings.collapseDescription ? this.adapter.descriptionHost?.(document) ?? null : null;
+    const description = settings.collapseDescription ? this.adapter.descriptionHost?.(document) ?? null : null;
     if (this.description?.host !== description) this.restoreDescription();
     if (description === null || description.contains(this.panel?.element ?? null)) return;
     const first = description.querySelector('p');
@@ -407,7 +418,7 @@ export class ProviderConversation {
         this.changed();
       } }, this.services.nativeFindEnvironment);
     }
-    const entries = this.nativeEntries.map((entry) => ({ ...entry, shown: this.originalsShown.has(entry.key) }));
+    const entries = this.nativeEntries.map((entry) => ({ ...entry, shown: this.originalsExpanded || this.originalsShown.has(entry.key) }));
     const outcomes = this.nativeFind.sync(entries);
     const supported = new Set(outcomes.filter((outcome) => outcome.status === 'folded' || outcome.status === 'shown').map((outcome) => outcome.key));
     const active = new Set(entries.filter((entry) => supported.has(entry.key)).map((entry) => entry.root));
@@ -424,7 +435,8 @@ export class ProviderConversation {
       const previous = this.compacted.get(entry.root);
       if (previous?.key === key) {
         if (previous.control.parentElement !== entry.root.parentElement || previous.control.nextElementSibling !== entry.root) entry.root.before(previous.control);
-        this.updateOriginal(previous.button, this.originalsShown.has(key));
+        this.updateOriginal(previous.button, this.originalsExpanded || this.originalsShown.has(key));
+        previous.control.hidden = this.originalsExpanded || !this.originalsShown.has(key);
         continue;
       }
       if (previous !== undefined) { previous.control.remove(); this.compacted.delete(entry.root); }
@@ -445,7 +457,8 @@ export class ProviderConversation {
       });
       entry.root.before(control);
       this.compacted.set(entry.root, { key, anchors: entry.anchors, control, button });
-      this.updateOriginal(button, this.originalsShown.has(key));
+      this.updateOriginal(button, this.originalsExpanded || this.originalsShown.has(key));
+      control.hidden = this.originalsExpanded || !this.originalsShown.has(key);
     }
   }
 
@@ -558,6 +571,7 @@ export class ProviderConversation {
     this.restoreDescription();
     this.originalsShown.clear();
     this.descriptionShown = false;
+    this.originalsExpanded = false;
     this.resetReviewed();
     if (this.refreshTimer !== null) clearTimeout(this.refreshTimer);
     this.refreshTimer = null;

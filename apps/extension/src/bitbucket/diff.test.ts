@@ -272,3 +272,14 @@ it('reads the actual standalone commit diff and both native file-count surfaces'
   const nativeControl = document.createElement('button'); nativeControl.textContent = 'Native control'; slot.append(nativeControl);
   expect(bitbucketHeaderTargets(document)[0]?.hintHost).toBeUndefined();
 });
+
+
+it('mounts the digest ahead of the verified native description card and outside its collapsible body', () => {
+  document.body.innerHTML = '<div id="description-host"><div><div><h2>Description</h2></div><div class="panel-content" aria-hidden="true"><div><section data-qa="pull-request-description"><div class="ak-renderer-document">Long description</div></section></div></div></div></div><div id="activity-host"><div data-qa="pr-activity"></div></div>';
+  const host = document.getElementById('description-host');
+  expect(bitbucketReviewHost(document)).toBe(host);
+  const owned = document.createElement('section');owned.dataset.geldUi = '';host?.prepend(owned);
+  expect(bitbucketReviewHost(document)).toBe(host);
+  document.querySelector('h2')?.replaceChildren('Unrecognized card');
+  expect(bitbucketReviewHost(document)).toBe(document.getElementById('activity-host'));
+});

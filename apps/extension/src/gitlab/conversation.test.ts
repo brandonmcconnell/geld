@@ -25,3 +25,11 @@ it('returns only the native rendered description body, preserving title, digest 
   document.querySelector('[data-testid="description-content"]')?.setAttribute('data-geld-ui', '');
   expect(gitLabDescriptionHost(document)).toBeNull();
 });
+
+it('replaces a whole rendered discussion card only while every nested source is separately identifiable and no editor is inside', () => {
+  document.body.innerHTML = '<section class="issuable-discussion"><li class="note-discussion"><div class="discussion-wrapper"><ul><li id="note_11" data-testid="noteable-note-container">First</li><li id="note_12" data-testid="noteable-note-container">Reply</li></ul></div></li></section>';
+  const card = document.querySelector<HTMLElement>('li.note-discussion');
+  expect(gitLabConversationRoots(document)).toEqual([{ root: card, anchors: ['note_11', 'note_12'], kind: 'comment' }]);
+  card?.append(document.createElement('textarea'));
+  expect(gitLabConversationRoots(document).map((entry) => entry.root.id)).toEqual(['note_11', 'note_12']);
+});

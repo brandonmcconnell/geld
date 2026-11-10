@@ -1,5 +1,5 @@
 import type { ProviderReviewComment, ProviderReviewInput } from '@geld/review';
-import type { ProviderConversationRoot } from '../providers/types';
+import type { ProviderConversationRoot, ProviderReviewSnapshot } from '../providers/types';
 import { describeBitbucketPage } from './page';
 
 const COMMENTS = '[data-testid="comment"][id]';
@@ -21,11 +21,50 @@ export function nativeBitbucketComment(comment: ProviderReviewComment, doc: Docu
   } catch { return null; }
 }
 
-export function bitbucketConversationRoots(doc: Document): readonly ProviderConversationRoot[] {
-  return [...doc.querySelectorAll<HTMLElement>(COMMENTS)].flatMap((root) => {
-    if (root.closest('[data-geld-ui]') !== null || !/^comment-[1-9]\d*$/.test(root.id) || root.querySelector('form,textarea,[contenteditable="true"], [data-testid="comment"]') !== null) return [];
-    return [{ root, anchors: [root.id], kind: 'comment' as const }];
-  });
+function activityRoot(entry: HTMLElement): HTMLElement {
+  const parent = entry.parentElement;
+  const row = parent?.parentElement;
+  return parent?.children.length === 1 && row !== null && row !== undefined
+    && row.querySelectorAll('[data-qa="pull-request-activity"]').length === 1
+    && row.closest('[data-qa="pr-activity"]') !== null
+    && row.querySelector('form,textarea,input,[contenteditable="true"]') === null ? row : entry;
+}
+
+export function bitbucketConversationRoots(doc: Document, snapshot?: ProviderReviewSnapshot): readonly ProviderConversationRoot[] {
+  const roots: ProviderConversationRoot[] = [];
+  const seen = new Set<HTMLElement>();
+  for (const comment of doc.querySelectorAll<HTMLElement>(COMMENTS)) {
+    if (comment.closest('[data-geld-ui]') !== null || !/^comment-[1-9]\d*$/.test(comment.id) || comment.querySelector('form,textarea,[contenteditable="true"], [data-testid="comment"]') !== null) continue;
+    const activity = comment.closest<HTMLElement>('[data-qa="pull-request-activity"]');
+    const candidate = activity === null ? comment : activityRoot(activity);
+    const root = candidate.querySelector('form,textarea,input,[contenteditable="true"]') === null ? candidate : comment;
+    if (seen.has(root)) continue;
+    const anchors = root === comment ? [comment.id] : [...root.querySelectorAll<HTMLElement>(COMMENTS)].map((node) => node.id);
+    if (anchors.some((anchor) => !/^comment-[1-9]\d*$/.test(anchor))) continue;
+    seen.add(root);roots.push({ root, anchors, kind: 'comment' });
+  }
+  if (snapshot === undefined) return roots;
+  const current = describeBitbucketPage(new URL(doc.URL));
+  if (current === null || current.repository.path !== snapshot.input.subject.repository || current.number !== snapshot.input.subject.id) return roots;
+  for (const entry of doc.querySelectorAll<HTMLElement>('[data-qa="pr-activity"] [data-qa="pull-request-activity"]')) {
+    if (entry.closest('[data-geld-ui]') !== null || entry.querySelector(COMMENTS) !== null || entry.querySelector('form,textarea,input,[contenteditable="true"]') !== null) continue;
+    const times = [...entry.querySelectorAll<HTMLTimeElement>('time[datetime]')];
+    if (times.length !== 1) continue;
+    const time = times[0];
+    if (time === undefined) continue;
+    const at = Date.parse(/^\d{4}-\d{2}-\d{2}T/.test(time.dateTime) ? time.dateTime : time.title.replace(' at ', ' '));
+    if (!Number.isFinite(at)) continue;
+    const matching = snapshot.events.filter((event) => Date.parse(event.createdAt) === at);
+    if (matching.length !== 1 || matching[0] === undefined) continue;
+    const event = matching[0];
+    const text = (entry.textContent ?? '').toLowerCase();
+    const verb = event.body.split(' ')[0]?.toLowerCase();
+    if (event.headSha !== undefined ? !text.includes(event.headSha.slice(0, 7)) : verb === undefined || !text.includes(verb)) continue;
+    const root = activityRoot(entry);
+    if (seen.has(root)) continue;
+    seen.add(root);roots.push({ root, anchors: [], eventIds: [matching[0].id], kind: 'activity' });
+  }
+  return roots;
 }
 
 export function syncBitbucketNativeReviewState(input: ProviderReviewInput, doc: Document): ProviderReviewInput {

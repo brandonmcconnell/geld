@@ -1,5 +1,6 @@
 import type { GitLabNativeNoteCapabilities, GitLabNativeThreadCapabilities } from './review';
 import type { ProviderReviewInput } from '@geld/review';
+import { providerNativeHidden } from '../providers/native-find';
 import { mapProviderSourceSelection, selectionMatches, selectionRanges } from '../providers/source-selection';
 import type { ProviderSourceActionContext } from '../providers/source-selection';
 
@@ -60,9 +61,9 @@ function noteElement(doc: Document, target: GitLabThreadTarget): HTMLElement | n
   return parent === null || parent.getAttribute('data-discussion-id') === target.discussionId ? element : null;
 }
 
-function enabled(button: HTMLElement | null): button is HTMLElement {
+function enabled(button: HTMLElement | null, allowManagedFold = false): button is HTMLElement {
   return button !== null && button.isConnected && !button.hasAttribute('disabled') && button.getAttribute('aria-disabled') !== 'true'
-    && button.closest('[hidden], [aria-hidden="true"], [inert]') === null;
+    && !providerNativeHidden(button, allowManagedFold);
 }
 
 function buttonIn(root: ParentNode | null, selector: string): HTMLElement | null {
@@ -100,9 +101,9 @@ function menuOf(doc: Document, toggle: HTMLElement): HTMLElement | null {
   return toggle.id !== '' && labelled ? menu : null;
 }
 
-function editControl(doc: Document, target: GitLabThreadTarget): HTMLElement | null {
+function editControl(doc: Document, target: GitLabThreadTarget, allowManagedFold = false): HTMLElement | null {
   const direct = buttonIn(noteElement(doc, target), 'button.js-note-edit');
-  if (enabled(direct)) return direct;
+  if (enabled(direct, allowManagedFold)) return direct;
   const toggle = menuControl(doc, target);
   return toggle === null ? null : buttonIn(menuOf(doc, toggle), '[data-testid="edit-note-action"]');
 }
@@ -135,14 +136,14 @@ function hasPermission(kind: GitLabThreadAction, target: GitLabThreadTarget, per
   return true;
 }
 
-function available(kind: GitLabThreadAction, doc: Document, target: GitLabThreadTarget, permissions: GitLabNativeThreadCapabilities, options: GitLabThreadActionOptions): boolean {
+function available(kind: GitLabThreadAction, doc: Document, target: GitLabThreadTarget, permissions: GitLabNativeThreadCapabilities, options: GitLabThreadActionOptions, allowManagedFold = false): boolean {
   if (!hasPermission(kind, target, permissions, options) || !sameNativeReview(doc, target)) return false;
-  if (kind === 'reply') return replyField(doc, target) !== null || enabled(replyControl(doc, target));
-  if (kind === 'quote') return discussion(doc, target) !== null && bodyOf(doc, target) !== null && (replyField(doc, target) !== null || enabled(replyControl(doc, target)));
-  if (kind === 'resolve' || kind === 'reopen') return currentResolved(doc, target) === (kind === 'reopen') && enabled(resolveControl(doc, target));
-  if (kind === 'react') return enabled(reactionControl(doc, target));
-  if (kind === 'edit') return enabled(editControl(doc, target)) || enabled(menuControl(doc, target));
-  return enabled(menuControl(doc, target));
+  if (kind === 'reply') return replyField(doc, target) !== null || enabled(replyControl(doc, target), allowManagedFold);
+  if (kind === 'quote') return discussion(doc, target) !== null && bodyOf(doc, target) !== null && (replyField(doc, target) !== null || enabled(replyControl(doc, target), allowManagedFold));
+  if (kind === 'resolve' || kind === 'reopen') return currentResolved(doc, target) === (kind === 'reopen') && enabled(resolveControl(doc, target), allowManagedFold);
+  if (kind === 'react') return enabled(reactionControl(doc, target), allowManagedFold);
+  if (kind === 'edit') return enabled(editControl(doc, target, allowManagedFold), allowManagedFold) || enabled(menuControl(doc, target), allowManagedFold);
+  return enabled(menuControl(doc, target), allowManagedFold);
 }
 
 async function waitFor<T>(doc: Document, read: () => T | null, current: () => boolean = () => true): Promise<T | null> {
@@ -258,7 +259,7 @@ export function readGitLabThreadActions(doc: Document, target: GitLabThreadTarge
   const resolved = currentResolved(doc, target) ?? permissions.resolved;
   const kinds: readonly GitLabThreadAction[] = ['reply', resolved ? 'reopen' : 'resolve', 'react', 'edit', 'quote', 'menu'];
   return kinds.map((kind) => {
-    const canActivate = available(kind, doc, target, permissions, options);
+    const canActivate = available(kind, doc, target, permissions, options, true);
     return {
       kind,
       label: LABELS[kind],
