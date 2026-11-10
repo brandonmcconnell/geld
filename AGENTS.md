@@ -1238,6 +1238,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   the content script's disk cache (`DiffCache`) is what avoids refetching: SHA-keyed entries for pages (`github:{owner}:{repo}:{pull}:{sha}`, exact and never stale), plus `…:{pull}:latest` entries for list rows — the list markup carries no head SHA (verified: none in the page), so these are served stale-while-revalidate: shown for up to 24 h so a row is never blank, refreshed through the budget once older than 30 min, and a SHA-keyed write (opening the PR) refreshes `latest` too.
   A failed revalidation keeps the stale counts on screen.
   Four concurrent fetches per tab, only for rows near the viewport.
+  that cache and its too-large memory are keyed by URL *and* the head the content script names (`FetchDiffRequest.sha`), since a pull request's `.diff` serves whatever its head is now: keyed by URL alone, the diff read before a push answered the next head's request and was stored on disk under that head's key, where SHA-keyed entries are never asked again.
+  A head-pinned diff landing also replaces the head-less (list row) state for its URL in that tab's `DiffSource`, which otherwise kept the old counts across soft navigations.
   **These line counts use GitHub-served diffs and page data.**
   Optional account, review and dashboard features also use provider APIs.
 - Browsers do not inject content scripts into tabs that were open before an install/update.

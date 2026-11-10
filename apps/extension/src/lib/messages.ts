@@ -17,6 +17,8 @@ export interface FetchDiffRequest {
   readonly url: string;
   /** Absent in messages from older content scripts still running: treated as `background`. */
   readonly priority?: DiffPriority;
+  /** The head the answer is for: a pull request's `.diff` serves whatever its head is now, so the background caches per head. */
+  readonly sha?: string;
 }
 
 export type FetchDiffResponse =
@@ -208,7 +210,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function isFetchDiffRequest(value: unknown): value is FetchDiffRequest {
-  return isRecord(value) && value.type === 'geld:fetch-diff' && typeof value.url === 'string' && (value.priority === undefined || value.priority === 'page' || value.priority === 'background');
+  return (
+    isRecord(value) &&
+    value.type === 'geld:fetch-diff' &&
+    typeof value.url === 'string' &&
+    (value.priority === undefined || value.priority === 'page' || value.priority === 'background') &&
+    (value.sha === undefined || typeof value.sha === 'string')
+  );
 }
 
 export function isFetchDiffResponse(value: unknown): value is FetchDiffResponse {
