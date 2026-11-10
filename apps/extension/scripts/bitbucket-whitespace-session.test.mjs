@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { EventEmitter } from 'node:events';
 import { Window } from 'happy-dom';
-import { BITBUCKET_WHITESPACE_URL as URL, bitbucketWhitespaceBudget as budget, bitbucketConnectRead, bitbucketNativeReadPost, bitbucketWhitespaceSettings as settingsScope, bitbucketWhitespaceResource as resource, observeBitbucketWhitespace, qualifyBitbucketWhitespace as qualify, bitbucketWhitespaceProbe as probe, verifyBitbucketWhitespace as verify } from './bitbucket-whitespace-session.mjs';
+import { BITBUCKET_WHITESPACE_URL as URL, bitbucketWhitespaceBudget as budget, bitbucketWhitespaceAwait, bitbucketConnectRead, bitbucketNativeReadPost, bitbucketWhitespaceSettings as settingsScope, bitbucketWhitespaceResource as resource, observeBitbucketWhitespace, qualifyBitbucketWhitespace as qualify, bitbucketWhitespaceProbe as probe, verifyBitbucketWhitespace as verify } from './bitbucket-whitespace-session.mjs';
 const API = 'https://bitbucket.org/!api/2.0/repositories/atlassian/bitbucket-upload-file/';
 const H = 'a'.repeat(40), B = 'b'.repeat(40);
 const FILES = [{ path: 'test/test.py', additions: 2, deletions: 1 }];
@@ -24,7 +24,7 @@ test('forecast uses actual16 baseline, eight own reads and no native context/cac
 });
 for (const original of [{ present: false }, { present: true, value: { hideWhitespace: true, custom: { secret: 'unchanged' } } }]) test('raw settings and presence restore only after page close', async () => {
   let value = structuredClone(original);const progress = {};const scope = settingsScope({ read: async () => structuredClone(value), write: async v => { value = structuredClone(v); }, progress });
-  await scope.prepare();assert.equal(value.value.hideWhitespace, false);assert.equal(value.value.prOverview, false);
+  await scope.prepare();assert.equal(value.value.hideWhitespace, false);assert.equal(value.value.prOverview, false);assert.equal(value.value.autoUpdatePatterns, false);
   await scope.hide(true);assert.equal(value.value.hideWhitespace, true);assert.deepEqual(value.value.custom, original.value?.custom);
   await assert.rejects(scope.restore(false), { code: 'CLOSE_BEFORE_RESTORE' });await scope.restore(true);assert.deepEqual(value, original);assert.equal(progress.pageClosedBeforeRestore, true);
 });
@@ -77,14 +77,14 @@ for (const changed of ['node', 'value']) test('Viewed ' + changed + ' drift is n
   const d = dom();try { probe('bind');const box = d.w.document.querySelector('article input');if (changed === 'node') box.replaceWith(box.cloneNode());else box.checked = true;assert.equal(probe().viewedPreserved, false); } finally { d.close(); }
 });
 
-function protocol({ fullCycle = false, leak = false, untrusted = false, fail = false, remount = false, settledMutation = false, frameUnavailable = false, closeRace = false, closeOpenFailure = false } = {}) {
+function protocol({ fullCycle = false, leak = false, untrusted = false, fail = false, remount = false, settledMutation = false, frameUnavailable = false, closeRace = false, closeOpenFailure = false, checkpoint: checkpointHook = async () => {} } = {}) {
   let dialog = false, setting = false, phase = 'baseline', closed = false, restored = false, disposed = false, generation = 0, preserved = true;const events = [], calls = [], rows = phaseRecords('baseline', false).filter(r => r.owner === 'native');
   const state = () => ({ originalPage: true, originalsPreserved: preserved, rowsPreserved: preserved, viewedPreserved: preserved, samePaths: true, viewedSemanticsPreserved: true, settledMounted: true, busy: false, forbiddenInputs: 0, overflow: false, events: [...events], dialogCount: dialog ? 1 : 0, checkbox: dialog ? { checked: leak && setting ? false : true } : null, cancelAvailable: dialog, totals: TOTALS });
   const settings = { current: async () => ({ hideWhitespace: setting }), hide: async v => { setting = v;if (remount) preserved = false;calls.push('settings:' + v);rows.push(...phaseRecords(phase, v)); }, restore: async value => { assert.equal(value, true);restored = true;calls.push('restored'); } };
   const page = { isClosed: () => closed, close: async () => { if (closeOpenFailure) throw Error('Still open');closed = true;calls.push('closed');if (closeRace) throw Error('Already closing'); }, evaluate: async (_f, action) => { if (_f !== probe) return !frameUnavailable;if (action === 'dispose') return { released: true };if (action === 'begin') return { begun: true, generation };if (action === 'candidate') return { stable: true, generation };if (action === 'rebind') { generation++;preserved = true;return { rebound: true, generation, originalsReplaced: remount, rowsReplaced: remount, viewedReplaced: remount }; }return state(); }, evaluateHandle: async (_f, _action, which) => ({ asElement: () => ({ evaluate: async () => true, click: async () => { events.push({ control: which, trusted: !untrusted });dialog = which === 'opener';if (remount && phase !== 'baseline') preserved = false;calls.push(which);if (phase === 'open') rows.push(...phaseRecords(phase, false));if (phase === 'cancel') rows.push(...phaseRecords(phase, true)); } }), dispose: async () => {} }) };
   const observer = { evidence: { providerWrites: 0, overflow: false }, records: () => rows, idle: () => ({ pending: 0, observed: rows.length }), phase: v => { phase = v; }, flush: async () => {}, dispose: async () => { disposed = true; } };
   const progress = {};const poll = async (read, accept) => { if (fail && phase === 'hide') throw Error('SECRET_FAILURE');for (let attempt = 0; attempt < 3; attempt++) { const v = await read();if (accept(v)) return v; }assert.fail('Protocol poll failed'); };
-  return { run: () => verify(page, { settings, observer, progress, poll, readState: async () => { if (settledMutation) preserved = false;return { hasDiff: true, all: TOTALS, visible: TOTALS }; }, guardBudget: () => {}, fullCycle }), progress, calls, finished: () => ({ closed, restored, disposed }) };
+  return { run: () => verify(page, { settings, observer, progress, poll, readState: async () => { if (settledMutation) preserved = false;return { hasDiff: true, all: TOTALS, visible: TOTALS }; }, guardBudget: () => {}, fullCycle, checkpoint: checkpointHook }), progress, calls, finished: () => ({ closed, restored, disposed }) };
 }
 test('bounded public sequence stops with Settings open, no Save, and closes before raw restore', async () => {
   const p = protocol();await p.run();assert.deepEqual(p.calls, ['opener', 'cancel', 'settings:true', 'opener', 'closed', 'restored']);assert.deepEqual(p.finished(), { closed: true, restored: true, disposed: true });assert.equal(p.progress.scope, 'first_activation_and_native_settings_restore');assert.equal(p.progress.opened.checkbox.checked, true);
@@ -383,4 +383,174 @@ test('bulk startup reads reject oversized or non-hash values while retaining emp
   assert.equal(bitbucketNativeReadPost(startupRequest('signature', { body: JSON.stringify({ hashes: Array(101).fill(H) }) })).allowed, false);
   assert.equal(bitbucketNativeReadPost(startupRequest('commit_status', { body: Array(101).fill(`commits=${H}`).join('&') })).allowed, false);
   assert.equal(bitbucketNativeReadPost(startupRequest('signature', { body: '{"hashes":[7]}' })).allowed, false);
+});
+
+test('a never-settling response body fails in five seconds, checkpoints and cannot be adopted late', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const page = new EventEmitter(), progress = {}, checkpoints = [], observer = observeBitbucketWhitespace(page, progress, 'installed', new AbortController(), { checkpoint: async code => { checkpoints.push(code); } });
+  const request = { url: () => API + 'pullrequests/22', method: () => 'GET', redirectChain: () => [], initiator: () => ({ stack: { callFrames: [{ url: APP }] } }) };
+  let resolveBody;const body = new Promise(resolve => { resolveBody = resolve; });
+  page.emit('request', request);page.emit('response', { request: () => request, status: () => 200, headers: () => ({}), buffer: () => body });
+  const flushed = observer.flush();t.mock.timers.tick(5000);await flushed;
+  assert.equal(progress.requests[0].error, 'RESPONSE_BUFFER_TIMEOUT');assert.equal(progress.requests[0].qualified, undefined);assert.deepEqual(checkpoints, ['response_failure']);assert.equal(observer.idle().pending, 0);
+  resolveBody(Buffer.from(JSON.stringify({ id: 22 })));await Promise.resolve();await Promise.resolve();
+  assert.equal(progress.requests[0].error, 'RESPONSE_BUFFER_TIMEOUT');assert.equal(progress.requests[0].bytes, undefined);assert.equal(progress.requests[0].qualified, undefined);await observer.dispose();
+});
+test('observer disposal is bounded and never qualifies a released response', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const page = new EventEmitter(), progress = {}, observer = observeBitbucketWhitespace(page, progress, 'installed', new AbortController());
+  const request = { url: () => API + 'pullrequests/22', method: () => 'GET', redirectChain: () => [] };let resolveBody;
+  page.emit('request', request);page.emit('response', { request: () => request, status: () => 200, headers: () => ({}), buffer: () => new Promise(resolve => { resolveBody = resolve; }) });
+  await Promise.resolve();const disposed = observer.dispose();resolveBody(Buffer.from('{}'));await disposed;
+  assert.equal(progress.released, true);assert.equal(progress.requests[0].qualified, undefined);assert.equal(progress.requests[0].error, 'RESPONSE_RELEASED');
+});
+test('bounded local operation handles hung promises and abort without exposing external errors', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const waiting = bitbucketWhitespaceAwait(() => new Promise(() => {}), { ms: 25, code: 'UNIT_WAIT_TIMEOUT' });
+  t.mock.timers.tick(25);await assert.rejects(waiting, { code: 'UNIT_WAIT_TIMEOUT' });
+  const abort = new AbortController();let executed = false;abort.abort(Error('PRIVATE_REASON'));
+  await assert.rejects(bitbucketWhitespaceAwait(() => { executed = true; }, { signal: abort.signal }), { code: 'WHITESPACE_CASE_ABORTED' });assert.equal(executed, false);
+});
+test('phase checkpoints precede native input and settings writes and record completed cleanup', async () => {
+  const events = [];const p = protocol({ checkpoint: async stage => { events.push({ stage, calls: [...p.calls] }); } });await p.run();
+  assert.deepEqual(events.map(value => value.stage), ['baseline', 'baseline_settings', 'activation', 'hidden_responses', 'settings_restore', 'final', 'cleanup', 'complete']);
+  assert.deepEqual(events[1].calls, []);assert.deepEqual(events[2].calls, ['opener', 'cancel']);
+  assert.equal(events[3].calls.includes('settings:true'), true);
+  assert.deepEqual(events.at(-1).calls.slice(-2), ['closed', 'restored']);
+});
+
+test('timed-out settings write must settle before exact raw restoration', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let value = { present: false }, releaseWrite, began = false;
+  const pending = new Promise(resolve => { releaseWrite = resolve; });
+  const scope = settingsScope({ progress: {}, read: async () => structuredClone(value), write: async next => { if (next.value?.hideWhitespace === true) { began = true;await pending; }value = structuredClone(next); } });
+  await scope.prepare();const hidden = assert.rejects(scope.hide(true), { code: 'SETTINGS_WRITE_TIMEOUT' });
+  for (let n = 0; n < 20 && !began; n++) await Promise.resolve();assert.equal(began, true);
+  t.mock.timers.tick(5000);await hidden;
+  let restored = false;const restoration = scope.restore(true).then(() => { restored = true; });await Promise.resolve();assert.equal(restored, false);
+  releaseWrite();await restoration;assert.deepEqual(value, { present: false });
+});
+test('a settings write that never settles leaves restoration explicitly unconfirmed', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let value = { present: false }, began = false;const progress = {};
+  const scope = settingsScope({ progress, read: async () => structuredClone(value), write: async next => { if (next.value?.hideWhitespace === true) { began = true;return new Promise(() => {}); }value = structuredClone(next); } });
+  await scope.prepare();const hidden = assert.rejects(scope.hide(true), { code: 'SETTINGS_WRITE_TIMEOUT' });
+  for (let n = 0; n < 20 && !began; n++) await Promise.resolve();t.mock.timers.tick(5000);await hidden;
+  const restoration = assert.rejects(scope.restore(true), { code: 'SETTINGS_PENDING_TIMEOUT' });t.mock.timers.tick(5000);await restoration;
+  assert.notEqual(progress.restored, true);assert.equal(value.present, true);assert.equal(value.value.hideWhitespace, false);
+});
+
+test('an abort before the queued operation starts prevents that operation', async () => {
+  const abort = new AbortController();let called = false;
+  const waiting = bitbucketWhitespaceAwait(() => { called = true; }, { signal: abort.signal });abort.abort(Error('PRIVATE_REASON'));
+  await assert.rejects(waiting, { code: 'WHITESPACE_CASE_ABORTED' });assert.equal(called, false);
+});
+
+test('failed final checkpoint cannot leave the verifier marked passed', async () => {
+  const p = protocol({ checkpoint: async stage => { if (stage === 'complete') throw Error('PRIVATE_CHECKPOINT_FAILURE'); } });
+  await assert.rejects(p.run(), { code: 'CHECKPOINT_TIMEOUT' });assert.equal(p.progress.status, 'failed');assert.equal(p.progress.failure, 'CHECKPOINT_TIMEOUT');assert.equal(p.progress.cleanup.failures.includes('CHECKPOINT_TIMEOUT'), true);assert.equal(JSON.stringify(p.progress).includes('PRIVATE_'), false);
+});
+
+test('actual checkpoint reports remain running until cleanup completes', async () => {
+  const { readFileSync } = await import('node:fs');const vm = await import('node:vm');
+  const source = readFileSync(new globalThis.URL('./browser-e2e.mjs', import.meta.url), 'utf8');
+  const code = source.slice(source.indexOf('let reportWrite;'), source.indexOf('function sourceFailureProvider('));
+  const item = { name: 'bitbucket-whitespace-session', status: 'passed', inProgress: true };
+  const report = { cases: [item], infrastructureErrors: [] };const snapshots = [];
+  const save = vm.runInNewContext(`${code};saveReport`, { report, cooldowns: new Map(), bitbucketRequestTimes: [], focus: item.name, artifacts: '/artifacts', resolve: (...parts) => parts.join('/'), writeFile: async (_path, raw) => snapshots.push(JSON.parse(raw)) });
+  await save();assert.equal(snapshots[0].status, 'running');assert.equal(snapshots[0].finishedAt, undefined);
+  item.inProgress = false;await save();assert.equal(snapshots[1].status, 'completed_with_unsupported_features');assert.equal(typeof snapshots[1].finishedAt, 'string');
+});
+
+test('timed-out checkpoint callers cannot release the actual report-write queue or overtake the final save', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { readFileSync } = await import('node:fs');const vm = await import('node:vm');
+  const source = readFileSync(new globalThis.URL('./browser-e2e.mjs', import.meta.url), 'utf8');
+  const saveCode = source.slice(source.indexOf('let reportWrite;'), source.indexOf('function sourceFailureProvider('));
+  const start = source.indexOf('  const checkpoint = async stage => {', source.indexOf('async function runBitbucketWhitespaceCase()'));
+  const checkpointCode = source.slice(start, source.indexOf('  const active = ', start));
+  const item = { name: 'bitbucket-whitespace-session', status: 'running', inProgress: true };
+  const report = { cases: [item], infrastructureErrors: [] }, writes = [];
+  let release, started, active = 0, maxActive = 0, persisted;
+  const pending = new Promise(resolve => { release = resolve; }), began = new Promise(resolve => { started = resolve; });
+  const { save, checkpoint } = vm.runInNewContext(`${saveCode}
+${checkpointCode}
+({ save: saveReport, checkpoint })`, {
+    item, report, cooldowns: new Map(), bitbucketRequestTimes: [], focus: item.name, artifacts: '/artifacts',
+    resolve: (...parts) => parts.join('/'), wait: (operation, code, ms) => bitbucketWhitespaceAwait(operation, { code, ms }),
+    writeFile: async (_path, raw) => {
+      const snapshot = JSON.parse(raw);writes.push(snapshot);active++;maxActive = Math.max(active, maxActive);
+      if (writes.length === 1) { started();await pending; }
+      persisted = snapshot;active--;
+    },
+  });
+  const first = assert.rejects(checkpoint('progress'), { code: 'CHECKPOINT_TIMEOUT' });await began;
+  t.mock.timers.tick(5000);await first;
+  item.inProgress = false;item.status = 'passed';
+  const finalCheckpoint = assert.rejects(checkpoint('complete'), { code: 'CHECKPOINT_TIMEOUT' });
+  for (let n = 0; n < 5; n++) await Promise.resolve();
+  t.mock.timers.tick(5000);await finalCheckpoint;
+  const finalSave = save(); // The top-level final save must use the same underlying queue.
+  for (let n = 0; n < 5; n++) await Promise.resolve();
+  assert.equal(writes.length, 1);assert.equal(active, 1);
+  release();await finalSave;
+  assert.equal(writes.length, 3);assert.equal(maxActive, 1);
+  assert.equal(writes[0].status, 'running');
+  assert.equal(writes[1].status, 'completed_with_unsupported_features');
+  assert.equal(persisted.status, 'completed_with_unsupported_features');
+  assert.equal(persisted.cases[0].inProgress, false);assert.equal(typeof persisted.finishedAt, 'string');
+});
+
+test('whitespace step deadline leaves the job time to upload checkpoint evidence', async () => {
+  const { readFileSync } = await import('node:fs');
+  const workflow = readFileSync(new globalThis.URL('../../../.github/workflows/browser-e2e.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /timeout-minutes: \$\{\{ needs\.select-public-verification\.outputs\.focus == 'bitbucket-whitespace-session' && 5 \|\| 15 \}\}/);
+});
+
+async function installedLifecycle(context) {
+  const { readFileSync } = await import('node:fs');const vm = await import('node:vm');
+  const code = readFileSync(new globalThis.URL('./browser-e2e.mjs', import.meta.url), 'utf8');
+  const start = code.indexOf('async function prepareInstalledBrowserSettings()'), end = code.indexOf('\nasync function patchSettings(', start);
+  assert.ok(start >= 0 && end > start);
+  return new vm.Script(code.slice(start, end) + ';({prepare:prepareInstalledBrowserSettings,close:closeInstalledBrowser})').runInNewContext({ bitbucketWhitespaceAwait, errorText: error => error.message, ...context });
+}
+
+test('only whitespace skips the redundant global settings write and checkpoints installation', async () => {
+  for (const focus of ['bitbucket-whitespace-session', 'github']) {
+    const report = { infrastructureErrors: [] };let patched = 0, saved = 0;
+    const lifecycle = await installedLifecycle({ focus, report, patchSettings: async () => { patched++;return { enabled: true }; }, saveReport: async () => { saved++; } });
+    await lifecycle.prepare();assert.equal(patched, focus === 'github' ? 1 : 0);assert.equal(saved, focus === 'github' ? 0 : 1);
+    if (focus === 'bitbucket-whitespace-session') { assert.equal(report.startup.stage, 'installed');assert.equal(report.startup.settingsPreparation, 'dedicated_bounded_case'); }
+    else assert.deepEqual(report.settings, { enabled: true });
+  }
+});
+test('whitespace saves before a hung browser close and terminates only its owned process', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const events = [], snapshots = [], report = { infrastructureErrors: [] }, owned = new EventEmitter();
+  Object.assign(owned, { pid: 321, exitCode: null, signalCode: null, kill(signal) { events.push(signal);this.signalCode = signal;this.emit('exit');return true; } });
+  const lifecycle = await installedLifecycle({ focus: 'bitbucket-whitespace-session', report,
+    saveReport: async () => { events.push('save:' + report.whitespaceBrowserTeardown.stage);snapshots.push(structuredClone(report)); },
+    browser: { process: () => owned, close: () => { events.push('close');return new Promise(() => {}); }, disconnect: async () => { events.push('disconnect'); } },
+  });
+  const closing = lifecycle.close();for (let n = 0; n < 30 && !events.includes('close'); n++) await Promise.resolve();assert.deepEqual(events.slice(0, 2), ['save:before_close', 'close']);
+  t.mock.timers.tick(5000);await closing;
+  assert.deepEqual(events, ['save:before_close', 'close', 'disconnect', 'SIGTERM', 'save:after_close']);
+  assert.equal(report.infrastructureErrors[0], 'WHITESPACE_BROWSER_CLOSE_TIMEOUT');assert.equal(report.whitespaceBrowserTeardown.ownedProcessExited, true);
+  assert.equal(snapshots[0].whitespaceBrowserTeardown.stage, 'before_close');assert.equal(snapshots.at(-1).whitespaceBrowserTeardown.stage, 'after_close');
+});
+test('whitespace escalates only the returned owned process after a failed graceful exit', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const signals = [], report = { infrastructureErrors: [] }, owned = new EventEmitter();
+  Object.assign(owned, { pid: 321, exitCode: null, signalCode: null, kill(signal) { signals.push(signal);if (signal === 'SIGKILL') { this.signalCode = signal;this.emit('exit'); }return true; } });
+  let closeStarted = false;
+  const lifecycle = await installedLifecycle({ focus: 'bitbucket-whitespace-session', report, saveReport: async () => {}, browser: { process: () => owned, close: () => { closeStarted = true;return new Promise(() => {}); }, disconnect: async () => {} } });
+  const closing = lifecycle.close();for (let n = 0; n < 30 && !closeStarted; n++) await Promise.resolve();t.mock.timers.tick(5000);
+  for (let n = 0; n < 50 && signals.length === 0; n++) await Promise.resolve();assert.deepEqual(signals, ['SIGTERM']);
+  t.mock.timers.tick(1000);await closing;assert.deepEqual(signals, ['SIGTERM', 'SIGKILL']);assert.equal(report.whitespaceBrowserTeardown.ownedProcessExited, true);
+});
+test('other focuses retain their existing close-then-save behavior without forced process teardown', async () => {
+  const report = { infrastructureErrors: [] }, events = [];let finish;
+  const lifecycle = await installedLifecycle({ focus: 'github', report, saveReport: async () => { events.push('save'); }, browser: { close: () => { events.push('close');return new Promise(resolve => { finish = resolve; }); }, process: () => { assert.fail('Unrelated focus inspected an owned process'); } } });
+  const closing = lifecycle.close();for (let n = 0; n < 5; n++) await Promise.resolve();assert.deepEqual(events, ['close']);finish();await closing;
+  assert.deepEqual(events, ['close', 'save']);assert.equal(report.whitespaceBrowserTeardown, undefined);
 });
