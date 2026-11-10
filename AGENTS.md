@@ -3576,6 +3576,7 @@ Provider related-link sources use the same hidden-people projection as the diges
 Keep description-owned related links independent of comment-author filtering.
 
 Installed public walkthrough focuses record the actual Chrome page through Puppeteer screencast, with a timed receipt for each completed scene.
+Install FFmpeg only for those recording focuses, since ordinary UI acceptance needs no media libraries and their download can dominate browser setup.
 They reuse the installed-browser permission, request budget and cooldown handling rather than bypassing local browser policy.
 Titles, captions and voiceover are post-production overlays and never replace native controls or manufacture provider state.
 
@@ -3590,6 +3591,7 @@ The toolbar contains a conditional resolved-thread meter, Flow, grouping, View, 
 Reviewer summaries stay inline with the Reviews row while conversation details remain inside its disclosure, and an unknown pending-request state is not presented as a review verdict.
 The combined view uses the Geld and provider marks with a plus sign and an accessible full label.
 View changes restore focus to the selected native timeline option when the digest is off and to its View control when it returns.
+Browser checks wait for the selected view to finish changing before checking focus or switching again, since the clicked option already has focus while its settings save is pending.
 While review sources load, keep the native conversation visible and mount view choices only in the ready digest toolbar so a temporary standalone button strip does not flash above it.
 GitLab's global SVG fill overrides presentation attributes, so owned outline glyphs explicitly keep `fill: none` in CSS while brand marks retain their fills.
 Standalone Node integration tests that import the digest load raw SVG imports from the actual asset while omitting CSS, matching the browser bundle's asset contract.

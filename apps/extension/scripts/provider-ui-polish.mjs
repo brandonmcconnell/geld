@@ -42,11 +42,26 @@ export async function verifyProviderUi(page, item, { provider, poll, patchSettin
   assert.equal(combined.text, '+');assert.equal(combined.icons, 2);assert.ok(combined.label.includes(provider === 'gitlab' ? 'GitLab' : 'Bitbucket'));
   await frame('view-menu');await page.keyboard.press('Escape');
   assert.equal(await page.$eval('.geld-provider-review__menu:has([data-geld-view-slot])', el => el.open), false);
-  await click('.geld-provider-review__menu:has([data-geld-view-slot]) > summary');
-  await click('[data-geld-digest-view="github"]');
-  await poll(() => page.evaluate(() => document.activeElement?.getAttribute('data-geld-digest-view')), value => value === 'github', 'Focus on the native timeline choice');
-  await click('[data-geld-digest-view="digest"]');
-  await poll(() => page.evaluate(() => document.activeElement?.getAttribute('data-geld-toolbar-control')), value => value === 'eye', 'Focus returns to the digest View control');
+  let focusError;
+  try {
+    await click('.geld-provider-review__menu:has([data-geld-view-slot]) > summary');
+    await click('[data-geld-digest-view="github"]');
+    await poll(() => page.$eval('.geld-provider-review', el => el.hidden), Boolean, 'Native timeline selected', 5000);
+    await poll(() => page.evaluate(() => document.activeElement?.getAttribute('data-geld-digest-view')), value => value === 'github', 'Focus on the native timeline choice', 5000);
+    await click('[data-geld-digest-view="digest"]');
+    await poll(() => page.$eval('.geld-provider-review', el => !el.hidden), Boolean, 'Digest selected', 5000);
+    await poll(() => page.evaluate(() => document.activeElement?.getAttribute('data-geld-toolbar-control')), value => value === 'eye', 'Focus returns to the digest View control', 5000);
+  } catch (error) { focusError = error.message; }
+  const focus = await page.evaluate(() => {
+    const panel = document.querySelector('.geld-provider-review');
+    const target = panel?.querySelector('[data-geld-toolbar-control="eye"]');
+    const active = document.activeElement;
+    return { active: { tag: active?.tagName, tool: active?.getAttribute('data-geld-toolbar-control'), view: active?.getAttribute('data-geld-digest-view') },
+      panel: panel ? { hidden: panel.hidden, inert: panel.inert, height: panel.getBoundingClientRect().height } : null,
+      target: target ? { hidden: target.closest('[hidden], [inert]') !== null, display: getComputedStyle(target).display, visibility: getComputedStyle(target).visibility, height: target.getBoundingClientRect().height } : null,
+      choices: [...document.querySelectorAll('[data-geld-digest-view]')].map(el => ({ view: el.getAttribute('data-geld-digest-view'), selected: el.getAttribute('aria-pressed') })) };
+  });
+  console.log(`PROVIDER_UI_STAGE ${JSON.stringify({ provider, stage: 'focus', focus, focusError })}`);
   const overview = page.url();
   const changes = provider === 'gitlab' ? `${overview.split('?')[0]}/diffs?diff_id=2158520123` : `${overview.replace(/\/$/, '')}/diff`;
   if (provider === 'bitbucket') {
@@ -88,7 +103,8 @@ export async function verifyProviderUi(page, item, { provider, poll, patchSettin
   const tests = await page.$('.geld-provider-category .geld-provider-category-header');assert.ok(tests);await tests.click();await tests.dispose();
   await poll(() => page.$eval('.geld-provider-category .geld-provider-category-header', el => el.getAttribute('aria-expanded')), value => value === 'true', 'Tests expanded');
   await frame('tests');
-  item.uiAcceptance = { digest, combined, files, sticky, frames };
+  item.uiAcceptance = { digest, combined, focus, focusError, files, sticky, frames };
   console.log(`PROVIDER_UI_META ${JSON.stringify({ provider, ...item.uiAcceptance })}`);
+  assert.equal(focusError, undefined, 'View changes restore keyboard focus');
   return { verified: 'Installed digest toolbar, disclosure, icon view choice, counts, categories and sticky header', uiAcceptance: item.uiAcceptance };
 }

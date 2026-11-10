@@ -455,7 +455,8 @@ export class ProviderConversation {
     const target = pending.view === 'github' ? this.viewControls?.querySelector<HTMLButtonElement>('[data-geld-digest-view="github"]')
       : this.panel?.element.querySelector<HTMLElement>('[data-geld-toolbar-control="eye"]');
     if (target == null || !target.isConnected || target.closest('[hidden], [inert]') !== null) return;
-    target.focus({ preventScroll: true });this.viewFocus = null;
+    target.focus({ preventScroll: true });
+    if (document.activeElement === target) this.viewFocus = null;
   }
 
   private compact(snapshot: ProviderReviewSnapshot, settings: GeldSettings): void {

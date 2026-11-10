@@ -310,7 +310,10 @@ jobs:
         if: needs.select-public-verification.outputs.focus != 'provider-evidence' && needs.select-public-verification.outputs.focus != 'provider-access-evidence'
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y xvfb xauth dbus-x11 at-spi2-core python3-pyatspi libglib2.0-bin ffmpeg
+          sudo apt-get install --no-install-recommends -y xvfb xauth dbus-x11 at-spi2-core python3-pyatspi libglib2.0-bin
+          case "$GELD_BROWSER_FOCUS" in
+            gitlab-walkthrough|bitbucket-walkthrough|bitbucket-walkthrough-files) sudo apt-get install --no-install-recommends -y ffmpeg ;;
+          esac
       - name: Locate the runner's Chrome
         if: needs.select-public-verification.outputs.focus != 'provider-evidence' && needs.select-public-verification.outputs.focus != 'provider-access-evidence'
         shell: bash
