@@ -3502,3 +3502,12 @@ Old and new sides are tokenized independently in contiguous visible runs, and an
 The fallback uses CSS Highlight ranges over original text nodes, skips files with native token spans and retains Bitbucket's verified enabled-only syntax preference gate.
 GitLab colors come from its active qualified syntax stylesheet, while Bitbucket script tokens use ADS code-role variables separately from the specialized Bash palette.
 Script source is bounded to 100,000 visible characters per file, and no extra source request is made for highlighting.
+
+Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
+Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
+
+Malformed GitLab approval or reviewer rows are isolated individually and mark reviews partial without discarding valid standings, discussion evidence or native required/remaining counts.
+An all-malformed source supplies no known empty reviewer list.
+
+Bitbucket hidden-people matching and exact-rule removal use the same canonical `bitbucket.org/uuid/<uuid>` identity as PR lists, normalized from the native account UUID.
+Keep display logins separate, leave malformed account identities visible, and never remove a wildcard during a per-person unhide.
