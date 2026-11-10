@@ -2389,6 +2389,8 @@ That displayed-outline phase retains an unknown source head explicitly and does 
 - **Provider diff caching and throttling have their own boundaries.**
   Whole-test source facts distinguish the selected acquisition head from the actual native rendered new-side tree, whose owner, full 40- or 64-character SHA and authoritative new path require a current original file witness.
   Immutable new-file identity is independent of a comparison's old base when the original raw/context resources, current full project/source-version identity and exact selected target still agree, without granting old-side or comment-coordinate equivalence.
+  An original native non-merge target equal to its selected source ID and acquired full head can identify that immutable source despite a different observed API presentation target, while other targets retain exact tuple checks and all common ownership/source/resource/path/frame guards remain required.
+  Observed response candidates do not establish consumption or an earlier unavailable visit's exact cause.
   Comment DOM folds decline numeric source coordinates when the same batched native frame and acquired same-project merge-request subject prove a different rendered new-side head, without changing source statistics, semantic counts or test outlines.
   Missing or legacy provenance retains the existing unprotected comment-coordinate behavior, and no Bitbucket topic destination or old-side file authority is inferred from this negative guard.
   A retired line-fold control must still belong to the current file state and connected owned row before its callback can change source visibility.
@@ -2759,7 +2761,7 @@ A visit without supported native authority and measured owned clipping is explic
 
 GitLab Rapid whole-test context is an explicit per-file `Find test boundaries` action, never an effect of the default-on test-outline setting or a programmatic button click.
 Only a current exact new-side source witness joined to complete acquisition facts grants the file intent, and each queued dispatch, completion and original native context click rebuilds the current provider page, diff view and source binding instead of trusting a held frame.
-The acquired source head and native rendered target head remain distinct, including the observed D03 source versus C871 merge-result comparison, and an unknown or mismatching rendered base leaves whole context unavailable.
+The acquired source head and native rendered target head remain distinct, including the observed D03 source versus C871 merge-result comparison, and whole-file authority follows the exact current new-side witness rather than old-base equality.
 The first implementation supports same-project GitLab Rapid new sources only, with no default-branch, fork, deleted-file, old-side or Bitbucket raw fallback.
 Participating runtime GitLab diff and raw reads share per-origin HTTP admission with priority, cancellation and Retry-After cooldown, separate from the existing logical diff permits, while direct source-unit callers can omit admission without global timers.
 Raw bodies are streamed as fatal UTF-8, bounded to 512 KiB and 10,000 lines per file, coalesced by exact repository/head/path and held only in a 16-file, 4 MiB memory cache with cancellation when the final consumer leaves.

@@ -145,7 +145,7 @@ describe('exact rendered new-side binding', () => {
     const source = gitlab(HEAD);
     const second = providerOutlineContext(source.page, merge.result, source.view);
     expect(first.subjectKey).not.toBe(second.subjectKey);
-    expect(second.newSources.size).toBe(0);
+    expect(second.newSources.get(source.root)?.headSha).toBe(HEAD);
     expect(providerOutlineContext(source.page, source.result, source.view).subjectKey).toBe(second.subjectKey);
   });
 
