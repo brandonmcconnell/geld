@@ -2928,6 +2928,9 @@ Bounded native file diagnostics compare the current validated bootstrap selectio
 Missing or malformed refs remain explicitly incomplete, unknown paths retain no refs or URLs, and an original owner or snapshot change makes the observation unavailable or inconsistent rather than granting source authority.
 The installed-browser workflow path filter excludes Action-only packaging, root package and scripts changes, so normal CI or local image validation may run without an installed artifact and imply neither browser failure nor browser acceptance.
 The `Installed browser tests` workflow uses a separate standard GitHub-hosted runner, read-only repository permissions and no provider credentials or publishing steps.
+The explicit `gitlab-ui` and `bitbucket-ui` acceptance slices reuse the existing mixed-diff and conversation fixtures without broadening default visits or provider request budgets.
+Their assertions require visible adjusted line totals, compact count popovers, custom dashboard controls with native typography, explicit original-conversation restoration and discoverable category controls, including a real GitLab file-browser close and reopen.
+Custom dashboard controls are inspected through their button and region relationships while authored native details remain supported, and a passing overview slice alone does not establish category or full-provider parity.
 Set `GELD_BROWSER_EXECUTABLE` to the Chrome executable and `GELD_BROWSER_ARTIFACTS` to the evidence directory when running it in an extension-enabled test environment.
 The harness requires the installed service worker, real extension storage and tab messaging, and records browser/manifest identity with screenshots, DOM and a JSON report.
 Standalone Bitbucket commit counts use already-issued exact-revision metadata and complete diffstat responses as their independent oracle, retaining only Cache-Control, ETag, Age, Date and Vary response headers.
@@ -3299,6 +3302,14 @@ Bitbucket activity cards without native anchors require one uniquely matching ex
 GitLab discussion wrappers are eligible only when every native note anchor is represented and no editor is inside them.
 A provider digest rerender restores focus to its original-conversation or section button only within the same review subject and when no other control has taken focus.
 Batch-history attention pointers retain each section's initial ID so its disclosure button and content region keep reciprocal accessible references.
+
+Bitbucket's navigation bar and file tree can expose separate owned count hints at the same time.
+Browser acceptance resolves the hint associated with the hovered native group for its pointer, keyboard and caret checks, without depending on global DOM order.
+Two full Bitbucket page visits have each used 26 observed anonymous API requests in retained runs, so combining them cannot fit the conservative 40-request window.
+Keep that limit and its carried history intact when arranging focused UI checks, and never report a budget-suppressed case as verified.
+
+GNU tar can finish extracting a requested member before Node has written a full repository archive into its stdin.
+The malicious PAX license fixture uses a temporary archive file to avoid an EPIPE race while preserving its exact extracted-size, hash and verifier-rejection assertions.
 
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.

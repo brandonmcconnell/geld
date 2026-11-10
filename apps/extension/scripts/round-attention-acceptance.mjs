@@ -13,15 +13,17 @@ export function gitLabRoundSnapshot() {
     const versions = app?.versions?.source_versions?.filter((version) => version.selected === true && version.latest === true) ?? [];
     if (app?.mr_path === '/gitlab-org/gitlab/-/merge_requests/266334' && String(app?.iid) === '266334' && versions.length === 1) selected = { headSha: versions[0].head_sha, versionId: String(versions[0].id) };
   } catch { /* Missing native selection cannot pass scope checks. */ }
+  const control = (node) => node?.querySelector(':scope > [data-geld-review-toggle], :scope > summary');
+  const isOpen = (node) => node === null ? null : control(node)?.hasAttribute('data-geld-review-toggle') ? control(node).getAttribute('aria-expanded') === 'true' : node.open;
   const native = (anchor) => {
     const source = document.getElementById(anchor);const thread = source?.closest('[data-discussion-id]');const saved = globalThis.__geldRoundNative?.get(anchor);
     return { anchor, id: source?.id ?? null, body: source?.querySelector('.note-body .note-text')?.textContent ?? null, discussion: thread?.getAttribute('data-discussion-id') ?? null, resolved: thread?.getAttribute('data-discussion-resolved') ?? null, sameNode: saved === undefined || saved.node === source && saved.parent === source?.parentElement };
   };
   return { url: location.href, head: panel.getAttribute('data-geld-review-head'), selected,
-    items: [...panel.querySelectorAll('[data-geld-item]')].map((item) => ({ id: item.getAttribute('data-geld-item'), state: item.getAttribute('data-state'), homeId: item.id, attention: item.closest('[data-geld-review-attention]') !== null, open: item.open, focused: document.activeElement === item.querySelector(':scope > summary'),
+    items: [...panel.querySelectorAll('[data-geld-item]')].map((item) => ({ id: item.getAttribute('data-geld-item'), state: item.getAttribute('data-state'), homeId: item.id, attention: item.closest('[data-geld-review-attention]') !== null, open: isOpen(item), focused: document.activeElement === control(item),
       sources: [...item.querySelectorAll('[data-geld-source]')].map((source) => ({ anchor: source.getAttribute('data-geld-source'), id: source.getAttribute('data-geld-source-id'), url: source.getAttribute('data-geld-source-url'), body: source.querySelector(':scope > .geld-provider-review__body')?.textContent, createdAt: source.querySelector('time[datetime]')?.getAttribute('datetime'), native: native(source.getAttribute('data-geld-source')) })) })),
-    attention: panel.querySelector('[data-geld-review-attention]')?.open ?? null,
-    rounds: [...panel.querySelectorAll('[data-geld-review-round]')].map((round) => ({ id: round.getAttribute('data-geld-review-round'), label: round.querySelector(':scope > summary')?.textContent, at: round.querySelector('[data-geld-event] time[datetime]')?.getAttribute('datetime'), pointers: [...round.querySelectorAll('[data-geld-review-pointer]')].map((row) => row.getAttribute('data-geld-review-pointer')) })),
+    attention: isOpen(panel.querySelector('[data-geld-review-attention]')),
+    rounds: [...panel.querySelectorAll('[data-geld-review-round]')].map((round) => ({ id: round.getAttribute('data-geld-review-round'), label: control(round)?.textContent, at: round.querySelector('[data-geld-event] time[datetime]')?.getAttribute('datetime'), pointers: [...round.querySelectorAll('[data-geld-review-pointer]')].map((row) => row.getAttribute('data-geld-review-pointer')) })),
     beforePointers: [...panel.querySelectorAll('[data-geld-review-key="history:before"] [data-geld-review-pointer]')].map((row) => row.getAttribute('data-geld-review-pointer')),
     boundary: (() => { const node = document.getElementById('note_4135374883');return { time: node?.querySelector('time[datetime]')?.getAttribute('datetime'), commits: [...node?.querySelectorAll('a.gfm-commit[data-commit]') ?? []].map((link) => ({ sha: link.getAttribute('data-commit'), url: link.href, project: link.getAttribute('data-project-path') })) }; })(),
     input: globalThis.__geldRoundInput ?? null,
@@ -102,9 +104,9 @@ export async function verifyGitLabRoundAttention(page, item, { readSettings, pat
     const candidate = proof.batch.items.find((item) => item.attention && item.sources.some((source) => Date.parse(source.createdAt) < Date.parse(proof.before.boundary.time)));
     assert.ok(candidate !== undefined, 'Actual unresolved work must predate the recorded commit event');proof.itemId = candidate.id;
     const home = `[data-geld-item="${candidate.id}"]`;const pointer = `[data-geld-review-pointer="${candidate.id}"] button`;
-    await openReviewAncestors(page, `${home} > summary`);
-    if ((await read()).items.find((item) => item.id === candidate.id).open) await page.click(`${home} > summary`);
-    await page.click('[data-geld-review-attention] > summary');
+    await openReviewAncestors(page, `${home} > [data-geld-review-toggle]`);
+    if ((await read()).items.find((item) => item.id === candidate.id).open) await page.click(`${home} > [data-geld-review-toggle]`);
+    await page.click('[data-geld-review-attention] > [data-geld-review-toggle]');
     assert.equal((await read()).attention, false);
     proof.openedAncestors = await openReviewAncestors(page, pointer);
     await page.$eval(pointer, (button) => { globalThis.__geldRoundInput = null;button.addEventListener('click', (event) => { globalThis.__geldRoundInput = { trusted: event.isTrusted, detail: event.detail }; }, { once: true, capture: true }); });

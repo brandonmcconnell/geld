@@ -168,3 +168,29 @@ test('a real429 response keeps its classification when its request also reached 
   assert.equal(item.status, 'rate_limited');assert.equal(item.cooldownProvider, 'bitbucket');
   assert.equal(item.rateLimitedUntil, iso(NOW + 120000));assert.equal(result.cooldowns.get('bitbucket'), NOW + 120000);
 });
+
+
+test('actual report checkpoints log bounded counts, inherited deadlines and expiry without source data', async () => {
+  const logs = [], writes = [];
+  const times = Array.from({ length: 40 }, (_, index) => NOW - 1000 + index);
+  const deadline = NOW + 60_000;
+  const report = {
+    cases: [{ name: 'PRIVATE_CASE', url: 'https://PRIVATE_URL/', observedBitbucketApiRequests: 3, budgetHold: { arbitrary: 'PRIVATE_BODY' }, inProgress: true }], infrastructureErrors: [],
+    quotaPolicy: { conservativeObservedRequestBudget: 40, externalRequestReserve: 0 }, observedBitbucketApiRequests: 3,
+    previousEvidence: { path: 'PRIVATE_PATH', inheritedAnonymousRequestsWithinRollingHour: 37, inheritedCooldowns: { bitbucket: iso(deadline), ignored: 'PRIVATE_VALUE' } },
+  };
+  const save = vm.runInNewContext(section('let reportWrite;', 'function sourceFailureProvider(') + ';saveReport', {
+    report, cooldowns: new Map([['bitbucket', deadline]]), bitbucketRequestTimes: times, focus: 'bitbucket-ui', artifacts: '/private',
+    Date: class extends Date { static now() { return NOW; } }, resolve: (...parts) => parts.join('/'),
+    writeFile: async (_path, raw) => writes.push(JSON.parse(raw)), console: { log: value => logs.push(value) },
+  });
+  await save();await save();assert.equal(logs.length, 1, 'unchanged snapshots do not spam logs');
+  const summary = JSON.parse(logs[0].slice('QUOTA_SUMMARY: '.length));
+  assert.equal(summary.limit, 40);assert.equal(summary.activeWithinHour, 40);assert.equal(summary.observedThisRun, 3);assert.equal(summary.inheritedAtStart, 37);
+  assert.equal(summary.availableBelowLimitAt, iso(times[0] + HOUR + 1));
+  assert.equal(summary.inheritedCooldowns.bitbucket, iso(deadline));assert.equal(summary.currentCooldowns.bitbucket, iso(deadline));
+  assert.deepEqual(summary.cases, [{ index: 0, observed: 3, budgetHeld: true, serverRateLimited: false, navigationSuppressed: false }]);
+  assert.doesNotMatch(logs.join(''), /PRIVATE_|https?:/);assert.deepEqual(times, Array.from({ length: 40 }, (_, index) => NOW - 1000 + index));
+  assert.equal(writes.length, 2);assert.equal(writes[0].status, 'running');
+  report.cases[0].navigationSuppressedByBudget = true;await save();assert.equal(logs.length, 2);
+});
