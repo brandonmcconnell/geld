@@ -2330,8 +2330,15 @@ async function verifyProviderAgentNotes(page, item) {
 }
 
 async function verifyProviderFlow(page, item) {
-  const progress = { status: 'running', scope: 'Public card counts, category inclusion and focus restoration. Dependency parsing and immutable fork selection have separate unit coverage.' };item.fileFlow = progress;
+  const progress = { status: 'running', scope: 'Overview digest toolbar only (Flow is never in the Files changed toolbar). Public card counts, category inclusion and focus restoration. Dependency parsing and immutable fork selection have separate unit coverage.' };item.fileFlow = progress;
   const before = await tabState(page);
+  if (await page.$('.geld-provider-flow-button') === null) {
+    const overview = await page.evaluateHandle(() => [...document.querySelectorAll('.merge-request-tabs-container a[href]')].find(link => /\/-\/merge_requests\/\d+$/.test(new URL(link.href).pathname)) ?? null);
+    assert.ok(await overview.evaluate(link => link !== null), 'Native Overview tab link');
+    await overview.click();
+    await page.waitForSelector('.geld-provider-flow-button', { visible: true, timeout: 30_000 });
+  }
+  progress.page = await page.evaluate(() => new URL(location.href).pathname);
   await page.click('.geld-provider-flow-button');
   await poll(() => page.evaluate(() => {
     const dialog = document.querySelector('dialog.geld-provider-flow');return dialog?.open && !/Reading imports|Loading verified/.test(dialog.querySelector('[role="status"]')?.textContent ?? '');
