@@ -279,10 +279,11 @@ async function authObservation(page, provider) {
   assert.equal(observed.signedIn, false, 'Smoke browser unexpectedly has an authenticated native identity');
   return observed;
 }
-async function capture(page, name, { fullPage = true } = {}) {
+async function capture(page, name, { fullPage = true, onStage } = {}) {
   if (page.isClosed()) return { unavailable: 'Page closed after rate limit or navigation failure' };
   const files = { screenshot: `${name}.png`, dom: `${name}.html`, accessibility: `${name}.accessibility.json` };
   await page.screenshot({ path: resolve(artifacts, files.screenshot), fullPage });
+  await onStage?.('after_screenshot');
   const html = await page.evaluate(() => {
     const copy = document.documentElement.cloneNode(true);
     for (const script of copy.querySelectorAll('script')) script.remove();
@@ -291,8 +292,11 @@ async function capture(page, name, { fullPage = true } = {}) {
     for (const item of copy.querySelectorAll('input[name]')) if (/token|secret|password|csrf/i.test(item.getAttribute('name') ?? '')) item.setAttribute('value', '[redacted]');
     return `<!doctype html>\n${copy.outerHTML}`;
   });
+  await onStage?.('after_dom_read');
   await writeFile(resolve(artifacts, files.dom), html);
-  await writeFile(resolve(artifacts, files.accessibility), `${JSON.stringify(await page.accessibility.snapshot({ interestingOnly: false }), null, 2)}\n`);
+  const accessibility = await page.accessibility.snapshot({ interestingOnly: false });
+  await onStage?.('after_accessibility_read');
+  await writeFile(resolve(artifacts, files.accessibility), `${JSON.stringify(accessibility, null, 2)}\n`);
   return files;
 }
 function observeBitbucketBudget(page, item, abort) {
