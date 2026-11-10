@@ -42,7 +42,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
  ass.write_text(header+'\n'.join(events)+'\n')
  vf=f"setpts=PTS-STARTPTS,tpad=start_mode=clone:start_duration=0.8:stop_mode=clone:stop_duration={total},scale=1440:1000:force_original_aspect_ratio=decrease,pad=1440:1180:(ow-iw)/2:80:color=0x101925,drawtext=fontfile={bold}:textfile={title}:fontcolor=white:fontsize=30:x=42:y=24,ass={ass}"
  target=work/f'{i:02}.mp4'
- run(['ffmpeg','-y','-v','error','-ss',str(scene['start']),'-t',str(scene['end']-scene['start']),'-i',str(raw),'-i',str(audio),'-vf',vf,'-af','adelay=500,apad','-t',str(total),'-r','24','-c:v','libx264','-preset','fast','-crf','20','-pix_fmt','yuv420p','-c:a','aac','-b:a','128k','-movflags','+faststart',str(target)])
+ run(['ffmpeg','-y','-v','error','-ss',f"{scene['start']:.6f}",'-t',f"{scene['end']-scene['start']:.6f}",'-i',str(raw),'-i',str(audio),'-vf',vf,'-af','adelay=500,apad','-t',f'{total:.6f}','-r','24','-c:v','libx264','-preset','fast','-crf','20','-pix_fmt','yuv420p','-c:a','aac','-b:a','128k','-movflags','+faststart',str(target)])
  total=duration(target)
  segments.append(target);chapters.append((cursor,cursor+total,scene['title']));cursor+=total
  print(f'{a.provider}: rendered {i+1}/{len(data["scenes"])} {scene["id"]}',flush=True)
@@ -61,5 +61,5 @@ for wanted in ['digest','counts','tests','settings']:
   if scene['id']!=wanted:continue
   start,end,_=chapters[index];at=min(end-.3,start+4)
   png=work/f'qa-{wanted}.png'
-  run(['ffmpeg','-y','-v','error','-ss',str(at),'-i',str(final),'-frames:v','1',str(png)])
+  run(['ffmpeg','-y','-v','error','-ss',f'{at:.6f}','-i',str(final),'-frames:v','1',str(png)])
   print('WALKTHROUGH_QA_IMAGE '+json.dumps({'provider':a.provider,'scene':wanted,'png':base64.b64encode(png.read_bytes()).decode()}),flush=True)
