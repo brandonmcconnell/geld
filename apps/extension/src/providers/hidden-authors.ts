@@ -47,7 +47,7 @@ export class ProviderHiddenAuthors {
       const list = row.root.parentElement;
       if (seen.has(row.root) || list === null || !row.root.isConnected || row.root.ownerDocument !== this.doc || !row.root.contains(row.host)
         || row.root.closest('[data-geld-ui], [hidden], [aria-hidden="true"], [inert]') !== null || row.author === null
-        || row.author.trim() === '' || /\s/.test(row.author) || !rules.hides(row.author) || this.shown.has(list)) continue;
+        || row.author.trim() === '' || /\s/.test(row.author) || (!rules.hides(row.author) && !rules.hides(`${this.provider}:${row.author}`)) || this.shown.has(list)) continue;
       seen.add(row.root);
       const bucket = buckets.get(list) ?? { rows: [], authors: new Map<string, string>() };
       bucket.rows.push(row);

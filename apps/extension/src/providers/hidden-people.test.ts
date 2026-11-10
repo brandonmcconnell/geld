@@ -28,6 +28,8 @@ describe('provider hidden people projection', () => {
     expect(result.input.reviewers).toEqual([input.reviewers?.[1]]);
     expect(result.input.bots).toEqual([]);expect(result.input.checks).toEqual([]);expect(result.events).toEqual([]);
     expect(result.hiddenAnchors.get(visible.anchor)).toBe(hidden.author.id);
+    expect(result.hiddenCommentAnchors.get(hidden.anchor)).toBe(hidden.author.id);
+    expect(result.hiddenCommentAnchors.has(visible.anchor)).toBe(false);
     expect(JSON.stringify(input)).toBe(before);
   });
 
@@ -37,6 +39,7 @@ describe('provider hidden people projection', () => {
     expect(result.input.threads).toEqual(input.threads);
     expect(result.people).toEqual([{ id: 'a', login: 'alice', ruleIdentity: 'alice', shown: true, exactRules: ['gitlab:ALICE'] }]);
     expect(result.hiddenAnchors.size).toBe(0);
+    expect(result.hiddenCommentAnchors.size).toBe(0);
   });
 
   it('does not offer to remove a wildcard as though it were a per-person preference', () => {

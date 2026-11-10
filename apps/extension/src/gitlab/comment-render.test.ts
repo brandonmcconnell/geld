@@ -24,6 +24,15 @@ afterEach(() => {
 });
 
 describe('GitLab native Markdown cloning', () => {
+  it('represents a qualified native video with an owned player control instead of duplicating media playback', () => {
+    const url = 'https://gitlab.com/-/project/123/uploads/0acc0b3514c56d8c6949d7c6aaa9c092/recording.mp4';
+    const host = fixture(`<video controls src="${url}"></video><video src="https://elsewhere.example/video.mp4"></video>`);
+    const source = document.getElementById('note_11');const before = source?.innerHTML;
+    expect(renderGitLabComment(comment, host)).toBe(true);
+    expect(host.querySelectorAll('[data-geld-video-open]')).toHaveLength(1);
+    expect(host.querySelector('video')).toBeNull();expect(source?.innerHTML).toBe(before);
+  });
+
   it('preserves actual rendered Markdown and code classes without moving or changing the source', () => {
     const host = fixture('<h3 id="source-heading">A heading</h3><p><strong>Words</strong> and <code class="code">call()</code></p><pre class="code highlight"><code><span class="k">return</span> 1</code></pre>');
     const source = document.getElementById('note_11');

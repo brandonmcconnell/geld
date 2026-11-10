@@ -13,7 +13,7 @@ export async function verifyProviderUi(page, item, { provider, poll, patchSettin
     await target.evaluate(el => el.scrollIntoView({ block: 'center', behavior: 'instant' }));
     await target.click();await target.dispose();
   };
-  await patchSettings({ enabled: true, digestView: 'digest', reviewOverview: true, reviewQuickActions: false, categories: { tests: true }, groupHidden: true, hideCommentLines: false, hideWhitespace: false, repoConfigs: 'never', aiEnabled: false });
+  await patchSettings({ enabled: true, prOverview: true, compactTimeline: 'compact', digestAboveDescription: false, quickReview: false, categories: { tests: true }, groupHidden: true, hideCommentLines: false, hideWhitespace: false, repoConfigs: 'never', aiEnabled: false });
   await poll(() => page.$('.geld-provider-review__header .geld-provider-flow-button'), Boolean, 'Digest toolbar with Flow', 45000);
   const digest = await page.evaluate(() => {
     const panel = document.querySelector('.geld-provider-review');
@@ -29,6 +29,9 @@ export async function verifyProviderUi(page, item, { provider, poll, patchSettin
       outlineIcons: [...panel.querySelectorAll('svg[data-geld-outline]')].map(svg => ({ fill: getComputedStyle(svg).fill, shapes: [...svg.children].map(shape => getComputedStyle(shape).fill) })),
       closed: closed.length, allClosed: closed.every(el => getComputedStyle(el).display === 'none'),
       family: getComputedStyle(panel).fontFamily, size: getComputedStyle(panel).fontSize,
+      headerHeight: header.getBoundingClientRect().height,
+      rowHeights: [...panel.querySelectorAll('[data-geld-status-row] > .geld-provider-review__section-toggle')].map(row => row.getBoundingClientRect().height),
+      afterDescription: !!document.querySelector('.issuable-discussion [data-testid="description-content"] > .md, [data-qa="pull-request-description"] .ak-renderer-document')?.compareDocumentPosition(panel) && !!(document.querySelector('.issuable-discussion [data-testid="description-content"] > .md, [data-qa="pull-request-description"] .ak-renderer-document').compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING),
     };
   });
   console.log(`PROVIDER_UI_STAGE ${JSON.stringify({ provider, stage: 'digest', digest })}`);
@@ -36,11 +39,24 @@ export async function verifyProviderUi(page, item, { provider, poll, patchSettin
   assert.equal(digest.settingsLabel, 'Open Geld settings');assert.equal(digest.settingsText, '');assert.ok(digest.hasCopyIcon);
   assert.ok(digest.closed > 0 && digest.allClosed, 'Collapsed rows must conceal their details');
   assert.ok(digest.outlineIcons.length > 0 && digest.outlineIcons.every(icon => icon.fill === 'none' && icon.shapes.every(fill => fill === 'none')), 'Provider CSS must not fill Geld outline icons');
+  assert.equal(digest.afterDescription, true, 'Digest follows the original description');
+  assert.ok(digest.headerHeight <= 44, 'Compact toolbar height');
+  assert.ok(digest.rowHeights.length > 1 && Math.max(...digest.rowHeights) - Math.min(...digest.rowHeights) <= 2, 'Single-line status rows share one height');
   await page.$eval('.geld-provider-review__header', el => el.scrollIntoView({ block: 'center', behavior: 'instant' }));await frame('digest');
   await click('.geld-provider-review__menu:has([data-geld-view-slot]) > summary');
-  const combined = await page.$eval('[data-geld-digest-view="digest-timeline"]', el => ({ text: el.textContent.trim(), label: el.getAttribute('aria-label'), icons: el.querySelectorAll('svg').length }));
-  assert.equal(combined.text, '+');assert.equal(combined.icons, 2);assert.ok(combined.label.includes(provider === 'gitlab' ? 'GitLab' : 'Bitbucket'));
-  await frame('view-menu');await page.keyboard.press('Escape');
+  const combined = await page.$eval('[data-geld-digest-view="digest-timeline"]', el => ({ text: el.textContent.trim(), label: el.getAttribute('aria-label'), icons: el.querySelectorAll('svg').length, height: el.getBoundingClientRect().height, overflow: el.scrollWidth > el.clientWidth }));
+  assert.equal(combined.text.replace(/\s+/g, ''), 'Digest+Timeline');assert.equal(combined.icons, 2);assert.ok(combined.label.includes(provider === 'gitlab' ? 'GitLab' : 'Bitbucket'));
+  assert.ok(combined.height <= 40 && !combined.overflow, 'The combined view label fits on one line');
+  await frame('view-menu');
+  const afterDescription = () => page.evaluate(() => {
+    const description = document.querySelector('.issuable-discussion [data-testid="description-content"] > .md, [data-qa="pull-request-description"] .ak-renderer-document');
+    return !!description && !!(description.compareDocumentPosition(document.querySelector('.geld-provider-review')) & Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  await click('[data-geld-digest-position]');
+  await poll(afterDescription, value => value === false, 'Opt-in digest before description', 5000);
+  await click('[data-geld-digest-position]');
+  await poll(afterDescription, Boolean, 'Restore description-first placement', 5000);
+  await page.keyboard.press('Escape');
   assert.equal(await page.$eval('.geld-provider-review__menu:has([data-geld-view-slot])', el => el.open), false);
   let focusError;
   try {
@@ -48,6 +64,7 @@ export async function verifyProviderUi(page, item, { provider, poll, patchSettin
     await click('[data-geld-digest-view="github"]');
     await poll(() => page.$eval('.geld-provider-review', el => el.hidden), Boolean, 'Native timeline selected', 5000);
     await poll(() => page.evaluate(() => document.activeElement?.getAttribute('data-geld-digest-view')), value => value === 'github', 'Focus on the native timeline choice', 5000);
+    assert.equal(await page.$eval('[data-geld-digest-view="digest-timeline"]', el => el.textContent.trim()), '+', 'Inline choice retains the compact logo pair');
     await click('[data-geld-digest-view="digest"]');
     await poll(() => page.$eval('.geld-provider-review', el => !el.hidden), Boolean, 'Digest selected', 5000);
     await poll(() => page.evaluate(() => document.activeElement?.getAttribute('data-geld-toolbar-control')), value => value === 'eye', 'Focus returns to the digest View control', 5000);
@@ -76,7 +93,13 @@ export async function verifyProviderUi(page, item, { provider, poll, patchSettin
     return {
       flowCount: document.querySelectorAll('.geld-provider-flow-button').length,
       categories: [...document.querySelectorAll('.geld-provider-category-header')].map(el => ({ label: el.getAttribute('aria-label'), count: el.querySelector('.geld-provider-category-count')?.textContent, box: rect(el) })),
-      ...(nav ? { nav: rect(nav), tabs: rect(nav.querySelector('[role="tablist"]')), totals: rect(nav.querySelector('.geld-provider-header-stats')) } : {}),
+      ...(nav ? { nav: rect(nav), tabs: rect(nav.querySelector('[role="tablist"]')), totals: rect(nav.querySelector('.geld-provider-header-stats')),
+        baseline: { width: getComputedStyle(nav, '::before').width, color: getComputedStyle(nav, '::before').backgroundColor },
+        countGap: nav.querySelector('.geld-provider-header-line-counts').getBoundingClientRect().left - nav.querySelector('.geld-provider-header-hidden-count').getBoundingClientRect().right,
+        badges: [...nav.querySelectorAll('.geld-provider-header-line-counts > span')].map(el => ({ background: getComputedStyle(el).backgroundColor, weight: getComputedStyle(el).fontWeight, size: getComputedStyle(el).fontSize })),
+        categoryOverflow: [...document.querySelectorAll('.geld-provider-category-content, .geld-provider-essential-content, [data-geld-provider-category-body]')].map(el => getComputedStyle(el).overflowX),
+        colorblind: document.documentElement.getAttribute('data-geld-bitbucket-colorblind'),
+      } : {}),
     };
   });
   console.log(`PROVIDER_UI_STAGE ${JSON.stringify({ provider, stage: 'files', files })}`);
@@ -87,6 +110,10 @@ export async function verifyProviderUi(page, item, { provider, poll, patchSettin
     assert.ok(files.nav && files.tabs && files.totals, 'Verified Bitbucket tab-bar count slot');
     assert.ok(files.totals.x >= files.tabs.right - 1, 'Totals sit on the right of tabs');
     assert.ok(files.totals.y >= files.tabs.y - 1 && files.totals.bottom <= files.tabs.bottom + 1, 'Totals share the tab row');
+    assert.ok(parseFloat(files.baseline.width) >= files.nav.width - 1, 'Native baseline extends under the counts');
+    assert.ok(files.countGap >= 4, 'Category hint has room before line counts');
+    assert.ok(files.badges.every(badge => badge.background !== 'rgba(0, 0, 0, 0)' && +badge.weight >= 600), 'Header counts use native filled semibold badges');
+    assert.ok(files.categoryOverflow.length > 0 && files.categoryOverflow.every(value => value === 'hidden'), 'Category sidebar does not add horizontal scrolling');
   }
   const tests = await page.$('.geld-provider-category .geld-provider-category-header');assert.ok(tests);await tests.click();await tests.dispose();
   await poll(() => page.$eval('.geld-provider-category .geld-provider-category-header', el => el.getAttribute('aria-expanded')), value => value === 'true', 'Tests expanded');

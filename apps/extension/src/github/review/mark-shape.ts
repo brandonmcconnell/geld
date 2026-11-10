@@ -220,7 +220,7 @@ export function shapeMark(img: HTMLElement, src: string, roundOnPage: boolean): 
     pending.delete(src);
     readings.set(src, reading);
     if (reading.shape === 'square') return;
-    for (const mark of document.querySelectorAll('img.geld-review__bot-icon, img.geld-review__avatar, img.geld-review-hovercard__avatar')) {
+    for (const mark of document.querySelectorAll('img.geld-review__bot-icon, img.geld-review__avatar, img.geld-review-hovercard__avatar, img.geld-provider-review__bot-icon')) {
       if (mark instanceof HTMLElement && mark.getAttribute('src') === src && !mark.hasAttribute(ATTR_SHAPE)) wear(mark, reading);
     }
   });

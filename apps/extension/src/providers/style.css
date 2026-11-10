@@ -134,8 +134,8 @@ html[data-geld-provider] [data-geld-provider-author-hidden] { display: none !imp
 .geld-provider-category-native-row.geld-provider-file { padding-inline-start: calc(var(--geld-provider-space-2) + var(--geld-category-depth, 0) * var(--geld-provider-space-4)); }
 .geld-provider-category-status { font: var(--geld-provider-byline-font); color: var(--geld-provider-text-subtle); }
 .geld-provider-category-native-row [aria-current="true"], .geld-provider-category-native-row[aria-current="true"] { color: var(--geld-provider-link); background: var(--geld-provider-bg-subtle); }
-.geld-provider-list-counts__add { color: var(--geld-provider-success); }
-.geld-provider-list-counts__del { color: var(--geld-provider-danger); }
+.geld-provider-list-counts__add { color: var(--geld-provider-addition, var(--geld-provider-success)); }
+.geld-provider-list-counts__del { color: var(--geld-provider-deletion, var(--geld-provider-danger)); }
 
 [data-geld-provider-category-host][data-geld-provider-tree-sized] { max-block-size: var(--geld-provider-tree-max-height); }
 .geld-provider-essential-content { order: 1; min-block-size: 0; overflow: auto; flex: 1 1 auto; }

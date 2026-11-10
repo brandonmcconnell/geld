@@ -53,6 +53,17 @@ test('UI acceptance selects one Bitbucket continuity case without broadening def
   assert.match(harness, /conservativeObservedRequestBudget: 40/);
 });
 
+test('provider UI refinements combine only the remaining UI cases and honor both cooldowns', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];assert.ok(literal);
+  const cases = new vm.Script(`(${literal})`).runInNewContext({}, { timeout: 1000 });
+  assert.deepEqual(Array.from(cases['provider-ui-refinements']), ['gitlab-ui-polish', 'bitbucket-ui-polish', 'gitlab-summary-preview']);
+  assert.deepEqual(select({ body: marker('provider-ui-refinements'), from: marker('provider-evidence') }), { focus: 'provider-ui-refinements', run: 'true', failures: [] });
+  const wait = workflow.slice(workflow.indexOf('Wait for the carried Bitbucket browser budget'), workflow.indexOf('Export retained provider evidence'));
+  assert.match(wait, /provider-ui-refinements/);
+  assert.match(wait, /provider in \('gitlab', 'bitbucket'\)/);
+  assert.match(wait, /target = max\(\[target, \*until\]\)/);
+});
+
 test('the literal Bitbucket list+commit slice selects exactly two cases and preserves cold-list demand', () => {
   const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];
   assert.ok(literal);
@@ -581,4 +592,14 @@ test('Files recording and UI acceptance preserve the carried hourly budget befor
   assert.match(workflow, /target = max\(values, default=0\) \+ 3605/);
   assert.ok(workflow.indexOf('Wait for the carried Bitbucket browser budget') < workflow.indexOf('Locate the runner'));
   assert.match(harness, /filesOnly: focus === 'bitbucket-walkthrough-files'/);
+});
+
+test('public open review probes select only their own provider case', () => {
+  const literal = /const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1];assert.ok(literal);
+  const cases = new vm.Script(`(${literal})`).runInNewContext({}, { timeout: 1000 });
+  for (const provider of ['gitlab', 'bitbucket']) {
+    const focus = `${provider}-open-review`;
+    assert.deepEqual(Array.from(cases[focus]), [focus]);
+    assert.deepEqual(select({ body: marker(focus), from: marker('github') }), { focus, run: 'true', failures: [] });
+  }
 });

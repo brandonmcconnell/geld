@@ -8,7 +8,7 @@ interface Point {
 
 const ZOOM_STEP = 1.5;
 
-export function createAttachmentViewer(source: HTMLImageElement, presentation: { readonly prefix: string; readonly buttonClass?: string; readonly groupClass?: string } = { prefix: 'geld-attachment' }): {
+export function createAttachmentViewer(source: HTMLImageElement, presentation: { readonly prefix: string; readonly buttonClass?: string; readonly groupClass?: string; readonly large?: boolean } = { prefix: 'geld-attachment' }): {
   readonly stage: HTMLElement;
   readonly controls: HTMLElement;
   readonly dispose: () => void;
@@ -19,7 +19,7 @@ export function createAttachmentViewer(source: HTMLImageElement, presentation: {
   const image = createElement('img', {
     class: part('image'), alt: source.alt, decoding: 'async', draggable: 'false',
   });
-  const stage = createElement('div', { class: part('stage') }, [image, status]);
+  const stage = createElement('div', { class: `${part('stage')}${presentation.large ? ` ${part('stage--large')}` : ''}` }, [image, status]);
   const zoomOut = createElement('button', {
     type: 'button', class: button('tool'), 'aria-label': 'Zoom out', title: 'Zoom out (−)', disabled: '',
   }, [svgFromString(ICON_DASH)]);
@@ -32,6 +32,8 @@ export function createAttachmentViewer(source: HTMLImageElement, presentation: {
   const controls = createElement('div', { class: `${presentation.groupClass ?? ''} ${part('zoom')}`.trim(), role: 'group', 'aria-label': 'Image zoom' }, [zoomOut, reset, zoomIn]);
   let width = 0;
   let height = 0;
+  let canvasWidth = 0;
+  let canvasHeight = 0;
   let scale = 1;
   let pan: Point = { x: 0, y: 0 };
   let start: Point | null = null;
@@ -41,8 +43,8 @@ export function createAttachmentViewer(source: HTMLImageElement, presentation: {
 
   const maxScale = (): number => Math.max(4, Math.min(16, image.naturalWidth / width));
   const render = (): void => {
-    const limitX = width * (scale - 1) / 2;
-    const limitY = height * (scale - 1) / 2;
+    const limitX = Math.max(0, (width * scale - canvasWidth) / 2);
+    const limitY = Math.max(0, (height * scale - canvasHeight) / 2);
     pan = { x: Math.max(-limitX, Math.min(limitX, pan.x)), y: Math.max(-limitY, Math.min(limitY, pan.y)) };
     image.style.transform = `translate(${pan.x}px, ${pan.y}px) scale(${scale})`;
     stage.toggleAttribute('data-zoomed', scale > 1);
@@ -55,7 +57,7 @@ export function createAttachmentViewer(source: HTMLImageElement, presentation: {
   const zoom = (next: number, at?: Point): void => {
     if (width === 0) return;
     const rect = stage.getBoundingClientRect();
-    const anchor = at === undefined ? { x: 0, y: 0 } : { x: at.x - rect.left - width / 2, y: at.y - rect.top - height / 2 };
+    const anchor = at === undefined ? { x: 0, y: 0 } : { x: at.x - rect.left - canvasWidth / 2, y: at.y - rect.top - canvasHeight / 2 };
     const value = Math.max(1, Math.min(maxScale(), next));
     const ratio = value / scale;
     pan = { x: anchor.x - (anchor.x - pan.x) * ratio, y: anchor.y - (anchor.y - pan.y) * ratio };
@@ -67,12 +69,27 @@ export function createAttachmentViewer(source: HTMLImageElement, presentation: {
     const naturalWidth = source.naturalWidth || image.naturalWidth;
     const naturalHeight = source.naturalHeight || image.naturalHeight;
     if (!naturalWidth || !naturalHeight) return;
+    if (presentation.large) {
+      const availableWidth = stage.clientWidth;
+      const availableHeight = stage.clientHeight;
+      if (!availableWidth || !availableHeight) return;
+      const ratio = Math.min(2, availableWidth * 0.8 / naturalWidth, availableHeight * 0.8 / naturalHeight);
+      const nextWidth = naturalWidth * ratio;
+      const nextHeight = naturalHeight * ratio;
+      if (width === nextWidth && height === nextHeight && canvasWidth === availableWidth && canvasHeight === availableHeight) return;
+      width = nextWidth; height = nextHeight; canvasWidth = availableWidth; canvasHeight = availableHeight;
+      image.style.width = `${width}px`; image.style.height = `${height}px`;
+      image.hidden = false; status.hidden = true;
+      scale = 1; pan = { x: 0, y: 0 }; render();
+      return;
+    }
     const availableWidth = window.innerWidth <= 600 ? window.innerWidth - 32 : Math.min(1120, window.innerWidth * 0.8);
     // 200px leaves room for the dialog's header and footer and its margin from the viewport.
     const availableHeight = Math.min(760, window.innerHeight * 0.72, window.innerHeight - 200);
     const ratio = Math.min(1, Math.max(1, availableWidth) / naturalWidth, Math.max(1, availableHeight) / naturalHeight);
     width = naturalWidth * ratio;
     height = naturalHeight * ratio;
+    canvasWidth = width; canvasHeight = height;
     stage.style.width = `${width}px`;
     stage.style.height = `${height}px`;
     scale = 1;
@@ -175,6 +192,8 @@ export function createAttachmentViewer(source: HTMLImageElement, presentation: {
   };
   document.addEventListener('keydown', onDialogKey);
   window.addEventListener('resize', fit);
+  const resize = presentation.large && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(fit) : null;
+  resize?.observe(stage);
   fit();
   status.hidden = width > 0;
   image.hidden = width === 0;
@@ -184,6 +203,7 @@ export function createAttachmentViewer(source: HTMLImageElement, presentation: {
     dispose: () => {
       document.removeEventListener('keydown', onDialogKey);
       window.removeEventListener('resize', fit);
+      resize?.disconnect();
       pointers.clear();
     },
   };

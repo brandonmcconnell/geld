@@ -15,6 +15,8 @@ html[data-geld-provider="bitbucket"] {
   --geld-provider-link: var(--ds-link);
   --geld-provider-success: var(--ds-text-success);
   --geld-provider-danger: var(--ds-text-danger);
+  --geld-provider-addition: var(--ds-text-accent-green);
+  --geld-provider-deletion: var(--ds-text-accent-red);
   --geld-provider-warning: var(--ds-text-warning);
   --geld-provider-ci-success: var(--ds-icon-success);
   --geld-provider-bg: var(--ds-surface);
@@ -66,10 +68,20 @@ html[data-geld-provider="bitbucket"] {
 
 /* Keep the added totals within the native tab bar's measured sticky height. */
 html[data-geld-provider="bitbucket"] nav[aria-label="Pull request"]:has(> .geld-provider-header-stats) {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--ds-space-150);
 }
+html[data-geld-provider="bitbucket"] nav[aria-label="Pull request"]:has(> .geld-provider-header-stats)::before {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: var(--ds-border-width);
+  background: var(--ds-border);
+  pointer-events: none;
+}
+html[data-geld-provider="bitbucket"] nav[aria-label="Pull request"]:has(> .geld-provider-header-stats) > [role="tablist"]::before { display: none; }
 html[data-geld-provider="bitbucket"] nav[aria-label="Pull request"]:has(> .geld-provider-header-stats) > [role="tablist"] {
   flex: 1 1 auto;
   min-width: 0;
@@ -80,6 +92,38 @@ html[data-geld-provider="bitbucket"] nav[aria-label="Pull request"] > .geld-prov
   margin-inline-start: auto;
   padding-inline-end: var(--ds-space-100);
 }
+html[data-geld-provider="bitbucket"] .geld-provider-header-stats { gap: var(--ds-space-100); }
+html[data-geld-provider="bitbucket"] .geld-provider-header-hidden-count { margin-inline-end: var(--ds-space-050); }
+html[data-geld-provider="bitbucket"] .geld-provider-header-line-counts { gap: 0; }
+html[data-geld-provider="bitbucket"] :is(.geld-provider-header-line-counts__add, .geld-provider-header-line-counts__del) {
+  padding: 3px var(--ds-space-050);
+  border-radius: var(--ds-radius-small);
+  font: var(--ds-font-body-small);
+  font-weight: var(--ds-font-weight-semibold);
+}
+html[data-geld-provider="bitbucket"] .geld-provider-header-line-counts__add {
+  color: var(--ds-text-accent-green);
+  background: var(--ds-background-accent-green-subtlest);
+}
+html[data-geld-provider="bitbucket"] .geld-provider-header-line-counts__del {
+  color: var(--ds-text-accent-red);
+  background: var(--ds-background-accent-red-subtlest);
+}
+html[data-geld-provider="bitbucket"][data-geld-bitbucket-colorblind="true"] .geld-provider-header-line-counts__add {
+  color: var(--ds-text-accent-blue);
+  background: var(--ds-background-accent-blue-subtlest);
+}
+html[data-geld-provider="bitbucket"][data-geld-bitbucket-colorblind="true"] {
+  --geld-provider-addition: var(--ds-text-accent-blue);
+  --geld-provider-deletion: var(--ds-text-accent-yellow);
+}
+html[data-geld-provider="bitbucket"][data-geld-bitbucket-colorblind="true"] .geld-provider-header-line-counts__del {
+  color: var(--ds-text-accent-yellow);
+  background: var(--ds-background-accent-yellow-subtlest);
+}
+html[data-geld-provider="bitbucket"] .geld-provider-header-line-counts__add:has(+ .geld-provider-header-line-counts__del) { border-start-end-radius: 0; border-end-end-radius: 0; }
+html[data-geld-provider="bitbucket"] .geld-provider-header-line-counts__add + .geld-provider-header-line-counts__del { border-start-start-radius: 0; border-end-start-radius: 0; }
+html[data-geld-provider="bitbucket"] :is([data-geld-provider-category-body], .geld-provider-category-content, .geld-provider-essential-content) { overflow-x: hidden; }
 
 /* Atlaskit draws the default button border without adding to its box size. */
 html[data-geld-provider="bitbucket"] :is(.geld-provider-toggle, .geld-provider-review__copy, .geld-provider-actions button, .geld-provider-review__source-actions button) {

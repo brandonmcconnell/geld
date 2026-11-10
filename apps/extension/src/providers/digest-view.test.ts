@@ -35,4 +35,15 @@ describe('provider conversation view choice', () => {
     expect(control.querySelector('[role="status"]')?.textContent).toContain('could not be saved');
     expect(button?.getAttribute('aria-pressed')).toBe('true');
   });
+
+  it('names both views in the menu while retaining compact inline marks', async () => {
+    const choosePosition = vi.fn(async () => undefined);
+    const menu = providerDigestViewChoice('bitbucket', { prOverview: true, compactTimeline: 'compact' }, async () => undefined, { menu: true, aboveDescription: false, choosePosition });
+    document.body.append(menu);
+    expect(menu.querySelector('[data-geld-digest-view="digest-timeline"]')?.textContent?.replace(/\s+/g, '')).toBe('Digest+Timeline');
+    const position = menu.querySelector<HTMLButtonElement>('[data-geld-digest-position]');
+    expect(position?.textContent).toBe('Show above description');
+    position?.click();
+    await vi.waitFor(() => expect(choosePosition).toHaveBeenCalledWith(true));
+  });
 });

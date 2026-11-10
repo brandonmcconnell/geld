@@ -70,3 +70,41 @@ it('qualifies same-repository Bitbucket image files without reusing GitLab uploa
   source.closest('a')!.href = source.src = 'https://bitbucket.org/another/project/raw/abcdef/screens/test.png';
   expect(bitbucketAttachmentLink(source, bb)).toBeNull();
 });
+
+it('opens a verified native video without replacing its inline player and restores the launch button on Escape', () => {
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+  vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+  document.body.innerHTML = `<div id="description"><video controls src="${imageUrl.replace('image.png', 'recording.mp4')}"></video></div>`;
+  const source = document.querySelector('video')!;manager.update(page, true);
+  const launch = document.querySelector<HTMLButtonElement>('[data-geld-video-open]')!;launch.click();
+  expect(source.parentElement?.id).toBe('description');expect(source.controls).toBe(true);
+  expect(document.querySelectorAll('video')).toHaveLength(2);
+  expect(document.querySelector('dialog a')?.getAttribute('href')).toBe(source.src);
+  document.querySelector('dialog button')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  expect(document.querySelector('dialog')).toBeNull();expect(document.activeElement).toBe(launch);
+  manager.update(page, false);expect(document.querySelector('[data-geld-video-open]')).toBeNull();expect(source.isConnected).toBe(true);
+});
+
+it('does not open unqualified, stale, or forged native video controls', () => {
+  document.body.innerHTML = `<div id="description"><video src="${imageUrl.replace('image.png', 'recording.mp4')}"></video></div>`;
+  const source = document.querySelector('video')!;manager.update(page, true);
+  const launch = document.querySelector<HTMLButtonElement>('[data-geld-video-open]')!;
+  const clone = launch.cloneNode(true);document.body.append(clone);
+  if (!(clone instanceof HTMLButtonElement)) throw new Error('Missing clone');
+  clone.click();expect(document.querySelector('dialog')).toBeNull();
+  source.src = 'https://elsewhere.example/video.mp4';launch.click();expect(document.querySelector('dialog')).toBeNull();
+  manager.update(page, true);expect(launch.isConnected).toBe(false);
+});
+
+it('closes an open video when the native source is replaced', () => {
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+  vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+  document.body.innerHTML = `<div id="description"><video src="${imageUrl.replace('image.png', 'recording.mp4')}"></video></div>`;
+  const source = document.querySelector('video')!;manager.update(page, true);
+  document.querySelector<HTMLButtonElement>('[data-geld-video-open]')!.click();
+  expect(document.querySelector('dialog')).not.toBeNull();
+  source.src = imageUrl.replace('image.png', 'replacement.mp4');
+  manager.update(page, true);
+  expect(document.querySelector('dialog')).toBeNull();
+});

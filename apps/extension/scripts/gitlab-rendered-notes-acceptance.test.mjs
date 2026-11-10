@@ -40,7 +40,7 @@ for (const [label, patch] of [
 
 async function domFixture(run) {
   const window = new Window({ url: F.url, settings: { disableJavaScriptEvaluation: true, disableJavaScriptFileLoading: true, disableCSSFileLoading: true, disableIframePageLoading: true } });
-  const globals = { document: window.document, location: window.location, Element: window.Element, HTMLElement: window.HTMLElement, Node: window.Node, getComputedStyle: window.getComputedStyle.bind(window) };
+  const globals = { document: window.document, location: window.location, Element: window.Element, HTMLElement: window.HTMLElement, HTMLVideoElement: window.HTMLVideoElement, Node: window.Node, getComputedStyle: window.getComputedStyle.bind(window) };
   const previous = new Map(Object.keys(globals).map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   try {
     for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { configurable: true, value });

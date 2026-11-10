@@ -9,8 +9,8 @@
 .geld-provider-header-stats { cursor: help; }
 .geld-provider-header-stats[hidden] { display: none; }
 .geld-provider-header-line-counts { font-variant-numeric: tabular-nums; }
-.geld-provider-header-line-counts__add { color: var(--geld-provider-success); }
-.geld-provider-header-line-counts__del { color: var(--geld-provider-danger); }
+.geld-provider-header-line-counts__add { color: var(--geld-provider-addition, var(--geld-provider-success)); }
+.geld-provider-header-line-counts__del { color: var(--geld-provider-deletion, var(--geld-provider-danger)); }
 .geld-provider-header-stats:focus-visible {
   outline: var(--geld-provider-focus-outline);
   outline-offset: var(--geld-provider-focus-offset);

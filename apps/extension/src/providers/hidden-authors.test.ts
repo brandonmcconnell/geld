@@ -138,6 +138,25 @@ it('leaves unknown author identities, native hidden rows and owned clones untouc
   expect(nativeHidden.root.hidden).toBe(true);
 });
 
+it.each([
+  ['gitlab', 'alice'],
+  ['bitbucket', 'bitbucket.org/uuid/7177c565-3bb4-44d3-b17b-e791dfb8fed8'],
+] as const)('applies %s-qualified rules consistently with the digest while preserving visit recovery', (provider, author) => {
+  const parent = list();
+  const native = row(parent, author, 1);
+  const other = provider === 'gitlab' ? 'bitbucket' : 'gitlab';
+  hiding = new ProviderHiddenAuthors(provider);
+  expect(hiding.update([native], { enabled: true, hiddenAuthors: [`${other}:${author}`] }, 'visit').size).toBe(0);
+  const scoped = { enabled: true, hiddenAuthors: [`${provider}:${author.toUpperCase()}`] };
+  expect(hiding.update([native], scoped, 'visit')).toEqual(new Set([native.root]));
+  show(parent).click();
+  expect(hiding.update([native], scoped, 'visit').size).toBe(0);
+  expect(hiding.update([native], scoped, 'next-visit')).toEqual(new Set([native.root]));
+  expect(hiding.update([native], { enabled: true, hiddenAuthors: [] }, 'next-visit').size).toBe(0);
+  expect(native.root.hasAttribute(PROVIDER_AUTHOR_HIDDEN)).toBe(false);
+  expect(parent.querySelector(NOTE)).toBeNull();
+});
+
 it('uses a valid owned table row with the actual native column span while keeping native rows in place', () => {
   const parent = list('tbody');
   const native = row(parent, 'bot-a', 1);

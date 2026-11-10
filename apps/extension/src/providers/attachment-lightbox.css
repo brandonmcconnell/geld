@@ -33,6 +33,15 @@ dialog.geld-provider-lightbox {
 .geld-provider-lightbox__body { display: grid; place-items: center; min-height: 0; background: var(--geld-provider-bg-subtle); }
 .geld-provider-lightbox__stage { position: relative; display: grid; place-items: center; overflow: hidden; touch-action: none; }
 .geld-provider-lightbox__image { position: absolute; inset: 0; display: block; width: 100%; height: 100%; max-width: none; max-height: none; object-fit: contain; transform-origin: center; user-select: none; cursor: zoom-in; }
+dialog.geld-provider-lightbox[open]:has(.geld-provider-lightbox__stage--large) { box-sizing: border-box; width: min(1120px, 84vw); min-width: 0; height: min(720px, 80dvh); }
+.geld-provider-lightbox:has(.geld-provider-lightbox__stage--large) :is(header, footer) { flex: none; }
+.geld-provider-lightbox:has(.geld-provider-lightbox__stage--large) .geld-provider-lightbox__body { flex: 1; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: stretch; }
+.geld-provider-lightbox__stage--large .geld-provider-lightbox__image { width: auto; height: auto; margin: auto; }
+.geld-provider-lightbox__stage--video { touch-action: auto; }
+.geld-provider-lightbox__video { grid-area: 1 / 1; width: 100%; height: 100%; min-height: 0; object-fit: contain; }
+.geld-provider-lightbox__playback { display: flex; flex-wrap: wrap; align-items: center; gap: var(--geld-provider-space-2); }
+.geld-provider-video-open { margin-block: var(--geld-provider-space-2); }
+.geld-provider-lightbox select { font: inherit; color: var(--geld-provider-button-text); background: var(--geld-provider-button-bg); border: var(--geld-provider-border-width) solid var(--geld-provider-border); border-radius: var(--geld-provider-button-radius); padding: var(--geld-provider-button-padding); }
 .geld-provider-lightbox__stage[data-zoomed] .geld-provider-lightbox__image { cursor: grab; }
 .geld-provider-lightbox__stage[data-dragging] .geld-provider-lightbox__image { cursor: grabbing; }
 .geld-provider-lightbox__status { grid-area: 1 / 1; width: min(320px, calc(100vw - 64px)); margin: 0; padding: var(--geld-provider-space-4); color: var(--geld-provider-text-subtle); text-align: center; }

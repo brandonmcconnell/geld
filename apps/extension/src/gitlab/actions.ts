@@ -1,14 +1,21 @@
 import { gitLabReviewIdentity } from './review';
 import type { GitLabReviewCapabilities } from './review';
 import { describeGitLabPage } from './page';
+import type { ProviderReviewActionContext } from '../providers/types';
 
 export type GitLabReviewAction = 'approve' | 'request-changes' | 'comment';
 
 export interface GitLabActionDescriptor {
   readonly kind: GitLabReviewAction;
+  readonly scopeKey?: string;
   readonly available: boolean;
   readonly reason?: string;
-  activate(): Promise<boolean>;
+  readonly requiresConfirmation?: boolean;
+  readonly confirmationLabel?: string;
+  readonly confirmationNote?: string;
+  readonly commentKinds?: readonly ('comment' | 'review')[];
+  readonly instant?: (context?: ProviderReviewActionContext) => Promise<boolean>;
+  activate(context?: ProviderReviewActionContext): Promise<boolean>;
 }
 
 export interface GitLabActionVisit {
@@ -120,6 +127,76 @@ function actionControl(doc: Document, kind: GitLabReviewAction): HTMLElement | n
   return outcome(doc, kind) ?? (kind === 'comment' ? mainComposer(doc) : null) ?? drawerButton(doc);
 }
 
+interface ApprovalWidget {
+  readonly owner: HTMLElement;
+  readonly root: HTMLElement;
+  readonly widget: HTMLElement;
+  readonly button: HTMLButtonElement;
+}
+interface ApprovalWidgetScope extends ApprovalWidget {
+  readonly key: string;
+  readonly visit: string;
+  readonly buttonParent: Node | null;
+  readonly rootParent: Node | null;
+}
+const widgetScopes = new WeakMap<Document, ApprovalWidgetScope>();
+let widgetSequence = 0;
+const WIDGET_EXCLUDED = '.note, .note-text, .md, [data-testid="noteable-note-container"], form, dialog, [role="dialog"], [contenteditable]';
+
+function approvalWidget(doc: Document, visit: GitLabActionVisit): ApprovalWidget | null {
+  if (!/^user:[1-9]\d*$/.test(visit.user ?? '') || !sameVisit(doc, visit) || drawerButton(doc) !== null || forms(doc).length > 0) return null;
+  const roots = [...doc.querySelectorAll<HTMLElement>('#widget-state.mr-state-widget')].filter(root => nativeControl(root) && root.closest(WIDGET_EXCLUDED) === null);
+  const root = roots.length === 1 ? roots[0] : undefined;
+  const owner = root?.closest<HTMLElement>('.merge-request[data-url]');
+  if (root === undefined || owner == null) return null;
+  const page = describeGitLabPage(new URL(doc.URL), doc);
+  if (page === null || !('number' in page)) return null;
+  try { if (new URL(owner.getAttribute('data-url') ?? '', doc.URL).href !== `${page.url}.json`) return null; }
+  catch { return null; }
+  const widgets = [...root.querySelectorAll<HTMLElement>('.js-mr-approvals.mr-section-container')].filter(nativeControl);
+  const widget = widgets.length === 1 ? widgets[0] : undefined;
+  if (widget === undefined) return null;
+  const buttons = [...widget.querySelectorAll<HTMLButtonElement>('button[data-testid="approve-button"]')].filter(nativeControl);
+  const button = buttons.length === 1 ? buttons[0] : undefined;
+  if (button === undefined || !enabled(button) || button.type !== 'button' || button.tabIndex < 0
+    || button.closest(`${WIDGET_EXCLUDED}, [aria-busy="true"]`) !== null) return null;
+  // The same native test id also marks Revoke approval and SAML form submission.
+  const label = button.textContent?.trim().replace(/\s+/g, ' ');
+  if (label !== 'Approve' && label !== 'Approve additionally' || button.hasAttribute('aria-label') && button.getAttribute('aria-label') !== label) return null;
+  return { root, owner, widget, button };
+}
+
+function readWidgetApproval(doc: Document, ceiling: GitLabReviewCapabilities, visit: GitLabActionVisit): GitLabActionDescriptor | null {
+  const candidate = ceiling.signedIn && ceiling.canApprove ? approvalWidget(doc, visit) : null;
+  if (candidate === null) { widgetScopes.delete(doc);return null; }
+  const identity = JSON.stringify([visit.url, visit.user, visit.headSha, visit.reviewUrl]);
+  let scope = widgetScopes.get(doc);
+  if (scope === undefined || scope.visit !== identity || scope.owner !== candidate.owner || scope.root !== candidate.root || scope.widget !== candidate.widget
+    || scope.button !== candidate.button || scope.buttonParent !== candidate.button.parentNode || scope.rootParent !== candidate.root.parentNode) {
+    scope = { ...candidate, key: `gitlab-widget-approval-${++widgetSequence}`, visit: identity, buttonParent: candidate.button.parentNode, rootParent: candidate.root.parentNode };
+    widgetScopes.set(doc, scope);
+  }
+  const original = scope;
+  const current = (): boolean => {
+    if (widgetScopes.get(doc) !== original) return false;
+    const latest = approvalWidget(doc, visit);
+    return latest !== null && latest.root === original.root && latest.owner === original.owner && latest.widget === original.widget && latest.button === original.button
+      && latest.button.parentNode === original.buttonParent && latest.root.parentNode === original.rootParent;
+  };
+  return {
+    kind: 'approve', available: true, scopeKey: original.key, requiresConfirmation: true,
+    confirmationLabel: 'Approve in GitLab',
+    confirmationNote: 'GitLab may also publish any pending review comments when you approve.',
+    async activate(context) {
+      if (context?.current() === false || !current()) return false;
+      original.button.focus({ preventScroll: true });
+      if (context?.current() === false || !current() || doc.activeElement !== original.button) return false;
+      original.button.click();
+      return true;
+    },
+  };
+}
+
 function waitForNative<T extends HTMLElement>(doc: Document, find: () => T | null, current: () => boolean): Promise<T | null> {
   if (!current()) return Promise.resolve(null);
   const present = find();
@@ -145,11 +222,17 @@ function waitForNative<T extends HTMLElement>(doc: Document, find: () => T | nul
   });
 }
 
-async function activate(kind: GitLabReviewAction, ceiling: GitLabReviewCapabilities, doc: Document, visit: GitLabActionVisit, expected?: HTMLElement): Promise<boolean> {
+async function activate(kind: GitLabReviewAction, ceiling: GitLabReviewCapabilities, doc: Document, visit: GitLabActionVisit, expected?: HTMLElement, commentKind?: 'comment' | 'review'): Promise<boolean> {
   const permissions = livePermissions(doc, ceiling, visit);
+  if (kind === 'comment' && commentKind === 'comment') {
+    const field = permissions.signedIn ? mainComposer(doc) : null;
+    if (field === null) return false;
+    field.focus();
+    return sameVisit(doc, visit) && mainComposer(doc) === field && editable(field) && doc.activeElement === field;
+  }
   if (!permitted(kind, permissions, doc) || expected !== undefined && actionControl(doc, kind) !== expected) return false;
   const currentVisit = (): boolean => ceiling.signedIn && sameVisit(doc, visit);
-  if (kind === 'comment' && permissions.canComment && outcome(doc, kind) === null) {
+  if (kind === 'comment' && commentKind !== 'review' && permissions.canComment && outcome(doc, kind) === null) {
     const field = mainComposer(doc);
     if (field !== null) {
       field.focus();
@@ -177,21 +260,64 @@ async function activate(kind: GitLabReviewAction, ceiling: GitLabReviewCapabilit
   return current() && editable(field) && reviewComposer(form) === field && doc.activeElement === field;
 }
 
+function instantScope(doc: Document, visit: GitLabActionVisit): boolean {
+  if (!/^user:[1-9]\d*$/.test(visit.user ?? '') || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(visit.headSha ?? '') || !sameVisit(doc, visit)) return false;
+  const page = describeGitLabPage(new URL(doc.URL), doc);
+  return page !== null && 'number' in page && page.headSha === visit.headSha;
+}
+
+async function instantReview(kind: Exclude<GitLabReviewAction, 'comment'>, ceiling: GitLabReviewCapabilities, doc: Document, visit: GitLabActionVisit, expected: HTMLElement, context?: ProviderReviewActionContext): Promise<boolean> {
+  const current = (): boolean => context?.current() !== false && instantScope(doc, visit);
+  if (!current() || !await activate(kind, ceiling, doc, visit, expected) || !current()) return false;
+  const radio = outcome(doc, kind);
+  const form = radio?.closest<HTMLFormElement>('form[data-testid="submit-gl-form"]');
+  const field = form === null || form === undefined ? null : reviewComposer(form);
+  const buttons = [...form?.querySelectorAll<HTMLButtonElement>('button[data-testid="submit-review-button"][type="submit"]') ?? []].filter(enabled);
+  const button = buttons.length === 1 ? buttons[0] : undefined;
+  if (radio === null || form == null || field === null || button === undefined) return false;
+  const emptyReview = (): boolean => {
+    const headings = [...form.parentElement?.parentElement?.querySelectorAll<HTMLElement>('[data-testid="reviewer-drawer-heading"]') ?? []].filter(nativeControl);
+    return headings.length === 1 && headings[0]?.textContent?.trim() === 'No pending comments';
+  };
+  const valid = (): boolean => current() && outcome(doc, kind) === radio && radio.checked && enabled(radio)
+    && reviewComposer(form) === field && field.value.trim() === '' && editable(field) && button.closest('form') === form && enabled(button)
+    && emptyReview()
+    && (kind !== 'approve' || ![...form.querySelectorAll<HTMLElement>('[data-testid="approve_password"], input[type="password"]')].some(nativeControl))
+    && form.checkValidity();
+  if (!valid()) return false;
+  button.focus({ preventScroll: true });
+  if (!valid()) return false;
+  button.click();
+  return true;
+}
+
 export function openGitLabReviewAction(kind: GitLabReviewAction, permissions: GitLabReviewCapabilities, doc: Document = document): Promise<boolean> {
   return permissions.requestChanges === 'unavailable' && kind === 'request-changes' ? Promise.resolve(false) : activate(kind, permissions, doc, gitLabActionVisit(doc));
 }
 
 export function readGitLabActions(doc: Document, ceiling: GitLabReviewCapabilities, visit: GitLabActionVisit = gitLabActionVisit(doc)): readonly GitLabActionDescriptor[] {
   const permissions = livePermissions(doc, ceiling, visit);
+  const widget = readWidgetApproval(doc, ceiling, visit);
   const kinds: readonly GitLabReviewAction[] = ['approve', 'request-changes', 'comment'];
   return kinds.map((kind) => {
-    const available = permitted(kind, permissions, doc);
+    if (kind === 'approve' && widget !== null) return widget;
+    const plainComment = kind === 'comment' && permissions.signedIn && mainComposer(doc) !== null;
+    const originalComment = plainComment ? mainComposer(doc) : null;
+    const available = plainComment || permitted(kind, permissions, doc);
     const control = available ? actionControl(doc, kind) : null;
+    const commentKinds = kind === 'comment' ? [
+      ...(plainComment ? ['comment' as const] : []),
+      ...(permissions.canReview && permitted(kind, permissions, doc) ? ['review' as const] : []),
+    ] : undefined;
     return {
       kind,
       available,
+      ...(commentKinds === undefined ? {} : { commentKinds }),
+      ...(kind !== 'comment' && available && control !== null && instantScope(doc, visit) ? { instant: (context?: ProviderReviewActionContext) => instantReview(kind, ceiling, doc, visit, control, context) } : {}),
       ...(!permissions.signedIn ? { reason: 'Sign in to GitLab to review.' } : !available ? { reason: 'This action is unavailable in GitLab on this page.' } : {}),
-      activate: () => !available || control === null ? Promise.resolve(false) : activate(kind, ceiling, doc, visit, control),
+      activate: (context?: ProviderReviewActionContext) => !available || control === null || context?.current() === false
+        || context?.commentKind === 'comment' && (originalComment === null || mainComposer(doc) !== originalComment)
+        ? Promise.resolve(false) : activate(kind, ceiling, doc, visit, control, context?.commentKind),
     };
   });
 }

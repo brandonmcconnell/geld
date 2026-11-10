@@ -1,5 +1,6 @@
 import type { ProviderCommentRenderContext } from '../providers/comment-render';
 import { nativeTableHeightWrapper, mountGitLabTableHeights } from './table-height';
+import { providerVideoPreview } from '../providers/attachment-video';
 import type { OwnedHeightTable } from './table-height';
 import type { ProviderReviewComment } from '@geld/review';
 import { providerReviewUrl } from '@geld/review';
@@ -123,6 +124,7 @@ export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLEl
       }
       return fragment;
     }
+    if (node instanceof HTMLVideoElement && !api) return providerVideoPreview(node, 'gitlab', comment.url);
     if (node.hasAttribute('contenteditable') || DROP.has(tag)) {
       return tag === 'input' && node.getAttribute('type') === 'checkbox' && node.hasAttribute('disabled')
         ? doc.createTextNode(node.hasAttribute('checked') ? '☑ ' : '☐ ')

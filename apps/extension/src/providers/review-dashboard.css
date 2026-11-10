@@ -1,11 +1,13 @@
 .geld-provider-review[data-provider] { padding: 0; overflow-wrap: anywhere; }
 .geld-provider-review > .geld-provider-review__header {
+  box-sizing: border-box;
+  min-block-size: calc(var(--geld-provider-button-min-height) + var(--geld-provider-space-3));
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-start;
   gap: var(--geld-provider-space-3) var(--geld-provider-space-5);
-  padding: var(--geld-provider-space-4) var(--geld-provider-space-5);
+  padding: var(--geld-provider-space-2) var(--geld-provider-space-5);
   background: var(--geld-provider-bg-subtle);
   border-radius: var(--geld-provider-radius) var(--geld-provider-radius) 0 0;
 }
@@ -24,8 +26,8 @@
 svg.geld-provider-digest-icon[data-geld-outline], svg.geld-provider-digest-icon[data-geld-outline] > * { fill: none; stroke: currentColor; }
 .geld-provider-review .geld-provider-review__tool {
   box-sizing: border-box;
-  min-block-size: var(--geld-provider-button-min-height);
-  padding: var(--geld-provider-space-2);
+  min-block-size: calc(var(--geld-provider-button-min-height) - var(--geld-provider-space-2));
+  padding: var(--geld-provider-space-2) var(--geld-provider-space-3);
   border: 0;
   border-radius: var(--geld-provider-button-radius);
   color: var(--geld-provider-text-subtle);
@@ -53,7 +55,7 @@ svg.geld-provider-digest-icon[data-geld-outline], svg.geld-provider-digest-icon[
 .geld-provider-review .geld-provider-review__section { margin: 0; border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); min-inline-size: 0; }
 .geld-provider-review__section-toggle {
   display: flex; align-items: center; gap: var(--geld-provider-space-4); box-sizing: border-box;
-  inline-size: 100%; min-block-size: var(--geld-provider-button-min-height); padding: var(--geld-provider-space-4) var(--geld-provider-space-5);
+  inline-size: 100%; min-block-size: calc(var(--geld-provider-button-min-height) + var(--geld-provider-space-3)); padding: var(--geld-provider-space-2) var(--geld-provider-space-5);
   border: 0; border-radius: 0; color: var(--geld-provider-text); background: transparent; font: var(--geld-provider-font); font-weight: var(--geld-provider-heading-weight); text-align: start; cursor: pointer;
 }
 .geld-provider-review__section-toggle::after {
@@ -127,7 +129,11 @@ svg.geld-provider-digest-icon[data-geld-outline], svg.geld-provider-digest-icon[
 .geld-provider-review[hidden] { display: none !important; }
 
 .geld-provider-review__menu-list .geld-provider-view { margin: 0; flex-direction: column; align-items: stretch; }
-.geld-provider-review__menu-list .geld-provider-view__option { justify-content: flex-start; border: 0; }
+.geld-provider-review__menu-list[data-geld-view-slot] { inline-size: max-content; }
+.geld-provider-review__menu-list .geld-provider-view__option { justify-content: flex-start; border: 0; white-space: nowrap; }
+.geld-provider-view__position { border: 0; border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); margin-block-start: var(--geld-provider-space-2); padding: var(--geld-provider-space-3); background: transparent; color: var(--geld-provider-text-subtle); font: var(--geld-provider-font-small); text-align: start; cursor: pointer; }
+.geld-provider-view__position:hover { background: var(--geld-provider-button-hover-bg); }
+.geld-provider-view__position:focus-visible { outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset); }
 @media (max-width: 700px) {
   [data-geld-status-row] > .geld-provider-review__section-toggle { flex-wrap: wrap; gap: var(--geld-provider-space-3); }
   [data-geld-status-row] > .geld-provider-review__section-toggle > .geld-provider-review__section-label { flex-basis: auto; }

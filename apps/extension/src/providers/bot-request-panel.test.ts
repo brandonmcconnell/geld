@@ -32,6 +32,7 @@ describe('bot command panel lifecycle', () => {
   it('retains command picks, disclosure and keyboard focus across harmless refreshes without changing bot state', async () => {
     const host = mount();const copy = vi.fn(async () => undefined);
     const panel = renderProviderReviewPanel(host, input, { botRequests: [request()], copyText: copy });
+    host.querySelector<HTMLButtonElement>('[data-geld-review-key="bots"] > [data-geld-review-toggle]')?.click();
     const details = host.querySelector<HTMLDetailsElement>('[data-geld-bot-request]')!;details.open = true;
     const full = [...details.querySelectorAll('button')].find((button) => button.textContent === 'Full review')!;full.click();full.focus();
     panel.update(input, { botRequests: [request()], copyText: copy, version: 2 });

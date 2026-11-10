@@ -21,6 +21,7 @@ import { gitLabReferenceAnchor, readGitLabReferences } from './references';
 import { readGitLabBotRequests } from './bot-request';
 import { readGitLabReviewerControls } from './reviewer-controls';
 import { readGitLabOpenReview } from './open-review';
+import { readGitLabStatus } from './status';
 import { ProviderHttpAdmission } from '../providers/http-admission';
 import { createGitLabWholeTestAdapter } from './whole-test-context';
 import { GitLabNativeWhitespace } from './native-whitespace';
@@ -45,7 +46,9 @@ export const gitlabAdapter: ProviderAdapter = {
   fetchDiff: (page, signal) => isProviderReviewPage(page) ? fetchGitLabDiff(page, signal) : fetchGitLabStandaloneDiff(page, signal),
   fetchConfig: fetchGitLabConfig,
   reviewHost: (doc) => doc.querySelector<HTMLElement>('.issuable-discussion .detail-page-description'),
-  actionHost: (doc) => doc.querySelector('button[data-testid="review-drawer-toggle"]')?.parentElement ?? null,
+  actionHost: (doc) => doc.querySelector<HTMLElement>('.merge-request-tabs-container > .merge-request-tabs-actions')
+    ?? doc.querySelector('button[data-testid="review-drawer-toggle"]')?.parentElement ?? null,
+  statusAction: readGitLabStatus,
   fetchReview: async (page, signal, doc) => {
     const actionVisit = gitLabActionVisit(doc);
     const snapshot = await fetchGitLabReview(page, signal, doc);

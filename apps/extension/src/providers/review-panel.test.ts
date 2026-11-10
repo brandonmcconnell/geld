@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildProviderReviewItems, providerReviewKey } from '@geld/review';
 import type { ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, ProviderReviewThread } from '@geld/review';
 import type { ProviderAiState } from './ai';
+import type { ProviderCommentRenderContext } from './comment-render';
 import { renderProviderReviewPanel } from './review-panel';
 import type { ProviderReviewAuthorPresentation, ProviderReviewPanelEvent, ProviderSourceActionContext } from './review-panel';
 
@@ -30,6 +31,34 @@ function host(): HTMLElement {
 beforeEach(() => { document.body.replaceChildren();window.location.href = reviewUrl; });
 
 describe('provider conversation digest', () => {
+  it('keeps a closed toolbar menu summary focused on unchanged updates', () => {
+    const native = input();
+    const panel = renderProviderReviewPanel(host(), native, { hasViewChoice: true });
+    const summary = panel.element.querySelector<HTMLElement>('[data-geld-toolbar-control="eye"]')!;
+    expect(summary.closest('details')?.open).toBe(false);
+    summary.focus();
+    panel.update(native, { hasViewChoice: true, version: 2 });
+    expect(document.activeElement).toBe(summary);
+    panel.destroy();
+  });
+
+  it('releases focus inside a closed menu without treating its summary as hidden', () => {
+    const native = input();
+    const panel = renderProviderReviewPanel(host(), native, { hasViewChoice: true });
+    const slot = panel.element.querySelector<HTMLElement>('[data-geld-view-slot]')!;
+    const menu = slot.closest('details')!;
+    const nested = document.createElement('details');
+    const summary = document.createElement('summary');summary.textContent = 'Nested menu';nested.append(summary);slot.append(nested);
+    menu.open = true;summary.focus();
+    expect(document.activeElement).toBe(summary);
+    panel.update(native, { hasViewChoice: true, version: 2 });
+    expect(document.activeElement).toBe(summary);
+    menu.open = false;
+    panel.update(native, { hasViewChoice: true, version: 3 });
+    expect(document.activeElement).not.toBe(summary);
+    panel.destroy();
+  });
+
   it('keeps compact reviewer summaries inline and details behind the closed row', () => {
     const native = { ...input([thread('a')]), reviewers: [
       { author: { id: 'user-1', login: 'alice' }, state: 'approved', reviewRequest: 'pending', url: `${reviewUrl}#note_1`, anchor: 'note_1' },
@@ -124,7 +153,7 @@ describe('provider conversation digest', () => {
     expect(panel.element.textContent).not.toMatch(/Requested review|Saved/);
   });
 
-  it('captures a quote excerpt before pointer focus clears selection and invalidates it after remount', async () => {
+  it('keeps a captured quote valid across metadata refreshes and invalidates it after a source remount', async () => {
     let context: ProviderSourceActionContext | undefined;
     const activate = vi.fn(async (value?: ProviderSourceActionContext) => { context = value; return true; });
     const options = { actionsForSource: () => [{ kind: 'quote', label: 'Quote reply', available: true, activate }] };
@@ -142,7 +171,97 @@ describe('provider conversation digest', () => {
     expect(context?.selection).toMatchObject({ kind: 'excerpt', sourceId: '1', anchor: 'note_1', url: comment('1').url, text: 'the response', body });
     expect(context?.current?.()).toBe(true);
     panel.update(input([thread('a')]), { ...options, version: 1 });
+    expect(context?.current?.()).toBe(true);
+    panel.update(input([thread('a', { comments: [comment('1', 'Changed source content.')] })]), options);
     expect(context?.current?.()).toBe(false);
+    panel.destroy();
+  });
+
+  it('retains comment DOM, selection and native control lifetimes while status rows update', () => {
+    const container = host();container.style.overflowY = 'auto';container.scrollTop = 200;
+    Object.defineProperties(container, { scrollHeight: { value: 1200 }, clientHeight: { value: 600 } });
+    const mounted = vi.fn(), disposed = vi.fn();
+    const contexts: ProviderCommentRenderContext[] = [];
+    const renderComment = vi.fn((source: ProviderReviewComment, body: HTMLElement, context?: ProviderCommentRenderContext) => {
+      body.textContent = source.body;
+      if (context !== undefined) { contexts.push(context);context.onMount(mounted);context.onDispose(disposed); }
+      return true;
+    });
+    const check = { key: 'job:1', name: 'Tests', sha: subject.headSha, status: 'queued', conclusion: null, detailsUrl: 'https://gitlab.com/group/subgroup/project/-/jobs/1' };
+    const source: ProviderReviewInput = { ...input([thread('a')]), checks: [check] };
+    const panel = renderProviderReviewPanel(container, source, { renderComment });
+    const item = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-item]');
+    const body = panel.element.querySelector('.geld-provider-review__body');
+    const text = body?.firstChild;
+    if (item === null || body === null || text == null) throw new Error('Missing comment body');
+    item.open = true;
+    vi.spyOn(item, 'getBoundingClientRect').mockImplementation(() => new DOMRect(0, panel.element.querySelector('[data-geld-check-state="passed"]') === null ? 100 : 140, 500, 80));
+    const range = document.createRange();range.setStart(text, 6);range.setEnd(text, 18);
+    document.getSelection()?.removeAllRanges();document.getSelection()?.addRange(range);
+    panel.update(source, { renderComment, version: 2, updating: true });
+    expect(panel.element.querySelector('[data-geld-review-updating]')?.textContent).toBe('Updating…');
+    expect(panel.element.querySelector('.geld-provider-review__body')).toBe(body);
+    panel.update({ ...source, checks: [{ ...check, status: 'completed', conclusion: 'success' }], reviewers: [{ author: comment('1').author, state: 'approved' }] }, { renderComment, version: 3 });
+    expect(panel.element.querySelector('[data-geld-review-updating]')).toBeNull();
+    expect(panel.element.querySelector('[data-geld-review-key="checks"]')?.textContent).toContain('Passed');
+    expect(panel.element.querySelector('[data-geld-review-key="reviewers"]')?.textContent).toContain('Approved');
+    expect(panel.element.querySelector('[data-geld-item]')).toBe(item);
+    expect(panel.element.querySelector('.geld-provider-review__body')).toBe(body);
+    expect(document.getSelection()?.toString()).toBe('the response');
+    expect(container.scrollTop).toBe(240);
+    expect(renderComment).toHaveBeenCalledOnce();expect(mounted).toHaveBeenCalledOnce();expect(disposed).not.toHaveBeenCalled();
+    expect(contexts[0]?.current()).toBe(true);
+    panel.destroy();expect(disposed).toHaveBeenCalledOnce();expect(contexts[0]?.current()).toBe(false);
+  });
+
+  it('keeps an active reviewer handoff mounted while independent CI checks refresh', async () => {
+    let finish: ((focused: boolean) => void) | undefined;
+    const activate = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve; }));
+    const options = { reviewerControls: { kind: 'reviewer-controls', label: 'Reviewer controls', available: true, activate } };
+    const panel = renderProviderReviewPanel(host(), input(), options);
+    const button = panel.element.querySelector<HTMLButtonElement>('[data-geld-reviewer-controls]');
+    if (button === null) throw new Error('Missing reviewer controls');
+    button.click();await vi.waitFor(() => expect(activate).toHaveBeenCalledOnce());
+    expect(button.disabled).toBe(true);
+    panel.update({ ...input(), checks: [{ name: 'Tests', sha: subject.headSha, status: 'completed', conclusion: 'success' }] }, options);
+    expect(panel.element.querySelector('[data-geld-reviewer-controls]')).toBe(button);
+    expect(button.disabled).toBe(true);
+    finish?.(true);await vi.waitFor(() => expect(button.disabled).toBe(false));
+    panel.destroy();
+  });
+
+  it('uses the latest available source action after an unchanged snapshot refresh', async () => {
+    const first = vi.fn(async () => true), latest = vi.fn(async () => true);
+    const source = input([thread('a')]);
+    const action = { kind: 'quote', label: 'Quote reply', available: true };
+    const panel = renderProviderReviewPanel(host(), source, { actionsForSource: () => [{ ...action, activate: first }] });
+    const button = [...panel.element.querySelectorAll('button')].find(value => value.textContent === 'Quote reply');
+    panel.update(source, { version: 2, actionsForSource: () => [{ ...action, activate: latest }] });
+    expect([...panel.element.querySelectorAll('button')].find(value => value.textContent === 'Quote reply')).toBe(button);
+    button?.click();await vi.waitFor(() => expect(latest).toHaveBeenCalledOnce());
+    expect(first).not.toHaveBeenCalled();
+    panel.update(source, { actionsForSource: () => [{ ...action, available: false, activate: latest }] });
+    expect(button?.isConnected).toBe(false);
+    expect([...panel.element.querySelectorAll('button')].find(value => value.textContent === 'Quote reply')).toBeUndefined();
+    panel.destroy();
+  });
+
+  it('retires native comment bindings when the provider replaces identical source markup', () => {
+    const native = document.createElement('article');native.id = 'note_1';native.innerHTML = '<p>Native source</p>';document.body.append(native);
+    const contexts: ProviderCommentRenderContext[] = [];
+    const dispose = vi.fn();
+    const renderComment = (source: ProviderReviewComment, body: HTMLElement, context?: ProviderCommentRenderContext): boolean => {
+      body.textContent = source.body;
+      if (context !== undefined) { contexts.push(context);context.onDispose(dispose); }
+      return true;
+    };
+    const source = input([thread('a')]);
+    const panel = renderProviderReviewPanel(host(), source, { renderComment });
+    const body = panel.element.querySelector('.geld-provider-review__body');
+    native.replaceChildren(native.firstElementChild?.cloneNode(true) ?? '');
+    panel.update(source, { renderComment, version: 2 });
+    expect(panel.element.querySelector('.geld-provider-review__body')).not.toBe(body);
+    expect(dispose).toHaveBeenCalledOnce();expect(contexts[0]?.current()).toBe(false);expect(contexts[1]?.current()).toBe(true);
     panel.destroy();
   });
 
@@ -233,7 +352,7 @@ describe('provider conversation digest', () => {
     before.focus();
     panel.update(source, { ...options, version: 2, updating: true });
     const after = panel.element.querySelector(`[data-geld-copy-kind="${kind}"]`);
-    expect(after).not.toBe(before);
+    expect(after).toBe(before);
     expect(document.activeElement).toBe(after);
     const outside = document.createElement('button');document.body.append(outside);outside.focus();
     panel.update(source, { ...options, version: 3, updating: false });
@@ -608,6 +727,40 @@ describe('provider conversation digest', () => {
     expect(panel.element.dataset.state).toBe('partial');
     expect(panel.element.querySelector('[data-geld-review-bot="coderabbit"]')?.textContent).toContain('count unavailable');
     expect(panel.element.querySelector('[data-geld-review-bot="coderabbit"]')?.textContent).not.toContain('No findings');
+  });
+
+  it('uses the native avatar of a bound bot account for its compact summary', () => {
+    const author = { id: 'trusted-bot', login: 'project-reviewer', automated: true };
+    const source = { ...comment('1'), author };
+    const native: ProviderReviewInput = { ...input([thread('a', { comments: [source] })]), bots: [{ id: 'coderabbit', authorId: author.id }] };
+    const panel = renderProviderReviewPanel(host(), native, {
+      authorPresentation: value => ({ authorId: value.author.id, displayName: 'Project reviewer', avatar: { src: 'https://gitlab.com/uploads/coderabbit.png', width: 32, height: 32, borderRadius: '50%' } }),
+    });
+    const image = panel.element.querySelector<HTMLImageElement>('[data-geld-review-key="bots"] .geld-provider-review__bot-icon');
+    expect(image?.src).toBe('https://gitlab.com/uploads/coderabbit.png');
+    expect(image?.dataset.shape).toBe('round');expect(image?.width).toBe(20);expect(image?.height).toBe(20);
+    expect(image?.alt).toBe('');expect(image?.getAttribute('aria-hidden')).toBe('true');expect(image?.referrerPolicy).toBe('no-referrer');
+    expect(image?.parentElement?.textContent).toContain('CodeRabbit');
+    panel.destroy();
+  });
+
+  it.each(['absent', 'unsafe', 'different-author'] as const)('falls back to a registered bot mark when the native avatar is %s', condition => {
+    const author = { id: 'trusted-bot', login: 'project-reviewer', automated: true };
+    const source = { ...comment('1'), author };
+    const native: ProviderReviewInput = { ...input([thread('a', { comments: [source] })]), bots: [{ id: 'greptile', authorId: author.id }] };
+    const panel = renderProviderReviewPanel(host(), native, {
+      authorPresentation: value => condition === 'absent' ? null : { authorId: condition === 'different-author' ? 'other-account' : value.author.id, displayName: 'Project reviewer', avatar: { src: condition === 'unsafe' ? 'javascript:alert(1)' : 'https://gitlab.com/unrelated.png', width: 32, height: 32 } },
+    });
+    expect(panel.element.querySelector<HTMLImageElement>('[data-geld-review-key="bots"] .geld-provider-review__bot-icon')?.src).toBe('https://avatars.githubusercontent.com/in/867647?s=40&v=4');
+    panel.destroy();
+  });
+
+  it('does not assign bot branding based on a comment claiming a registered identity', () => {
+    const impostor = { ...comment('1', 'CodeRabbit review completed'), author: { id: 'ordinary-user', login: 'coderabbit', automated: true } };
+    const panel = renderProviderReviewPanel(host(), input([thread('a', { comments: [impostor] })]));
+    expect(panel.element.querySelector('.geld-provider-review__bot-icon')).toBeNull();
+    expect(panel.element.querySelector('[data-geld-review-key="bots"]')).toBeNull();
+    panel.destroy();
   });
 
   it('offers explicit identity only for unbound automated accounts and supported services', async () => {
