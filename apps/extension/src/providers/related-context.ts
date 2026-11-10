@@ -1,11 +1,12 @@
 import { browser } from 'wxt/browser';
-import { compileAuthorRules, repositoryKey } from '@geld/core';
+import { repositoryKey } from '@geld/core';
 import type { GeldSettings } from '@geld/core';
 import { isDependencyUpdate, officialSourceForBot, relatedLinksFrom } from '@geld/review/related-links';
 import type { LinkCandidate, RelatedLink } from '@geld/review/related-links';
 import { previewDocFromMarkdown } from '@geld/review';
 import type { PreviewLink, ProviderReviewComment } from '@geld/review';
 import { element } from './dom';
+import { projectProviderPeople } from './hidden-people';
 import { referenceForSubject } from './references';
 import type { ProviderReviewReference } from './references';
 import type { ProviderAdapter, ProviderReviewPage, ProviderReviewSnapshot } from './types';
@@ -32,12 +33,12 @@ function descriptionCandidates(body: HTMLElement | null, page: ProviderReviewPag
 
 export function providerRelatedLinks(page: ProviderReviewPage, body: HTMLElement | null, snapshot?: ProviderReviewSnapshot, hiddenAuthors: readonly string[] = [], shownPeople: ReadonlySet<string> = new Set()): readonly RelatedLink[] {
   const candidates = descriptionCandidates(body, page);
-  const hidden = compileAuthorRules(hiddenAuthors);
   if (snapshot !== undefined && (snapshot.input.subject.provider !== page.provider || snapshot.input.subject.origin !== page.repository.origin || snapshot.input.subject.repository !== page.repository.path || snapshot.input.subject.id !== page.number)) snapshot = undefined;
-  const bots = new Map((snapshot?.input.bots ?? []).map((bot) => [bot.authorId, bot.id]));
+  const people = snapshot === undefined ? null : projectProviderPeople(snapshot.input, snapshot.comments, snapshot.events, hiddenAuthors, shownPeople);
+  const bots = new Map((people?.input.bots ?? []).map((bot) => [bot.authorId, bot.id]));
   const seen = new Set<string>();
-  for (const comment of [...(snapshot?.comments ?? []), ...(snapshot?.input.threads ?? []).flatMap((thread) => thread.comments)]) {
-    if (seen.has(comment.anchor) || !bots.has(comment.author.id) || !shownPeople.has(comment.author.id) && (hidden.hides(comment.author.login) || hidden.hides(`${page.provider}:${comment.author.login}`))) continue;
+  for (const comment of [...(people?.comments ?? []), ...(people?.input.threads ?? []).flatMap((thread) => thread.comments)]) {
+    if (seen.has(comment.anchor) || !bots.has(comment.author.id)) continue;
     seen.add(comment.anchor);
     let parsed = commentLinks.get(comment);
     if (parsed?.body !== comment.body) {
