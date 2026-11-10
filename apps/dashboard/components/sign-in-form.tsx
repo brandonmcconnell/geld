@@ -4,23 +4,30 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowRight, Mail } from 'lucide-react';
-import { Button } from '@geld/ui';
+import { ArrowRight, Mail } from '@/components/icons';
+import { Button } from '@/components/button';
 import { measure } from '@/lib/measurement';
 import { authClient } from '@/lib/auth-client';
-import { Brand } from './brand';
+import { AuthFrame } from './auth-frame';
 import { useDashboard } from './app-shell';
-export function SignInForm() {
+type SignInMethod = 'otp' | 'magic' | 'password' | 'sso';
+const signInMethods: readonly { id: SignInMethod; label: string }[] = [
+  { id: 'otp', label: 'Email code' },
+  { id: 'magic', label: 'Magic link' },
+  { id: 'password', label: 'Password' },
+  { id: 'sso', label: 'SSO' },
+];
+export function SignInForm({ intent = 'signin' }: { readonly intent?: 'signin' | 'signup' }) {
   const { session, refresh, loading } = useDashboard();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [sent, setSent] = useState(false);
-  const [method, setMethod] = useState<'otp' | 'magic' | 'password' | 'sso'>('otp');
+  const [method, setMethod] = useState<SignInMethod>('otp');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  function chooseMethod(next: 'otp' | 'magic' | 'password' | 'sso') {
+  function chooseMethod(next: SignInMethod) {
     setMethod(next);
     setSent(false);
     setPassword('');
@@ -47,21 +54,6 @@ export function SignInForm() {
     }
     setBusy(false);
   }
-  async function sendReset() {
-    setBusy(true);
-    setMessage('');
-    try {
-      const result = await authClient.requestPasswordReset({ email, redirectTo: '/settings/account/reset-password' });
-      setMessage(
-        result.error
-          ? 'A reset link could not be sent. Try again.'
-          : 'If this address has an account, a password reset link is on its way.',
-      );
-    } catch {
-      setMessage('A reset link could not be sent. Try again.');
-    }
-    setBusy(false);
-  }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -81,7 +73,11 @@ export function SignInForm() {
           if (target.protocol === 'https:') window.location.assign(target.href);
         } else setMessage(error.success ? error.data.error : 'SSO could not connect.');
       } else if (method === 'password') {
-        const result = await authClient.signIn.email({ email, password, callbackURL: '/connect' });
+        const result = await authClient.signIn.email({
+          email,
+          password,
+          callbackURL: '/connect',
+        });
         if (result.error) setMessage('Email or password could not be verified.');
         else {
           setPassword('');
@@ -89,7 +85,10 @@ export function SignInForm() {
           router.push('/connect');
         }
       } else if (method === 'magic') {
-        const result = await authClient.signIn.magicLink({ email, callbackURL: '/connect' });
+        const result = await authClient.signIn.magicLink({
+          email,
+          callbackURL: '/connect',
+        });
         setMessage(
           result.error ? 'The sign-in link could not be sent. Try again.' : 'Check your email for a sign-in link.',
         );
@@ -117,17 +116,21 @@ export function SignInForm() {
     setBusy(false);
   }
   return (
-    <div className="page">
-      <div className="form-card">
-        <Brand />
-        <h1>Your next review starts here.</h1>
-        <p>Bring your repositories together. Keep the change in focus.</p>
+    <AuthFrame>
+      <div className="auth-form">
+        <p className="eyebrow">YOUR REVIEW WORKSPACE</p>
+        <h1>{intent === 'signup' ? 'Create your account' : 'Welcome back'}</h1>
+        <p className="auth-description">
+          {intent === 'signup'
+            ? 'Your code, your providers, one clear workspace.'
+            : 'Sign in to your workspace. Pick up where you left off.'}
+        </p>
         {!loading && !session.configured && (
           <div className="status-message" role="status">
             Sign-in is not configured in this environment.
           </div>
         )}
-        <div className="form-stack">
+        <div className="social-signin">
           {['github', 'gitlab', 'bitbucket'].map((provider) => (
             <Button
               variant="outline"
@@ -136,12 +139,27 @@ export function SignInForm() {
               data-measure="provider-connect"
               onClick={() => social(provider)}
             >
-              Continue with {provider === 'github' ? 'GitHub' : provider === 'gitlab' ? 'GitLab' : 'Bitbucket'}
+              {provider === 'github' ? 'GitHub' : provider === 'gitlab' ? 'GitLab' : 'Bitbucket'}
               <ArrowRight size={15} />
             </Button>
           ))}
         </div>
-        <div className="form-divider">or use your email</div>
+        <div className="form-divider">or continue with email</div>
+        <div className="auth-methods" role="group" aria-label="Sign-in method">
+          {signInMethods
+            .filter((option) => intent === 'signin' || option.id === 'otp' || option.id === 'magic')
+            .map((option) => (
+              <button
+                type="button"
+                key={option.id}
+                aria-pressed={method === option.id}
+                disabled={busy}
+                onClick={() => chooseMethod(option.id)}
+              >
+                {option.label}
+              </button>
+            ))}
+        </div>
         <form className="form-stack" onSubmit={submit}>
           <label>
             Email address
@@ -160,6 +178,7 @@ export function SignInForm() {
             <label>
               Password
               <input
+                name="password"
                 className="field"
                 type="password"
                 autoComplete="current-password"
@@ -173,6 +192,7 @@ export function SignInForm() {
             <label>
               One-time code
               <input
+                name="otp"
                 className="field"
                 value={otp}
                 onChange={(event) => setOtp(event.target.value)}
@@ -197,49 +217,29 @@ export function SignInForm() {
                       ? 'Send a sign-in link'
                       : 'Send a one-time code'}
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            type="button"
-            disabled={busy}
-            onClick={() => chooseMethod(method === 'otp' ? 'magic' : 'otp')}
-          >
-            {method === 'otp' ? 'Use a magic link instead' : 'Use a one-time code instead'}
-          </Button>
-          {method !== 'password' ? (
-            <Button variant="ghost" size="sm" type="button" disabled={busy} onClick={() => chooseMethod('password')}>
-              Use a password instead
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              disabled={busy || !session.configured}
-              onClick={(event) => {
-                const input = event.currentTarget.form?.elements.namedItem('email');
-                if (input instanceof HTMLInputElement && input.reportValidity()) void sendReset();
-              }}
-            >
-              Email a password reset link
-            </Button>
+          {sent && (
+            <button className="auth-text-button" type="button" disabled={busy} onClick={() => chooseMethod('otp')}>
+              Use a different email
+            </button>
           )}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={busy}
-            onClick={() => chooseMethod(method === 'sso' ? 'otp' : 'sso')}
-          >
-            {method === 'sso' ? 'Use an email code instead' : 'Use company SSO'}
-          </Button>
+          {method === 'password' && (
+            <Link className="auth-text-button" href="/forgot-password">
+              Forgot password?
+            </Link>
+          )}
         </form>
         {message && (
           <div className="status-message" role="status">
             {message}
           </div>
         )}
-        <p>
+        <p className="auth-switch">
+          {intent === 'signup' ? 'Already have an account?' : 'New to Geld?'}{' '}
+          <Link href={intent === 'signup' ? '/sign-in' : '/sign-up'}>
+            {intent === 'signup' ? 'Sign in' : 'Create an account'}
+          </Link>
+        </p>
+        <p className="auth-legal">
           By continuing, you agree to the{' '}
           <Link href="https://www.geld.sh/privacy" className="underline">
             privacy policy
@@ -247,6 +247,6 @@ export function SignInForm() {
           . You can connect a Git provider later.
         </p>
       </div>
-    </div>
+    </AuthFrame>
   );
 }

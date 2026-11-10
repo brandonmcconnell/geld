@@ -80,3 +80,37 @@ describe('companion setup authority', () => {
     expect(storageCalls).toBe(0);
   });
 });
+
+describe('fallback settings authority', () => {
+  it('persists explicit fallback independently from the normal Geld toggle and enforces paid eligibility', async () => {
+    const teamId = '22222222-2222-4222-8222-222222222222';
+    await db.query("INSERT INTO teams(id,name,created_by) VALUES($1,'Team','u')", [teamId]);
+    await db.query("INSERT INTO team_members(team_id,user_id,role) VALUES($1,'u','admin')", [teamId]);
+    await db.query('INSERT INTO subscriptions(team_id,card_on_file,cap_cents) VALUES($1,true,5000)', [teamId]);
+    const input = {
+      provider: 'geld',
+      label: 'Geld',
+      enabled: true,
+      billed: false,
+      safetyNet: true,
+      capCents: 5000,
+      teamId,
+      models: [],
+      automaticLadder: true,
+    };
+    const saved = await saveProvider(request('/api/ai/providers', input));
+    expect(saved.status).toBe(200);
+    expect((await db.query("SELECT settings FROM ai_providers WHERE provider='geld'")).rows).toEqual([
+      { settings: expect.objectContaining({ billed: false, safetyNet: true, teamId }) },
+    ]);
+    expect((await db.query('SELECT safety_net,cap_cents FROM subscriptions')).rows).toEqual([
+      { safety_net: true, cap_cents: 5000 },
+    ]);
+    await db.query('UPDATE subscriptions SET card_on_file=false');
+    expect((await saveProvider(request('/api/ai/providers', input))).status).toBe(403);
+    await db.query('UPDATE subscriptions SET card_on_file=true');
+    expect((await saveProvider(request('/api/ai/providers', { ...input, capCents: 0 }))).status).toBe(403);
+    await db.query("UPDATE team_members SET role='member'");
+    expect((await saveProvider(request('/api/ai/providers', input))).status).toBe(403);
+  });
+});

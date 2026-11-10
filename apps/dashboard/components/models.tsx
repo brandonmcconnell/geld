@@ -2,8 +2,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { z } from 'zod';
-import { BookOpen } from 'lucide-react';
-import { Button, buttonVariants } from '@geld/ui';
+import { BookOpen } from '@/components/icons';
+import { Button, buttonVariants } from '@/components/button';
 import { EmptyState } from './app-shell';
 const modelsSchema = z.object({
   someUnavailable: z.boolean().default(false),
@@ -92,11 +92,8 @@ export function Models() {
   }, [revision]);
   return (
     <div className="page">
-      <p className="eyebrow">MODELS</p>
-      <h1>Choose what does the thinking.</h1>
-      <p className="muted mt-3">
-        Models come from your connected providers. The automatic ladder tries them in the order you choose.
-      </p>
+      <h1 className="sr-only">Models</h1>
+
       {someUnavailable && (
         <div className="status-message" role="status">
           <p>Some provider catalogs could not be loaded. Check your connections or try again.</p>
@@ -122,6 +119,7 @@ export function Models() {
         <label className="form-stack mt-6">
           Find a model
           <input
+            name="query"
             className="field"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -169,7 +167,7 @@ export function Models() {
             </div>
           }
         >
-          Enable Geld behind a cost confirmation, or connect your own provider to see its models.
+          Connect an AI provider to see available models.
         </EmptyState>
       )}
     </div>

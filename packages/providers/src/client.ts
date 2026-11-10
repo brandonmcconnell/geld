@@ -318,6 +318,35 @@ function clientFor(api: ApiTransport, provider: Provider, host: string, graphql:
         return { ok: false, reason: 'invalid_response' };
       return { ok: true, value: result.value };
     },
+    async reviewRequesters(ref) {
+      if (!owns(ref)) return { ok: false, reason: 'invalid_response' };
+      if (provider !== 'github') return { ok: false, reason: 'unsupported' };
+      const eventSchema = z.array(
+        z.object({
+          event: z.string(),
+          actor: z.object({ login: z.string() }).nullable().optional(),
+          requested_reviewer: z.object({ login: z.string() }).nullable().optional(),
+        }),
+      );
+      const requests = new Map<string, string>();
+      for (let page = 1; page <= 5; page++) {
+        const result = await api.request(
+          `repos/${e(ref.owner)}/${e(ref.repo)}/issues/${ref.number}/timeline?per_page=100&page=${page}`,
+        );
+        if (!result.ok) return result;
+        const events = eventSchema.safeParse(result.value);
+        if (!events.success) return { ok: false, reason: 'invalid_response' };
+        for (const item of events.data) {
+          const reviewer = item.requested_reviewer?.login;
+          if (!reviewer) continue;
+          if (item.event === 'review_requested' && item.actor) requests.set(reviewer, item.actor.login);
+          if (item.event === 'review_request_removed') requests.delete(reviewer);
+        }
+        if (events.data.length < 100)
+          return { ok: true, value: [...requests].map(([reviewer, requester]) => ({ reviewer, requester })) };
+      }
+      return { ok: false, reason: 'unavailable' };
+    },
     async comments(ref) {
       if (!owns(ref)) return { ok: false, reason: 'invalid_response' };
       const data: unknown[] = [];

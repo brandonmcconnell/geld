@@ -2,12 +2,12 @@
 import { measure } from '@/lib/measurement';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowUp, Copy, Sparkles, Square, X } from 'lucide-react';
+import { ArrowUp, Copy, Sparkles, Square, X } from '@/components/icons';
 import { z } from 'zod';
 import type { PullRef } from '@geld/domain';
 import type { ReviewPlan, ReviewStep } from '@geld/review/plan';
 import type { ReviewData } from '@/lib/review-contracts';
-import { Button } from '@geld/ui';
+import { Button } from '@/components/button';
 import { useDashboard } from './app-shell';
 interface Turn {
   readonly role: 'user' | 'assistant';
@@ -98,8 +98,9 @@ export function AssistantPanel({
           <Sparkles size={15} />
           Review assistant
         </span>
-        <button className="icon-button" onClick={onClose} aria-label="Close assistant">
+        <button type="button" className="icon-button" onClick={onClose} aria-label="Close assistant">
           <X size={16} />
+          <span className="touch-target" aria-hidden="true" />
         </button>
       </header>
       <div className="assistant-context">
@@ -110,15 +111,12 @@ export function AssistantPanel({
         {turns.length === 0 && (
           <div className="assistant-intro">
             <Sparkles size={23} />
-            <h3>A second perspective.</h3>
-            <p>
-              Ask about this step, check a risk or draft a comment. The assistant knows the plan and the changes you are
-              reading.
-            </p>
+            <h3>Ask about this change</h3>
+            <p>Ask a question or draft a comment using the current diff and guide.</p>
             <div>
               {['Explain this step', 'What could break?', 'Where is this tested?', 'Draft a review comment'].map(
                 (question) => (
-                  <button key={question} onClick={() => send(question)} disabled={busy || !session.user}>
+                  <button type="button" key={question} onClick={() => send(question)} disabled={busy || !session.user}>
                     {question}
                     <ArrowUp size={11} className="rotate-45" />
                   </button>
@@ -135,11 +133,13 @@ export function AssistantPanel({
               <div className="assistant-turn-meta">
                 <small>{model}</small>
                 <button
+                  type="button"
                   className="icon-button"
                   aria-label="Copy assistant response"
                   onClick={() => navigator.clipboard.writeText(turn.content)}
                 >
                   <Copy size={12} />
+                  <span className="touch-target" aria-hidden="true" />
                 </button>
               </div>
             )}
@@ -163,6 +163,7 @@ export function AssistantPanel({
           Ask about this review
         </label>
         <textarea
+          name="assistant-message"
           id="assistant-message"
           value={message}
           onChange={(e) => setMessage(e.target.value)}

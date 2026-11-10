@@ -2,7 +2,7 @@
 import Image from 'next/image';
 import { useState } from 'react';
 import { z } from 'zod';
-import { Button } from '@geld/ui';
+import { Button } from '@/components/button';
 const schema = z.object({
   collaborators: z.array(
     z.object({
@@ -163,6 +163,7 @@ export function CollaboratorAudit({ teamId }: { readonly teamId: string }) {
               Include all collaborators<small> Off by default. Load every page before selecting everyone.</small>
             </span>
             <input
+              name="value"
               type="checkbox"
               disabled={busy || !!data.next}
               checked={!!people.length && people.every((person) => selected.includes(key(person)))}
@@ -195,6 +196,7 @@ export function CollaboratorAudit({ teamId }: { readonly teamId: string }) {
                     </small>
                   </span>
                   <input
+                    name="value"
                     type="checkbox"
                     disabled={busy}
                     checked={selected.includes(key(person))}
@@ -215,6 +217,7 @@ export function CollaboratorAudit({ teamId }: { readonly teamId: string }) {
                         {repo.owner}/{repo.name}
                       </span>
                       <input
+                        name="value"
                         type="checkbox"
                         disabled={busy}
                         checked={chosen.includes(repo.id)}
@@ -294,11 +297,11 @@ function CollaboratorAvatar({
     /* Use a local initial when no safe avatar is available. */
   }
   return url ? (
-    <Image unoptimized src={url} width={22} height={22} className="rounded-full" alt="" />
+    <Image unoptimized src={url} width={22} height={22} className="rounded-none" alt="" />
   ) : (
     <span
       aria-hidden="true"
-      className="inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs"
+      className="inline-flex size-6 shrink-0 items-center justify-center rounded-none bg-muted text-xs"
     >
       {person.login.slice(0, 1).toUpperCase()}
     </span>

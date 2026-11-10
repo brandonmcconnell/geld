@@ -1,15 +1,16 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { z } from 'zod';
-import { Button } from '@geld/ui';
+import { Button } from '@/components/button';
 import { TeamDestruction } from './team-destruction';
 import { SsoSettings } from './sso-settings';
 import { AppMigration } from './app-migration';
 import { BitbucketConnection } from './bitbucket-connection';
 import { CollaboratorAudit } from './collaborator-audit';
 import { RepositoryAppSetup } from './repository-app-setup';
-import { useDashboard } from './app-shell';
+import { useDashboard, EmptyState } from './app-shell';
 const dataSchema = z.object({
   team: z.object({
     id: z.string(),
@@ -76,6 +77,11 @@ const previewSchema = z.object({
 });
 export function TeamDetail({ id }: { readonly id: string }) {
   const { queue, session } = useDashboard();
+  const requestedPanel = useSearchParams().get('view');
+  const panel =
+    requestedPanel && ['repositories', 'members', 'access', 'sso', 'activity', 'advanced'].includes(requestedPanel)
+      ? requestedPanel
+      : 'repositories';
   const [data, setData] = useState<z.infer<typeof dataSchema> | null>(null);
   const [message, setMessage] = useState('');
   const [revision, setRevision] = useState(0);
@@ -116,7 +122,7 @@ export function TeamDetail({ id }: { readonly id: string }) {
       const error = z.object({ error: z.string() }).safeParse(value);
       setMessage(
         r.ok
-          ? 'Saved. Provider work stays pending until confirmed.'
+          ? 'Saved. Git host changes stay pending until confirmed.'
           : error.success
             ? error.data.error
             : 'This change could not be saved.',
@@ -130,23 +136,33 @@ export function TeamDetail({ id }: { readonly id: string }) {
   const admin = data?.team.role === 'admin';
   return (
     <div className="page" data-measure="team-access">
-      <nav className="breadcrumbs">
-        <Link href="/teams">Teams</Link>
-        <span>/</span>
-        <span>{data?.team.name ?? 'Team'}</span>
-      </nav>
       <div className="page-heading">
-        <h1>{data?.team.name ?? 'Team'}</h1>
-        <Link href="/settings/billing">Plan and spending cap ↗</Link>
+        <h1>
+          {panel === 'repositories'
+            ? 'Repositories'
+            : panel === 'members'
+              ? 'Members'
+              : panel === 'access'
+                ? 'Access and permissions'
+                : panel === 'sso'
+                  ? 'Single sign-on'
+                  : panel === 'activity'
+                    ? 'Grant ledger'
+                    : 'Advanced'}
+        </h1>
+        <span className="muted text-xs">{data?.team.name ?? 'Team'}</span>
       </div>
+      {data && !admin && !['repositories', 'members'].includes(panel) && (
+        <EmptyState title="Team admin access required">An admin can manage these team settings.</EmptyState>
+      )}
       {message && (
         <p role="status" className="status-message">
           {message}
         </p>
       )}
-      <section className="settings-card">
-        <h2>Repositories</h2>
-        <p>Your provider account controls which content you can read and which actions you can take.</p>
+      <section className="settings-card" hidden={panel !== 'repositories'}>
+        <h2 className="sr-only">Repositories</h2>
+        <p>Your Git host controls repository access.</p>
         {data?.repositories.map((repo) => (
           <div className="settings-row" key={repo.id}>
             <div>
@@ -155,7 +171,7 @@ export function TeamDetail({ id }: { readonly id: string }) {
               </Link>
               <small>
                 {' '}
-                {repo.provider} · {repo.accessible ? 'Provider access confirmed' : 'No provider access'}
+                {repo.provider} · {repo.accessible ? 'Access confirmed' : 'No repository access'}
               </small>
             </div>
             {repo.canRequest ? (
@@ -184,7 +200,7 @@ export function TeamDetail({ id }: { readonly id: string }) {
         {!!data?.hiddenCount && <p>{data.hiddenCount} hidden repositories</p>}
         <details>
           <summary>Add repositories from your connections</summary>
-          <p>Repositories need your own provider access. Add requests wait for admin approval by default.</p>
+          <p>Repositories need your own Git host access. Add requests wait for admin approval by default.</p>
           {queue.repositories.map((repo) => (
             <label className="settings-row" key={repo.id}>
               <span>
@@ -204,11 +220,11 @@ export function TeamDetail({ id }: { readonly id: string }) {
         </details>
       </section>
       {admin && (
-        <section className="settings-card">
+        <section className="settings-card" hidden={panel !== 'access'}>
           <h2>Access and visibility</h2>
           <label className="settings-row">
             <span>Approve repository additions</span>
-            <input type="checkbox" checked={approval} onChange={(e) => setApproval(e.target.checked)} />
+            <input name="approval" type="checkbox" checked={approval} onChange={(e) => setApproval(e.target.checked)} />
           </label>
           <label className="settings-row">
             <span>
@@ -216,6 +232,7 @@ export function TeamDetail({ id }: { readonly id: string }) {
               <small> Requires extra repository App permissions.</small>
             </span>
             <input
+              name="managed"
               type="checkbox"
               checked={managed}
               onChange={(e) => {
@@ -228,6 +245,7 @@ export function TeamDetail({ id }: { readonly id: string }) {
             <label className="settings-row">
               <span>Sync team membership to repositories</span>
               <input
+                name="sync"
                 type="checkbox"
                 checked={sync}
                 onChange={(e) => {
@@ -241,6 +259,7 @@ export function TeamDetail({ id }: { readonly id: string }) {
           <label className="settings-row">
             <span>Members without repository access see</span>
             <select
+              name="visibility"
               className="field max-w-xs"
               value={visibility}
               onChange={(e) => {
@@ -299,6 +318,7 @@ export function TeamDetail({ id }: { readonly id: string }) {
                             {m.login} outside collaborator · {data?.repositories.find((r) => r.id === m.repoId)?.name}
                           </span>
                           <input
+                            name="value"
                             type="checkbox"
                             checked={outside.includes(key)}
                             onChange={(e) =>
@@ -331,15 +351,15 @@ export function TeamDetail({ id }: { readonly id: string }) {
         </section>
       )}
       {admin && (
-        <>
+        <div hidden={panel !== 'access'}>
           <RepositoryAppSetup key={String(managed)} teamId={id} managedAccess={managed} />
           <AppMigration teamId={id} />
           <CollaboratorAudit teamId={id} />
           <BitbucketConnection teamId={id} />
-        </>
+        </div>
       )}
-      <section className="settings-card">
-        <h2>Members</h2>
+      <section className="settings-card" hidden={panel !== 'members'}>
+        <h2 className="sr-only">Members</h2>
         {data?.members.map((member) => (
           <div className="settings-row" key={member.id}>
             <span>
@@ -366,6 +386,7 @@ export function TeamDetail({ id }: { readonly id: string }) {
             }}
           >
             <input
+              name="email"
               className="field"
               type="email"
               aria-label="Teammate email"
@@ -380,7 +401,7 @@ export function TeamDetail({ id }: { readonly id: string }) {
           </form>
         )}
       </section>
-      <section className="settings-card">
+      <section className="settings-card" hidden={panel !== 'members'}>
         <h2>Requests</h2>
         {data?.requests.length ? (
           data.requests.map((r) => (
@@ -392,6 +413,7 @@ export function TeamDetail({ id }: { readonly id: string }) {
               {r.state === 'pending' && r.canDecide && (
                 <span className="flex gap-2">
                   <Button
+                    variant="outline"
                     size="sm"
                     disabled={busy}
                     onClick={() =>
@@ -428,8 +450,8 @@ export function TeamDetail({ id }: { readonly id: string }) {
       </section>
       {admin && (
         <>
-          <section className="settings-card">
-            <h2>Grant ledger</h2>
+          <section className="settings-card" hidden={panel !== 'activity'}>
+            <h2 className="sr-only">Grant ledger</h2>
             <p>
               Only Geld-created grants are managed here. Invitations remain pending until the provider confirms access.
             </p>
@@ -467,20 +489,14 @@ export function TeamDetail({ id }: { readonly id: string }) {
               ))}
             <Link href={`/settings/security?team=${id}`}>Open security log ↗</Link>
           </section>
-          <GuideDefaults teamId={id} />
-          <SsoSettings teamId={id} />
-          <TeamDestruction teamId={id} name={data?.team.name ?? 'Team'} />
+          <div hidden={panel !== 'sso'}>
+            <SsoSettings teamId={id} />
+          </div>
+          <div hidden={panel !== 'advanced'}>
+            <TeamDestruction teamId={id} name={data?.team.name ?? 'Team'} />
+          </div>
         </>
       )}
     </div>
-  );
-}
-function GuideDefaults({ teamId }: { readonly teamId: string }) {
-  return (
-    <section className="settings-card">
-      <h2>Review defaults</h2>
-      <p>Guide triggers and default reviewers follow team, repository and PR settings.</p>
-      <Link href={`/teams/${teamId}/settings`}>Configure review defaults ↗</Link>
-    </section>
   );
 }

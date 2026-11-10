@@ -4,6 +4,7 @@ const output: Pick<NextConfig, 'output'> = process.env.VERCEL === '1' ? {} : { o
 const config: NextConfig = {
   cacheComponents: true,
   reactStrictMode: true,
+  devIndicators: false,
   poweredByHeader: false,
   logging: { incomingRequests: false },
   transpilePackages: [
