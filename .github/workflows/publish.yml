@@ -12,9 +12,9 @@ name: Publish to stores
 #     release tag and a subset of stores.
 #
 # Every store reviews each submission, and Chrome/Edge/Apple refuse a new one
-# while the previous is under review (Apple lets us withdraw it; the others do
-# not), so a store that is busy is *skipped* with a warning and the next
-# scheduled run publishes the newest release once it clears. Firefox has no
+# while the previous is under review, so a store that is busy is *skipped* with a
+# warning and the next scheduled run publishes the newest release once it clears.
+# Apple would let us withdraw a waiting submission, but the Safari job never does. Firefox has no
 # blocking review but an API quota (24 submissions and 48 file uploads a day per
 # account), so a version AMO already has is detected with a read-only request
 # *before* anything is uploaded, and a throttled answer is a skip that the next
@@ -28,8 +28,7 @@ name: Publish to stores
 #   Safari  : APPLE_ASC_KEY_ID, APPLE_ASC_ISSUER_ID, APPLE_ASC_PRIVATE_KEY (base64 .p8),
 #             APPLE_CERTIFICATE_P12 (base64), APPLE_CERTIFICATE_PASSWORD, APPLE_TEAM_ID
 #             plus repository variables SAFARI_REVIEW_VIDEO_URL, SAFARI_REVIEW_VIDEO_VERSION and
-#             SAFARI_REVIEW_TEST_DEVICE, and SAFARI_AUTO_PUBLISH=true to submit on the schedule
-#             (unset: Safari is submitted only from a manual run)
+#             SAFARI_REVIEW_TEST_DEVICE; SAFARI_AUTO_PUBLISH=false keeps Safari to manual runs
 # See apps/extension/store/PUBLISHING.md for where each comes from.
 
 on:
@@ -46,9 +45,9 @@ on:
         required: false
         default: ''
       channels:
-        description: 'Comma-separated stores: chrome, edge, firefox, safari (add safari to submit it; it is paused otherwise)'
+        description: 'Comma-separated stores: chrome, edge, firefox, safari'
         required: false
-        default: 'chrome,edge,firefox'
+        default: 'chrome,edge,firefox,safari'
       notes:
         description: 'Reviewer notes (Edge / Firefox)'
         required: false
@@ -214,13 +213,13 @@ jobs:
           [ "$code" = "0" ] || exit "$code"
           echo "::notice title=Firefox::Version uploaded; AMO signs and lists it after its automated review."
 
-  # Paused on the schedule and after CI: every run withdrew the submission Apple was about to review
-  # (--reject_if_possible) for the newest build, so no review ever finished. A run from the Actions tab with safari
-  # typed into its channels (it is not in the default) still submits; set the repository variable SAFARI_AUTO_PUBLISH to true to resume the automatic path.
+  # Never withdraws a submission Apple has not finished: withdrawing the waiting one for each newer build, twice a day,
+  # meant no review ever finished. A review waiting or under way is a skip, as on Chrome and Edge, and the next run
+  # submits the newest build once it ends. The repository variable SAFARI_AUTO_PUBLISH=false keeps Safari to manual runs.
   safari:
     name: Safari (App Store Connect)
     needs: assets
-    if: contains(needs.assets.outputs.channels, 'safari') && (github.event_name == 'workflow_dispatch' || vars.SAFARI_AUTO_PUBLISH == 'true')
+    if: contains(needs.assets.outputs.channels, 'safari') && (github.event_name == 'workflow_dispatch' || vars.SAFARI_AUTO_PUBLISH != 'false')
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
@@ -249,12 +248,32 @@ jobs:
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
+      # Read-only, before anything is built: a submission still waiting for or in review is left alone.
+      - name: Check App Store Connect for a review in progress
+        id: review
+        if: steps.creds.outputs.ready == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.APPLE_ASC_PRIVATE_KEY }}
+        run: |
+          review=$(node apps/extension/scripts/publish/asc-review-busy.mjs sh.geld.safari || echo "unknown")
+          echo "App Store Connect review: $review"
+          case "$review" in
+            busy*)
+              echo "::warning title=Safari::Skipped: a submission is ${review#busy } with App Review; the next scheduled run submits the newest build once that review ends."
+              echo "ready=false" >> "$GITHUB_OUTPUT" ;;
+            free) echo "ready=true" >> "$GITHUB_OUTPUT" ;;
+            *)
+              echo "::warning title=Safari::Skipped: could not read App Review's state, so nothing was submitted; the next run checks again."
+              echo "ready=false" >> "$GITHUB_OUTPUT" ;;
+          esac
       # A build App Store Connect already has is detected with a read-only API
       # call before spending minutes archiving and uploading a package Apple
       # would refuse as redundant. The release tag is vX.Y.Z-build.N.
       - name: Check App Store Connect for this build
         id: known
-        if: steps.creds.outputs.ready == 'true'
+        if: steps.creds.outputs.ready == 'true' && steps.review.outputs.ready == 'true'
         env:
           ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
@@ -269,20 +288,20 @@ jobs:
             echo "::notice title=Safari::Skipped: App Store Connect already has build $marketing ($build) (checked without archiving)."
           fi
       - uses: pnpm/action-setup@v6
-        if: steps.creds.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
+        if: steps.creds.outputs.ready == 'true' && steps.review.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
       - uses: actions/setup-node@v7
-        if: steps.creds.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
+        if: steps.creds.outputs.ready == 'true' && steps.review.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
         with:
           node-version: 22
           cache: pnpm
-      - if: steps.creds.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
+      - if: steps.creds.outputs.ready == 'true' && steps.review.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
         run: pnpm install --frozen-lockfile
         env:
           FONTAWESOME_PACKAGE_TOKEN: ${{ secrets.FONTAWESOME_PACKAGE_TOKEN }}
       # Rebuild the Safari flavour at the release's version and refresh the Xcode
       # wrapper (safari:sync copies the build in and stamps MARKETING_VERSION and
       # the build number). The release tag is vX.Y.Z-build.N → build number N.
-      - if: steps.creds.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
+      - if: steps.creds.outputs.ready == 'true' && steps.review.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
         env:
           WXT_GELD_APP_CLIENT_ID: ${{ vars.WXT_GELD_APP_CLIENT_ID }}
           TAG: ${{ needs.assets.outputs.tag }}
@@ -290,7 +309,7 @@ jobs:
           export GELD_BUILD_NUMBER="${TAG##*build.}"
           pnpm --filter @geld/extension safari:sync
       - name: Import signing certificate
-        if: steps.creds.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
+        if: steps.creds.outputs.ready == 'true' && steps.review.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
         env:
           P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
           P12_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -302,7 +321,7 @@ jobs:
           security import cert.p12 -k build.keychain -P "$P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/xcodebuild
           security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
       - name: Archive and export the App Store package
-        if: steps.creds.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
+        if: steps.creds.outputs.ready == 'true' && steps.review.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
         env:
           ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
@@ -341,12 +360,10 @@ jobs:
           ls -1 build/export
       # fastlane (preinstalled on GitHub's macOS runners) uploads the .pkg, waits for
       # App Store Connect to process it, attaches it to the version, fills in the
-      # release notes and submits for review. --reject_if_possible withdraws a
-      # submission still waiting for review so this one takes its place (a
-      # submission already *in* review cannot be replaced; that case is reported
-      # as skipped).
+      # release notes and submits for review. Nothing is withdrawn: the review
+      # check above skips the job while a submission is waiting or in review.
       - name: Upload and submit for review
-        if: steps.creds.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
+        if: steps.creds.outputs.ready == 'true' && steps.review.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
         env:
           ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
@@ -377,7 +394,7 @@ jobs:
             --app_review_information "$review_information" \
             --submission_information '{"export_compliance_uses_encryption":false,"export_compliance_encryption_updated":false,"add_id_info_uses_idfa":false}' \
             --run_precheck_before_submit false \
-            --submit_for_review --automatic_release --reject_if_possible \
+            --submit_for_review --automatic_release \
             --force 2>&1 | tee deliver.log
           code=${PIPESTATUS[0]}
           # No app record in App Store Connect for the bundle id yet (fastlane's find_app returns nil).
