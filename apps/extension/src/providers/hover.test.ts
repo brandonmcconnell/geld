@@ -98,6 +98,22 @@ afterEach(() => {
 });
 
 describe('provider commit hover intent', () => {
+  it('leaves the review's own tabs to the counts in the tab bar while another review's link still counts', async () => {
+    window.location.href = `${ROOT}/-/merge_requests/7`;
+    const get = vi.fn(() => ready());
+    create(get);
+    const own = document.createElement('a'); own.href = `${ROOT}/-/merge_requests/7/diffs`; own.textContent = 'Changes';
+    const other = document.createElement('a'); other.href = `${ROOT}/-/merge_requests/8/diffs`; other.textContent = '!8';
+    document.body.append(own, other); geometry(own); geometry(other);
+    hover(own);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(get).not.toHaveBeenCalled();
+    expect(tooltip()?.hidden ?? true).toBe(true);
+    hover(other);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(get).toHaveBeenCalledOnce();
+  });
+
   it('does not fetch delegated link counts when list statistics are off and closes them when disabled', async () => {
     settings = { ...DEFAULT_SETTINGS, showListStats: false };
     const get = vi.fn(() => ready());

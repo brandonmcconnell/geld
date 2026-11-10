@@ -5,6 +5,7 @@ import { breakdownFromFiles, hiddenNounPlural, statsBreakdown } from '../github/
 import { lineIndex, mergeLineRects } from '../github/ui/tooltip';
 import type { ProviderDiffSource, ProviderDiffState } from './diff-source';
 import type { ProviderAdapter, ProviderPage } from './types';
+import { isProviderReviewPage } from './types';
 
 export interface ProviderHoverOptions {
   readonly document?: Document;
@@ -253,6 +254,9 @@ export class ProviderHover {
       if (url.origin !== current.origin || url.pathname === current.pathname || url.protocol !== 'https:' || url.username !== '' || url.password !== '') return null;
       const page = this.adapter.describe(url, this.doc);
       if (page === null || page.provider !== this.adapter.id || page.kind === 'other') return null;
+      // The review's own tabs link to it under other paths; its counts already stand in the tab bar.
+      const own = this.adapter.describe(current, this.doc);
+      if (own !== null && isProviderReviewPage(own) && isProviderReviewPage(page) && own.url === page.url) return null;
       const settings = this.settings();
       if (!settings.enabled || !settings.showListStats || !decideRepo(compileRepoRules(settings.repoRules), providerRepositoryScope(page.repository)).allowed) return null;
       return { host: anchor, page };
