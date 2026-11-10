@@ -4,6 +4,7 @@ import type { ProviderReviewPage } from '../providers/types';
 import { BitbucketClient } from './api';
 import { describeBitbucketPage } from './page';
 import { fetchBitbucketReview } from './review';
+import { readProviderDigest } from '../providers/digest-conformance';
 
 const ROOT = '/2.0/repositories/acme/widgets/pullrequests/42';
 const DATE = '2026-11-01T12:00:00Z';
@@ -72,6 +73,18 @@ describe('Bitbucket review normalization from documented API fixtures', () => {
     expect(snapshot.complete).toBe(false);
     expect(snapshot.input.complete).toBe(false);
     expect(snapshot.unavailable).toContainEqual(expect.objectContaining({ area: 'approval requirements' }));
+  });
+
+  it('meets the digest adapter contract, with or without a source', async () => {
+    const full = setup();
+    const reading = readProviderDigest(await fetchBitbucketReview(full.page, new AbortController().signal, full.client), 'open');
+    expect(reading.issues).toEqual([]);
+    expect(reading.document?.reviewers.map((reviewer) => reviewer.standing)).toEqual(['approved', 'changes_requested']);
+    expect(reading.document?.requirement).toBeNull();
+    const failing = setup({}, 'statuses');
+    const missing = readProviderDigest(await fetchBitbucketReview(failing.page, new AbortController().signal, failing.client), 'open');
+    expect(missing.issues).toEqual([]);
+    expect(missing.document?.coverage.checks?.state).toBe('unavailable');
   });
 
   it('does not infer a pending request from assigned reviewer membership or an existing approval', async () => {

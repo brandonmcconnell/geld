@@ -2325,6 +2325,8 @@ Where each host stands against GitHub's digest, the shared document and layout m
 Keep that matrix current when a row or behaviour changes on any host.
 `@geld/review`'s `DigestDocument` (`digest-document.ts`) is the one set of facts every host fills and every digest row reads: GitLab and Bitbucket through `digestFromProvider`, GitHub's Action payload through `digestFromMeta`.
 An area a host could not read is marked in `coverage` and lists nothing, so a row says how much it saw instead of reading an empty list as none (`knownEmpty`).
+Every provider's review test runs `readProviderDigest` (`providers/digest-conformance.ts`) on a full read and on one with a source missing, and expects no issues: that is the adapter contract, and `docs/adding-a-provider.md` explains it.
+The labels hosts give unread sources map to digest areas through `AREA_ALIASES`, and an unknown label fails the document, so a new label lands with its alias.
 The cloud content scripts live in `entrypoints/gitlab.content/` and `entrypoints/bitbucket.content/`, with provider adapters in `src/gitlab/` and `src/bitbucket/` behind `src/providers/` interfaces.
 The first pass targets gitlab.com and Bitbucket Cloud, with self-hosted variants requiring separate adapter verification and host permissions.
 GitLab and Bitbucket cloud access is optional, including their content-script registration, so upgrading a GitHub-only installation does not introduce required site access.
