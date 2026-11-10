@@ -2959,7 +2959,7 @@ try {
   });
 
   await runCase('bitbucket-native-bash-on', BITBUCKET_NATIVE_BASH.url, async (page, item) => characterizeNativeBashOn(page, item, {
-    poll, tabState, source: nativeBashSources.get(page), traffic: syntaxOnObservers.get(page), freshAnonymousProfile: report.auth.freshTemporaryBrowserProfile,
+    poll, pause, tabState, source: nativeBashSources.get(page), traffic: syntaxOnObservers.get(page), freshAnonymousProfile: report.auth.freshTemporaryBrowserProfile,
     settings: nativeBashSettingsScopes.get(page),
     guardBudget: guardBitbucketShellBudget, capture: (target, name) => capture(target, name, { fullPage: false, redactFormValues: true }),
   }), true);

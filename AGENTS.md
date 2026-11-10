@@ -2860,6 +2860,12 @@ The harness labels this prior-success requirement ROOT-MANUAL and unverified by 
   This separate case requires a fully free40-request window and at least eight free immediately before each native Save, with no forecast for first-enable or restoration costs and no navigation from default, all or regression focus.
   Prior successful NativeOn210 cost and exact restoration review is an external ROOT-MANUAL admission requirement, explicitly not verified by the first-use harness or by literal focus selection.
 
+- **A mounted native Settings dialog is not yet an eligible form**: new standalone Bash and first-use Pipeline harnesses pin the exact original opener, first observed dialog/parent and first form, then wait read-only within a bounded candidate window for the unchanged strict source-backed schema.
+  Two actual frame observations must retain original controls and every known field value before binding is allowed, and a replacement, source drift or early input cannot restart the epoch on a new owner.
+  Progress retains only bounded safe names/types and fixed boolean/numeric presentation diagnostics, with no unknown form values, DOM, AX, screenshots or generic Cancel.
+  A never-ready initial form remains unavailable and untouched, while an unknown fresh form after a prior Save remains failed native restoration.
+  The actual first standalone attempt stopped at one dialog sample that failed its visibility predicate before schema inspection, which establishes no specific visibility cause, empty form, animation or successful native Bash palette reference.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
