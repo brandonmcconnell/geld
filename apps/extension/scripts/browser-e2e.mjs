@@ -1377,6 +1377,28 @@ async function headerHintsEvidence(page, expectedLabel, groupSelector, name, int
   } finally { await discardHandle(keyboardTarget);await discardHandle(anchor); }
 }
 
+async function breakdownStaysClosed(page, selector) {
+  await page.keyboard.press('Escape');
+  await page.mouse.move(1, 1);
+  const point = await page.evaluate((target) => {
+    const node = [...document.querySelectorAll(target)].find((candidate) => candidate.getBoundingClientRect().width > 0 && candidate.getBoundingClientRect().height > 0);
+    if (node === undefined) return null;
+    node.scrollIntoView({ block: 'center', behavior: 'instant' });
+    const box = node.getBoundingClientRect();
+    return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
+  }, selector);
+  assert.ok(point !== null, `No visible ${selector} to hover`);
+  await page.mouse.move(point.x, point.y);
+  await pause(600);
+  const open = await page.evaluate(() => {
+    const tooltip = document.getElementById('geld-provider-count-tooltip');
+    return tooltip !== null && !tooltip.hidden && tooltip.getBoundingClientRect().height > 0;
+  });
+  await page.mouse.move(1, 1);
+  assert.equal(open, false, `${selector} opened the breakdown, which belongs to the counts in the tab bar alone`);
+  return { selector, open, waitedMs: 600 };
+}
+
 async function browserZoom(page, factor) {
   const result = await options.evaluate(async (url, factor) => {
     const tab = (await chrome.tabs.query({})).find((value) => value.url === url);
@@ -3452,7 +3474,7 @@ try {
     item.enabledDom = enabled;
     item.visibleCountUi = await page.evaluate(providerUiProbe, 'gitlab');
     assertVisibleProviderCounts(item.visibleCountUi, item.enabledState.visible);
-    item.headerHints = await headerHintsEvidence(page, '1 test', '[data-testid="js-file-addition-line"]', 'gitlab-mixed-header');
+    item.headerHints = await headerHintsEvidence(page, '1 test', '.merge-request-tabs-actions', 'gitlab-mixed-header');
     const categorizedPath = item.enabledState.categories.find((category) => category.id === 'tests')?.paths[0];
     assert.ok(typeof categorizedPath === 'string', 'Mixed GitLab fixture needs a real categorized path');
     item.categoryInteraction = await categoryInteraction(page, categorizedPath, 'gitlab', 'gitlab-category', false);
@@ -3467,12 +3489,13 @@ try {
     item.theme = await themeProbe(page);
     item.spokenEnabled = await countA11y(page);
     assert.match(item.spokenEnabled.additions ?? '', /\b4\b/, 'Spoken additions must match the rewritten4 visible lines');
-    item.hoverAdditions = await installedHover(page, '[data-testid="js-file-addition-line"]', 'pointer', 'gitlab-additions-hover');
-    item.hoverChangesPointer = await installedHover(page, '[data-testid="diffs-tab"] > a', 'pointer', 'gitlab-changes-pointer-hover');
-    item.hoverChangesKeyboard = await installedHover(page, '[data-testid="diffs-tab"] > a', 'keyboard', 'gitlab-changes-keyboard-hover');
-    assert.equal(item.hoverChangesPointer.text, item.hoverAdditions.text, 'Native additions and Changes tooltip totals disagree');
-    assert.equal(item.hoverChangesKeyboard.text, item.hoverAdditions.text, 'Keyboard and pointer breakdowns disagree');
-    item.zoom200 = await responsiveHover(page, '[data-testid="diffs-tab"] > a', 'gitlab-zoom200', item.hoverChangesKeyboard.text);
+    const tabBarCounts = '.merge-request-tabs-actions .geld-provider-header-stats, .merge-request-tabs-actions .geld-provider-header-hidden-count';
+    item.hoverCountsPointer = await installedHover(page, tabBarCounts, 'pointer', 'gitlab-counts-pointer-hover');
+    item.hoverCountsKeyboard = await installedHover(page, tabBarCounts, 'keyboard', 'gitlab-counts-keyboard-hover');
+    assert.equal(item.hoverCountsKeyboard.text, item.hoverCountsPointer.text, 'Keyboard and pointer breakdowns disagree');
+    item.changesTabInert = await breakdownStaysClosed(page, '[data-testid="diffs-tab"] > a');
+    item.nativeAdditionsInert = await breakdownStaysClosed(page, '[data-testid="js-file-addition-line"]');
+    item.zoom200 = await responsiveHover(page, tabBarCounts, 'gitlab-zoom200', item.hoverCountsKeyboard.text);
     assert.equal((await countA11y(page)).additions, item.spokenEnabled.additions, 'GitLab zoom changed the accessible visible addition count');
     item.reducedMotion = await reducedMotionProbe(page, 'gitlab');
     await patchSettings({ enabled: false });

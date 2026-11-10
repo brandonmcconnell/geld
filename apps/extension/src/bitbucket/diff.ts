@@ -157,7 +157,7 @@ export function bitbucketHeaderTargets(doc: Document): readonly ProviderHeaderTa
       && (hidden === null || presentationRoot !== null)
       && nav.closest('[data-geld-ui], [hidden], [inert], a, button, [role="tab"], [role="tablist"], [data-testid="comment"], [data-qa="pull-request-description"], [data-qa="pr-activity"], form, [contenteditable]') === null
       ? { hintHost: nav, hintBefore: null, ...(presentationRoot === null ? {} : { presentationRoot }) } : {};
-    targets.push({ files, additions: null, deletions: null, hoverHosts: [tab], ...hint });
+    targets.push({ files, additions: null, deletions: null, passive: true, ...hint });
   }
   const heading = native(doc.querySelectorAll<HTMLElement>('#file-tree h5')).find((node) => node.textContent?.trim() === 'Lines updated');
   const stats = heading?.parentElement?.parentElement;
@@ -182,7 +182,7 @@ export function bitbucketHeaderTargets(doc: Document): readonly ProviderHeaderTa
     }
     const fileTab = native(doc.querySelectorAll<HTMLElement>('[data-testid="sidebar-tab-files"][role="tab"]'))[0];
     const badge = fileTab?.querySelector<HTMLElement>(':scope > span > div > span > span');
-    if (badge !== undefined && badge !== null && count(badge.textContent) !== null) targets.push({ files: badge, additions: null, deletions: null, hoverHosts: fileTab === undefined ? [] : [fileTab] });
+    if (badge !== undefined && badge !== null && count(badge.textContent) !== null) targets.push({ files: badge, additions: null, deletions: null, passive: true });
   }
   return targets;
 }

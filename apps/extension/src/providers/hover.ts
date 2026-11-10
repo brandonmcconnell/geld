@@ -521,6 +521,8 @@ export class ProviderHover {
   };
 
   private readonly onFocusIn = (event: FocusEvent): void => {
+    // A click focuses what it lands on; only keyboard focus holds the breakdown open, so a click never pins it.
+    if (!keyboardFocus(elementOf(event.target))) return;
     const candidate = this.candidate(event.target);
     this.focusHost = candidate?.host ?? null;
     if (candidate !== null) this.begin(candidate.host, candidate.page, null);
@@ -544,4 +546,9 @@ export class ProviderHover {
   private readonly onVisibility = (): void => { if (this.doc.hidden) this.close(); };
   private readonly onPosition = (): void => { if (this.active !== null) this.valid(this.active) ? this.position() : this.close(); };
   private readonly onNavigation = (): void => { this.dismissed = null; this.close(); };
+}
+
+function keyboardFocus(target: Element | null): boolean {
+  if (target === null) return false;
+  try { return target.matches(':focus-visible'); } catch { return true; }
 }

@@ -135,6 +135,8 @@ export interface ProviderHeaderTarget {
   readonly files: HTMLElement | null;
   readonly hoverHosts?: readonly HTMLElement[];
   readonly keyboardHoverHosts?: readonly HTMLElement[];
+  /** Native counts rewritten in place but never opening the breakdown, which only the hint does (a tab's badge, toolbar totals). */
+  readonly passive?: true;
   readonly accessibleSummaryHost?: HTMLElement;
   readonly labels?: readonly {
     readonly host: HTMLElement;

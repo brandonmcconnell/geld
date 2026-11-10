@@ -333,6 +333,25 @@ describe('count tooltip ownership and lifecycle', () => {
     expect(host.hasAttribute('aria-describedby')).toBe(false);
   });
 
+  it('closes on leave after a click focuses the host, since only keyboard focus holds it open', async () => {
+    const instance = create(vi.fn(() => ready()));
+    const host = document.createElement('span');
+    host.setAttribute('data-geld-ui', '');
+    document.body.append(host);
+    geometry(host);
+    const { all, hidden } = breakdownFromFiles([], createMatcher(DEFAULT_SETTINGS));
+    instance.bindBreakdown(host, () => statsBreakdown(all, hidden, 'test files'));
+    hover(host);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(tooltip()?.hidden).toBe(false);
+    const matches = host.matches.bind(host);
+    vi.spyOn(host, 'matches').mockImplementation((selector: string) => selector === ':focus-visible' ? false : matches(selector));
+    host.focus();
+    leave(host);
+    expect(tooltip()?.hidden).toBe(true);
+    instance.stop();
+  });
+
   it('backs off from existing and newly mounted native popovers, including parent-owned descriptions', async () => {
     const get = vi.fn(() => ready());
     const instance = create(get);

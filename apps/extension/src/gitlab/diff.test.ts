@@ -85,7 +85,7 @@ it('does not run on sign-in interstitials or invalid review paths', () => {
   expect(describeGitLabPage(new URL('https://gitlab.com/a/b/-/merge_requests/1/diffs/surprise'), document)).toBeNull();
 });
 
-it('declares native count labels and the interactive Changes link separately from its pointer-transparent badge', () => {
+it('declares native count labels and keeps the Changes link and its badge from opening the breakdown', () => {
   rapid();
   document.body.insertAdjacentHTML('afterbegin', '<li data-testid="diffs-tab"><a data-action="diffs" data-toggle="tabvue" href="/gitlab-org/gitlab/-/merge_requests/266882/diffs">Changes <span class="js-changes-tab-count" style="pointer-events:none">1</span></a></li>');
   const additions = document.querySelector('[data-testid="js-file-addition-line"]');
@@ -94,7 +94,8 @@ it('declares native count labels and the interactive Changes link separately fro
   wrapper.setAttribute('aria-label', 'Added 4 lines.');
   const targets = gitLabHeaderTargets(document);
   expect(targets[0]?.labels).toContainEqual({ host: wrapper, attribute: 'aria-label', count: 'additions' });
-  expect(targets[1]?.hoverHosts).toEqual([document.querySelector('[data-testid="diffs-tab"] a')]);
+  expect(targets[1]?.hoverHosts).toBeUndefined();
+  expect(targets[1]?.passive).toBe(true);
   expect(targets[1]?.files).toBe(document.querySelector('.js-changes-tab-count'));
 });
 
@@ -153,13 +154,27 @@ it('uses the neutral overview action slot outside the Changes anchor, badge, and
   expect(document.activeElement).toBe(previous);
 });
 
-it('deduplicates the overview fallback when a native stats hint exists and rejects foreign Changes identity', () => {
+it('keeps one hint in the tab bar on every tab, the toolbar totals rewritten in place, and rejects foreign Changes identity', () => {
   overviewHeader();
   document.body.insertAdjacentHTML('beforeend', '<div class="diff-stats inline-parallel-buttons"><div class="diff-stats-contents"><div class="diff-stats-group"><span>2 files</span></div><div aria-label="Added 4 lines."><span data-testid="js-file-addition-line">4</span></div></div></div>');
-  expect(gitLabHeaderTargets(document).filter((target) => target.hintHost !== undefined)).toHaveLength(1);
-  expect(gitLabHeaderTargets(document)[0]?.hintHost).toBe(document.querySelector('.diff-stats-contents'));
+  const targets = gitLabHeaderTargets(document);
+  expect(targets.filter((target) => target.hintHost !== undefined)).toHaveLength(1);
+  expect(targets.find((target) => target.hintHost !== undefined)?.hintHost).toBe(document.querySelector('.merge-request-tabs-actions'));
+  expect(targets[0]?.hintHost).toBeUndefined();
+  expect(targets[0]?.passive).toBe(true);
+  expect(targets[0]?.additions).toBe(document.querySelector('[data-testid="js-file-addition-line"]'));
   document.querySelector('a[data-action="diffs"]')?.setAttribute('href', 'https://example.com/gitlab-org/gitlab/-/merge_requests/266334/diffs');
   expect(gitLabHeaderTargets(document)).toHaveLength(1);
+});
+
+it('finds the tab bar slot on the Changes tab before GitLab mounts its thread counter', () => {
+  window.location.href = 'https://gitlab.com/gitlab-org/quality/triage-ops/-/merge_requests/4544/diffs';
+  // As served on the Changes tab of triage-ops!4544 (Nov 2026), before Vue mounts the counter.
+  document.body.innerHTML = '<div class="merge-request-tabs-container"><ul class="merge-request-tabs"><li data-testid="diffs-tab"><a data-action="diffs" data-toggle="tabvue" href="/gitlab-org/quality/triage-ops/-/merge_requests/4544/diffs"><span>Changes</span><span class="gl-badge badge badge-pill badge-neutral"><span class="gl-badge-content"><span class="js-changes-tab-count">1</span></span></span></a></li></ul><div class="merge-request-tabs-actions gl-flex gl-flex-wrap gl-items-center gl-gap-3"><div data-blocks-merge="true" id="js-vue-discussion-counter"></div><div id="js-submit-review-button"></div></div></div>';
+  const target = gitLabHeaderTargets(document).find((candidate) => candidate.hintHost !== undefined);
+  expect(target?.hintHost).toBe(document.querySelector('.merge-request-tabs-actions'));
+  expect(target?.hintBefore).toBe(document.getElementById('js-vue-discussion-counter'));
+  expect(target?.hoverHosts).toBeUndefined();
 });
 
 it('uses the same neutral stats host on an immutable native commit and ignores hidden or cloned insertion hosts', () => {
