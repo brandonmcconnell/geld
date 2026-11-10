@@ -8,6 +8,7 @@
 
 import type { CommentReaction, PreviewDoc, RawCheckRun, RawComment, ReviewerRecord, ReviewerState, ThreadPeer } from '@geld/review';
 import { appAvatarForLogin, findingSeverity, looksLikeSummaryBody } from '@geld/review';
+import { OWN_UI_ATTRIBUTE } from '../dom';
 import { loginOfLink } from './login';
 import { OVERVIEW_ITEM, OVERVIEW_THREAD_FRAME, overviewCommentsSection } from './overview-page';
 import type { ReferenceLink } from './references';
@@ -139,6 +140,7 @@ export function blockText(root: Element, images = false): string {
       return;
     }
     if (!(node instanceof Element)) return;
+    if (node !== root && node.hasAttribute(OWN_UI_ATTRIBUTE)) return;
     if (images && node.tagName === 'IMG') {
       const alt = (node.getAttribute('alt') ?? '').trim();
       if (alt !== '') parts.push(`![${alt}]`);
