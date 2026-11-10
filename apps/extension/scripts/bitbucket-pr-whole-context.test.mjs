@@ -82,7 +82,7 @@ test('passive API observer retains bounded facts, never full JSON or arbitrary e
 async function runProtocol(fault){const {verifyBitbucketPrWhole}=await import('./bitbucket-pr-whole-context.mjs');let closed=false,outline=false,ready=false,stage=0,selected='',restored=false;const order=[],progress={},source=Array.from({length:134},(_,i)=>`line${i+1}`),proof={...traffic(fault==='head'?'c'.repeat(40):F.head),requests:[],raw:[],rawNative:[],armed:false};const events=[];
  const native=()=>({same:true,menuClosed:true,sourceClicks:0,findTrusted:ready,findFocused:true,focusReturned:fault!=='focus',source:ready?{literal:F.head.slice(0,12),url:`https://bitbucket.org/${F.repository}/src/${F.head.slice(0,12)}/${F.path}`}:null,openerEvents:ready?[{before:'false',trusted:false,mediatedByFind:true},{before:'true',trusted:false,mediatedByFind:true}]:[]});
  const value=()=>({same:true,viewedSame:true,countsSame:true,overflow:false,visible:true,clicked:true,rows:source.flatMap((text,i)=>stage<2&&F.leaves.some((leaf,j)=>j>=stage&&leaf.missing.includes(i+1))?[]:[{next:i+1,text,hidden:false}]),folds:outline?F.leaves.map((f,i)=>({...f,expanded:stage>i?'true':'false'})):[],intent:outline?{status:ready?'ready':'idle'}:null,events:[...events],selected});
- const page={isClosed:()=>closed,close:async()=>{closed=true;order.push('close');},evaluate:async(fn,action)=>{if(fn.name==='bitbucketPrTargetProbe')return{same:true,visible:true,categoryOpen:true,hasArticle:true,hasHeader:true,expanded:true,codeLines:2,released:true};if(fn.name==='bitbucketPrWholeProbe'){if(action==='cleanup')return{closed:true,released:true};return fault==='menu'&&ready?null:native();}if(action==='selection-target')return{visible:true,text:'self.assertIn',x1:1,x2:4,y:1};if(action==='restore-selection')return{restored:true};return value();},evaluateHandle:async(_fn,_action,arg)=>({asElement:()=>({evaluate:async()=>true,click:async()=>{order.push(arg);if(arg==='intent'){ready=true;proof.requests=[{}];proof.rawNative=[{same:true,findTrusted:true,menuClosed:true,literal:F.head.slice(0,12)}];proof.raw=[{exact:true,extension:true,armed:true,method:'GET',status:200,redirected:false,bytes:F.bytes,sha256:F.sha256,lines:source}];}else{stage++;events.push({leaf:arg,qualified:true,direction:stage===1?'above':'below'});}}}),dispose:async()=>{}}),mouse:{move:async()=>{},down:async()=>{},up:async()=>{selected='self.assertIn';}}};
+ const page={isClosed:()=>closed,close:async()=>{closed=true;order.push('close');},evaluate:async(fn,action)=>{if(fn.name==='bitbucketPrTargetProbe')return{same:true,visible:true,categoryOpen:true,hasArticle:true,hasHeader:true,expanded:true,codeLines:2,released:true};if(fn.name==='bitbucketPrWholeProbe'){if(action==='cleanup')return{closed:true,released:true};if(action==='setup-diagnostic'&&fault==='setup')return{same:false,diagnostic:{phase:'current',code:'BRANCH_CONTROLS',counts:{branchControls:0},flags:{branchesClosed:false}}};if(action==='setup-diagnostic'&&fault==='setup-evaluate')throw Error('PRIVATE_EVALUATION_ERROR');return fault==='menu'&&ready?null:native();}if(action==='selection-target')return{visible:true,text:'self.assertIn',x1:1,x2:4,y:1};if(action==='restore-selection')return{restored:true};return value();},evaluateHandle:async(_fn,_action,arg)=>({asElement:()=>({evaluate:async()=>true,click:async()=>{order.push(arg);if(arg==='intent'){ready=true;proof.requests=[{}];proof.rawNative=[{same:true,findTrusted:true,menuClosed:true,literal:F.head.slice(0,12)}];proof.raw=[{exact:true,extension:true,armed:true,method:'GET',status:200,redirected:false,bytes:F.bytes,sha256:F.sha256,lines:source}];}else{stage++;events.push({leaf:arg,qualified:true,direction:stage===1?'above':'below'});}}}),dispose:async()=>{}}),mouse:{move:async()=>{},down:async()=>{},up:async()=>{selected='self.assertIn';}}};
  const settings={current:async()=>{},outline:async v=>{outline=v;},restore:async c=>{assert.equal(c,true);restored=true;}},observer={evidence:proof,checkpoint:async()=>{},dispose:async()=>{}};const poll=async(read,accept)=>{for(let i=0;i<2;i++){const v=await read();if(accept(v))return v;}throw Error('PRIVATE_EXCEPTION');};let result,error;try{result=await verifyBitbucketPrWhole(page,{settings,observer,poll,progress,guardBudget:()=>{},readCounters:async()=>({state:{all:{files:5,additions:46,deletions:99},visible:{files:3,additions:11,deletions:3},hiddenCount:2},native:{files:3,additions:11,deletions:fault==='counts'?99:3}})});}catch(e){error=e;}return{result,error,order,progress,restored};}
 test('PR protocol reuses one full source and native context with explicit provenance and exact counts',async()=>{const p=await runProtocol();assert.equal(p.result.status,'passed');assert.equal(p.progress.preparation.referenceBinding,'api_literal_ref');assert.equal(p.progress.counts.length,3);assert.equal(p.restored,true);assert.match(p.result.verified,/Native full hash remains unknown/);});
 for(const fault of ['head','menu','counts','focus'])test(`PR protocol refuses ${fault} and restores settings without a helper GET`,async()=>{const p=await runProtocol(fault);assert.ok(p.error);assert.equal(p.restored,true);assert.notEqual(p.progress.status,'passed');if(fault==='head'){assert.equal(p.progress.status,'unavailable');assert.equal(p.order.includes('intent'),false);}assert.doesNotMatch(JSON.stringify(p.progress),/PRIVATE_EXCEPTION/);});
@@ -131,4 +131,49 @@ for (const hidden of [true, false]) test('whole-source probe keeps the active pa
  sticky.innerHTML='<button aria-haspopup="true" aria-expanded="false">All changes</button>';document.body.prepend(sticky);
  assert.equal(probe().same,true);trusted(f.find);const popup=open(f);close(f,popup);assert.equal(probe().menuClosed,true);
  document.querySelector('#pull-request-tabs-1-tab').append(document.getElementById('all').cloneNode(true));assert.equal(probe(),null);
+});
+
+test('whole-context setup retains the original closed branch metadata beneath native sticky-header CSS',()=>{
+ const f=fixture(),branches=document.querySelector('[data-qa="pr-branches-and-state-styles"]'),metadata=branches.nextElementSibling;
+ const outer=document.createElement('div');outer.className='e1q0qh514';outer.innerHTML='<div class="e1q0qh511"><div class="e1q0qh513" style="visibility:hidden"></div></div>';branches.before(outer);outer.firstElementChild.firstElementChild.append(branches,metadata);
+ const before=outer.outerHTML;assert.equal(getComputedStyle(branches).visibility,'hidden');assert.equal(probe('setup-diagnostic').same,true);assert.equal(outer.outerHTML,before);
+ trusted(f.find);const popup=open(f);close(f,popup);assert.equal(probe().same,true);assert.equal(probe().menuClosed,true);
+ branches.firstElementChild.setAttribute('aria-expanded','true');assert.equal(probe(),null);
+});
+for(const hiding of ['hidden','inert','aria-hidden','display','content-visibility','collapse','opacity'])test('hidden branch metadata still rejects explicit unavailable state '+hiding,()=>{
+ fixture();const branches=document.querySelector('[data-qa="pr-branches-and-state-styles"]');
+ if(hiding==='display')branches.style.display='none';else if(hiding==='content-visibility')branches.style.contentVisibility='hidden';else if(hiding==='collapse')branches.style.visibility='collapse';else if(hiding==='opacity')branches.style.opacity='0';else branches.setAttribute(hiding,hiding==='aria-hidden'?'true':'');
+ const value=probe('setup-diagnostic');assert.equal(value.same,false);assert.equal(value.diagnostic.code,'BRANCH_CONTROLS');assert.equal(value.diagnostic.counts.branchControls,0);
+});
+const setupFaults={
+ ROUTE_UNQUALIFIED:()=>{window.location.hash='%E0%A4%A';},
+ FRAME_COUNT:()=>document.querySelector('[aria-label="Diff"]').remove(),
+ HEADER_METADATA:()=>{document.querySelector('[data-qa="pr-branches-and-state-styles"]').nextElementSibling.textContent='PRIVATE_UNKNOWN_HEADER';},
+ DIFF_PANEL:()=>document.body.append(document.querySelector('[aria-label="Diff"]')),
+ ALL_CHANGES:()=>{document.getElementById('all').textContent='PRIVATE_COMPARISON';},
+ BRANCH_CONTROLS:()=>{document.querySelector('[data-qa="pr-branches-and-state-styles"] [role="button"]').setAttribute('aria-expanded','true');},
+ REPOSITORY_LINK:()=>{document.querySelector('[data-testid="pr-header"] a').href='https://example.test/PRIVATE_LINK';},
+ TARGET_ANCHOR:()=>document.getElementById('chg-'+F.path).remove(),
+ TARGET_ARTICLE:()=>document.querySelector('article').remove(),
+ FILE_HEADER:()=>document.querySelector('[data-testid="file-header"]').remove(),
+ FILE_TITLE:()=>{document.querySelector('h2[data-qa="bk-filepath"]').textContent='PRIVATE_PATH';},
+ FILE_MENU:()=>document.querySelector('[data-qa="bk-file__menu"]').remove(),
+ FILE_OPENER:()=>{document.querySelector('[data-qa="bk-file__menu"] button').disabled=true;},
+ SETUP_OPENER_OPEN:()=>document.querySelector('[data-qa="bk-file__menu"] button').setAttribute('aria-expanded','true'),
+ SETUP_POPUP:()=>document.body.insertAdjacentHTML('beforeend','<section role="dialog">PRIVATE_POPUP<input value="PRIVATE_FORM"></section>'),
+};
+for(const[code,change]of Object.entries(setupFaults))test('setup diagnostic retains fixed failing predicate without unknown page data: '+code,()=>{
+ fixture();change();const before=document.documentElement.outerHTML,value=probe('setup-diagnostic');assert.equal(value.same,false);assert.equal(value.diagnostic.code,code);assert.equal(document.documentElement.outerHTML,before);
+ assert.deepEqual(Object.keys(value),['same','diagnostic']);assert.doesNotMatch(JSON.stringify(value),/PRIVATE_|https:|branchText|<section|<input/);assert.ok(JSON.stringify(value).length<2048);assert.equal(probe('setup'),null);
+});
+test('setup diagnostic bounds counts and only emits known booleans and counters',()=>{
+ fixture();const region=document.querySelector('[aria-label="Diff"]');for(let i=0;i<150;i++)region.after(region.cloneNode(false));const value=probe('setup-diagnostic');assert.equal(value.diagnostic.counts.regions,101);assert.equal(value.diagnostic.flags.countsCapped,true);
+ assert.ok(Object.values(value.diagnostic.counts).every(n=>Number.isInteger(n)&&n>=0&&n<=101));assert.ok(Object.values(value.diagnostic.flags).every(n=>typeof n==='boolean'));
+});
+test('diagnostic-only inspection does not install the source observer or create source authority',()=>{
+ fixture();const value=probe('diagnostic');assert.equal(value.same,true);assert.equal(value.diagnostic.code,'CURRENT_READY');assert.equal(globalThis.__geldBitbucketPrWhole,undefined);assert.equal('source' in value,false);assert.equal('nativeFullHead' in value,false);
+});
+
+for(const fault of ['setup','setup-evaluate'])test('failed setup polling preserves bounded diagnostics before timeout: '+fault,async()=>{
+ const result=await runProtocol(fault);assert.ok(result.error);assert.equal(result.progress.setupProbe.attempts,2);assert.equal(result.progress.setupProbe.first.code,fault==='setup'?'BRANCH_CONTROLS':'SETUP_EVALUATION_FAILED');assert.deepEqual(result.progress.setupProbe.last,result.progress.setupProbe.first);assert.equal(result.order.includes('intent'),false);assert.doesNotMatch(JSON.stringify(result.progress),/PRIVATE_/);
 });

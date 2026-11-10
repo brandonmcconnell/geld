@@ -19,11 +19,20 @@ const H = 'a'.repeat(40), B = 'b'.repeat(40), REF = H.slice(0, 12), PATH = 'test
 const source = ['def test_example():', '    first()', '    last()', ''];
 const sessions: (() => void)[] = [];
 function trustedClick(target: Element): void { const event = new MouseEvent('click', { bubbles: true });Object.defineProperty(event, 'isTrusted', { value: true });target.dispatchEvent(event); }
-function fixture(options: { popup?: 'valid' | 'absent' | 'duplicate' | 'foreign' | 'form' | 'wrong-ref' | 'wrong-path' | 'existing'; sourceRef?: string; source?: string; focus?: 'native' | 'external' } = {}) {
+function fixture(options: { popup?: 'valid' | 'absent' | 'duplicate' | 'foreign' | 'form' | 'wrong-ref' | 'wrong-path' | 'existing'; sourceRef?: string; source?: string; focus?: 'native' | 'external'; hiddenHeader?: boolean } = {}) {
   window.location.href = 'https://bitbucket.org/team/repo/pull-requests/27/diff';
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => new DOMRect(10, 10, 200, 24));
   document.body.innerHTML = `<div data-testid="pr-header"><div data-qa="pr-branches-and-state-styles"><div role="button" aria-haspopup="true" aria-expanded="false">source</div><div role="button" aria-haspopup="true" aria-expanded="false">main</div></div><div>#27 • updated</div><a href="/team/repo/src">repo</a></div><button data-selection aria-haspopup="true" aria-expanded="false">All changes</button>
     <div role="region" aria-label="Diff"><div><div id="chg-${PATH}"></div><div><article data-qa="branch-diff-file"><div data-qa="bk-file__header" data-testid="file-header"><span aria-label="Expand/collapse file"></span><h2 data-qa="bk-filepath">${PATH}</h2><div data-qa="bk-file__actions" data-testid="file-actions"><div data-qa="bk-file__menu"><button type="button" aria-haspopup="true" aria-expanded="false"><span role="img" aria-label="Diff actions"></span></button></div></div><label>Viewed<input type="checkbox" disabled></label></div><div data-qa="bk-file__content" data-testid="file-content"><div class="diff-chunk"><div class="diff-chunk-inner"><div class="chunk-heading-wrapper"><div><button data-qa="pr-diff-show-more-lines-above">Show more</button></div></div><div class="lines-wrapper" role="row" data-key="code-line"><div data-qa="code-line"><div data-key="code-line-number" data-old-line-number="3" data-new-line-number="3"></div><pre><span data-line-type=" ">    last()</span></pre></div></div></div></div></div></article></div></div></div>`;
+  const panel = document.createElement('section');panel.id = 'pull-request-tabs-1-tab';panel.setAttribute('role', 'tabpanel');
+  panel.append(document.querySelector('[data-selection]')!, document.querySelector('[role="region"]')!);document.body.append(panel);
+  // Actual retained PR header ancestry: 48aQc.ActionsWrapper hides with visibility:hidden at sticky scroll.
+  const branches = document.querySelector('[data-qa="pr-branches-and-state-styles"]')!, metadata = branches.nextElementSibling!;
+  const wrapper = document.createElement('div');wrapper.className = 'e1q0qh514';
+  const author = document.createElement('div');author.className = 'e1q0qh511';
+  const info = document.createElement('div');info.className = 'e1q0qh513';
+  branches.before(wrapper);info.append(branches, metadata);author.append(info);wrapper.append(author);
+  if (options.hiddenHeader) wrapper.style.visibility = 'hidden';
   const page = describeBitbucketProviderPage(new URL(document.URL))!, entry = readBitbucketDiff(document)!.entries[0]!;
   const facts = providerDiffSourceFacts(page, { kind: 'bitbucket-review', headSha: H, baseSha: B, sourceRepository: 'team/repo', sourceRef: options.sourceRef ?? REF, topic: true }, [{ path: PATH, newPath: PATH }])!;
   const result: ProviderDiffResult = { files: [{ path: PATH, additions: 1, deletions: 0, status: 'modified' }], revision: `${B}..${H}`, complete: true, sourceFacts: facts };
@@ -67,6 +76,53 @@ it('offers Find before a source grant and mediates one original open/close only 
   const nativeFrame = readBitbucketDiff(document)!.readNewSourceFrame!()!;expect(nativeFrame.read(f.entry)).toBeNull();expect(nativeFrame.readReference?.(f.entry)).toMatchObject({ literalRef: REF });
   expect(original.isConnected).toBe(true);expect(original.textContent).toBe(originalText);expect(f.entry.root.querySelector<HTMLInputElement>('input')!.checked).toBe(false);
   f.update();f.click();expect(f.clicks).toHaveLength(2);expect(f.fetcher).toHaveBeenCalledTimes(1);
+});
+
+it('prepares a real source with the native sticky header hiding original branch metadata', async () => {
+  const f = fixture({ hiddenHeader: true }), wrapper = document.querySelector<HTMLElement>('.e1q0qh514')!;
+  const before = wrapper.outerHTML;
+  document.body.insertAdjacentHTML('afterbegin', '<div id="sticky-header-content"><button aria-haspopup="true" aria-expanded="false">All changes</button></div>');
+  expect(getComputedStyle(wrapper).visibility).toBe('hidden');
+  f.click();await vi.waitFor(() => expect(f.fetcher).toHaveBeenCalledTimes(1));f.update();
+  expect(f.manager.source(f.entry)?.lines).toEqual(source);expect(f.clicks).toEqual([false, false]);
+  expect(wrapper.outerHTML).toBe(before);
+});
+
+it('retains source identity when native scrolling hides the original header and mounts a visible compact copy', async () => {
+  const f = fixture();f.click();await vi.waitFor(() => expect(f.fetcher).toHaveBeenCalledTimes(1));f.update();
+  const original = providerOutlineContext(f.page, f.result, readBitbucketDiff(document)!);
+  document.querySelector<HTMLElement>('.e1q0qh514')!.style.visibility = 'hidden';
+  document.body.insertAdjacentHTML('afterbegin', '<div id="sticky-header-content"><button aria-haspopup="true" aria-expanded="false">All changes</button></div>');
+  await Promise.resolve();const after = providerOutlineContext(f.page, f.result, readBitbucketDiff(document)!);
+  expect(after.subjectKey).toBe(original.subjectKey);expect(after.newSources.get(f.entry.root)).toEqual(original.newSources.get(f.entry.root));
+  expect(after.newSources.size).toBe(1);expect(f.fetcher).toHaveBeenCalledTimes(1);
+});
+
+it.each(['duplicate', 'wrong-panel', 'duplicate-panel'] as const)('rejects an ambiguous original comparison scope before a source request: %s', async change => {
+  const f = fixture({ hiddenHeader: true }), panel = document.querySelector('#pull-request-tabs-1-tab')!;
+  if (change === 'duplicate') panel.append(document.querySelector('[data-selection]')!.cloneNode(true));
+  if (change === 'wrong-panel') document.body.append(document.querySelector('[role="region"]')!);
+  if (change === 'duplicate-panel') panel.after(panel.cloneNode(false));
+  f.click();await Promise.resolve();expect(f.fetcher).not.toHaveBeenCalled();expect(f.clicks).toEqual([]);
+});
+
+it.each(['duplicate', 'panel-replaced', 'branch-text', 'branch-open'] as const)('withdraws a hidden-header seal after original comparison drift: %s', async change => {
+  const f = fixture({ hiddenHeader: true });f.click();await vi.waitFor(() => expect(f.fetcher).toHaveBeenCalledTimes(1));
+  if (change === 'duplicate') document.querySelector('#pull-request-tabs-1-tab')!.append(document.querySelector('[data-selection]')!.cloneNode(true));
+  if (change === 'panel-replaced') { const panel = document.querySelector('#pull-request-tabs-1-tab')!;panel.replaceWith(panel.cloneNode(true)); }
+  const branch = document.querySelector('[data-qa="pr-branches-and-state-styles"] [role="button"]')!;
+  if (change === 'branch-text') branch.textContent = 'different';
+  if (change === 'branch-open') branch.setAttribute('aria-expanded', 'true');
+  expect(providerOutlineContext(f.page, f.result, readBitbucketDiff(document)!).newSources.size).toBe(0);
+});
+
+it.each(['hidden', 'inert', 'aria-hidden', 'display', 'opacity', 'collapsed'] as const)('does not treat suppressed branch metadata as native CSS hiding: %s', async change => {
+  const f = fixture({ hiddenHeader: true }), wrapper = document.querySelector<HTMLElement>('.e1q0qh514')!;
+  if (change === 'display') wrapper.style.display = 'none';
+  else if (change === 'opacity') wrapper.style.opacity = '0';
+  else if (change === 'collapsed') wrapper.style.visibility = 'collapse';
+  else wrapper.setAttribute(change, change === 'aria-hidden' ? 'true' : '');
+  f.click();await Promise.resolve();expect(f.fetcher).not.toHaveBeenCalled();expect(f.clicks).toEqual([]);
 });
 
 it('keeps the same frame while its own popup and controller refresh settle', async () => {
