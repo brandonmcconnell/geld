@@ -3,8 +3,9 @@
  * geld.sh accepts. A payload says which build is running (version, channel,
  * browser) and what happened to it (installed, updated from one version to
  * another, active today). It carries no identifier of any kind: no install id,
- * no account, no page, repository or file, and the site adds none when it
- * forwards the events. Counting is done by events alone: an install pings once
+ * no account, no page, repository or file. Forwarding, the site gives each
+ * event a random id of its own, which links it to nothing. Counting is done by
+ * events alone: an install pings once
  * per UTC day, so a day's `extension_active` events are that day's active
  * installs, and the ones flagged `first_of_week` are the week's.
  */

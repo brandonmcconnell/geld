@@ -16,12 +16,31 @@ const MAX_BODY_BYTES = 32 * 1024;
 const DEFAULT_HOST = 'https://us.i.posthog.com';
 const FORWARD_TIMEOUT_MS = 5_000;
 
+/** The body as text, or null past `limit` bytes: read as a stream, so a chunked request with no length stops there too. */
+async function readBody(request: NextRequest, limit: number): Promise<string | null> {
+  if (request.body === null) return '';
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let received = 0;
+  let text = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return text + decoder.decode();
+    received += value.byteLength;
+    if (received > limit) {
+      await reader.cancel();
+      return null;
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+}
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   await connection();
   const declared = Number(request.headers.get('content-length') ?? '0');
   if (declared > MAX_BODY_BYTES) return new NextResponse(null, { status: 413 });
-  const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) return new NextResponse(null, { status: 413 });
+  const text = await readBody(request, MAX_BODY_BYTES);
+  if (text === null) return new NextResponse(null, { status: 413 });
   let body: unknown;
   try {
     body = JSON.parse(text);

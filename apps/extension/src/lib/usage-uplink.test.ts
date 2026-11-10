@@ -1,4 +1,5 @@
 import type { UsagePayload } from '@geld/core';
+import { parseUsagePayload } from '@geld/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const stored = new Map<string, unknown>();
@@ -39,7 +40,10 @@ beforeEach(() => {
   vi.useFakeTimers({ now: Date.UTC(2026, 10, 10, 12) });
   vi.stubEnv('DEV', false);
   vi.stubGlobal('fetch', async (_url: string, init: { body: string }) => {
-    sent.push(JSON.parse(init.body));
+    const body: unknown = JSON.parse(init.body);
+    const payload = parseUsagePayload(body);
+    if (payload === null) throw new Error('geld.sh would refuse this payload.');
+    sent.push(payload);
     return new Response(null, { status: 204 });
   });
 });
