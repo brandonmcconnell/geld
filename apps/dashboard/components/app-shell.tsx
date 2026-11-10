@@ -31,6 +31,7 @@ import type { QueueData, SessionData } from '@/lib/contracts';
 import { InboxPopover } from './inbox';
 import { DashboardContext, useDashboard } from '@/lib/dashboard-context';
 import { WorkspaceHeader } from './workspace-header';
+import { GlobalSearch } from './global-search';
 import { WorkspaceLoading } from './workspace-loading';
 import {
   Sidebar,
@@ -248,24 +249,65 @@ export function AppShell({
 }
 function WorkspaceChrome({ children }: { readonly children: ReactNode }) {
   const { setOpenMobile } = useSidebar();
+  const pathname = usePathname();
+  const contextual =
+    pathname.startsWith('/settings') ||
+    pathname.startsWith('/connect') ||
+    pathname.includes('/~settings') ||
+    /^\/teams\/[^/]+/.test(pathname);
   useEffect(() => {
     const close = () => setOpenMobile(false);
     window.addEventListener('geld:close-navigation', close);
     return () => window.removeEventListener('geld:close-navigation', close);
   }, [setOpenMobile]);
   return (
-    <>
+    <div className="workspace-exploration" data-contextual={contextual}>
       <a href="#main" className="skip-link">
         Skip to content
       </a>
-      <AppSidebar />
-      <div className="workspace-main">
-        <WorkspaceHeader />
-        <main id="main" className="main-content">
-          {children}
-        </main>
+      <header className="workspace-globalbar">
+        <div className="global-team">
+          <TeamSwitcher />
+        </div>
+        <nav aria-label="Workspace sections">
+          {[
+            { href: '/', label: 'Review queue' },
+            { href: '/repositories', label: 'Repositories' },
+            { href: '/teams', label: 'Teams' },
+            { href: '/settings/account', label: 'Settings' },
+          ].map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={
+                (
+                  item.href === '/'
+                    ? pathname === '/'
+                    : pathname.startsWith(item.href.split('/account')[0] ?? item.href)
+                )
+                  ? 'page'
+                  : undefined
+              }
+            >
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+        <div className="global-account">
+          <GlobalSearch />
+          <AccountMenu />
+        </div>
+      </header>
+      <div className="workspace-body">
+        <AppSidebar />
+        <div className="workspace-main">
+          <WorkspaceHeader search={false} />
+          <main id="main" className="main-content">
+            {children}
+          </main>
+        </div>
       </div>
-    </>
+    </div>
   );
 }
 

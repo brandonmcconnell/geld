@@ -1,5 +1,7 @@
 'use client';
 import Link from 'next/link';
+import { useState } from 'react';
+import { Search } from './icons';
 import { ArrowUpRight, FolderGit2, Lock } from '@/components/icons';
 import { repositoryPath, type Provider } from '@geld/domain';
 import { Button } from '@/components/button';
@@ -13,15 +15,29 @@ export function Repositories({
   readonly provider?: Provider;
   readonly host?: string;
 }) {
+  const [query, setQuery] = useState('');
   const { queue, loading, loadMore } = useDashboard();
   const repositories = queue.repositories.filter(
     (repo) =>
       (!owner || repo.ref.owner === owner) &&
       (!provider || repo.ref.provider === provider) &&
-      (!host || repo.ref.host === host),
+      (!host || repo.ref.host === host) &&
+      `${repo.ref.owner}/${repo.ref.repo}`.toLowerCase().includes(query.toLowerCase()),
   );
   return (
     <div className="page repository-index">
+      <div className="repository-list-toolbar">
+        <label>
+          <Search size={14} />
+          <input
+            aria-label="Filter repositories"
+            placeholder="Filter repositories…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </label>
+        <span>{repositories.length} repositories</span>
+      </div>
       {repositories.length ? (
         <div className="settings-card">
           {repositories.map((repo) => (
@@ -40,7 +56,16 @@ export function Repositories({
           ))}
         </div>
       ) : (
-        <EmptyState icon={FolderGit2} title={loading ? 'Loading repositories...' : 'Connect your first repository'}>
+        <EmptyState
+          icon={FolderGit2}
+          title={
+            loading
+              ? 'Loading repositories...'
+              : query
+                ? 'No matching repositories'
+                : 'Connect your first repository'
+          }
+        >
           Repositories appear here after you connect a Git account.
         </EmptyState>
       )}

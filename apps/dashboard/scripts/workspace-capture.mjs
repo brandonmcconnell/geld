@@ -31,7 +31,7 @@ try {
       await page.evaluate(() => document.fonts.ready);
       await page.mouse.move(0, 0);
       await page.evaluate(() => {
-        document.activeElement instanceof HTMLElement && document.activeElement.blur();
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
         window.scrollTo(0, 0);
       });
       assert.equal(
