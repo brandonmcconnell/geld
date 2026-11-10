@@ -3511,3 +3511,6 @@ An all-malformed source supplies no known empty reviewer list.
 
 Bitbucket hidden-people matching and exact-rule removal use the same canonical `bitbucket.org/uuid/<uuid>` identity as PR lists, normalized from the native account UUID.
 Keep display logins separate, leave malformed account identities visible, and never remove a wildcard during a per-person unhide.
+
+Provider related-link sources use the same hidden-people projection as the digest, including canonical Bitbucket UUID rules, hidden starter-owned threads and visit peeking.
+Keep description-owned related links independent of comment-author filtering.
