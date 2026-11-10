@@ -291,11 +291,29 @@ Each family should fit through an adapter alone; where it does not, the document
 - Watched only: Pagure, sourcehut (patches by mail, likely out of scope), OneDev, Harness Code, Tangled, Radicle.
 - Left out: AWS CodeCommit, Phabricator.
 
-## 7. Decisions for the owner
+## 7. Decisions
 
-1. Duo and bot approvals: confirm §2.1 (register Duo, read `/approval_state`, bot approvals in Review bots with "counts" or "does not count").
-2. Approval against clean: pick the "all clear" mark for bots (§2.2), as a GitHub behaviour change in its own pull request.
-3. Merge checks: keep a provider-only row, or fold it into CI and the status pill as GitHub does.
-4. Status pill: keep opening the host's own menu (a native slot), or build Geld's menu on GitLab (merge, auto-merge, draft, close via the API).
-5. Schema: confirm that `DigestDocument` wraps `GeldPrMeta` rather than replacing it.
-6. Order of work after this audit: §2.3 and §2.4 fixes first (small, self-contained), then the document and layout, then rows (rounds and the accordion, threads as slots, CI as a slot, Review bots, Reviews), then GitHub onto the shared model.
+Answered by the owner on Nov 10, 2026.
+
+1. **Bots go in Review bots, people in Reviews, on every host.**
+   Any automated account is a bot for the digest, recognised from the host's own marks (GitLab's `bot` and `user_type`, GitHub's Apps) even when the registry does not know it, and is never listed in Reviews.
+   Approval requirements are read from the host's rules, including group, project and repository rules where the host has them, so a bot whose approval a rule counts is seen as counting.
+   How a bot's approval is worded on its pill is still open (see §8).
+2. **Approval against clean stays as it is for now.**
+   The shared check mark keeps both meanings; a distinct mark can be reconsidered later.
+3. **The row is "Checks" on every host.**
+   On GitHub it holds the CI checks as today; on GitLab and Bitbucket it holds their CI and their merge checks, with the details each host gives.
+   Renaming GitHub's "CI checks" is a visible GitHub change and goes in its own pull request.
+4. **The status pill uses the host's own menu where that menu is complete**, judged host by host.
+   GitHub's was overridden because it lacked the merge and the stack's choices; GitLab's and Bitbucket's are to be assessed the same way.
+5. **`GeldPrMeta` stays separate and `DigestDocument` wraps it.**
+   `GeldPrMeta` is a wire format: versioned, size-budgeted to fit a comment, written by the Action and read by older extensions, so its schema has to change slowly and stay small.
+   `DigestDocument` is the in-memory reading every renderer uses, and grows freely; `fromMeta` lifts one into the other.
+6. **Order of work: §2.3 and §2.4 first, then the document and layout, then row by row, then GitHub.**
+   Parity covers more than the digest: header counts and their breakdown, the Changes-tab categories, the sidebar's Related links and Related work, collapsible description headings and the cut, hidden and blocked people, and Flow.
+   Each is checked against GitHub's implementation as the work reaches it, and the matrix grows a section for each.
+
+## 8. Open questions
+
+1. A bot that approved: on GitLab !4544 Duo approved and GitLab counts it toward no rule, so Reviews reads 0 of 2.
+   Proposed: Duo's pill reads "approved", and its hover card and accessible name add "does not count toward the 2 required approvals"; where a rule does count a bot's approval, the card says "counts toward the code owner rule" and the Reviews fraction names it too.
