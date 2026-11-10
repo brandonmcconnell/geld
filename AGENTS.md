@@ -2344,10 +2344,21 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   Pipeline acceptance follows the original native file-tree link and pins its actual fragment-bearing URL through Settings, context, source and selection checks instead of rewriting native file selection.
   The explicit `bitbucket-pipeline-shell` focus is excluded from default and all-provider visits and keeps complete immutable source/count oracles while omitting separately tested filtering, zoom and overview work.
   It disables both overview and quick-review acquisition before page creation, retains every other raw setting and restores original flag presence only after the native page closes.
-  Its preflight retains the observed 26-request acquisition allowance plus five free rather than presuming a cheaper cost, with the existing 40-request cap, cooldown carryover and strict context reserve unchanged.
+  Its preflight uses the focused PR240 run41381283702 native_navigation measurement of 16 standard API requests, plus five free, with the existing 40-request cap, rolling timestamp ledger, cooldown carryover and strict context reserve unchanged.
+  The measured requests occurred on 2026-11-02 from 03:07:46.465Z through 03:07:49.455Z.
+  Consent, Settings and later source-selection costs remain unmeasured and must still obey the live request and reserve guards.
+  Retain the expanded native candidate before validating it, and fingerprint the exact source returned by the successful YAML-context validator so a verifier failure cannot erase its evidence.
+  After trusted native Pipeline selection and nonempty row hydration, before shell source or pre-paint baselines and fresh Settings observation, only the focused fresh anonymous profile may dismiss the exact native cookie dialog using its original Only necessary button.
+  That action requires native bootstrap isAuthenticated false, the observed direct layout slot, cookiesTrackingNoticeLink dialog label, exact Atlassian legal URL and unique enabled unobscured button, with the pinned URL, original native tree link, source, head, counts and Viewed guards.
+  Missing consent is a no-op, while changed, covered or ambiguous native modals fail without touching Preferences, Accept all or storage APIs.
+  Retain bounded sanitized all-HTTP request and response metadata around the genuine trusted consent click, including any native consent write, separately from the standard API quota ledger.
+  Consent preparation does not operate Diff Settings controls or establish their hidden values, and independently cleans both native identity probes and its traffic listeners on failure.
   Focused Pipeline captures remain viewport-only, including final and failure artifacts, to avoid unrelated full-page lazy rendering.
   Before HTML sanitization, the planned Pipeline visit retains bounded script URL metadata from original script elements and already-issued script ResourceTiming entries on the observed first-party asset origins.
   This omits query-bearing, credentialed and non-asset URLs, performs no source fetch or execution and does not establish native module or preference behavior.
+  The focused visit also optionally retains the already-issued main-frame app.8c0b6f48dd68c4fd8f958592a0de8efebbdf6d2d.js response, with an exact first-party URL, HTTP200 JavaScript, no redirects and a six MiB decoded-body cap.
+  It performs no fetch, retry, page evaluation or execution, saves only that fixed script artifact with its byte count and SHA256, and treats absent, changed-version, oversized or unreadable bodies as diagnostic unavailability.
+  Its response listener detaches and body acquisition has a bounded settle deadline before normal page close, with any still-pending read explicitly reported and prohibited from starting an artifact write after the deadline.
 
   Dialog reads share the parent visit and existing `active + 4 < 40` rolling-request guard, which requires at least five free slots and makes no assumption that native actions generate zero requests.
   Public anonymous fixtures can verify preview, copy and unavailable composer behavior but do not establish authenticated writer persistence or an actual bot run.

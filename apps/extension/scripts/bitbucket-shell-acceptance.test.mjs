@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { test } from 'node:test';
-import { assertBitbucketShellCounts, currentBitbucketShellHead, observeBitbucketShellFixture, parseObservedBitbucketShellMetadata } from './bitbucket-shell-acceptance.mjs';
+import { assertBitbucketShellCounts, currentBitbucketShellHead, observeBitbucketShellFixture, parseObservedBitbucketShellMetadata, verifyBitbucketShellSource, verifyBitbucketShell, bitbucketShellProbe } from './bitbucket-shell-acceptance.mjs';
 
 // Synthetic API evidence exercises the live harness's refusal boundary. These are neither
 // public commit IDs nor browser/provider proof; no browser or network is used by this suite.
+import { bitbucketPipelineVisitProbe } from './bitbucket-pipeline-visit.mjs';
+import { bitbucketPipelineConsentProbe } from './bitbucket-pipeline-consent.mjs';
+import { bitbucketSyntaxSettingsProbe } from './bitbucket-syntax-settings.mjs';
 const REPO = 'atlassian/bitbucket-upload-file';
 const HEAD = 'a'.repeat(40);
 const BASE = 'b'.repeat(40);
@@ -187,4 +191,56 @@ test('count/state invariants reject drift in the post-screenshot snapshot', () =
   assert.throws(() => assertBitbucketShellCounts(counts, state, counts, hidden), /tab visible changed/);
   assert.throws(() => assertBitbucketShellCounts(counts, state, counts, { ...state, repo: 'other/fork' }), /tab repo changed/);
   assert.throws(() => assertBitbucketShellCounts(counts, state, counts, { ...state, hasDiff: false }), /lost its complete diff/);
+});
+
+// Synthetic complete source/range protocol. Equality samples below are not browser colors.
+const SHELL_COMMAND = `if [ ! -d ".changes/next-release" ]; then echo "Next release file missing, make sure to run 'semversioner add-change'"; exit 1; fi`;
+function completeSourceProbe() {
+  const lines = [...Array.from({ length: 30 }, (_, index) => '# synthetic prefix ' + index), 'check-next-release: &check-next-release', '  step:', '    script:', '    - ' + SHELL_COMMAND, '', 'following:', '  script: []'];
+  const rows = lines.map((text, index) => ({ old: index + 1, next: index + 1, text, rowId: 'row' + index, links: index === 33 ? [['#Lbitbucket-pipelines.ymlT34', 'To line 34']] : [] }));
+  const ranges = [['keyword', 'if', 0], ['keyword', 'then', SHELL_COMMAND.indexOf('then')], ['keyword', 'fi', SHELL_COMMAND.length - 2], ['built_in', 'echo', SHELL_COMMAND.indexOf('echo')], ['built_in', 'exit', SHELL_COMMAND.indexOf('exit')], ['string', '".changes/next-release"', SHELL_COMMAND.indexOf('"')]].map(([scope, word, offset]) => ({ scope, rowId: rows[33].rowId, start: 6 + offset, end: 6 + offset + word.length }));
+  return { url: 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/27/diff', file: 'chg-bitbucket-pipelines.yml', heading: 'bitbucket-pipelines.yml', actualStep: true, prefixOld: 37, prefixNext: 37, oldSource: rows, newSource: rows, rows, ranges, invalidRanges: [], prePaintSeen: true, preserved: true, nativeIds: ['Lbitbucket-pipelines.ymlT34'], colors: Object.fromEntries(['keyword', 'built_in', 'string'].map((scope) => [scope, { native: 'synthetic-token', nativeNormalized: scope, pseudoNormalized: scope }])) };
+}
+test('full valid source verifier returns a fingerprint of the exact validated native-prefix text', () => {
+  const value = completeSourceProbe();const before = structuredClone(value);
+  const result = verifyBitbucketShellSource(value);
+  assert.equal(result.sourceFingerprint, createHash('sha256').update(value.newSource.map((row) => row.text).join('\n') + '\n').digest('hex'));
+  assert.equal(result.rangeCount, 6);assert.deepEqual(value, before);
+});
+for (const [name, change] of [
+  ['wrong command', (p) => { p.rows[33].text = '    - echo incorrect'; }],
+  ['incomplete native prefix', (p) => { p.prefixNext = 36; }],
+  ['invalid native range', (p) => { p.invalidRanges.push({ scope: 'keyword' }); }],
+  ['YAML prefix range', (p) => { p.ranges.push({ scope: 'string', rowId: p.rows[33].rowId, start: 0, end: 5 }); }],
+  ['range escapes actual source prefix', (p) => { p.ranges.push({ scope: 'string', rowId: p.rows[36].rowId, start: 0, end: 1 }); }],
+  ['source references changed', (p) => { p.preserved = false; }],
+  ['no prepaint evidence', (p) => { p.prePaintSeen = false; }],
+  ['actual palette mismatch', (p) => { p.colors.string.pseudoNormalized = 'different'; }],
+]) test('full source verifier refuses ' + name, () => { const value = completeSourceProbe();change(value);assert.throws(() => verifyBitbucketShellSource(value)); });
+
+test('actual focused verifier retains its raw expanded candidate when subsequent source validation fails', async () => {
+  const page = new EventEmitter();const item = {};const phases = [];let selected = false;let expanded = false;const review = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/27/diff';
+  const painted = completeSourceProbe();painted.url = review + '#chg-bitbucket-pipelines.yml';painted.ownedCount = 6;painted.colors.string.pseudoNormalized = 'mismatch';
+  const baseline = { ...painted, prefixOld: 18, prefixNext: 16, ownedCount: 0, rows: [...painted.rows, { old: 18, next: 16, text: '          - docker' }, { old: 29, next: 27, text: '          - pipe: atlassian/git-secrets-scan:3.0.0' }], controls: [{ visible: true, previous: [18, 16], next: [29, 27] }] };
+  page.url = () => selected ? painted.url : review;page.isClosed = () => false;page.$$ = async () => [];
+  page.evaluate = async (fn, action) => {
+    if (action === 'cleanup') { phases.push('cleanup:' + fn.name);return null; }
+    if (fn === bitbucketPipelineConsentProbe) { phases.push('consent');return { status: 'not_present', url: page.url() }; }
+    if (fn === bitbucketPipelineVisitProbe) return action === 'click-result' ? { trusted: true, sameLink: true, sameParent: true, href: '#chg-bitbucket-pipelines.yml' } : { sameSource: true, heading: 'bitbucket-pipelines.yml', selected, url: page.url(), pinned: selected ? page.url() : null };
+    if (fn === bitbucketSyntaxSettingsProbe) { phases.push('settings-source:' + action);assert.equal(selected, true);return { sameSource: true, sourceRows: 4, url: page.url(), viewed: [false], dialogCount: 0, events: [] }; }
+    assert.equal(fn, bitbucketShellProbe);phases.push('shell:' + action);
+    if (action === 'scroll' || action === 'arm') return { matches: 1 };
+    if (action === 'click-result') return { trusted: true, url: page.url(), qa: 'pr-diff-show-more-lines-below', aria: 'Show more lines below', previous: [18, 16], next: [29, 27] };
+    return expanded ? painted : baseline;
+  };
+  page.evaluateHandle = async (fn) => { const handle = { asElement: () => handle, dispose: async () => {}, click: async () => { if (fn === bitbucketPipelineVisitProbe) selected = true;else expanded = true; } };return handle; };
+  observeBitbucketShellFixture(page, item, { safeUrl: (value) => value, extensionId: 'synthetic' });
+  const response = (url, body) => page.emit('response', { url: () => url, request: () => ({ method: () => 'GET' }), status: () => 200, headers: () => ({}), json: async () => body });
+  response(`${API}/pullrequests/27`, metadata());response(pinUrl(), {});
+  const counts = { files: 5, additions: 46, deletions: 29 };const state = { hasDiff: true, onDiffPage: true, all: counts, visible: counts, hiddenCount: 0 };
+  try {
+    await assert.rejects(verifyBitbucketShell(page, item, { poll: async (read, accept) => { const value = await read();assert.equal(accept(value), true);return value; }, bitbucketDom: async () => counts, tabState: async () => state, guardBudget: () => ({ remaining: 24 }), prepareConsent: true, freshAnonymousProfile: true }), /Actual string pseudo-highlight differs/);
+    assert.equal(item.shellSyntax.expandedCandidate, painted);assert.equal(item.shellSyntax.expanded, null);assert.equal(item.shellSyntax.status, 'failed');assert.equal(item.shellSyntax.contextMechanics.status, 'passed');assert.equal(item.shellSyntax.consent.status, 'not_present');
+    assert.ok(phases.indexOf('consent') < phases.indexOf('shell:undefined'));assert.ok(phases.indexOf('cleanup:bitbucketPipelineConsentProbe') < phases.indexOf('shell:undefined'));assert.equal(phases.filter((value) => value === 'settings-source:setup').length, 2);
+  } finally { page.emit('close'); }
 });

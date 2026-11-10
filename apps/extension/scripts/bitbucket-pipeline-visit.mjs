@@ -14,9 +14,9 @@ export function assertBitbucketPipelineURL(value, expected) {
 
 export function pipelineBudgetPreflight(active, budget) {
   assert.ok(Number.isSafeInteger(active) && active >= 0);assert.equal(budget, 40);
-  const allowance = 26;const minimumFree = 5;const remaining = budget - active;
+  const allowance = 16;const minimumFree = 5;const remaining = budget - active;
   return { available: remaining >= allowance + minimumFree, active, remaining, budget, allowance, minimumFree,
-    basis: 'Conservative allowance from actual PR229 run41375818884:26 initial requests, plus five free. Disabling unrelated review acquisition is not a measured cheaper forecast. Global request and429 guards remain authoritative.' };
+    basis: 'Measured focused PR240 run41381283702 native_navigation:16 standard API requests at03:07:46.465Z through03:07:49.455Z on2026-11-02, plus five free. Consent, Settings and later selection costs remain unmeasured. This forecast does not reset the rolling ledger or lower its40 cap. Global request, context reserve and429 guards remain authoritative.' };
 }
 
 export function pipelineSettingsScope({ readSettings, writeSettings, progress }) {
