@@ -41,7 +41,11 @@
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",
     "dev:dashboard": "pnpm --filter @geld/dashboard dev",
-    "build:dashboard": "pnpm --filter @geld/dashboard build"
+    "build:dashboard": "pnpm --filter @geld/dashboard build",
+    "dev:hub": "node apps/hub/scripts/dev.mjs",
+    "dev:hub:demo": "node apps/hub/scripts/dev-demo.mjs",
+    "build:hub": "pnpm --filter @geld/hub build",
+    "test:hub:e2e": "pnpm --filter @geld/hub-e2e test:e2e"
   },
   "devDependencies": {
     "@geld/core": "workspace:*",

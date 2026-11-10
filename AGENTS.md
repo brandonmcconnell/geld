@@ -28,6 +28,13 @@ apps/action/         @geld/action — GitHub Action that upserts one review-summ
 apps/site/           @geld/site — Next.js site for geld.sh (see "Website" below).
 apps/dashboard/      @geld/dashboard — independent Next.js review workspace, Better Auth accounts
                      and Postgres team metadata. Provider authority and privacy are mandatory.
+apps/hub/            @geld/hub — the new review workspace, built beside apps/dashboard, which stays as it
+                     is until the owner retires it. TanStack Start on Vite, a Cloudflare Worker (see "Hub").
+apps/hub-emulator/   @geld/hub-emulator — a local GitHub emulator with seeded data, for the hub's demo mode
+                     and tests. apps/hub-e2e/ (@geld/hub-e2e) is the Playwright suite that runs against it.
+packages/hub-ui/     @geld/hub-ui — the hub's components and design tokens (Radix, Tailwind 4).
+                     packages/hub-icons/ (@geld/hub-icons) draws its icons from the Geld Font Awesome kit;
+                     packages/hub-tsconfig/ holds its shared tsconfig.
 apps/nightly-installer/ geld-nightly — `npx geld-nightly@latest`, the optional installer for the nightly
                      build (see "Nightly builds"). `dist/` is built in CI and attached to releases.
 packages/domain/     @geld/domain — provider-neutral contracts, access and billing rules.
@@ -2282,6 +2289,27 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
   Local development uses the *same* App (its `http://localhost:3000/auth` callback);
   put the values in `apps/site/.env.local` (see `.env.example`, or `vercel env pull` from the Development scope) with a different `AUTH_SECRET` per environment.
   Without real credentials the flow can be exercised against a fetch mock, which is how it was verified.
+
+## Hub (apps/hub)
+
+The new Geld review workspace, built as a separate app beside `apps/dashboard`.
+`apps/dashboard` and app.geld.sh are left untouched until the owner decides to move them.
+The "Website stack" rule in Conventions governs `apps/site` only: the hub follows its own stack by the owner's decision.
+That stack is TanStack Start on Vite, TanStack Router and Query, Drizzle, Tailwind 4, Radix components in `packages/hub-ui`, and `@pierre/diffs` for diffs, running as a Cloudflare Worker built by Void.
+Run it with `pnpm dev:hub:demo` (Node 24.22 or newer): a local GitHub emulator on port 4200 with seeded data and the app on port 3200, no GitHub app or secrets needed.
+`pnpm dev:hub` runs against github.com and needs `apps/hub/.env`.
+The ports are the hub's own: 3000 is the site's and 3001 the old dashboard's.
+Each hub package's `check` is typecheck and unit tests, so root `pnpm check` and CI cover them on Node 22;
+the build and the Playwright suite (`pnpm test:hub:e2e`) need Node 24.22 and run in CI's `Hub` job, the suite advisory for now.
+Biome is available per package as `biome:check` and `biome:lint` and is not part of `check`: the code is not clean under its preset yet.
+Direct dependencies are pinned to exact versions, since the app misbehaves on newer ones (a newer Better Auth serves the demo sign-in on another route).
+`pnpm-workspace.yaml` overrides two Octokit type packages for the same reason.
+**Icons come only from the Geld Font Awesome kit** (`packages/hub-icons`, `createIcon` over Sharp Regular), under the names the app imports, so a glyph is changed in one place.
+Do not add another icon library: check a package's own licence file, not only its manifest, before taking it.
+The only company marks in it are GitHub's and GitLab's, the Git providers'.
+Environment variables that configure deployment are prefixed `GELD_HUB_`.
+Not done yet: it still uses the D1, KV and R2 bindings it started with, signs in with GitHub alone and knows nothing of Geld's accounts, teams, Digest or categories.
+Each of those arrives as its own change.
 
 ## Diff syntax highlighting
 

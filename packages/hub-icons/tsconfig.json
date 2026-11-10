@@ -1,0 +1,4 @@
+{
+  "extends": "@geld/hub-tsconfig/react-library.json",
+  "include": ["src"]
+}
