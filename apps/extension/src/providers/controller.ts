@@ -16,6 +16,7 @@ import { ProviderListAuthors } from './list-authors';
 import { ProviderHeaderHints } from './header-hints';
 import { applyProviderLineFolds, clearProviderLineFolds, PROVIDER_LINE_FOLDS_CHANGED } from './line-folds';
 import { immutableProviderPage, isProviderReviewPage } from './types';
+import { providerOutlineContext } from './source-facts';
 import type { ProviderAdapter, ProviderDiffEntry, ProviderDiffView, ProviderHeaderTarget, ProviderListRow, ProviderPage } from './types';
 import type { ProviderRepoConfigSource } from './repo-config';
 import type { RepoConfigChoices } from '../lib/local-state';
@@ -405,7 +406,7 @@ export class ProviderController {
       const { commentLines, ...withoutComments } = file;
       void commentLines;
       return withoutComments;
-    }), effective);
+    }), effective, effective.enabled && (effective.hideCommentLines || effective.testOutline) ? providerOutlineContext(page, result.result, view) : undefined);
     const visible = subtractTotals(subtractTotals(all, hidden.totals), hidden.filtered);
     const expansionKey = JSON.stringify([key, result.result.revision]);
     if (this.expansionKey !== expansionKey) this.activeCategory = null;

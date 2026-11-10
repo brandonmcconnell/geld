@@ -3,6 +3,8 @@ import { describeRepository, isChangeKindId, repositoryKey } from '@geld/core';
 import type { FileStats } from '@geld/core';
 import { immutableProviderPage, isProviderReviewPage } from './types';
 import type { ProviderDiffResult, ProviderPage } from './types';
+import { parseProviderDiffSourceFacts, providerSourceSubjectKey } from './source-facts';
+import type { ProviderDiffSourceFacts } from './source-facts';
 
 export const PROVIDER_CACHE_SLOTS = 64;
 export const PROVIDER_CACHE_MAX_BYTES = 64 * 1024;
@@ -17,11 +19,12 @@ export interface ProviderCacheStorage {
 }
 
 interface CachedDiff {
-  readonly schema: 1;
+  readonly schema: 3;
   readonly key: string;
   readonly storedAt: number;
   readonly revision: string;
   readonly files: readonly FileStats[];
+  readonly sourceFacts?: ProviderDiffSourceFacts;
 }
 
 interface Slot {
@@ -149,18 +152,33 @@ function fileStats(value: unknown): readonly FileStats[] | null {
       if (added === null || removed === null || added.length > file.additions || removed.length > file.deletions) return null;
       commentLines = { added, removed };
     }
-    files.push({ path: file.path, additions: file.additions, deletions: file.deletions, ...(status === undefined ? {} : { status }), ...(kinds.length === 0 ? {} : { kinds }), ...(commentLines === undefined ? {} : { commentLines }) });
+    let removedImports: FileStats['removedImports'];
+    if (file.removedImports !== undefined) {
+      if (!array(file.removedImports) || file.removedImports.length > 2000) return null;
+      const imports: string[] = [];
+      for (const specifier of file.removedImports) {
+        if (typeof specifier !== 'string' || specifier.length === 0 || specifier.length > 4096 || /[\u0000-\u001f\u007f]/.test(specifier)) return null;
+        imports.push(specifier);
+      }
+      if (new Set(imports).size !== imports.length) return null;
+      removedImports = imports;
+    }
+    files.push({ path: file.path, additions: file.additions, deletions: file.deletions, ...(status === undefined ? {} : { status }), ...(kinds.length === 0 ? {} : { kinds }), ...(commentLines === undefined ? {} : { commentLines }), ...(removedImports === undefined ? {} : { removedImports }) });
   }
   return new Set(files.map((file) => file.path)).size === files.length ? files : null;
 }
 
 function parse(value: unknown, slot: number): CachedDiff | null {
-  if (!record(value) || value.schema !== 1 || typeof value.key !== 'string' || value.key.length > 8192 || providerCacheSlot(value.key) !== slot || !nonnegative(value.storedAt) || value.storedAt > Date.now() + 60_000 || typeof value.revision !== 'string' || value.revision.length === 0 || value.revision.length > 2048) return null;
+  // Earlier schemas discarded removed imports; refetch them instead of silently losing Flow edges.
+  if (!record(value) || value.schema !== 3 || typeof value.key !== 'string' || value.key.length > 8192 || providerCacheSlot(value.key) !== slot || !nonnegative(value.storedAt) || value.storedAt > Date.now() + 60_000 || typeof value.revision !== 'string' || value.revision.length === 0 || value.revision.length > 2048) return null;
   const head = keyHead(value.key);
   if (head === false || (head !== null && !value.revision.toLowerCase().includes(head.toLowerCase()))) return null;
   const files = fileStats(value.files);
   if (files === null) return null;
-  const result: CachedDiff = { schema: 1, key: value.key, storedAt: value.storedAt, revision: value.revision, files };
+  const facts = parseProviderDiffSourceFacts(value.sourceFacts);
+  const present = new Set(files.filter((file) => file.status !== 'deleted').map((file) => file.path));
+  const sourceFacts = facts !== null && providerSourceSubjectKey(facts.subject) === value.key && facts.newPaths.every((path) => present.has(path.path)) ? facts : null;
+  const result: CachedDiff = { schema: value.schema, key: value.key, storedAt: value.storedAt, revision: value.revision, files, ...(sourceFacts === null ? {} : { sourceFacts }) };
   return new TextEncoder().encode(JSON.stringify(result)).byteLength <= PROVIDER_CACHE_MAX_BYTES ? result : null;
 }
 
@@ -179,7 +197,7 @@ export class ProviderDiffCache {
     if (header && !exact) return null;
     const age = Date.now() - entry.storedAt;
     if (age < 0 || age > (exact ? PROVIDER_CACHE_EXACT_MS : PROVIDER_CACHE_LATEST_MS)) return null;
-    return { result: { files: entry.files, revision: entry.revision, complete: true }, storedAt: entry.storedAt, exact, fresh: exact || age <= PROVIDER_CACHE_FRESH_MS };
+    return { result: { files: entry.files, revision: entry.revision, complete: true, ...(entry.sourceFacts === undefined ? {} : { sourceFacts: entry.sourceFacts }) }, storedAt: entry.storedAt, exact, fresh: exact || age <= PROVIDER_CACHE_FRESH_MS };
   }
 
   async load(page: ProviderPage): Promise<void> {
@@ -215,7 +233,8 @@ export class ProviderDiffCache {
     let key: string;
     try { key = providerDiffKey(page); } catch { return; }
     const id = providerCacheSlot(key);
-    const entry = parse({ schema: 1, key, storedAt: Date.now(), revision: result.revision, files: result.files }, id);
+    const snapshot = { schema: 3, key, storedAt: Date.now(), revision: result.revision, files: result.files };
+    const entry = parse({ ...snapshot, sourceFacts: result.sourceFacts }, id) ?? parse(snapshot, id);
     if (entry === null) return;
     void this.load(page).catch(() => undefined);
     const current = this.slots.get(id);

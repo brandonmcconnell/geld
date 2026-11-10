@@ -153,6 +153,22 @@ describe('Bitbucket diff acquisition from documented API shapes', () => {
     expect(result.files).toEqual([{ path: 'src/a.test.ts', additions: 1, deletions: 0, status: 'added' }, { path: 'src/a.ts', additions: 1, deletions: 0, status: 'added' }]);
     expect(result.patches?.get('src/a.test.ts')).toContain('test("works"');
     expect(requests.filter((url) => new URL(url).pathname === ROOT)).toHaveLength(2);
+    expect(requests).toHaveLength(5);
+    expect(result.sourceFacts?.comparison).toMatchObject({ kind: 'bitbucket-review', sourceRepository: null, headSha: HEAD, baseSha: BASE });
+  });
+
+  it('retains an explicit source repository without adding identity or file requests', async () => {
+    const source = { commit: { hash: HEAD }, repository: { full_name: 'contributor/fork' } };
+    const { client, requests } = setup((url) => {
+      if (url.pathname === ROOT) return json({ ...PR, source });
+      if (url.pathname.includes('/diffstat/')) return json({ values: [TEST, SOURCE], size: 2 });
+      return new Response(PATCH, { headers: { 'content-type': 'text/plain' } });
+    });
+    const result = await client.diff(signal());
+    expect(result.sourceFacts?.comparison).toMatchObject({ kind: 'bitbucket-review', sourceRepository: 'contributor/fork', headSha: HEAD });
+    expect(result.sourceFacts?.newPaths).toEqual([{ path: TEST.new.path, newPath: TEST.new.path }, { path: SOURCE.new.path, newPath: SOURCE.new.path }]);
+    expect(requests).toHaveLength(4);
+    expect(requests.filter((url) => new URL(url).pathname === ROOT)).toHaveLength(2);
   });
 
   it('keeps omitted patches incomplete while preserving authoritative counts', async () => {
