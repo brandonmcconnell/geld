@@ -170,6 +170,10 @@ function ownNode<K extends keyof HTMLElementTagNameMap>(tag: K, className: strin
   return node;
 }
 
+function hasStatePreservingMove(parent: HTMLElement): parent is HTMLElement & { moveBefore(node: Node, before: Node | null): void } {
+  return 'moveBefore' in parent && typeof parent.moveBefore === 'function';
+}
+
 function ensureFoldRow(state: Painted, key: string, before: HTMLElement, action: (trusted: boolean) => void): FoldRow {
   let note = state.notes.get(key);
   if (note !== undefined && note.root.parentElement !== before.parentElement) { note.root.remove(); state.notes.delete(key); note = undefined; }
@@ -194,7 +198,21 @@ function ensureFoldRow(state: Painted, key: string, before: HTMLElement, action:
     state.notes.set(key, note);
   }
   note.action = action;
-  if (before.previousElementSibling !== note.root) before.before(note.root);
+  if (before.previousElementSibling !== note.root) {
+    const parent = before.parentElement;
+    const moveDocument = document, moveURL = moveDocument.URL;
+    const focused = moveDocument.activeElement === note.button;
+    let ordinaryMove = false;
+    if (note.root.isConnected && parent !== null && note.root.parentElement === parent && hasStatePreservingMove(parent)) {
+      try { parent.moveBefore(note.root, before); }
+      catch { if (before.previousElementSibling !== note.root) { ordinaryMove = true;before.before(note.root); } }
+    } else { ordinaryMove = true;before.before(note.root); }
+    // Ordinary connected DOM moves can blur a button. Preserve only focus held immediately before our own move.
+    if (ordinaryMove && focused && document === moveDocument && moveDocument.URL === moveURL && state.root.ownerDocument === moveDocument
+      && moveDocument.activeElement === moveDocument.body && painted.get(state.root) === state && state.notes.get(key) === note
+      && note.button.isConnected && note.root.contains(note.button) && state.root.contains(note.root)
+      && note.root.parentElement === parent && before.parentElement === parent && before.previousElementSibling === note.root) note.button.focus({ preventScroll: true });
+  }
   return note;
 }
 
