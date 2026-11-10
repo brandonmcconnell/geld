@@ -3446,3 +3446,9 @@ Provider addressed-state caches include the selected decision setting and are re
 Provider native count rewrites use the shared count grammar and preserve the native grouping separator in visible text and accessibility labels.
 GitLab's combined Added and Removed label is identified with the same grammar, so dotted, apostrophe and no-break-space grouping cannot split one count into several or leave stale totals.
 Count restoration continues to retain the original text nodes, icons and latest native wording.
+
+Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
+Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
+
+Malformed GitLab approval or reviewer rows are isolated individually and mark reviews partial without discarding valid standings, discussion evidence or native required/remaining counts.
+An all-malformed source supplies no known empty reviewer list.
