@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+vi.mock('./request-audit', () => ({ auditedRoute: (handler: (request: Request) => Promise<Response>) => handler }));
 const state = vi.hoisted(() => ({
   signedIn: true,
   sha: 'a'.repeat(40),

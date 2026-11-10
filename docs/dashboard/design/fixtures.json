@@ -238,7 +238,7 @@
       },
       "id": "demo-pull-128",
       "title": "Keep review progress when a pull request changes",
-      "body": "Keep the review focused on what changed. Preserve progress for unchanged steps and ask for another look when their hunks change.",
+      "body": "Preserve review progress when a pull request changes.\n\n### What changed\n\n- Keep decisions for **unchanged steps**.\n- Reset steps whose code fingerprint has changed.\n- Store progress under the current account and pull request.\n\n### Validation\n\n- [x] New commits preserve unchanged decisions\n- [x] Switching accounts clears saved progress",
       "author": "morgan",
       "authorAvatar": null,
       "state": "open",
@@ -689,7 +689,7 @@
       {
         "id": "comment-1",
         "author": "morgan",
-        "body": "This keeps the decisions from unchanged steps. The supporting test covers restoring an accepted step after a new push.",
+        "body": "This keeps the decisions from **unchanged steps**. The supporting test covers restoring an accepted step after a new push.\n\n| Scenario | Expected result |\n| --- | --- |\n| Same fingerprint | Keep the decision |\n| Changed fingerprint | Request another review |",
         "path": null,
         "line": null,
         "url": "https://github.com/acme/platform/pull/128#issuecomment-1",
@@ -699,7 +699,7 @@
         "id": "design-comment-2",
         "author": "sam",
         "createdAt": "2026-11-01T11:04:00Z",
-        "body": "The account boundary is covered now. I\u2019ll take another look at the storage changes before approving.",
+        "body": "The account boundary is covered now. I’ll take another look at the storage changes before approving.",
         "path": null,
         "line": null,
         "url": "/github/acme/platform/pull/128#issuecomment-2"

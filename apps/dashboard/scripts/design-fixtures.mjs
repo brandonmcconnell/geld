@@ -277,7 +277,14 @@ async function configure(context, state = {}) {
           : fixture.queue;
       status = state.queueError ? 503 : 200;
     } else if (p === '/api/teams') data = { teams: state.emptyTeams ? [] : [team] };
-    else if (p === '/api/pull') {
+    else if (p === '/api/pull/file') {
+      const file = activeReview.files.find(file => file.path === url.searchParams.get('path'));
+      const lines = Array.from({ length: 80 }, (_, index) => `// Unchanged context, line ${index + 1}`);
+      for (const hunk of file?.hunks ?? []) for (const line of hunk.lines) {
+        if (line.newLine) lines[line.newLine - 1] = line.text;
+      }
+      data = { lines, revision: activeReview.pull.headSha };
+    } else if (p === '/api/pull') {
       data = activeReview;
       if (state.pullError) {
         data = { error: 'Reconnect this provider to continue reviewing.' };

@@ -3,11 +3,12 @@ import { pullRefSchema } from '@geld/domain';
 import { currentActor } from '@/lib/session';
 import { providerClient } from '@/lib/providers';
 import { json } from '@/lib/http';
+import { auditedRoute } from '@/lib/request-audit';
 const schema = pullRefSchema.extend({
   path: z.string().min(1).max(2000),
   revision: z.string().regex(/^[a-f0-9]{40,64}$/i),
 });
-export async function GET(request: Request) {
+async function readGET(request: Request) {
   if (!(await currentActor())) return json({ error: 'Sign in to view source' }, 401);
   const query = Object.fromEntries(new URL(request.url).searchParams);
   const parsed = schema.safeParse({ ...query, number: Number(query.number) });
@@ -40,3 +41,4 @@ export async function GET(request: Request) {
     return json({ error: 'Source could not be loaded. Try again.' }, 503);
   }
 }
+export const GET = auditedRoute(readGET, 'pull.file');

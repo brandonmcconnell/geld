@@ -191,6 +191,7 @@ function FileDiff({
                                 <td colSpan={4}>
                                   <button
                                     type="button"
+                                    aria-busy={busy}
                                     disabled={
                                       busy ||
                                       hunk.newStart - (expanded[`${index}:above`] ?? 0) <=
@@ -265,6 +266,7 @@ function FileDiff({
                                 <td colSpan={4}>
                                   <button
                                     type="button"
+                                    aria-busy={busy}
                                     disabled={
                                       busy ||
                                       (source !== null &&

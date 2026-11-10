@@ -13,7 +13,7 @@ export function Markdown({
 }) {
   return (
     <Streamdown
-      className="review-markdown"
+      className="review-markdown [&_div]:rounded-none"
       components={components}
       mode={streaming ? 'streaming' : 'static'}
       skipHtml

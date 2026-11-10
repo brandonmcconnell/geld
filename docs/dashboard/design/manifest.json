@@ -629,6 +629,17 @@
       "route": "/github/acme/platform/pull/128"
     },
     {
+      "name": "changes-context",
+      "label": "Expanded source context",
+      "file": "desktop/changes-context.png",
+      "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
       "name": "changes-wrap",
       "label": "Wrapped code lines",
       "file": "desktop/changes-wrap.png",
@@ -698,6 +709,17 @@
       "name": "conversation",
       "label": "Pull request digest",
       "file": "desktop/conversation.png",
+      "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "discussion",
+      "label": "Pull request description and discussion",
+      "file": "desktop/discussion.png",
       "group": "desktop",
       "viewport": {
         "width": 1440,
@@ -916,14 +938,14 @@
     },
     {
       "name": "review-signed-out",
-      "label": "Public review before sign-in",
+      "label": "Protected review redirects to sign-in",
       "file": "desktop/review-signed-out.png",
       "group": "desktop",
       "viewport": {
         "width": 1440,
         "height": 1000
       },
-      "route": "/github/acme/platform/pull/128"
+      "route": "/sign-in"
     },
     {
       "name": "digest-stale",
@@ -1050,17 +1072,6 @@
       "name": "inbox-error",
       "label": "Inbox connection error",
       "file": "desktop/inbox-error.png",
-      "group": "desktop",
-      "viewport": {
-        "width": 1440,
-        "height": 1000
-      },
-      "route": "/"
-    },
-    {
-      "name": "inbox-signed-out",
-      "label": "Inbox before sign-in",
-      "file": "desktop/inbox-signed-out.png",
       "group": "desktop",
       "viewport": {
         "width": 1440,
@@ -1663,6 +1674,17 @@
       "route": "/github/acme/platform/pull/128"
     },
     {
+      "name": "changes-context",
+      "label": "Expanded source context",
+      "file": "mobile/changes-context.png",
+      "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
       "name": "changes-wrap",
       "label": "Wrapped code lines",
       "file": "mobile/changes-wrap.png",
@@ -1743,6 +1765,17 @@
       "name": "conversation",
       "label": "Pull request digest",
       "file": "mobile/conversation.png",
+      "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/github/acme/platform/pull/128"
+    },
+    {
+      "name": "discussion",
+      "label": "Pull request description and discussion",
+      "file": "mobile/discussion.png",
       "group": "mobile",
       "viewport": {
         "width": 390,
@@ -1961,14 +1994,14 @@
     },
     {
       "name": "review-signed-out",
-      "label": "Public review before sign-in",
+      "label": "Protected review redirects to sign-in",
       "file": "mobile/review-signed-out.png",
       "group": "mobile",
       "viewport": {
         "width": 390,
         "height": 844
       },
-      "route": "/github/acme/platform/pull/128"
+      "route": "/sign-in"
     },
     {
       "name": "digest-stale",
@@ -2095,17 +2128,6 @@
       "name": "inbox-error",
       "label": "Inbox connection error",
       "file": "mobile/inbox-error.png",
-      "group": "mobile",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "route": "/"
-    },
-    {
-      "name": "inbox-signed-out",
-      "label": "Inbox before sign-in",
-      "file": "mobile/inbox-signed-out.png",
       "group": "mobile",
       "viewport": {
         "width": 390,

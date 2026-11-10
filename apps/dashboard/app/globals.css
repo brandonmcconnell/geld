@@ -4219,7 +4219,7 @@ html {
   font: inherit;
   font-size: 0.6875rem;
 }
-.context-expand button:disabled {
+.context-expand button:disabled:not([aria-busy='true']) {
   display: none;
 }
 .review-markdown {
@@ -4244,6 +4244,14 @@ html {
 }
 .review-markdown ul {
   list-style: disc;
+}
+.review-markdown .contains-task-list {
+  list-style: none;
+  padding-inline-start: 0;
+}
+.review-markdown .task-list-item input {
+  margin-inline-end: 0.5rem;
+  vertical-align: middle;
 }
 .review-markdown ol {
   list-style: decimal;

@@ -38,9 +38,9 @@ export function ReviewDigest({ data }: { readonly data: ReviewData }) {
       </div>
       <section className="digest-overview">
         <div className="digest-description">
-          <h2>Summary</h2>
+          <h2>{discussionOnly ? 'Description' : 'Summary'}</h2>
           <Markdown>
-            {(meta?.headSha === data.pull.headSha ? meta.summary?.tldr : null) ??
+            {(!discussionOnly && meta?.headSha === data.pull.headSha ? meta.summary?.tldr : null) ??
               (data.pull.body || 'No description provided.')}
           </Markdown>
         </div>

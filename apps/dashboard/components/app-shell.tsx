@@ -31,6 +31,7 @@ import type { QueueData, SessionData } from '@/lib/contracts';
 import { InboxPopover } from './inbox';
 import { DashboardContext, useDashboard } from '@/lib/dashboard-context';
 import { WorkspaceHeader } from './workspace-header';
+import { WorkspaceLoading } from './workspace-loading';
 import {
   Sidebar,
   SidebarProvider,
@@ -217,18 +218,22 @@ export function AppShell({
   return (
     <DashboardContext.Provider value={data}>
       {!navigation ? (
-        <div className="auth-shell isolate">
+        <div className="auth-shell isolate" aria-busy={loading}>
           <main id="main" className="main-content">
             {children}
           </main>
         </div>
       ) : !session.user && !session.demo ? (
-        <main id="main" className="page" role="status">
-          <p>{error ?? 'Loading your workspace...'}</p>
-          {error && (
-            <button type="button" className="button" onClick={data.refresh}>
-              Try again
-            </button>
+        <main id="main">
+          {error ? (
+            <div className="page" role="status">
+              <p>{error}</p>
+              <button type="button" className="button" onClick={data.refresh}>
+                Try again
+              </button>
+            </div>
+          ) : (
+            <WorkspaceLoading />
           )}
         </main>
       ) : (

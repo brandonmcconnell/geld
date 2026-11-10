@@ -102,7 +102,7 @@ export function ReviewQueue({ repository }: { readonly repository?: RepositoryRe
   const selection = selected.filter((path) => visiblePaths.includes(path));
   const allSelected = visiblePaths.length > 0 && selection.length === visiblePaths.length;
   return (
-    <div className="page queue-page">
+    <div className="page queue-page" aria-busy={loading}>
       {session.demo && <p className="demo-notice">Sample workspace · Provider writes are disabled</p>}
       <div className="queue-tabs" role="tablist" aria-label="Review queue views">
         {tabs.map((item) => (

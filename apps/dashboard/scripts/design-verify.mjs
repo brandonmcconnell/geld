@@ -18,12 +18,18 @@ async function open(state = {}, width = 1440, url = '/', dismiss = true) {
     reducedMotion: 'reduce',
   });
   context.setDefaultTimeout(10000);
+  context.setDefaultNavigationTimeout(60000);
   const writes = await configure(context, state);
   const page = await context.newPage();
   const requests = [];
   page.on('request', (request) => requests.push(request.url()));
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(base + url, { waitUntil: 'networkidle' });
+  await page.locator('.workspace-main, .auth-shell[aria-busy=false], .error-page').first().waitFor({ timeout: 30000 });
+  if (!state.queueLoading && await page.locator('.queue-page').count()) {
+    await page.locator('.queue-page[aria-busy=false]').waitFor();
+    await page.locator('.change-count-placeholder[title="Loading change counts"]').first().waitFor({ state: 'hidden' });
+  }
   if (dismiss && (await page.getByRole('region', { name: 'Privacy choices', exact: true }).count()))
     await page.getByRole('button', { name: 'Decline optional', exact: true }).click();
   return { context, page, writes, requests };
@@ -127,7 +133,7 @@ try {
   await q.page.getByRole('button', { name: 'Open review', exact: true }).click();
   await q.page.waitForURL('**' + pull);
   await q.page.getByRole('dialog').waitFor({ state: 'hidden' });
-  await q.page.getByRole('link', { name: 'Review queue', exact: true }).click();
+  await q.page.getByRole('link', { name: 'All reviews', exact: true }).click();
   await q.page.getByRole('button', { name: 'Switch team', exact: true }).click();
   await q.page.getByRole('button', { name: 'Platform engineering', exact: true }).click();
   await q.context.route('**/api/session', (route) =>
@@ -141,9 +147,8 @@ try {
     route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'Signed out' }) }),
   );
   await q.page.getByRole('button', { name: 'Refresh review queue', exact: true }).click();
-  await q.page.locator('.account-name:visible').filter({ hasText: 'Sign in' }).waitFor();
+  await q.page.waitForURL('**/sign-in');
   assert.equal(await q.page.locator('.pull-row').count(), 0);
-  await q.page.getByRole('button', { name: 'Switch team', exact: true }).click();
   assert.equal(await q.page.getByRole('button', { name: 'Platform engineering', exact: true }).count(), 0);
   await q.context.close();
   console.log(
@@ -165,7 +170,7 @@ try {
     });
   });
   await navigation.page.getByRole('button', { name: 'Select repository', exact: true }).click();
-  await navigation.page.getByRole('button', { name: 'Load more repositories', exact: true }).click();
+  await navigation.page.getByLabel('Choose a repository', { exact: true }).getByRole('button', { name: 'Load more repositories', exact: true }).click();
   await navigation.page.getByRole('searchbox', { name: 'Find a repository', exact: true }).fill('gitlab');
   await navigation.page.getByRole('button', { name: 'acme/api on gitlab.com', exact: true }).click();
   await navigation.page.waitForURL('**/gitlab/acme/api');
@@ -177,7 +182,7 @@ try {
   await navigation.page.getByRole('button', { name: 'Platform engineering', exact: true }).click();
   await navigation.page.waitForURL(base + '/');
   await navigation.page.getByRole('button', { name: 'Select repository', exact: true }).click();
-  await navigation.page.getByRole('button', { name: 'Load more repositories', exact: true }).waitFor();
+  await navigation.page.getByLabel('Choose a repository', { exact: true }).getByRole('button', { name: 'Load more repositories', exact: true }).waitFor();
   assert.equal(scopes.at(-1), teamId);
   await navigation.page.keyboard.press('Escape');
   await navigation.context.route('**/api/session', (request) =>
@@ -187,8 +192,8 @@ try {
     request.fulfill({ status: 401, json: { error: 'Signed out' } }),
   );
   await navigation.page.getByRole('button', { name: 'Refresh review queue', exact: true }).click();
-  await navigation.page.locator('.account-name:visible').filter({ hasText: 'Sign in' }).waitFor();
-  await navigation.page.getByRole('button', { name: 'Select repository', exact: true }).click();
+  await navigation.page.waitForURL('**/sign-in');
+  assert.equal(await navigation.page.getByRole('button', { name: 'Select repository', exact: true }).count(), 0);
   assert.equal(
     await navigation.page.getByRole('button', { name: 'acme/platform on github.com', exact: true }).count(),
     0,
@@ -213,9 +218,8 @@ try {
     request.fulfill({ json: { user: null, configured: true, demo: false } }),
   );
   await notifications.page.getByRole('button', { name: 'Refresh review queue', exact: true }).click();
-  await notifications.page.locator('.account-name:visible').filter({ hasText: 'Sign in' }).waitFor();
-  await notifications.page.getByRole('button', { name: 'Open inbox', exact: true }).click();
-  await notifications.page.getByRole('link', { name: 'Sign in to view your inbox', exact: true }).waitFor();
+  await notifications.page.waitForURL('**/sign-in');
+  assert.equal(await notifications.page.getByRole('button', { name: 'Open inbox', exact: true }).count(), 0);
   assert.equal(await notifications.page.getByText('Review requested', { exact: true }).count(), 0);
   await notifications.context.close();
   console.log('PASS drag resizing/collapse, chevron-only team switching, account trigger and inbox isolation');
@@ -239,6 +243,12 @@ try {
   await tab(review.page, 'Guide');
   await review.page.getByRole('heading', { name: 'Guide complete', exact: true }).waitFor();
   await tab(review.page, 'Diff');
+  const firstFile = review.page.locator('.diff-file').first();
+  assert.ok((await firstFile.getByRole('link', { name: 'Source', exact: true }).getAttribute('href')).includes('/blob/'));
+  assert.ok((await firstFile.getByRole('link', { name: 'Raw', exact: true }).getAttribute('href')).includes('revision='));
+  await firstFile.getByRole('button', { name: 'Expand below', exact: true }).first().click();
+  await firstFile.getByText('// Unchanged context, line', { exact: false }).first().waitFor();
+  assert.equal(await firstFile.locator('.diff-code pre').first().evaluate(e => getComputedStyle(e).overflowY), 'visible');
   await review.page.getByRole('button', { name: 'Wrap lines', exact: true }).click();
   assert.equal(
     await review.page
