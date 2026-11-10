@@ -13,7 +13,7 @@ import type { ProviderReviewComment } from '@geld/review';
 import { readGitLabThreadActions, syncGitLabNativeReviewState } from './thread-actions';
 import { fetchGitLabConfig } from './config';
 import { renderGitLabComment } from './comment-render';
-import { gitLabConversationRoots, gitLabDescriptionHost } from './conversation';
+import { gitLabConversationRoots, gitLabPersonRoots, gitLabDescriptionHost } from './conversation';
 import { createGitLabAuthorPresentationReader } from './author-presentation';
 import { gitLabReferenceAnchor, readGitLabReferences } from './references';
 import { readGitLabBotRequests } from './bot-request';
@@ -35,6 +35,7 @@ export const gitlabAdapter: ProviderAdapter = {
   readReferences: readGitLabReferences,
   referenceAnchor: gitLabReferenceAnchor,
   conversationRoots: gitLabConversationRoots,
+  personRoots: gitLabPersonRoots,
   descriptionHost: gitLabDescriptionHost,
   fetchDiff: (page, signal) => isProviderReviewPage(page) ? fetchGitLabDiff(page, signal) : fetchGitLabStandaloneDiff(page, signal),
   fetchConfig: fetchGitLabConfig,

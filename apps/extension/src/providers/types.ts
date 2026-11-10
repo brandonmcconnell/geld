@@ -227,6 +227,7 @@ export interface ProviderAdapter {
   readReferences?(page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[]): readonly ProviderReviewReference[];
   referenceAnchor?(reference: ProviderReviewReference, page: ProviderReviewPage, doc: Document, events: readonly ProviderReviewPanelEvent[]): HTMLAnchorElement | null;
   conversationRoots?(doc: Document, snapshot?: ProviderReviewSnapshot): readonly ProviderConversationRoot[];
+  personRoots?(doc: Document, snapshot?: ProviderReviewSnapshot): readonly ProviderConversationRoot[];
   descriptionHost?(doc: Document): HTMLElement | null;
   actionHost?(doc: Document): HTMLElement | null;
   fetchReview?(page: ProviderReviewPage, signal: AbortSignal, doc: Document): Promise<ProviderReviewSnapshot>;

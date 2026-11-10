@@ -845,3 +845,46 @@ describe('persistent provider conversation views', () => {
     expect(native.hasAttribute('data-geld-provider-native-find')).toBe(false);
   });
 });
+
+describe('hidden people in provider conversations', () => {
+  it('filters digest counts and native comments, then restores one person for the visit', async () => {
+    const hidden = { ...comment('Hidden concern'), author: { id: 'alice-id', login: 'alice' } };
+    const visible = { ...comment('Visible concern'), id: '2', anchor: 'note_2', url: `${url}#note_2`, author: { id: 'bob-id', login: 'bob' } };
+    const base = snapshot();
+    const source = { ...base, input: { ...base.input, threads: [
+      { ...base.input.threads[0]!, comments: [hidden] },
+      { ...base.input.threads[0]!, id: 'b'.repeat(40), anchor: `discussion_${'b'.repeat(40)}`, url: visible.url, comments: [visible] },
+    ] } };
+    const first = document.createElement('article');first.id = hidden.anchor;
+    const second = document.createElement('article');second.id = visible.anchor;
+    document.body.append(first, second);
+    const f = fixture(source, {}, { aiEnabled: false, hiddenAuthors: ['alice'], compactTimeline: 'off' }, {
+      personRoots: () => [{ root: first, anchors: [hidden.anchor], kind: 'comment' }, { root: second, anchors: [visible.anchor], kind: 'comment' }],
+    });
+    await vi.waitFor(() => expect(first.hasAttribute('data-geld-provider-person-hidden')).toBe(true));
+    expect(second.hasAttribute('data-geld-provider-person-hidden')).toBe(false);
+    expect(f.host.querySelectorAll('[data-geld-item]')).toHaveLength(1);
+    expect(f.host.querySelector('.geld-provider-review')?.textContent).not.toContain('Hidden concern');
+    f.host.querySelector<HTMLButtonElement>('[data-geld-person-toggle="alice-id"]')?.click();
+    await vi.waitFor(() => expect(first.hasAttribute('data-geld-provider-person-hidden')).toBe(false));
+    expect(f.host.querySelectorAll('[data-geld-item]')).toHaveLength(2);
+    expect(source.input.threads[0]?.comments).toEqual([hidden]);
+    f.conversation.clear();
+    expect(document.querySelector('.geld-provider-hidden-person')).toBeNull();
+    expect(first.hasAttribute('data-geld-provider-person-hidden')).toBe(false);
+  });
+
+  it('uses complete native sources for a local review mark after hiding one reply', async () => {
+    const starter = { ...comment('Visible concern'), author: { id: 'bob-id', login: 'bob' } };
+    const reply = { ...comment('Hidden reply'), id: '2', anchor: 'note_2', url: `${url}#note_2`, author: { id: 'alice-id', login: 'alice' } };
+    const base = snapshot();
+    const source = { ...base, input: { ...base.input, threads: [{ ...base.input.threads[0]!, comments: [starter, reply] }] } };
+    const save = vi.fn<NonNullable<ProviderConversationServices['saveReviewed']>>(async () => undefined);
+    const f = fixture(source, { readReviewed: async () => ({}), saveReviewed: save }, { aiEnabled: false, hiddenAuthors: ['alice'] });
+    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-local-reviewed]')).not.toBeNull());
+    f.host.querySelector<HTMLButtonElement>('[data-geld-local-reviewed]')?.click();
+    await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(save.mock.calls[0]?.[1].sources.map((entry) => entry.anchor)).toEqual([starter.anchor, reply.anchor]);
+    expect(f.host.querySelector('.geld-provider-review')?.textContent).not.toContain('Hidden reply');
+  });
+});

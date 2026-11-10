@@ -30,13 +30,15 @@ function activityRoot(entry: HTMLElement): HTMLElement {
     && row.querySelector('form,textarea,input,[contenteditable="true"]') === null ? row : entry;
 }
 
-export function bitbucketConversationRoots(doc: Document, snapshot?: ProviderReviewSnapshot): readonly ProviderConversationRoot[] {
+export function bitbucketPersonRoots(doc: Document, snapshot?: ProviderReviewSnapshot): readonly ProviderConversationRoot[] { return bitbucketConversationRoots(doc, snapshot, false); }
+
+export function bitbucketConversationRoots(doc: Document, snapshot?: ProviderReviewSnapshot, grouped = true): readonly ProviderConversationRoot[] {
   const roots: ProviderConversationRoot[] = [];
   const seen = new Set<HTMLElement>();
   for (const comment of doc.querySelectorAll<HTMLElement>(COMMENTS)) {
     if (comment.closest('[data-geld-ui]') !== null || !/^comment-[1-9]\d*$/.test(comment.id) || comment.querySelector('form,textarea,[contenteditable="true"], [data-testid="comment"]') !== null) continue;
     const activity = comment.closest<HTMLElement>('[data-qa="pull-request-activity"]');
-    const candidate = activity === null ? comment : activityRoot(activity);
+    const candidate = !grouped || activity === null ? comment : activityRoot(activity);
     const root = candidate.querySelector('form,textarea,input,[contenteditable="true"]') === null ? candidate : comment;
     if (seen.has(root)) continue;
     const anchors = root === comment ? [comment.id] : [...root.querySelectorAll<HTMLElement>(COMMENTS)].map((node) => node.id);

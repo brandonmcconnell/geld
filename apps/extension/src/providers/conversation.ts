@@ -1,5 +1,5 @@
 import type { DigestView, GeldSettings } from '@geld/core';
-import { repositoryKey, trustedReviewAccountFor } from '@geld/core';
+import { compileAuthorRules, repositoryKey, trustedReviewAccountFor } from '@geld/core';
 import { botById, buildProviderReviewItems, PROVIDER_BOT_CAPABILITIES, providerBotSupport } from '@geld/review';
 import type { ProviderReviewComment, ProviderReviewInput, ReviewItem } from '@geld/review';
 import { ProviderAiTriage } from './ai';
@@ -8,6 +8,8 @@ import type { ProviderAiDependencies } from './ai';
 import type { ProviderReviewReference } from './references';
 import { element } from './dom';
 import { providerDigestViewChoice } from './digest-view';
+import { projectProviderPeople } from './hidden-people';
+import { ProviderHiddenPeopleView } from './hidden-people-view';
 import { renderProviderReviewPanel } from './review-panel';
 import type { ProviderReviewPanel, ProviderSourceActionContext } from './review-panel';
 import type { ProviderAdapter, ProviderReviewPage, ProviderReviewSnapshot } from './types';
@@ -25,6 +27,7 @@ function hiddenFlag(node: Element, name: string, hidden: boolean): void {
 }
 
 export interface ProviderConversationServices {
+  readonly unhidePerson?: (login: string) => Promise<void>;
   readonly chooseDigestView?: (view: DigestView) => Promise<void>;
   readonly saveTrustedBot?: (input: ProviderReviewInput, comment: ProviderReviewComment, botId: string) => Promise<void>;
   readonly saveTrustedPublisher?: (input: ProviderReviewInput, comment: ProviderReviewComment) => Promise<void>;
@@ -74,6 +77,8 @@ export class ProviderConversation {
   private key = '';
   private viewControls: HTMLElement | null = null;
   private viewSignature = '';
+  private readonly shownPeople = new Set<string>();
+  private readonly hiddenPeople: ProviderHiddenPeopleView;
   private generation = 0;
   private abort: AbortController | null = null;
   private snapshot: ProviderReviewSnapshot | null = null;
@@ -104,6 +109,7 @@ export class ProviderConversation {
   private reviewedError = '';
 
   constructor(private readonly adapter: ProviderAdapter, private readonly changed: () => void, private readonly services: ProviderConversationServices = {}) {
+    this.hiddenPeople = new ProviderHiddenPeopleView((id, shown) => { if (shown) this.shownPeople.add(id); else this.shownPeople.delete(id); this.changed(); }, services.unhidePerson);
     this.ai = new ProviderAiTriage(() => this.changed(), services.aiDependencies);
     this.publication = new ProviderPublishedReview(() => this.changed());
   }
@@ -124,16 +130,17 @@ export class ProviderConversation {
       this.publication.reset();
       this.panel?.destroy(); this.panel = null;
       this.restoreCompact(); this.restoreDescription();
-      this.resetReviewed();
+      this.resetReviewed(); this.hiddenPeople.clear();
     }
+    const wantsPeople = !compileAuthorRules(settings.hiddenAuthors).isEmpty;
     const viewHost = page.kind === 'overview' ? this.adapter.reviewHost?.(document) ?? null : null;
     this.updateViewChoice(viewHost, settings);
-    if (!settings.prOverview && !settings.quickReview) {
+    if (!settings.prOverview && !settings.quickReview && !wantsPeople) {
       if (this.abort !== null) { this.generation += 1; this.abort.abort(); this.abort = null; this.nextRefresh = 0; this.snapshotVersion += 1; }
       if (this.panel !== null) this.panel.element.hidden = true;
       this.status?.remove(); this.status = null;
       this.actions?.remove(); this.actions = null; this.signature = '';
-      this.restoreCompact(); this.restoreDescription();
+      this.restoreCompact(); this.restoreDescription(); this.hiddenPeople.clear();
       return;
     }
     if (this.adapter.fetchReview === undefined) return;
@@ -141,7 +148,7 @@ export class ProviderConversation {
     const actionHost = settings.quickReview ? this.adapter.actionHost?.(document) ?? null : null;
     if (host === null) { if (this.panel !== null) this.panel.element.hidden = true; this.status?.remove(); this.status = null; this.restoreCompact(); this.restoreDescription(); }
     if (actionHost === null) { this.actions?.remove(); this.actions = null; this.signature = ''; }
-    if (host === null && actionHost === null) return;
+    if (host === null && actionHost === null && !wantsPeople) return;
     if (this.abort === null && Date.now() >= this.nextRefresh) {
       const abort = new AbortController();
       this.abort = abort;
@@ -164,13 +171,26 @@ export class ProviderConversation {
       });
     }
     const snapshot = this.snapshot;
+    if (snapshot !== null) {
+      const people = projectProviderPeople(snapshot.input, snapshot.comments, snapshot.events, settings.hiddenAuthors, this.shownPeople);
+      this.hiddenPeople.update(viewHost, people, this.adapter.personRoots?.(document, snapshot) ?? []);
+    } else this.hiddenPeople.clear();
     if (host !== null && snapshot !== null) {
       const native = providerReviewWithTrustedAccounts(snapshot.input, snapshot.comments, settings, snapshot.complete);
       this.publication.load(native, snapshot.comments, snapshot.sourceCoverage, settings);
       const publication = this.publication.result;
-      const input = publication?.input ?? native;
-      const comments = publication?.comments ?? snapshot.comments;
-      this.loadReviewed(input, comments);
+      const originalInput = publication?.input ?? native;
+      const originalComments = publication?.comments ?? snapshot.comments;
+      const people = projectProviderPeople(originalInput, originalComments, snapshot.events, settings.hiddenAuthors, this.shownPeople);
+      const input = people.input;
+      const comments = people.comments;
+      const hiddenIds = new Set(people.people.filter((person) => !person.shown).map((person) => person.id));
+      const hidden = hiddenIds.size > 0;
+      const originalItems = buildProviderReviewItems(originalInput);
+      const originalByAnchor = new Map(originalItems.flatMap((item) => item.sources.map((source) => [source.anchor, item] as const)));
+      const displayedIds = new Map(buildProviderReviewItems(input).map((item) => [item.id, originalByAnchor.get(item.sources[0]?.anchor ?? '')?.id ?? item.id]));
+      const originalId = (id: string): string => displayedIds.get(id) ?? id;
+      this.loadReviewed(originalInput, originalComments);
       if (settings.aiEnabled) void this.ai.load(input, comments, settings);
       else if (this.ai.state.key !== null) this.ai.reset();
       const repository = { provider: input.subject.provider, origin: input.subject.origin, path: input.subject.repository };
@@ -180,9 +200,10 @@ export class ProviderConversation {
       const actionKey = this.key;
       const actionHead = input.subject.headSha;
       this.status?.remove(); this.status = null;
-      const references = this.adapter.readReferences?.(page, document, snapshot.events) ?? [];
+      const references = (this.adapter.readReferences?.(page, document, snapshot.events) ?? []).filter((reference) => (reference.source.anchor === null || !people.hiddenAnchors.has(reference.source.anchor)) && (reference.source.eventId === undefined || !people.hiddenEvents.has(reference.source.eventId)) && (reference.source.author === undefined || !hiddenIds.has(reference.source.author.id)));
       const reviewerControls = snapshot.reviewerControls;
       const options = {
+        ...(hidden ? { sourceInput: originalInput } : {}),
         ...(reviewerControls === undefined ? {} : { reviewerControls: { ...reviewerControls, activate: async (context?: ProviderSourceActionContext): Promise<boolean> => {
           const current = (): boolean => {
             if (context?.current?.() === false || this.generation !== actionGeneration || this.key !== actionKey || this.snapshot !== snapshot || !snapshot.complete
@@ -201,7 +222,7 @@ export class ProviderConversation {
             || active.diffPageUrl !== page.diffPageUrl || active.headSha !== null && active.headSha !== actionHead) return false;
           const latest = providerReviewWithTrustedAccounts(snapshot.input, snapshot.comments, this.latestSettings, snapshot.complete);
           return JSON.stringify(latest.bots) === JSON.stringify(native.bots);
-        }) ?? [],
+        }).filter((request) => !native.bots?.some((bot) => bot.id === request.botId && people.people.some((person) => person.id === bot.authorId && !person.shown))) ?? [],
         references,
         ...(this.adapter.referenceAnchor === undefined ? {} : { onRevealReference: (reference: ProviderReviewReference): boolean => {
           const current = (): ProviderReviewPage | null => {
@@ -271,8 +292,8 @@ export class ProviderConversation {
           }, 700);
           this.changed();
         },
-        comments, events: snapshot.events, complete: snapshot.complete,
-        ...(publication === null ? {} : { publication: {
+        comments, events: people.events, complete: snapshot.complete,
+        ...(publication === null || publication.candidate !== null && hiddenIds.has(publication.candidate.comment.author.id) ? {} : { publication: {
           result: publication,
           repository,
           ...(saveTrustedPublisher === undefined ? {} : { save: (comment: ProviderReviewComment): Promise<void> => saveTrustedPublisher(input, comment) }),
@@ -280,10 +301,10 @@ export class ProviderConversation {
         unavailable: [...snapshot.unavailable, ...(this.error === '' ? [] : [{ area: 'Refresh', reason: this.error }]), ...(this.publication.error === '' ? [] : [{ area: 'Published summary', reason: this.publication.error }])],
         approvalsRequired: snapshot.approvalsRequired, approvalsLeft: snapshot.approvalsLeft,
         ...(snapshot.requirements === undefined ? {} : { requirements: snapshot.requirements }),
-        transformItems: (items: Parameters<ProviderAiTriage['apply']>[0]) => this.ai.apply(publication?.items ?? items),
+        transformItems: (items: Parameters<ProviderAiTriage['apply']>[0]) => this.ai.apply(hidden ? items : publication?.items ?? items).map((item) => hidden ? { ...item, id: originalId(item.id) } : item),
         ai: {
           enabled: settings.aiEnabled,
-          state: this.ai.state,
+          state: { ...this.ai.state, pending: new Set([...this.ai.state.pending].map(originalId)) },
           run: (): void => { void this.ai.run(input, comments, settings); },
           cancel: (): void => this.ai.cancel(),
         },
@@ -293,7 +314,7 @@ export class ProviderConversation {
           ids: this.reviewed,
           pending: this.reviewedPending,
           ...(this.reviewedError === '' ? {} : { error: this.reviewedError }),
-          set: (item: ReviewItem, reviewed: boolean): void => { void this.setReviewed(input, comments, item, reviewed); },
+          set: (item: ReviewItem, reviewed: boolean): void => { const original = originalItems.find((candidate) => candidate.id === item.id); if (original !== undefined) void this.setReviewed(originalInput, originalComments, original, reviewed); },
         } }),
         ...(saveTrustedBot === undefined ? {} : { identifyReviewer: {
           repository,
@@ -599,6 +620,7 @@ export class ProviderConversation {
 
   clear(): void {
     this.viewControls?.remove(); this.viewControls = null; this.viewSignature = '';
+    this.hiddenPeople.clear(); this.shownPeople.clear();
     this.restoreCompact();
     this.restoreDescription();
     this.originalsShown.clear();
