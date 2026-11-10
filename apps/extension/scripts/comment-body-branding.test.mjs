@@ -410,17 +410,14 @@ test('OS dark evidence preserves all three original views and never claims unsel
       authorPresentationProbe: async () => { assert.equal(f.native.hidden, false);return measurements.shift(); },
       pause: async () => {}, capture: async () => ({ kind: 'offline test only' }),
       poll: async (read, accepts) => { const value = await read();assert.equal(accepts(value), true);return value; },
-      clickReviewButton: async (_page, actual, label) => {
-        assert.equal(actual, '.geld-provider-view button[data-geld-digest-view]');clicks.push(label);
-        setView({ Bitbucket: 'github', Geld: 'digest', 'Geld + Bitbucket': 'digest-timeline' }[label]);
-      },
+      clickDigestView: async (_page, view) => { clicks.push(view);setView(view); },
     });
     const result = await theme({
       evaluate: async (read, ...args) => read(...args), isClosed: () => false,
       emulateMediaFeatures: async value => media.push(value),
     }, 'bitbucket', f.anchor);
     assert.deepEqual(settings, originalSettings);
-    assert.deepEqual(clicks, ['Bitbucket', 'Geld', 'Geld + Bitbucket']);
+    assert.deepEqual(clicks, ['github', 'digest', 'digest-timeline']);
     assert.equal(result.views.length, 3);
     assert.equal(result.darkPreferenceProbe.nativeThemeChanged, nativeChanges);
     assert.equal(result.darkPreferenceProbe.bodyNativeThemeChanged, nativeChanges);

@@ -182,6 +182,12 @@ function safeUrl(value) {
   } catch { return String(value).slice(0, 1000); }
 }
 function errorText(error) { return error instanceof Error ? `${error.name}: ${error.message}` : String(error); }
+// An assertion without a message reads only "false == true", so name the harness line that threw.
+function errorWhere(error) {
+  if (!(error instanceof Error) || typeof error.stack !== 'string') return undefined;
+  const frame = error.stack.split('\n').map((line) => line.match(/\/scripts\/([\w.-]+\.mjs):(\d+):\d+\)?$/)).find((match) => match !== null);
+  return frame ? `${frame[1]}:${frame[2]}` : undefined;
+}
 function providerOf(value) {
   try {
     const host = new URL(value).hostname;
@@ -810,6 +816,7 @@ async function runCase(name, url, body, discovery = false) {
   } catch (error) {
     item.status = item.rateLimitedUntil !== undefined && item.holdReason === 'provider_http429' ? 'rate_limited' : item.budgetHold !== undefined ? 'unavailable' : wholePrivacy ? (item.bitbucketWhole?.status==='failed'?'failed':item.rateLimitedUntil!==undefined?'rate_limited':'unavailable') : shellPrivacy ? (item.gitLabShell?.status === 'failed' ? 'failed' : item.rateLimitedUntil !== undefined ? 'rate_limited' : 'unavailable') : fileMenuPrivacy && item.rateLimitedUntil !== undefined ? 'rate_limited' : fileMenuPrivacy && (item.nativeFileMenu?.status === 'failed' || item.nativeFileMenuContract === 'invalid_result' || item.nativeFileMenuTraffic?.forbiddenWrites > 0 || item.nativeFileMenuTraffic?.positiveExtensionRequests > 0) ? 'failed' : whitespacePrivacy && item.nativeWhitespace?.status === 'failed' ? 'failed' : name === 'bitbucket-native-settings-diagnostic' && item.nativeSettingsDiagnostic?.status === 'failed' ? 'failed' : name === 'bitbucket-native-bash-on' && item.nativeBashOn?.status === 'failed' ? 'failed' : discovery ? item.rateLimitedUntil === undefined ? 'unavailable' : 'rate_limited' : 'failed';
     item.error = wholePrivacy ? 'Bitbucket whole-context acceptance unavailable or failed. See fixed stage diagnostics.' : localReviewOnly ? 'Bitbucket local review acceptance failed. See bounded stage evidence.' : shellPrivacy ? 'GitLab shell acceptance unavailable or failed. See fixed phase and cleanup diagnostics.' : fileMenuPrivacy ? 'Native file-menu diagnostic unavailable or guard failed. See fixed progress and cleanup codes.' : whitespacePrivacy ? 'Native whitespace characterization unavailable or failed. See fixed stage and cleanup codes.' : errorText(error);
+    if (!(wholePrivacy || localReviewOnly || shellPrivacy || fileMenuPrivacy || whitespacePrivacy)) item.where = errorWhere(error);
     if (item.budgetHold !== undefined && item.rateLimitedUntil === undefined) item.error = `Conservative anonymous API budget hold until ${item.budgetHold.availableAt}. No provider HTTP429 is implied; native demand stopped and no retry was attempted.`;
     if (item.rateLimitedUntil !== undefined) {
       item.interruptedError = item.error;
@@ -928,7 +935,7 @@ async function runCase(name, url, body, discovery = false) {
     }
     item.finishedAt = new Date().toISOString();
     await saveReport();
-    console.log(`${item.status.toUpperCase()}: ${name}${item.error === undefined ? '' : ` — ${item.error}`}`);
+    console.log(`${item.status.toUpperCase()}: ${name}${item.error === undefined ? '' : ` — ${item.error}`}${item.where === undefined ? '' : ` (at ${item.where})`}`);
   }
 }
 async function runBitbucketWhitespaceCase() {
@@ -2151,6 +2158,27 @@ async function clickReviewButton(page, selector, label) {
   } finally { await discardHandle(handle); }
 }
 
+async function clickDigestView(page, view) {
+  const selector = `.geld-provider-view button[data-geld-digest-view="${view}"]`;
+  const summary = await page.evaluateHandle((selector) => {
+    const menu = document.querySelector(selector)?.closest('details');
+    return menu && !menu.open ? menu.querySelector(':scope > summary') : null;
+  }, selector);
+  try {
+    const opener = summary.asElement();
+    // The views sit in the digest's View menu, so it is opened with a real click first.
+    if (opener !== null) { await opener.evaluate((element) => element.scrollIntoView({ block: 'center', inline: 'nearest' }));await opener.click(); }
+  } finally { await discardHandle(summary); }
+  const handle = await page.evaluateHandle((selector) => { const button = document.querySelector(selector);return button instanceof HTMLButtonElement && !button.disabled ? button : null; }, selector);
+  const button = handle.asElement();
+  assert.ok(button !== null, `Missing actual ${view} view button`);
+  try {
+    await button.evaluate((element) => element.scrollIntoView({ block: 'center', inline: 'nearest' }));
+    await button.click();
+    return { view, input: 'Real Puppeteer pointer click on the observed control' };
+  } finally { await discardHandle(handle); }
+}
+
 async function gitLabBotDigest(page) {
   return page.evaluate((ids) => {
     const panel = document.querySelector('.geld-provider-review');
@@ -3024,9 +3052,7 @@ async function gitLabSidebarPeopleEvidence(page) {
 }
 
 async function authorThemeEvidence(page, provider, anchor) {
-  const selector = '.geld-provider-view button[data-geld-digest-view]';
   const saved = await options.evaluate(async key => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
-  const name = provider === 'gitlab' ? 'GitLab' : 'Bitbucket';
   const evidence = { baseline: null, darkPreferenceProbe: null, views: [], nativeMeasurement: 'Retained native originals explicitly shown through the persistent view selector before comparing rendered styles.' };
   const readView = () => page.evaluate(anchor => {
     const panel = document.querySelector('.geld-provider-review');
@@ -3035,11 +3061,11 @@ async function authorThemeEvidence(page, provider, anchor) {
     return { selected: document.querySelector('.geld-provider-view [aria-pressed="true"]')?.getAttribute('data-geld-digest-view') ?? null, digestVisible: visible(panel), nativeVisible: visible(source), choices: document.querySelectorAll('.geld-provider-view button[data-geld-digest-view]').length };
   }, anchor);
   try {
-    await clickReviewButton(page, selector, name);
+    await clickDigestView(page, 'github');
     evidence.views.push(await poll(readView, value => value.selected === 'github' && !value.digestVisible && value.nativeVisible && value.choices === 3, 'Provider-only view restores the native conversation and keeps re-entry visible'));
-    await clickReviewButton(page, selector, 'Geld');
+    await clickDigestView(page, 'digest');
     evidence.views.push(await poll(readView, value => value.selected === 'digest' && value.digestVisible && value.choices === 3, 'Geld digest can be enabled again from the provider-only view'));
-    await clickReviewButton(page, selector, `Geld + ${name}`);
+    await clickDigestView(page, 'digest-timeline');
     evidence.views.push(await poll(readView, value => value.selected === 'digest-timeline' && value.digestVisible && value.nativeVisible && value.choices === 3, 'Combined view renders both the digest and native conversation'));
     await poll(() => page.evaluate(anchor => { const node = document.getElementById(anchor);return node !== null && node.closest('[hidden]') === null && node.getBoundingClientRect().height > 0; }, anchor), Boolean, 'Retained original author is rendered before style comparison');
     const baseline = await authorPresentationProbe(page, provider, anchor);
