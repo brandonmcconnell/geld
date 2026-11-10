@@ -11324,7 +11324,7 @@ var init_settings_schema = __esm({
             kind: "toggle",
             key: "attachmentLightbox",
             label: "Attachment lightbox",
-            description: "View image and video attachments in a larger player in issues and pull requests.",
+            description: "Preview image attachments in issues and pull requests with zoom and pan.",
             popup: false,
             surfaces: ["extension"]
           },
