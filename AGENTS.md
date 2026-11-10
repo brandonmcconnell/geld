@@ -3260,6 +3260,9 @@ Unrelated later popups are reported separately rather than counted as a leaked s
 The installed Bitbucket context checks scroll original controls and source selection targets instantly before bounded hit testing.
 An inherited smooth-scroll policy can leave their old coordinates immediately after scrollIntoView returns, so a ready source alone does not prove pointer readiness.
 Source ownership is checked again after the hit-test wait and before the trusted click or drag.
+An installed Bitbucket fold can retain an obstructed rectangle center after scrolling even while another part of the original button is visible.
+Acceptance intersects the button with the viewport and bounded clipping ancestors, samples at most nine points and uses a real mouse click only after a descendant hit and a fresh source and point check.
+Fully covered controls still fail, and an obstructed center records bounded hit-owner geometry plus a fixed public-target crop for layout diagnosis.
 
 Bitbucket's native context reducer replaces its diff array even when the idle comparison's whitespace mode is unchanged, so an already-ready receipt retains the same store, panel, subject and exact boolean-or-unset value across that update.
 Native unified rows and chunks use array-index React keys, so prepending or merging context can legitimately replace previously displayed row nodes.
