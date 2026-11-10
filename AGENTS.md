@@ -3283,3 +3283,9 @@ Intercept the pull request's document, set `appPayload.enabled_features.prs_over
 a `<meta name="user-login">` puts the review group up.
 The merge box (`page_data/merge_box`) and the sidebar need a session and show GitHub's error box.
 Signed in, a copy of the desktop Chrome's profile (`~/.config/google-chrome`, its `Default` and `Local State`, launched with `--password-store=basic` so its cookies decrypt) serves the real page to the headless browser with the extension, without driving the desktop one.
+
+Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
+Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
+
+Malformed GitLab approval or reviewer rows are isolated individually and mark reviews partial without discarding valid standings, discussion evidence or native required/remaining counts.
+An all-malformed source supplies no known empty reviewer list.
