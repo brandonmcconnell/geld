@@ -792,6 +792,16 @@ html[data-geld-quick-review] details.js-reviews-container {
   margin-right: 8px;
 }
 
+/*
+ * The Files changed toolbar gets its background only from GitHub's `is-stuck` class, which an observer sets after the
+ * frame in which the toolbar sticks: on a slow page it stood stuck and transparent over the diff for a moment. The
+ * class changes nothing else, so the background is the toolbar's from the start, the page's own colour while it sits
+ * in place.
+ */
+html[data-geld-on] section[class*='stickyHeader'][class*='toolbar'] {
+  background-color: var(--bgColor-default, var(--color-canvas-default));
+}
+
 /* In the Overview's stuck mini header, before its divider and panel toggles. */
 .geld-quick-review[data-geld-place='mini'] {
   align-self: center;
