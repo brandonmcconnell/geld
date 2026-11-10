@@ -3658,3 +3658,4 @@ Nested author conversation bodies survive reviewer and CI-only refreshes so sele
 GitLab merge blockers come from its qualified merge widget separately from pipeline checks, and system-note activity uses the same author-bound inert renderer as normal comments.
 An explicit Digest selection folds represented originals revealed through source links or native find, while ordinary refreshes preserve those reveals and active native editors.
 The gitlab-expanded-digest installed-browser slice opens triage-ops MR4544 and verifies expanded bot content, merge blockers, formatted emoji, timeline restore/refold, description headings and menu isolation.
+GitLab scoped label halves depend on inline foreground/background colors and a bounded inset border, so the inert native renderer preserves only those scalar color values while dropping layout and arbitrary custom properties.

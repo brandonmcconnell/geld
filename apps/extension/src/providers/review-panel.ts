@@ -953,7 +953,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const avatarUrl = nativeUrl !== null && new URL(nativeUrl).protocol === 'https:' ? nativeUrl : registered === null ? null : botAppAvatar(registered, 40);
       const verdict = bots.find((bot) => bot.id === id);
       const row = disclosure(`bot:${id}`, botById(id)?.title ?? id, false);
-      row.classList.add('geld-provider-review__standing');
+      row.classList.add('geld-provider-review__standing', 'geld-provider-review__entry');
       row.dataset.geldReviewBot = id;
       row.dataset.state = verdict?.verdict ?? 'unknown';
       const health = verdict === undefined ? 'pending' : botHealth(verdict);
@@ -987,6 +987,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       if (compact instanceof HTMLButtonElement) compact.setAttribute('aria-label', `Preview ${registered?.title ?? id} review: ${verdict?.score === undefined ? '' : `${verdict.score}/5, `}${verdict === undefined ? 'No result' : verdictLabel(verdict)}`);
       if (health === 'good') compact.append(digestIcon('check', doc));
       preview.append(compact);
+      row.querySelector('[data-geld-review-toggle]')?.replaceChildren(digestIcon('reviews', doc), compact.querySelector('img')?.cloneNode(true) ?? node('span'), node('strong', registered?.title ?? id), node('span', verdict === undefined ? 'No result' : verdictLabel(verdict), 'geld-provider-review__entry-preview'));
       row.dataset.geldBotHealth = health;
       const status = node('span', { good: 'Clear', warn: 'Needs attention', severe: 'Severe findings', bad: 'Review failed', pending: 'Pending' }[health], 'geld-provider-review__bot-health');
       status.dataset.health = health;row.append(status);
@@ -1512,7 +1513,10 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       let anchor: string;
       try { anchor = new URL(event.url).hash.slice(1); } catch { return null; }
       const root = doc.getElementById(anchor);
-      return root === null || root.closest('[data-geld-ui]') !== null ? null : [event.id, root.innerHTML];
+      if (root === null || root.closest('[data-geld-ui]') !== null) return null;
+      const body = root.querySelector('.note-body .note-text');
+      const authors = [...root.querySelectorAll('.note-header-info > .author-name-link')].map(author => [author.getAttribute('data-user-id'), author.getAttribute('data-username')]);
+      return [event.id, root.className, authors, body?.innerHTML ?? root.innerHTML];
     });
     const actionSignatures = sources.map(comment => {
       try { return options.actionsForSource?.(comment).map(action => [action.kind, action.label, action.available, action.reason]); }

@@ -56,8 +56,11 @@ export async function verifyExpandedGitLabDigest(page, item, { poll, patchSettin
     const toggle = heading.querySelector('.geld-provider-description-section');
     const before = toggle.getAttribute('aria-expanded');
     heading.click();
-    return { toggled: toggle.getAttribute('aria-expanded') !== before, capped: !!heading.closest('[data-geld-provider-description-capped]'), rails: document.querySelectorAll('[data-geld-provider-description-depth]').length };
+    const toggled = toggle.getAttribute('aria-expanded') !== before;
+    if (toggle.getAttribute('aria-expanded') === 'false') heading.click();
+    return { toggled, capped: !!heading.closest('[data-geld-provider-description-capped]'), rails: document.querySelectorAll('[data-geld-provider-description-depth]').length };
   });
+  console.log(`EXPANDED_DESCRIPTION_STATE ${JSON.stringify(description)}`);
   assert.ok(description?.toggled, 'Clicking heading text toggles its section');
   assert.equal(description.capped, false);
   assert.ok(description.rails > 0);
@@ -67,6 +70,7 @@ export async function verifyExpandedGitLabDigest(page, item, { poll, patchSettin
     const view = panel.querySelector('[data-geld-digest-view="digest"]');
     return { isolation: getComputedStyle(panel).isolation, positionRadius: getComputedStyle(position).borderRadius, viewRadius: getComputedStyle(view).borderRadius, emptyStatus: getComputedStyle(panel.querySelector('.geld-provider-view__status')).display };
   });
+  console.log(`EXPANDED_MENU_STATE ${JSON.stringify(menu)}`);
   assert.equal(menu.isolation, 'isolate');assert.equal(menu.positionRadius, menu.viewRadius);assert.equal(menu.emptyStatus, 'none');
   item.expandedDigest = { expanded, description, menu };
   return { verified: 'Expanded GitLab digest, bot classification, merge blockers, native timeline restore/refold and description interactions', expandedDigest: item.expandedDigest };

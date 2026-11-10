@@ -148,6 +148,15 @@ export function renderGitLabComment(comment: ProviderReviewComment, host: HTMLEl
       ? ['note-text', 'md', 'code', 'highlight', 'line', 'markdown-code-block'].includes(name) || /^language-[a-z0-9][\w.+-]{0,40}$/i.test(name)
       : !name.startsWith('js-')).join(' ');
     if (classes !== '') element.className = classes;
+    // GitLab's scoped label halves use inline foreground/background colors, including contrast text.
+    if (!api && node instanceof HTMLElement && (node.matches('span.gl-label') || node.matches('span.gl-label-text, span.gl-label-text-scoped') && node.closest('span.gl-label') !== null)) {
+      for (const property of ['color', 'background-color']) {
+        const value = node.style.getPropertyValue(property);
+        if (/^(?:#[a-f0-9]{3,8}|rgba?\([\d.,%\s]+\))$/i.test(value)) element.style.setProperty(property, value);
+      }
+      const border = node.style.getPropertyValue('--label-inset-border');
+      if (/^inset 0 0 0 [12]px #[a-f0-9]{3,8}$/i.test(border)) element.style.setProperty('--label-inset-border', border);
+    }
     for (const attribute of ['data-lang', 'data-language']) {
       const value = node.getAttribute(attribute);
       if (value !== null && /^[a-z][\w.+-]{0,40}$/i.test(value)) element.setAttribute(attribute, value);

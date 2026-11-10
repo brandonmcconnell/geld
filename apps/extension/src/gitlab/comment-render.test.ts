@@ -306,3 +306,14 @@ it('renders system-note activity through the same sanitizer without trusting API
   source.querySelector('a')?.setAttribute('data-user-id', '99');
   expect(renderGitLabComment(comment, host, document, undefined, undefined, true)).toBe(false);
 });
+
+it('preserves scoped label contrast colors without copying layout or arbitrary custom properties', () => {
+  const host = fixture('<span class="gl-label gl-label-scoped" style="color:#cc0000; --label-inset-border:inset 0 0 0 2px #cc0000; position:fixed; --unsafe:url(https://evil.example)"><a href="/labels"><span class="gl-label-text" style="background-color:#cc0000; color:#ffffff">type</span><span class="gl-label-text-scoped" style="color:#cc0000">bug</span></a></span><span style="color:red">Ordinary text</span>');
+  expect(renderGitLabComment(comment, host)).toBe(true);
+  const label = host.querySelector<HTMLElement>('.gl-label');
+  expect(label?.style.getPropertyValue('--label-inset-border')).toBe('inset 0 0 0 2px #cc0000');
+  expect(host.querySelector<HTMLElement>('.gl-label-text')?.style.color).toBe('#ffffff');
+  expect(host.querySelector<HTMLElement>('.gl-label-text')?.style.backgroundColor).toBe('#cc0000');
+  expect(label?.style.position).toBe('');expect(label?.style.getPropertyValue('--unsafe')).toBe('');
+  expect(host.lastElementChild?.lastElementChild?.hasAttribute('style')).toBe(false);
+});
