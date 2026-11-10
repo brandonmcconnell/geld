@@ -12,9 +12,11 @@
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
-    "check": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run build"
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run build",
+    "verify:icons": "node scripts/verify-icon-kit.mjs"
   },
   "dependencies": {
+    "@awesome.me/kit-2e791c163e": "1.0.4",
     "@base-ui/react": "^1.8.0",
     "@better-auth/sso": "1.7.15",
     "@c15t/react": "^1.8.0",
