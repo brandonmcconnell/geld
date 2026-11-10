@@ -50,6 +50,7 @@ import type { AiRunRecord, JevDecision } from '../../lib/local-state';
 import { AI_RUNS_CAP, aiGatewayItem, aiKeyItem, aiRunsItem, jevDecisionsItem, jevKeyItem, jevSourceItem } from '../../lib/local-state';
 import type { AiCompleteRequest, AiEvaluateRequest } from '../../lib/messages';
 import { isAiCompleteResponse, isAiEvaluateResponse } from '../../lib/messages';
+import { countUsage } from '../../lib/usage-count';
 
 /* ------------------------------------------------------------------------- */
 /* On-demand runs, kept on this device per pull request                        */
@@ -290,6 +291,7 @@ export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], s
   await hydrating;
   const apiKey = (await aiKeyItem.getValue()).trim();
   if (apiKey === '') return { changed: false };
+  countUsage('ai_triage_run');
   const known: GeldPrMeta = withAi(meta);
   const plan = planConsolidation(known, meta.items, { comments, wantFix: settings.suggestedFixes === 'all' || settings.suggestedFixes === 'ai' });
   const pending = plan.pending;

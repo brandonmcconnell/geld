@@ -346,7 +346,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         key: 'usageStats',
         label: 'Send anonymous usage statistics',
         description:
-          'Tell `geld.sh` when Geld is installed or updated, and once a day that it is in use, with the version, browser and release channel. No identifier is attached, and nothing about pages, repositories or accounts is sent. It shows how many people use Geld and how quickly updates reach them. Off: nothing is sent.',
+          'Tell `geld.sh` when Geld is installed or updated, and once a day that it is in use, with the version, browser and release channel, how often its features were used, and once a week which of its switches and categories are on. What you typed (category names, patterns, rules, logins) is only counted, never sent. No identifier is attached, and nothing about pages, repositories or accounts is sent. Off: nothing is sent.',
         popup: false,
         surfaces: ['extension'],
       },

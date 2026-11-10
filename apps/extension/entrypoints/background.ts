@@ -12,7 +12,7 @@ import { settingsItem } from '../src/lib/storage';
 import { diagnosticSubject, recordDiagnostic } from '../src/lib/diagnostics';
 import { installErrorCapture } from '../src/lib/error-capture';
 import { queueErrorReports, startErrorReports } from '../src/lib/error-uplink';
-import { startUsageReports } from '../src/lib/usage-uplink';
+import { addUsageCount, startUsageReports } from '../src/lib/usage-uplink';
 import type { BlockedUsersResponse, FetchDiffResponse, FetchFileResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
 import { blockedLoginsIn } from '../src/github/blocked-list';
 import type { EnsureContentResponse } from '../src/lib/messages';
@@ -28,6 +28,7 @@ import {
   isBlockedUsersRequest,
   isFetchFileRequest,
   isClearDiffCacheMessage,
+  isUsageCountMessage,
   isOpenSettingsMessage,
   isTabStateMessage,
 } from '../src/lib/messages';
@@ -537,6 +538,10 @@ export default defineBackground(() => {
   recordDiagnostic({ kind: 'worker-start' });
   browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
     if(isTrackerStatusRequest(message)){void readTrackerStatuses(message,sender.url??sender.tab?.url).then(sendResponse);return true;}
+    if (isUsageCountMessage(message)) {
+      void addUsageCount(message.counter, message.by).catch(() => undefined);
+      return undefined;
+    }
     if (isErrorReportMessage(message)) {
       void queueErrorReports(message.errors).catch(() => undefined);
       return undefined;
