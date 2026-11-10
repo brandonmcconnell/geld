@@ -9,6 +9,7 @@ import { settingsItem } from '../lib/storage';
 import { isClearDiffCacheMessage, isGetTabStateMessage, isPerfReportMessage, isRevealFileMessage, isToggleHiddenMessage } from '../lib/messages';
 import type { TabState, TabStateMessage } from '../lib/messages';
 import { mark, snapshot } from '../lib/perf';
+import { installErrorCapture } from '../lib/error-capture';
 import type { PerfSnapshot } from '../lib/perf';
 import { PROVIDER_IDLE_STATE, ProviderController } from './controller';
 import { isProviderReviewPage } from './types';
@@ -130,6 +131,7 @@ export function createProviderBotTrust(environment: ProviderBotTrustEnvironment)
 export async function startProvider(ctx: ContentScriptContext, adapter: ProviderAdapter): Promise<void> {
   if (window.top !== window) return;
   let retired = false;
+  let stopErrorCapture = (): void => undefined;
   let controller: ProviderController | null = null;
   let unwatchSettings: (() => void) | null = null;
   let unwatchCatalog: (() => void) | null = null;
@@ -163,8 +165,10 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
     mode?.stop();
     controller?.stop();
     publish(PROVIDER_IDLE_STATE);
+    quiet(stopErrorCapture);
   };
   document.dispatchEvent(new Event('geld:takeover'));
+  stopErrorCapture = installErrorCapture('content');
   document.addEventListener('geld:takeover', retire, { once: true });
   ctx.onInvalidated(retire);
   mark('script-start');

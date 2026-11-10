@@ -7,6 +7,7 @@ import type { GeldSettings, RepositoryIdentity } from '@geld/core';
 import { buildProviderReviewItems, createNativePublication, META_VERSION, readProviderPublication, renderProviderSummary } from '@geld/review';
 import type { GeldPrMeta, ProviderReviewComment, ProviderReviewInput } from '@geld/review';
 import { settingsItem } from '../lib/storage';
+import { installErrorCapture } from '../lib/error-capture';
 import { providerReviewedItemsItem, whitespaceOptOutsItem } from '../lib/local-state';
 import type { ProviderReviewedRecord, ProviderReviewedStorage } from '../lib/local-state';
 import { createProviderBotTrust, createProviderReviewedServices, startProvider } from './runtime';
@@ -14,6 +15,7 @@ import { providerReviewWithTrustedAccounts, reviewedItemFingerprint } from './co
 import { ProviderController } from './controller';
 import type { ProviderAdapter, ProviderPage, ProviderReviewPage, ProviderReviewSnapshot } from './types';
 
+vi.mock('../lib/error-capture', () => ({ installErrorCapture: vi.fn(() => vi.fn()) }));
 vi.mock('wxt/browser', () => ({ browser: { runtime: { id: 'provider-test', sendMessage: vi.fn(async () => undefined), onMessage: { addListener: vi.fn() } } } }));
 vi.mock('wxt/utils/content-script-context', () => ({ ContentScriptContext: class {
   private readonly abort = new AbortController();
@@ -278,8 +280,15 @@ describe('provider runtime cache routing', () => {
     const second = new ContentScriptContext('provider-second', { noScriptStartedPostMessage: true });
     try {
       await startProvider(first, adapter);
+      const firstCapture = vi.mocked(installErrorCapture).mock.results.at(-1)?.value;
+      expect(firstCapture).toBeTypeOf('function');
+      expect(firstCapture).not.toHaveBeenCalled();
       const oldListener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls.at(-1)?.[0];
       await startProvider(second, adapter);
+      expect(firstCapture).toHaveBeenCalledOnce();
+      const secondCapture = vi.mocked(installErrorCapture).mock.results.at(-1)?.value;
+      expect(secondCapture).not.toBe(firstCapture);
+      expect(secondCapture).not.toHaveBeenCalled();
       const activeListener = vi.mocked(browser.runtime.onMessage.addListener).mock.calls.at(-1)?.[0];
       if (oldListener === undefined || activeListener === undefined) throw new Error('Runtime listener missing');
       const oldResponse = vi.fn();
@@ -289,6 +298,8 @@ describe('provider runtime cache routing', () => {
       await vi.waitFor(() => expect(activeResponse).toHaveBeenCalledWith(true));
       expect(clear).toHaveBeenCalledTimes(1);
       expect(oldResponse).not.toHaveBeenCalled();
+      second.notifyInvalidated();
+      expect(secondCapture).toHaveBeenCalledOnce();
     } finally { first.notifyInvalidated(); second.notifyInvalidated(); }
   });
 });

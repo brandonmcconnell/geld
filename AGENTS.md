@@ -3526,6 +3526,10 @@ The installed-provider browser workflow installs only the extension and its work
 The three-view author/theme harness restores the exact saved settings and measures native and owned bodies only after the combined view is visible.
 Offline helper extraction stops at the next top-level function declaration so newly inserted provider probes cannot become part of a preceding function expression.
 
+GitLab and Bitbucket install the shared content-script error capture after retiring an earlier injected copy and dispose it with their provider runtime.
+Only extension-owned errors enter that capture, and the background's existing reporting preference governs remote submission.
+Shared Related links settings describe issues and pull or merge requests without promising GitHub-only sidebar placement or a stack on providers that do not expose one.
+
 Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
 Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
 
