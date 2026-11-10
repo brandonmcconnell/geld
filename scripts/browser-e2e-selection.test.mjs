@@ -573,10 +573,12 @@ test('walkthrough rendering consumes completed footage without navigating provid
 });
 
 
-test('Files-only recording preserves the carried hourly budget before any browser operation', () => {
+test('Files recording and UI acceptance preserve the carried hourly budget before any browser operation', () => {
   assert.deepEqual(select({ body: marker('bitbucket-walkthrough-files'), from: marker('walkthrough-render') }), { focus: 'bitbucket-walkthrough-files', run: 'true', failures: [] });
-  assert.match(workflow, /Wait for the carried Bitbucket recording budget/);
+  const wait = workflow.slice(workflow.indexOf('Wait for the carried Bitbucket browser budget'), workflow.indexOf('Export retained provider evidence'));
+  assert.match(wait, /bitbucket-walkthrough-files/);
+  assert.match(wait, /bitbucket-ui-polish/);
   assert.match(workflow, /target = max\(values, default=0\) \+ 3605/);
-  assert.ok(workflow.indexOf('Wait for the carried Bitbucket recording budget') < workflow.indexOf('Locate the runner'));
+  assert.ok(workflow.indexOf('Wait for the carried Bitbucket browser budget') < workflow.indexOf('Locate the runner'));
   assert.match(harness, /filesOnly: focus === 'bitbucket-walkthrough-files'/);
 });

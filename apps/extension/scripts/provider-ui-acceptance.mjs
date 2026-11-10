@@ -322,8 +322,9 @@ export function providerDashboardProbe(mode = 'read') {
   const nativeSurfaceAppearance = appearance(nativeSurface);
   return {
     panelCount: panels.length, panelVisible: visible(panel), bound, sameOriginals, custody, bodyChanges,
-    overviewVisible: visible(panel?.querySelector('[data-geld-review-overview]')),
-    metrics: ['open', 'comments', 'activity'].map((name) => ({ name, visible: visible(panel?.querySelector(`[data-geld-review-metric="${name}"]`)) })),
+    overviewVisible: visible(panel?.querySelector('.geld-provider-review__header')),
+    copyVisible: visible(panel?.querySelector('.geld-provider-review__copy')),
+    viewToggleVisible: visible(panel?.querySelector('.geld-provider-review__menu:has([data-geld-view-slot]) > summary')),
     sectionBindings: sectionBindings.slice(0, 40), truncated: sectionBindings.length > 40 || native.length > 1000,
     originalCount: native.length, originalVisible: native.filter((entry) => visible(entry.node)).length,
     representedMounted: represented.size, representedVisible: [...represented].filter(visible).length,
@@ -340,13 +341,13 @@ export function assertProviderDashboard(snapshot, originalsVisible = false) {
   assert.equal(snapshot.panelCount, 1, 'One provider dashboard must own the overview');
   assert.equal(snapshot.panelVisible, true, 'The provider dashboard must be rendered');
   assert.equal(snapshot.overviewVisible, true, 'The dashboard must have a visible summary layout');
-  assert.ok(snapshot.metrics.every((metric) => metric.visible), 'Open, comments and activity metrics must be visible');
+  assert.equal(snapshot.copyVisible, true, 'The digest copy control must be visible');
   assert.ok(snapshot.sectionBindings.length >= 2, 'Dashboard sections must be present');
   assert.ok(snapshot.sectionBindings.every((section) => !section.nativeDetails && section.ownsContent && ['true', 'false'].includes(section.expanded)), 'Dashboard sections must use bound custom controls rather than plain native details');
   assert.ok(snapshot.sectionBindings.filter((section) => section.primary).length >= 2 && snapshot.sectionBindings.filter((section) => section.primary).every((section) => section.toggle), 'Primary dashboard controls must be visible');
   if (snapshot.viewControls?.length > 0) {
     assert.deepEqual(snapshot.viewControls.map(control => control.value).sort(), ['digest', 'digest-timeline', 'github']);
-    assert.ok(snapshot.viewControls.every(control => control.visible && ['true', 'false'].includes(control.pressed)), 'All three view controls must be visible and expose their selection');
+    assert.ok(snapshot.viewControls.every(control => (control.visible || snapshot.viewToggleVisible) && ['true', 'false'].includes(control.pressed)), 'All three view controls must be visible and expose their selection');
     assert.deepEqual(snapshot.viewControls.filter(control => control.pressed === 'true').map(control => control.value), [originalsVisible ? 'digest-timeline' : 'digest']);
     assert.equal(snapshot.originalToggleCount, 0, 'Three-way view controls replace the legacy toggle');
   } else assert.equal(snapshot.originalToggleCount, 1, 'Original conversation must have one explicit restore control');
@@ -440,11 +441,13 @@ export async function verifyProviderDashboardUi(page, progress, { poll, capture,
     await poll(read, (value) => selected(value)?.expanded === beforeExpanded && value.sameOriginals, 'Custom dashboard disclosure restores its original state');
     const showOriginals = progress.baseline.viewControls.length === 3 ? '.geld-provider-view button[data-geld-digest-view="digest-timeline"]' : 'button[data-geld-original-conversation]';
     const hideOriginals = progress.baseline.viewControls.length === 3 ? '.geld-provider-view button[data-geld-digest-view="digest"]' : 'button[data-geld-original-conversation]';
+    if (progress.baseline.viewToggleVisible) await click('.geld-provider-review__menu:has([data-geld-view-slot]) > summary');
     await click(showOriginals);
     progress.originalsShown = await poll(read, (value) => value.originalVisible === value.originalCount && value.sameOriginals, 'Real Show original conversation restores retained native entries');
     assertProviderDashboard(progress.originalsShown, true);
     try { await onOriginalsShown?.(progress.originalsShown); }
     finally {
+      if (progress.baseline.viewToggleVisible) await click('.geld-provider-review__menu:has([data-geld-view-slot]) > summary');
       await click(hideOriginals);
       progress.originalsHidden = await poll(read, (value) => value.originalVisible === 0 && value.sameOriginals, 'Real Hide original conversation suppresses the same retained entries');
       assertProviderDashboard(progress.originalsHidden);

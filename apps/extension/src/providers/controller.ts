@@ -49,6 +49,7 @@ interface HoverCounts {
   readonly reason?: string;
   readonly onIntent?: () => void;
   readonly anchor?: () => HTMLElement | null;
+  readonly presentationRoot?: HTMLElement;
 }
 
 export const PROVIDER_IDLE_STATE: TabState = {
@@ -405,10 +406,8 @@ export class ProviderController {
       return;
     }
     const result = this.source.get(page, true, true, true);
-    if (isProviderReviewPage(page)) {
-      const host = page.kind === 'overview'
-        ? this.adapter.reviewHost?.(document) ?? this.adapter.actionHost?.(document) ?? null
-        : this.adapter.diffFlowHost?.(document) ?? this.adapter.actionHost?.(document) ?? view?.container ?? null;
+    if (isProviderReviewPage(page) && page.kind === 'overview' && effective.prOverview) {
+      const host = this.adapter.reviewHost?.(document)?.querySelector<HTMLElement>('[data-geld-flow-slot]') ?? null;
       this.fileFlow.update(page, host, result.status === 'ready' && result.provisional !== true ? result.result : null, matcher, view,
         result.status === 'failed' ? `Changed files are unavailable: ${result.reason}` : 'Loading verified changed files…');
     } else this.fileFlow.clear();
@@ -504,7 +503,7 @@ export class ProviderController {
 
   private snapshotHeaders(targets: readonly ProviderHeaderTarget[]): readonly HeaderSnapshot[] {
     return targets.map((target) => ({
-      nodes: [target.additions, target.deletions, target.files, target.accessibleSummaryHost, ...(target.labels ?? []).map((label) => label.host)],
+      nodes: [target.additions, target.deletions, target.files, target.accessibleSummaryHost, target.hintHost, target.hintBefore, target.presentationRoot, ...(target.labels ?? []).map((label) => label.host)],
       values: JSON.stringify([
         target.additions?.textContent, target.deletions?.textContent, target.files?.textContent,
         target.accessibleSummaryHost?.querySelector('.geld-provider-accessible-counts')?.textContent,
@@ -759,6 +758,7 @@ export class ProviderController {
     this.hover.bindBreakdown(host, () => this.hoverCounts.get(host)?.stats ?? null, {
       onIntent: () => this.hoverCounts.get(host)?.onIntent?.(),
       anchor: () => this.hoverCounts.get(host)?.anchor?.() ?? null,
+      presentationRoot: () => this.hoverCounts.get(host)?.presentationRoot ?? null,
       ...(keyboard === undefined ? {} : { keyboard }),
       status: () => {
         const current = this.hoverCounts.get(host);
@@ -770,11 +770,13 @@ export class ProviderController {
   private bindHeaders(targets: readonly ProviderHeaderTarget[], counts: HoverCounts): void {
     const keyboard = new Set(targets.flatMap((target) => target.keyboardHoverHosts ?? []));
     const anchors = new Map<HTMLElement, HTMLElement>();
+    const presentations = new Map<HTMLElement, HTMLElement>();
     for (const target of targets) {
       const hint = this.headerHints.forTarget(target);
       if (hint === null) continue;
       anchors.set(hint, hint);
-      if (!(target.keyboardHoverHosts ?? []).some((host) => host.contains(hint))) keyboard.add(hint);
+      if (target.presentationRoot !== undefined) presentations.set(hint, target.presentationRoot);
+      else if (!(target.keyboardHoverHosts ?? []).some((host) => host.contains(hint))) keyboard.add(hint);
       for (const host of [target.additions, target.deletions, target.files, ...(target.hoverHosts ?? []), ...(target.keyboardHoverHosts ?? [])]) if (host !== null) anchors.set(host, hint);
     }
     const current = new Set(targets.flatMap((target) => [target.additions, target.deletions, target.files, ...(target.hoverHosts ?? []), ...(target.keyboardHoverHosts ?? [])]).filter((host): host is HTMLElement => host !== null && host.closest('[aria-hidden="true"], [inert]') === null));
@@ -787,7 +789,8 @@ export class ProviderController {
     for (const host of current) {
       this.headerHosts.add(host);
       const anchor = anchors.get(host);
-      this.bindHover(host, anchor === undefined ? counts : { ...counts, anchor: () => anchor }, keyboard.has(host) ? true : undefined);
+      const presentationRoot = presentations.get(host);
+      this.bindHover(host, { ...counts, ...(anchor === undefined ? {} : { anchor: () => anchor }), ...(presentationRoot === undefined ? {} : { presentationRoot }) }, presentationRoot !== undefined ? false : keyboard.has(host) ? true : undefined);
     }
   }
 

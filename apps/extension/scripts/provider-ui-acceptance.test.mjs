@@ -151,7 +151,7 @@ test('fixed result shape does not serialize arbitrary source text, attributes or
 
 function dashboard() {
   document.body.style.cssText = 'font-family:Arial;font-size:14px;color:rgb(23,23,23);background-color:rgb(255,255,255)';
-  document.body.innerHTML = '<div class="issuable-discussion"><article id="note_1" data-testid="noteable-note-container" data-geld-provider-native-find="folded" hidden="until-found"><div class="timeline-content" style="background-color:rgb(255,255,255)">Native comment text</div></article></div><section class="geld-provider-review" data-provider="gitlab"><article data-geld-source="note_1">Digest copy</article><header data-geld-review-overview><span data-geld-review-metric="open">1</span><span data-geld-review-metric="comments">1</span><span data-geld-review-metric="activity">1</span></header><button data-geld-original-conversation>Show original conversation</button><section id="section-reviewers" data-geld-review-key="reviewers"><button id="reviewer-toggle" data-geld-review-toggle aria-controls="reviewers" aria-expanded="false">Reviews</button><div id="reviewers" class="geld-provider-review__section-content" aria-labelledby="reviewer-toggle" hidden></div></section><section id="section-checks" data-geld-review-key="checks"><button id="checks-toggle" data-geld-review-toggle aria-controls="checks" aria-expanded="true">CI checks</button><div id="checks" class="geld-provider-review__section-content" aria-labelledby="checks-toggle"></div></section></section>';
+  document.body.innerHTML = '<div class="issuable-discussion"><article id="note_1" data-testid="noteable-note-container" data-geld-provider-native-find="folded" hidden="until-found"><div class="timeline-content" style="background-color:rgb(255,255,255)">Native comment text</div></article></div><section class="geld-provider-review" data-provider="gitlab"><article data-geld-source="note_1">Digest copy</article><header class="geld-provider-review__header">Geld<button class="geld-provider-review__copy" aria-label="Copy digest"></button></header><button data-geld-original-conversation>Show original conversation</button><section id="section-reviewers" data-geld-review-key="reviewers"><button id="reviewer-toggle" data-geld-review-toggle aria-controls="reviewers" aria-expanded="false">Reviews</button><div id="reviewers" class="geld-provider-review__section-content" aria-labelledby="reviewer-toggle" hidden></div></section><section id="section-checks" data-geld-review-key="checks"><button id="checks-toggle" data-geld-review-toggle aria-controls="checks" aria-expanded="true">CI checks</button><div id="checks" class="geld-provider-review__section-content" aria-labelledby="checks-toggle"></div></section></section>';
 }
 test('dashboard proof includes actual native suppression and exact original-node custody across restore', () => {
   dashboard();assertProviderDashboard(providerDashboardProbe('bind'));
@@ -250,11 +250,11 @@ test('native system-event payload is pinned independently from its separate time
   providerDashboardProbe('bind');document.querySelector('#note_2 time').textContent = '3 days ago';assertProviderDashboard(providerDashboardProbe());
   document.querySelector('[data-testid="system-note-content"]').textContent = 'unapproved this merge request';assert.equal(providerDashboardProbe().custody.bodyMismatches, 1);
 });
-test('legacy details-only UI and missing metrics cannot pass as a dashboard', () => {
+test('legacy details-only UI and missing toolbar controls cannot pass as a dashboard', () => {
   dashboard();document.querySelector('[data-geld-review-key]').outerHTML = '<details data-geld-review-key="reviewers"><summary>Reviews</summary></details>';
   assert.throws(() => assertProviderDashboard(providerDashboardProbe('bind')), /custom controls/);
-  providerDashboardProbe('cleanup');dashboard();document.querySelector('[data-geld-review-metric="activity"]').remove();
-  assert.throws(() => assertProviderDashboard(providerDashboardProbe('bind')), /metrics/);
+  providerDashboardProbe('cleanup');dashboard();document.querySelector('.geld-provider-review__copy').remove();
+  assert.throws(() => assertProviderDashboard(providerDashboardProbe('bind')), /copy control/);
 });
 test('native typography or color mismatches and missing original evidence fail', () => {
   dashboard();document.querySelector('.geld-provider-review').style.fontSize = '16px';

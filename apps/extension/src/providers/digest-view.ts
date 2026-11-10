@@ -22,9 +22,9 @@ export function providerDigestViewChoice(provider: 'gitlab' | 'bitbucket', setti
     return svg;
   };
   const options: readonly { view: DigestView; label: string; hint: string }[] = [
-    { view: 'digest', label: 'Geld', hint: `Geld digest with ${name} activity folded` },
-    { view: 'github', label: name, hint: `${name} conversation with the digest off` },
-    { view: 'digest-timeline', label: `Geld + ${name}`, hint: `Geld digest and the full ${name} conversation` },
+    { view: 'digest', label: 'Geld Digest', hint: `Geld digest with ${name} activity folded` },
+    { view: 'github', label: `${name} Timeline`, hint: `${name} conversation with the digest off` },
+    { view: 'digest-timeline', label: `Geld Digest + ${name} Timeline`, hint: `Geld digest and the full ${name} conversation` },
   ];
   let pending = false;
   for (const option of options) {
@@ -35,15 +35,16 @@ export function providerDigestViewChoice(provider: 'gitlab' | 'bitbucket', setti
     button.setAttribute('aria-pressed', String(option.view === current));
     button.title = option.hint;
     button.append(icon(option.view === 'github' ? 'provider' : 'geld'));
-    button.append(element('span', option.label));
-    if (option.view === 'digest-timeline') button.append(icon('provider'));
+    if (option.view === 'digest-timeline') button.append(element('span', '+'), icon('provider'));
+    else button.append(element('span', option.view === 'digest' ? 'Digest' : 'Timeline'));
     button.addEventListener('click', () => {
       if (pending || !group.isConnected) return;
       pending = true;
       group.setAttribute('aria-busy', 'true');
+      const saved = choose(option.view);
       for (const control of group.querySelectorAll('button')) control.disabled = true;
       status.textContent = '';
-      void choose(option.view).catch(() => { status.textContent = 'The view could not be saved. Try again.'; }).finally(() => {
+      void saved.then(() => { const menu = group.closest('details');if (menu !== null) menu.open = false; }).catch(() => { status.textContent = 'The view could not be saved. Try again.'; }).finally(() => {
         pending = false;
         group.removeAttribute('aria-busy');
         for (const control of group.querySelectorAll('button')) control.disabled = false;

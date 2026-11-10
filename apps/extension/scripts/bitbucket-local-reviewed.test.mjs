@@ -10,7 +10,9 @@ import { BITBUCKET_LOCAL_REVIEW, createLocalReviewOracle, localReviewProbe, loca
 const { buildProviderReviewItems, isOpenStatus } = await tsImport('@geld/review', import.meta.url);
 // Node has no stylesheet renderer; this test uses the real shared panel's state and controls.
 const styles = registerHooks({ load(url, context, next) {
-  return new URL(url).pathname.endsWith('.css') ? { format: 'module', source: '', shortCircuit: true } : next(url, context);
+  const source = new URL(url);
+  if (source.protocol === 'file:' && source.pathname.endsWith('.svg') && source.searchParams.has('raw')) return { format: 'module', source: `export default ${JSON.stringify(readFileSync(source, 'utf8'))}`, shortCircuit: true };
+  return source.pathname.endsWith('.css') ? { format: 'module', source: '', shortCircuit: true } : next(url, context);
 } });
 let renderProviderReviewPanel;
 try { ({ renderProviderReviewPanel } = await tsImport('../src/providers/review-panel.ts', import.meta.url)); }

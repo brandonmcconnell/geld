@@ -618,3 +618,37 @@ describe('provider count popup placement', () => {
     expect(value.caret).toBeLessThanOrEqual(292);
   });
 });
+
+describe('native visual header copies', () => {
+  function mirror() {
+    const get = vi.fn(() => ready()), onIntent = vi.fn();
+    const instance = create(get);
+    const root = document.createElement('div');root.setAttribute('aria-hidden', 'true');
+    const host = document.createElement('span');host.dataset.geldUi = '';host.tabIndex = -1;
+    root.append(host);document.body.append(root);geometry(host);
+    const { all, hidden } = breakdownFromFiles([], createMatcher(DEFAULT_SETTINGS));
+    instance.bindBreakdown(host, () => statsBreakdown(all, hidden, 'test files'), { keyboard: false, presentationRoot: () => root, onIntent });
+    return { root, host, get, onIntent, instance };
+  }
+
+  it('supports pointer hover without adding a tab stop or exposing the native duplicate', async () => {
+    const f = mirror();hover(f.host);await vi.advanceTimersByTimeAsync(150);
+    expect(tooltip()?.hidden).toBe(false);
+    expect(f.host.tabIndex).toBe(-1);expect(f.root.getAttribute('aria-hidden')).toBe('true');
+    expect(f.get).not.toHaveBeenCalled();expect(f.onIntent).toHaveBeenCalledOnce();
+    leave(f.host);f.host.focus();await vi.advanceTimersByTimeAsync(150);
+    expect(tooltip()?.hidden).toBe(true);expect(f.onIntent).toHaveBeenCalledOnce();
+  });
+
+  it.each(['nested-hidden', 'inert', 'hidden', 'invisible', 'offscreen', 'unrelated-hidden'] as const)('does not activate a %s mirror', async reason => {
+    const f = mirror();
+    if (reason === 'nested-hidden') { const outer = document.createElement('div');outer.setAttribute('aria-hidden', 'true');f.root.before(outer);outer.append(f.root); }
+    if (reason === 'inert') f.root.setAttribute('inert', '');
+    if (reason === 'hidden') f.root.hidden = true;
+    if (reason === 'invisible') f.root.style.visibility = 'hidden';
+    if (reason === 'offscreen') vi.mocked(f.host.getBoundingClientRect).mockReturnValue(new DOMRect(20, -100, 100, 20));
+    if (reason === 'unrelated-hidden') { const inner = document.createElement('div');inner.setAttribute('aria-hidden', 'true');f.root.append(inner);inner.append(f.host); }
+    hover(f.host);await vi.advanceTimersByTimeAsync(150);
+    expect(tooltip()?.hidden ?? true).toBe(true);expect(f.onIntent).not.toHaveBeenCalled();expect(f.get).not.toHaveBeenCalled();
+  });
+});

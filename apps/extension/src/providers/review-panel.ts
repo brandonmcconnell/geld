@@ -11,6 +11,8 @@ import type { ProviderSourceActionContext, ProviderSourceSelection } from './sou
 
 export type { ProviderSourceActionContext } from './source-selection';
 import './review-dashboard.css';
+import { digestIcon } from './digest-icons';
+import type { DigestIcon } from './digest-icons';
 
 import { renderReviewerIdentity } from './reviewer-identity';
 import { referenceForSubject } from './references';
@@ -65,6 +67,8 @@ export interface ProviderReviewPanelOptions {
   readonly agentNotes?: readonly ProviderAgentNote[];
   readonly onRevealAgentNote?: (note: ProviderAgentNote) => void;
   readonly onOpenSettings?: () => Promise<void>;
+  readonly onGrouping?: (grouping: 'type' | 'batch') => Promise<void>;
+  readonly hasViewChoice?: boolean;
   readonly originalConversation?: { readonly shown: boolean; readonly toggle: () => void };
 
   readonly reviewerControls?: ProviderReviewSourceAction;
@@ -143,7 +147,7 @@ function reviewerRequested(reviewer: ProviderReviewReviewer): boolean {
 function reviewerLabel(reviewer: ProviderReviewReviewer): string {
   if (reviewer.reviewRequest === undefined) return STANDING[reviewer.state];
   const standing = reviewer.state === 'pending' ? null : STANDING[reviewer.state];
-  const request = reviewer.reviewRequest === 'pending' ? 'Review requested' : reviewer.reviewRequest === 'unknown' ? 'Request state unavailable' : null;
+  const request = reviewer.reviewRequest === 'pending' ? 'Review requested' : null;
   return [standing ?? (request === 'Review requested' ? null : 'Reviewer'), request].filter((label) => label !== null).join(' · ');
 }
 
@@ -271,6 +275,12 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   const panel = node('section', '', 'geld-provider-review');
   panel.setAttribute('aria-label', 'Geld review digest');
   host.prepend(panel);
+  const dismissMenus = (event: Event): void => {
+    for (const menu of panel.querySelectorAll<HTMLDetailsElement>('details.geld-provider-review__menu[open]')) {
+      if (event.target instanceof Node && !menu.contains(event.target)) menu.open = false;
+    }
+  };
+  doc.addEventListener('pointerdown', dismissMenus);
 
   function disclosure(key: string, label: string, initiallyOpen: boolean): ReviewDisclosure {
     const section = Object.assign(node('section', '', 'geld-provider-review__section'), { open: false });
@@ -283,6 +293,12 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     toggle.id = `${id}-toggle`;
     toggle.setAttribute('aria-controls', `${id}-content`);
     toggle.append(node('span', label, 'geld-provider-review__section-label'));
+    const icons: Readonly<Record<string, DigestIcon>> = { reviewers: 'reviews', checks: 'check', bots: 'check', requirements: 'check', reports: 'report', 'agent-notes': 'report', previews: 'preview', comments: 'comment', activity: 'activity' };
+    const glyph = icons[key] ?? (key.startsWith('references:') ? 'link' : undefined);
+    if (glyph !== undefined) {
+      section.dataset.geldStatusRow = '';
+      toggle.prepend(digestIcon(glyph, doc));
+    }
     const setOpen = (open: boolean, chosen = false): void => {
       if (chosen) touched.add(key);
       section.dataset.geldReviewOpen = String(open);
@@ -531,12 +547,14 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   function reviewStandings(): HTMLElement {
     const reviewers = input.reviewers;
     const summary = reviewStandingSummary();
-    const section = disclosure('reviewers', summary.label, false);
+    const section = disclosure('reviewers', 'Reviews', false);
     const summaryElement = section.querySelector('[data-geld-review-toggle]');
-    if (summaryElement !== null) {
-      summaryElement.textContent = '';
-      summaryElement.append(node('span', summary.label, 'geld-provider-review__reviewer-summary'));
-    }
+    summaryElement?.setAttribute('aria-label', summary.label);
+    section.append(node('p', summary.label, 'geld-provider-review__reviewer-summary'));
+    const preview = node('span', '', 'geld-provider-review__row-preview');
+    preview.setAttribute('aria-label', summary.label);
+    if (summary.coverage !== 'complete' || (reviewers?.length ?? 0) === 0) preview.append(node('span', summary.label.replace(/^Reviews(?: · )?/, ''), 'geld-provider-review__muted'));
+    summaryElement?.append(preview);
     if (options.reviewerControls?.available === true) {
       const controls = node('div', '', 'geld-provider-review__source-actions');
       const button = node('button', 'Reviewer controls');
@@ -597,7 +615,14 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         const request = node('span', 'Review requested', 'geld-provider-review__reviewer-request');
         request.title = reviewer.state === 'pending' ? 'Review requested' : 'Review requested again. The current verdict still stands.';
         chip.append(request);
-      } else if (reviewer.reviewRequest === 'unknown') chip.append(node('span', 'Request state unavailable', 'geld-provider-review__muted'));
+      }
+      const compact = node('span', '', 'geld-provider-review__status-chip');
+      compact.dataset.state = reviewer.state;
+      compact.title = `${reviewer.author.login}: ${reviewerLabel(reviewer)}`;
+      compact.append(mark.cloneNode(true), node('span', presentation?.displayName ?? reviewer.author.login));
+      if (reviewer.state === 'approved') compact.append(digestIcon('check', doc));
+      else compact.append(node('span', reviewerLabel(reviewer), 'geld-provider-review__muted'));
+      preview.append(compact);
       if (reviewer.author.automated === true) chip.append(node('span', 'Automated account', 'geld-provider-review__muted'));
       const comments = new Map<string, ProviderReviewComment>();
       for (const comment of [...input.threads.flatMap(thread => thread.comments), ...(options.comments ?? [])]) {
@@ -613,8 +638,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       }
       row.prepend(chip);list.append(row);
     }
-    list.dataset.geldReviewPreview = '';
-    summaryElement?.after(list);
+    section.append(list);
     return section;
   }
 
@@ -629,14 +653,16 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     }
     const tally = [...counts].map(([state, count]) => `${count} ${state.toLowerCase()}`).join(' · ');
     const summaryText = coverage === 'unavailable' ? 'Unavailable' : coverage === 'partial' ? `Partial${tally === '' ? '' : ` · ${tally}`}` : current.length === 0 ? 'None on this commit' : tally;
-    const section = disclosure('checks', `CI checks · ${summaryText}`, false);
+    const section = disclosure('checks', 'CI checks', false);
     section.dataset.geldChecksCoverage = coverage;
     const summary = section.querySelector('[data-geld-review-toggle]');
+    summary?.setAttribute('aria-label', `CI checks · ${summaryText}`);
     if (summary !== null && coverage !== 'unavailable' && current.length > 0) {
-      summary.replaceChildren(doc.createTextNode(`CI checks · ${coverage === 'partial' ? 'Partial · ' : ''}`));
+      const preview = node('span', coverage === 'partial' ? 'Partial · ' : '', 'geld-provider-review__row-preview');
+      summary.append(preview);
       let first = true;
       for (const [label, count] of counts) {
-        if (!first) summary.append(doc.createTextNode(' · '));
+        if (!first) preview.append(doc.createTextNode(' · '));
         first = false;
         const part = node('span', '', 'geld-provider-review__check-part');
         const source = current.find((check) => providerCheckPresentation(check, input.subject.provider).label === label);
@@ -644,9 +670,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         const glyph = source === undefined ? null : providerCheckIcon(input.subject.provider, source, doc);
         if (glyph !== null) part.append(glyph);
         part.append(doc.createTextNode(`${count} ${label.toLowerCase()}`));
-        summary.append(part);
+        preview.append(part);
       }
-    }
+    } else summary?.append(node('span', summaryText, 'geld-provider-review__row-preview'));
     if (coverage !== 'complete') section.append(node('p', coverage === 'unavailable' ? 'CI checks could not be read.' : 'Some CI checks could not be read.'));
     else if (checks?.length === 0) section.append(node('p', 'No CI checks reported.'));
     const list = node('ul');
@@ -675,7 +701,20 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   function requirementsSection(): HTMLElement | null {
     const requirements = options.requirements;
     if (requirements === undefined || requirements === null) return null;
-    const section = disclosure('requirements', `Merge requirements · ${requirements.length} shown`, false);
+    const section = disclosure('requirements', 'Merge checks', false);
+    const summary = section.querySelector('[data-geld-review-toggle]');
+    const preview = node('span', '', 'geld-provider-review__row-preview');
+    for (const state of ['failed', 'pending', 'unknown', 'passed'] as const) {
+      const count = requirements.filter(requirement => requirement.state === state).length;
+      if (count === 0) continue;
+      if (preview.childNodes.length > 0) preview.append(doc.createTextNode(' · '));
+      const part = node('span', `${count} ${REQUIREMENT_STATE[state].toLowerCase()}`, 'geld-provider-review__check-part');
+      part.dataset.geldCheckState = state;
+      preview.append(part);
+    }
+    if (requirements.length === 0) preview.textContent = 'None supplied';
+    summary?.setAttribute('aria-label', `Merge requirements · ${preview.textContent}`);
+    summary?.append(preview);
     if (requirements.length === 0) section.append(node('p', 'No merge requirement details were supplied.'));
     const list = node('ul');
     for (const requirement of requirements) {
@@ -701,7 +740,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   function botsSection(): HTMLElement | null {
     const bound = [...new Set((input.bots ?? []).map((bot) => bot.id))];
     if (bound.length === 0) return null;
-    const section = disclosure('bots', `Review bots · ${bound.length}`, true);
+    const section = disclosure('bots', 'Review bots', false);
+    const preview = node('span', '', 'geld-provider-review__row-preview');
+    section.querySelector('[data-geld-review-toggle]')?.append(preview);
     const comments = [...input.threads.flatMap((thread) => thread.comments), ...(options.comments ?? [])];
     for (const id of bound) {
       const verdict = bots.find((bot) => bot.id === id);
@@ -709,6 +750,11 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       row.dataset.geldReviewBot = id;
       row.dataset.state = verdict?.verdict ?? 'unknown';
       const health = verdict === undefined ? 'pending' : botHealth(verdict);
+      const compact = node('span', '', 'geld-provider-review__status-chip');
+      compact.dataset.geldBotHealth = health;
+      compact.append(node('span', botById(id)?.title ?? id), node('span', verdict === undefined ? 'No result' : verdict.score === undefined ? verdictLabel(verdict) : `${verdict.score}/5`, 'geld-provider-review__muted'));
+      if (health === 'good') compact.append(digestIcon('check', doc));
+      preview.append(compact);
       row.dataset.geldBotHealth = health;
       const status = node('span', { good: 'Clear', warn: 'Needs attention', severe: 'Severe findings', bad: 'Review failed', pending: 'Pending' }[health], 'geld-provider-review__bot-health');
       status.dataset.health = health;row.append(status);
@@ -1141,29 +1187,24 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     return lines.join('\n');
   }
 
-  function dashboardSummary(): HTMLElement {
-    const summary = node('div', '', 'geld-provider-review__overview');
-    summary.dataset.geldReviewOverview = '';
-    summary.setAttribute('aria-label', 'Conversation overview');
-    const comments = new Set([...input.threads.flatMap((thread) => thread.comments), ...(options.comments ?? [])].map((comment) => comment.anchor));
-    const open = threadCounts(items).open;
-    const metrics = [
-      { key: 'open', label: 'Open items', value: open },
-      { key: 'comments', label: 'Comments', value: comments.size },
-      { key: 'activity', label: 'Activity', value: (options.events ?? []).length },
-    ];
-    for (const metric of metrics) {
-      const tile = node('div', '', 'geld-provider-review__metric');
-      tile.dataset.geldReviewMetric = metric.key;
-      tile.append(node('strong', String(metric.value)), node('span', metric.label));
-      summary.append(tile);
-    }
-    return summary;
+  function toolbarMenu(label: string, glyph: DigestIcon, title: string): HTMLDetailsElement {
+    const menu = node('details', '', 'geld-provider-review__menu');
+    const toggle = node('summary', '', 'geld-provider-review__tool');
+    toggle.dataset.geldToolbarControl = glyph;
+    toggle.title = title;toggle.setAttribute('aria-label', title);
+    toggle.append(digestIcon(glyph, doc), node('span', label, 'geld-provider-review__tool-label'));
+    menu.append(toggle);
+    menu.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();event.stopPropagation();menu.open = false;toggle.focus();
+    });
+    return menu;
   }
 
   function render(): void {
     if (destroyed) return;
     const focused = doc.activeElement;
+    const toolbarFocus = focused instanceof HTMLElement && panel.contains(focused) ? focused.dataset.geldToolbarControl : undefined;
     const copyFocus = focused instanceof HTMLElement && panel.contains(focused) && !focused.matches(':disabled') ? copyFocusTargets.get(focused) : undefined;
     const commentControlId = focused instanceof HTMLElement && panel.contains(focused) && focused.hasAttribute('data-geld-comment-control') ? focused.id : null;
     const requestFocus = focused instanceof HTMLElement && panel.contains(focused) && focused.closest('[data-geld-bot-request]') !== null ? focused : null;
@@ -1204,7 +1245,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       if (sourceLink({ anchor: comment.anchor, kind: 'comment', author: comment.author.login, url: comment.url }, input.subject) === null) return null;
       try { return [comment.anchor, options.commentSignature?.(comment)]; } catch { return [comment.anchor, null]; }
     });
-    const signature = JSON.stringify([(options.agentNotes ?? []).map(note => [note.id, note.signature]), input, options.sourceInput, options.reviewerControls?.available, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size, requestSignature, commentSignatures]);
+    const signature = JSON.stringify([(options.agentNotes ?? []).map(note => [note.id, note.signature]), input, options.sourceInput, options.reviewerControls?.available, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, options.hasViewChoice, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size, requestSignature, commentSignatures]);
     if (signature === lastSignature) {
       refreshComments();
       for (const time of panel.querySelectorAll<HTMLTimeElement>('time[datetime]')) {
@@ -1249,20 +1290,34 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     panel.dataset.geldReviewHead = input.subject.headSha;
     panel.dataset.state = (options.complete ?? input.complete) === false || (options.unavailable?.length ?? 0) > 0 ? 'partial' : 'ready';
     const header = node('div', '', 'geld-provider-review__header');
-    header.append(node('h2', 'Geld review'));
+    const brand = node('div', '', 'geld-provider-review__brand');
+    brand.append(digestIcon('geld', doc), node('h2', 'Geld'));
+    header.append(brand);
+    const { total, open } = threadCounts(items), resolved = total - open;
+    if (total > 0) {
+      const progress = node('span', '', 'geld-provider-review__progress');
+      const meter = node('progress');meter.max = total;meter.value = resolved;
+      meter.setAttribute('aria-label', `${resolved} of ${total} threads resolved${input.complete === false ? ' in available data' : ''}`);
+      progress.append(meter, node('span', `${resolved}/${total} resolved`));
+      header.append(progress);
+    }
+    const tools = node('div', '', 'geld-provider-review__tools');
+    header.append(tools);
     if (options.updating === true) {
       const updating = node('span', 'Updating…', 'geld-provider-review__muted');
       updating.setAttribute('role', 'status');
-      header.append(updating);
+      brand.append(updating);
     }
-    const copy = node('button', 'Copy digest', 'geld-provider-review__copy');
+    const copy = node('button', '', 'geld-provider-review__copy geld-provider-review__tool');
+    copy.dataset.geldToolbarControl = 'copy';
+    copy.title = 'Copy digest';copy.setAttribute('aria-label', 'Copy digest');copy.append(digestIcon('copy', doc));
     copy.type = 'button';
     copy.addEventListener('click', () => {
       if (destroyed || panel.inert || !copy.isConnected) return;
       copy.disabled = true;
       const write = options.copyText ?? ((text: string): Promise<void> => navigator.clipboard.writeText(text));
       const text = digestText();
-      Promise.resolve().then(() => write(text)).then(() => { copy.textContent = 'Copied'; }, () => { copy.textContent = 'Could not copy'; }).finally(() => { copy.disabled = false; });
+      Promise.resolve().then(() => write(text)).then(() => { copy.title = 'Copied';copy.setAttribute('aria-label', 'Copied'); }, () => { copy.title = 'Could not copy';copy.setAttribute('aria-label', 'Could not copy'); }).finally(() => { copy.disabled = false; });
     });
     if (options.originalConversation !== undefined) {
       const original = options.originalConversation;
@@ -1271,18 +1326,42 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       toggle.dataset.geldOriginalConversation = '';
       toggle.setAttribute('aria-pressed', String(original.shown));
       toggle.addEventListener('click', () => { if (!destroyed && toggle.isConnected) original.toggle(); });
-      header.append(toggle);
+      tools.append(toggle);
     }
-    header.append(copy);
+    const flowSlot = node('span', '', 'geld-provider-review__flow-slot');
+    flowSlot.dataset.geldFlowSlot = '';tools.append(flowSlot);
+    if (options.onGrouping !== undefined) {
+      const menu = toolbarMenu(options.reviewGrouping === 'batch' ? 'Push' : 'Type', 'filter', 'Group the digest by');
+      const list = node('div', '', 'geld-provider-review__menu-list');
+      for (const grouping of ['type', 'batch'] as const) {
+        const button = node('button', grouping === 'type' ? 'Type' : 'Push');button.type = 'button';
+        button.dataset.geldToolbarControl = 'filter';
+        button.setAttribute('aria-pressed', String((options.reviewGrouping ?? 'type') === grouping));
+        button.addEventListener('click', () => {
+          if (destroyed || !button.isConnected) return;
+          button.disabled = true;
+          void options.onGrouping?.(grouping).then(() => { menu.open = false; }).catch(() => { button.title = 'Could not save grouping. Try again.'; }).finally(() => { button.disabled = false; });
+        });
+        list.append(button);
+      }
+      menu.append(list);tools.append(menu);
+    }
+    if (options.hasViewChoice === true) {
+      const menu = toolbarMenu('View', 'eye', 'How pull requests look');
+      const slot = node('div', '', 'geld-provider-review__menu-list');slot.dataset.geldViewSlot = '';
+      menu.append(slot);tools.append(menu);
+    }
+    tools.append(copy);
     if (options.onOpenSettings !== undefined) {
-      const settings = node('button', 'Settings', 'geld-provider-toggle geld-provider-review__settings');settings.type = 'button';settings.setAttribute('aria-label', 'Open Geld settings');
+      const settings = node('button', '', 'geld-provider-review__tool geld-provider-review__settings');settings.type = 'button';settings.setAttribute('aria-label', 'Open Geld settings');settings.title = 'Geld settings';settings.append(digestIcon('settings', doc));
+      settings.dataset.geldToolbarControl = 'settings';
       const status = node('span', '', 'geld-provider-review__muted');status.setAttribute('role', 'status');
       settings.addEventListener('click', () => {
         if (destroyed || !settings.isConnected) return;
         settings.disabled = true;
         void options.onOpenSettings?.().catch(() => { if (!destroyed) status.textContent = 'Settings could not be opened. Try the extension toolbar.'; }).finally(() => { settings.disabled = false; });
       });
-      header.append(settings, status);
+      tools.append(settings, status);
     }
     if (activeAi?.enabled === true) {
       const controls = node('div', '', 'geld-provider-review__source-actions');
@@ -1302,9 +1381,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         cancel.addEventListener('click', () => { if (!destroyed) activeAi.cancel(); });
         controls.append(cancel);
       }
-      header.append(controls);
+      tools.prepend(controls);
     }
-    const children: HTMLElement[] = [header, dashboardSummary()];
+    const children: HTMLElement[] = [header];
     const published = publicationSection();
     if (published !== null) children.push(published);
     if (options.localReviewed?.error !== undefined) {
@@ -1324,12 +1403,13 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       children.push(summary);
     }
     if (panel.dataset.state === 'partial') {
-      const unavailable = node('p', 'Partial review · Some review data is unavailable.', 'geld-provider-review__muted');
+      const unavailable = node('span', 'Partial review', 'geld-provider-review__muted');
+      unavailable.title = 'Some review data is unavailable.';
       unavailable.setAttribute('role', 'status');
       unavailable.dataset.geldReviewCoverage = 'partial';
-      children.push(unavailable);
+      brand.append(unavailable);
     }
-    children.push(reviewStandings(), checksSection());
+    children.push(reviewStandings());
     const requirements = requirementsSection();
     if (requirements !== null) children.push(requirements);
     const botSection = botsSection();
@@ -1351,6 +1431,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     }
     const reports = reportsSection();
     if (reports !== null) children.push(reports);
+    children.push(checksSection());
     const previews = previewsSection();
     if (previews !== null) children.push(previews);
     const comments = new Map(input.threads.flatMap((thread) => thread.comments.map((comment) => [comment.anchor, comment] as const)));
@@ -1402,6 +1483,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       }
     }
     panel.replaceChildren(...children);
+    if (toolbarFocus !== undefined && (doc.activeElement === doc.body || doc.activeElement === focused)) {
+      [...panel.querySelectorAll<HTMLElement>('[data-geld-toolbar-control]')].find(control => control.dataset.geldToolbarControl === toolbarFocus)?.focus({ preventScroll: true });
+    }
     if (copyFocus !== undefined && copyFocus.subject === JSON.stringify(input.subject) && (doc.activeElement === doc.body || doc.activeElement === focused)) {
       const route = new URL(doc.URL);route.hash = '';
       const candidates = [...panel.querySelectorAll<HTMLButtonElement>('[data-geld-item-copy]')].filter((button) => {
@@ -1487,6 +1571,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     },
     destroy() {
       destroyed = true;
+      doc.removeEventListener('pointerdown', dismissMenus);
       disposeComments();clearRenderStates();sourceSlots.clear();
       for (const control of identities) control.destroy();
       for (const control of botRequests.values()) control.destroy();

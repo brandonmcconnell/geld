@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import test from 'node:test';
 import { Window } from 'happy-dom';
@@ -11,7 +12,9 @@ import { beginGitLabAuthorReuseProbe, endGitLabAuthorReuseProbe, gitLabAuthorReu
 const { createGitLabAuthorPresentationReader } = await tsImport('../src/gitlab/author-presentation.ts', import.meta.url);
 // Node has no CSS renderer. Omit side-effect styles for this structural integration only.
 const styles = registerHooks({ load(url, context, nextLoad) {
-  return new URL(url).pathname.endsWith('.css') ? { format: 'module', source: '', shortCircuit: true } : nextLoad(url, context);
+  const source = new URL(url);
+  if (source.protocol === 'file:' && source.pathname.endsWith('.svg') && source.searchParams.has('raw')) return { format: 'module', source: `export default ${JSON.stringify(readFileSync(source, 'utf8'))}`, shortCircuit: true };
+  return source.pathname.endsWith('.css') ? { format: 'module', source: '', shortCircuit: true } : nextLoad(url, context);
 } });
 let renderProviderReviewPanel;
 try { ({ renderProviderReviewPanel } = await tsImport('../src/providers/review-panel.ts', import.meta.url)); }

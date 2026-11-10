@@ -19,6 +19,8 @@ on:
         type: choice
         options:
           - regression
+          - gitlab-ui-polish
+          - bitbucket-ui-polish
           - gitlab-walkthrough
           - bitbucket-walkthrough
           - bitbucket-walkthrough-files
@@ -154,7 +156,7 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const choices = new Set(['bitbucket-walkthrough-files', 'walkthrough-render', 'gitlab-walkthrough', 'bitbucket-walkthrough', 'regression', 'provider-evidence', 'provider-access-evidence', 'provider-access', 'bitbucket-diff', 'bitbucket-ui', 'gitlab-ui', 'bitbucket-whitespace-session', 'bitbucket-whitespace-source', 'bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'bitbucket-pipeline-initial-on', 'bitbucket-list', 'bitbucket-authors', 'bitbucket-native-bash', 'bitbucket-native-bash-on', 'bitbucket-native-settings-diagnostic', 'bitbucket-native-file-menu', 'bitbucket-local-reviewed', 'bitbucket-comment', 'bitbucket-commit', 'bitbucket-commit-links', 'bitbucket-list-commit', 'gitlab-lists', 'gitlab-diff', 'gitlab-file-search', 'gitlab-whitespace-viewed', 'gitlab-whitespace-session', 'bitbucket-pr-whole-context', 'bitbucket-whole-context', 'gitlab-shell', 'gitlab-standalone-whole', 'gitlab-review', 'gitlab-local-reviewed', 'gitlab-bot', 'gitlab-coderabbit', 'gitlab-references', 'gitlab-binary', 'github', 'cross-provider-settings', 'all']);
+            const choices = new Set(['gitlab-ui-polish', 'bitbucket-ui-polish', 'bitbucket-walkthrough-files', 'walkthrough-render', 'gitlab-walkthrough', 'bitbucket-walkthrough', 'regression', 'provider-evidence', 'provider-access-evidence', 'provider-access', 'bitbucket-diff', 'bitbucket-ui', 'gitlab-ui', 'bitbucket-whitespace-session', 'bitbucket-whitespace-source', 'bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'bitbucket-pipeline-initial-on', 'bitbucket-list', 'bitbucket-authors', 'bitbucket-native-bash', 'bitbucket-native-bash-on', 'bitbucket-native-settings-diagnostic', 'bitbucket-native-file-menu', 'bitbucket-local-reviewed', 'bitbucket-comment', 'bitbucket-commit', 'bitbucket-commit-links', 'bitbucket-list-commit', 'gitlab-lists', 'gitlab-diff', 'gitlab-file-search', 'gitlab-whitespace-viewed', 'gitlab-whitespace-session', 'bitbucket-pr-whole-context', 'bitbucket-whole-context', 'gitlab-shell', 'gitlab-standalone-whole', 'gitlab-review', 'gitlab-local-reviewed', 'gitlab-bot', 'gitlab-coderabbit', 'gitlab-references', 'gitlab-binary', 'github', 'cross-provider-settings', 'all']);
             const parseFocus = (body) => {
               const text = typeof body === 'string' ? body : '';
               const prefixes = text.match(/<!-- geld-browser-focus:/g) ?? [];
@@ -194,7 +196,7 @@ jobs:
       group: geld-installed-browser-public-providers
       cancel-in-progress: false
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ needs.select-public-verification.outputs.focus == 'bitbucket-walkthrough-files' && 75 || 15 }}
+    timeout-minutes: ${{ contains(fromJSON('["bitbucket-walkthrough-files", "bitbucket-ui-polish"]'), needs.select-public-verification.outputs.focus) && 75 || 15 }}
     env:
       GELD_BROWSER_ARTIFACTS: ${{ github.workspace }}/artifacts/browser-e2e
       GELD_BROWSER_PREVIOUS_REPORT: ${{ github.workspace }}/.browser-previous-evidence/report.json
@@ -275,8 +277,8 @@ jobs:
           run-id: ${{ steps.cooldowns.outputs.run-id }}
           github-token: ${{ github.token }}
           path: .browser-previous-evidence
-      - name: Wait for the carried Bitbucket recording budget
-        if: needs.select-public-verification.outputs.focus == 'bitbucket-walkthrough-files'
+      - name: Wait for the carried Bitbucket browser budget
+        if: contains(fromJSON('["bitbucket-walkthrough-files", "bitbucket-ui-polish"]'), needs.select-public-verification.outputs.focus)
         run: |
           python3 - <<'PY'
           import json, os, time
@@ -308,7 +310,10 @@ jobs:
         if: needs.select-public-verification.outputs.focus != 'provider-evidence' && needs.select-public-verification.outputs.focus != 'provider-access-evidence'
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y xvfb xauth dbus-x11 at-spi2-core python3-pyatspi libglib2.0-bin ffmpeg
+          sudo apt-get install --no-install-recommends -y xvfb xauth dbus-x11 at-spi2-core python3-pyatspi libglib2.0-bin
+          case "$GELD_BROWSER_FOCUS" in
+            gitlab-walkthrough|bitbucket-walkthrough|bitbucket-walkthrough-files) sudo apt-get install --no-install-recommends -y ffmpeg ;;
+          esac
       - name: Locate the runner's Chrome
         if: needs.select-public-verification.outputs.focus != 'provider-evidence' && needs.select-public-verification.outputs.focus != 'provider-access-evidence'
         shell: bash

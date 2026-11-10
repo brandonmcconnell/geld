@@ -42,7 +42,7 @@ it('projects complete compact Essential/category trees without moving native rec
   expect(parent?.getAttribute('style')).toBe(virtualStyle);
   expect(container.getAttribute('data-geld-provider-category-body')).toBe('native');
   expect(host.querySelector('input[type="search"]')).not.toBeNull();
-  expect(headers(host).map((button) => button.textContent)).toEqual(['Essential (1 file)', 'Tests (2 tests)']);
+  expect(headers(host).map((button) => button.getAttribute('aria-label'))).toEqual(['Essential (1 file)', 'Tests (2 tests)']);
   const essential = required(host.querySelector<HTMLElement>('.geld-provider-essential-content'));
   expect(essential.querySelectorAll('[data-geld-category-path]')).toHaveLength(1);
   expect(essential.textContent).toContain('main.ts');
@@ -86,7 +86,7 @@ it.each(['absent', 'closed', 'collapsed-width', 'virtual-list-absent'] as const)
   const fallback = required(document.querySelector<HTMLElement>('[data-geld-provider-category-placement="fallback"]'));
   expect(diff.previousElementSibling).toBe(fallback);
   expect(fallback.getAttribute('aria-label')).toBe('Files by category');
-  expect(headers(fallback).map((button) => button.textContent)).toEqual(['Essential (1 file)', 'Tests (2 tests)']);
+  expect(headers(fallback).map((button) => button.getAttribute('aria-label'))).toEqual(['Essential (1 file)', 'Tests (2 tests)']);
   const tests = required(headers(fallback)[1]);
   tests.focus(); tests.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true, cancelable: true }));
   expect(document.activeElement).toBe(headers(fallback)[0]);
@@ -133,7 +133,7 @@ it('shows Essential on a review containing only uncategorized files', () => {
   const files = FILES.slice(0, 1);
   const counts = breakdownFromFiles(files, createMatcher(DEFAULT_SETTINGS, null, BUNDLED_CATALOG));
   tree.update(view, counts.hidden, counts.all, files, { revealPath: vi.fn(), setExpanded: vi.fn() });
-  expect(headers(host).map((button) => button.textContent)).toEqual(['Essential (1 file)']);
+  expect(headers(host).map((button) => button.getAttribute('aria-label'))).toEqual(['Essential (1 file)']);
   expect(host.querySelector('.geld-provider-essential-content')?.hasAttribute('hidden')).toBe(false);
 });
 
@@ -216,9 +216,9 @@ it('uses plural nouns for zero and singular only for one', () => {
   const group = required(hidden.categories[0]);
   const empty: HiddenBreakdown = { ...hidden, totals: { files: 0, additions: 0, deletions: 0 }, categories: [{ ...group, paths: [], totals: { files: 0, additions: 0, deletions: 0 } }] };
   tree.update(view, empty, { files: 0, additions: 0, deletions: 0 }, [], { revealPath: vi.fn(), setExpanded: vi.fn() });
-  expect(headers(host).map((button) => button.textContent)).toEqual(['Essential (0 files)', 'Tests (0 tests)']);
+  expect(headers(host).map((button) => button.getAttribute('aria-label'))).toEqual(['Essential (0 files)', 'Tests (0 tests)']);
   tree.update(view, { ...hidden, totals: { files: 1, additions: 4, deletions: 1 }, categories: [{ ...group, paths: ['spec/unit.test.ts'], totals: { files: 1, additions: 4, deletions: 1 } }] }, all, FILES, { revealPath: vi.fn(), setExpanded: vi.fn() });
-  expect(headers(host)[1]?.textContent).toBe('Tests (1 test)');
+  expect(headers(host)[1]?.getAttribute('aria-label')).toBe('Tests (1 test)');
 });
 
 it('restores exact native attributes and preserves search/filter ownership on clear and nonempty native search', () => {
@@ -627,7 +627,7 @@ it.each(['gitlab', 'bitbucket'] as const)('uses %s category equivalents and nati
   const group = required(hidden.categories[0]);
   const update = (icon: typeof group.category.icon) => tree.update(view, { ...hidden, categories: [{ ...group, category: { ...group.category, icon } }] }, all, FILES, { revealPath: vi.fn(), setExpanded: vi.fn(), subjectKey: 'same-review' });
   update('beaker');
-  expect(headers(host).map((button) => button.textContent)).toEqual(['Essential (1 file)', 'Tests (2 tests)']);
+  expect(headers(host).map((button) => button.getAttribute('aria-label'))).toEqual(['Essential (1 file)', 'Tests (2 tests)']);
   const tests = required(headers(host)[1]);
   expect(tests.querySelector('svg')?.getAttribute('data-geld-native-icon')).toBe(provider === 'gitlab' ? 'work-item-test-case' : 'flask');
   expect(tests.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
@@ -646,7 +646,7 @@ it.each(['gitlab', 'bitbucket'] as const)('uses %s category equivalents and nati
   expect(folder.querySelector('svg')?.getAttribute('data-geld-native-icon')).toBe(provider === 'gitlab' ? 'folder-open' : 'chevron-down');
   update('book');
   expect(tests.querySelector('svg')?.getAttribute('data-geld-native-icon')).toBe(provider === 'gitlab' ? 'book' : 'book-with-bookmark');
-  expect(tests.textContent).toBe('Tests (2 tests)');
+  expect(tests.getAttribute('aria-label')).toBe('Tests (2 tests)');
   tree.clear();
   expect(original.isConnected).toBe(true);
   expect(original.getAttribute('aria-expanded')).toBe('true');

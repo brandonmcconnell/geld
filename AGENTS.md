@@ -3576,9 +3576,31 @@ Provider related-link sources use the same hidden-people projection as the diges
 Keep description-owned related links independent of comment-author filtering.
 
 Installed public walkthrough focuses record the actual Chrome page through Puppeteer screencast, with a timed receipt for each completed scene.
+Install FFmpeg only for those recording focuses, since ordinary UI acceptance needs no media libraries and their download can dominate browser setup.
 They reuse the installed-browser permission, request budget and cooldown handling rather than bypassing local browser policy.
 Titles, captions and voiceover are post-production overlays and never replace native controls or manufacture provider state.
 
 Bitbucket walkthroughs use the original Files link for same-document navigation, because a full reload repeats native metadata demand.
-A Files-only continuation waits for every carried anonymous request timestamp to leave the existing hourly window before opening a provider page, preserving the existing request cap.
+Files-only recording and Bitbucket UI acceptance wait for every carried anonymous request timestamp to leave the existing hourly window before opening a provider page, preserving the existing request cap.
 Rendering joins completed scene receipts from the same public pull request and requires the digest, counts, categories and settings sections before publishing a complete walkthrough package.
+
+### Provider digest layout and tab-bar geometry
+
+GitLab and Bitbucket use Geld's compact digest structure with the provider's own font, surface, border and interaction tokens.
+The toolbar contains a conditional resolved-thread meter, Flow, grouping, View, copy and settings controls rather than a separate metric dashboard.
+Reviewer summaries stay inline with the Reviews row while conversation details remain inside its disclosure, and an unknown pending-request state is not presented as a review verdict.
+Merge checks use a short row label and inline native-state totals, keeping long rule names inside the disclosure instead of wrapping the label into several lines.
+The combined view uses the Geld and provider marks with a plus sign and an accessible full label.
+View changes restore focus to the selected native timeline option when the digest is off and to its View control when it returns.
+Browser checks wait for the selected view to finish changing before checking focus or switching again, since the clicked option already has focus while its settings save is pending.
+While review sources load, keep the native conversation visible and mount view choices only in the ready digest toolbar so a temporary standalone button strip does not flash above it.
+GitLab's global SVG fill overrides presentation attributes, so owned outline glyphs explicitly keep `fill: none` in CSS while brand marks retain their fills.
+Standalone Node integration tests that import the digest load raw SVG imports from the actual asset while omitting CSS, matching the browser bundle's asset contract.
+Flow belongs only in the overview digest toolbar, never in a native Files changed toolbar.
+Bitbucket's owned header counts share the verified native tab row as a flex sibling, because adding a second row changes the height assumed by its sticky header.
+Bitbucket keeps separate normal and compact header copies with duplicate tab IDs, so count targets include both.
+Its shipped StickyHeaderContent always sets `aria-hidden="true"`, even when visible, so compact counts mirror the native pointer-only presentation with `tabindex="-1"` while the regular header retains keyboard access.
+Only the verified compact-header ancestor can allow this visual mirror's pointer popover, and hidden, inert, nested aria-hidden or offscreen copies remain inactive.
+Include hint hosts in settled-header snapshots so that this handoff repairs counts before the debounced full apply, even when the underlying file numbers are unchanged.
+The browser check waits for the compact header's transition and count handoff before inspecting its paint order.
+Installed UI acceptance checks that geometry and the sticky header's hit-test order after scrolling, alongside disclosures and category controls.
