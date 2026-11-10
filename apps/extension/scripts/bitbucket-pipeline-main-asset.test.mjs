@@ -6,7 +6,7 @@ import { BITBUCKET_PIPELINE_MAIN_ASSET as URL, BITBUCKET_PIPELINE_MAIN_FILE as F
 const BODY = Buffer.from('throw new Error("This synthetic script must never execute");');
 function setup(options = {}) {
   const page = new EventEmitter();const frame = {};page.mainFrame = () => frame;const progress = {};const writes = [];let reads = 0;
-  const probe = observe(page, progress, { settleMs: 10, writeArtifact: async (file, bytes, signal) => { writes.push({ file, bytes: Buffer.from(bytes), signal });if (options.writeFailure) throw Error('Synthetic artifact write failed'); } });
+  const probe = observe(page, progress, { settleMs: options.settleMs ?? 10, moduleOnly: options.moduleOnly ?? false, ...(options.extractModule === undefined ? {} : { extractModule: options.extractModule }), writeArtifact: async (file, bytes, signal) => { writes.push({ file, bytes: Buffer.from(bytes), signal });if (options.writeFailure) throw Error('Synthetic artifact write failed'); } });
   const response = (changes = {}) => ({ url: () => URL, request: () => ({ url: () => URL, method: () => 'GET', frame: () => frame, resourceType: () => 'script', redirectChain: () => [], ...changes.request }), status: () => 200, headers: () => ({ 'content-type': 'application/javascript; charset=utf-8', ...changes.headers }), buffer: async () => { reads++;if (options.readFailure) throw Error('Synthetic response body unavailable');return BODY; }, ...Object.fromEntries(Object.entries(changes).filter(([key]) => !['request', 'headers'].includes(key))) });
   return { page, progress, writes, response, probe, reads: () => reads };
 }
@@ -36,3 +36,25 @@ test('bounded pending read is reported and cannot initiate a late artifact write
   const before = structuredClone(value.progress);complete(BODY);await new Promise(setImmediate);assert.deepEqual(value.writes, []);assert.deepEqual(value.progress, before);
 });
 test('listener detached before page close refuses later emitted responses', async () => { const value = setup();await value.probe.dispose();value.page.emit('response', value.response());assert.equal(value.reads(), 0);assert.deepEqual(value.writes, []); });
+
+const MODULE_BODY = Buffer.from('o("fozrM",function(e,r){e.exports={getGlobalShouldIgnoreWhitespace:s=>s.preference};})');
+test('module-only actual worker retains one registration artifact and independent immutable asset hash, never full app', async () => {
+  const value=setup({moduleOnly:true,settleMs:3000});const script=Buffer.concat([Buffer.from('/* public prefix */'),MODULE_BODY,Buffer.from(';throw Error("never execute")')]);
+  value.page.emit('response',value.response({buffer:async()=>script}));await value.probe.dispose();
+  assert.equal(value.progress.status,'captured');assert.equal(value.progress.file,'bitbucket-native-fozrM.js');assert.equal(value.progress.executed,false);assert.equal(value.writes.length,1);assert.equal(value.writes[0].file,'bitbucket-native-fozrM.js');assert.deepEqual(value.writes[0].bytes,MODULE_BODY);
+  assert.deepEqual(value.progress.asset,{bytes:script.length,sha256:createHash('sha256').update(script).digest('hex')});assert.equal(value.progress.module.bytes,MODULE_BODY.length);assert.equal(value.progress.module.sha256,createHash('sha256').update(MODULE_BODY).digest('hex'));assert.equal(value.progress.bytes,undefined);assert.equal(value.progress.sha256,undefined);assert.equal(value.page.listenerCount('response'),0);
+});
+test('module-only unsupported script remains optional unavailable without full body artifact',async()=>{
+  const value=setup({moduleOnly:true,settleMs:3000});value.page.emit('response',value.response());await value.probe.dispose();assert.equal(value.progress.status,'unavailable');assert.equal(value.progress.reason,'registration');assert.deepEqual(value.writes,[]);assert.equal(value.progress.file,undefined);assert.ok(value.progress.asset.sha256);assert.equal(JSON.stringify(value.progress).includes('must never execute'),false);
+});
+test('module-only failure never serializes raw browser error',async()=>{const value=setup({moduleOnly:true,readFailure:true});value.page.emit('response',value.response());await value.probe.dispose();assert.equal(value.progress.reason,'capture_failed');assert.equal(JSON.stringify(value.progress).includes('Synthetic'),false);assert.deepEqual(value.writes,[]);});
+test('module-only parser timeout/abort cannot write after cleanup or hold settings restoration',async()=>{
+  let finish;let signal;const value=setup({moduleOnly:true,extractModule:(_bytes,options)=>{signal=options.signal;return new Promise(resolve=>{finish=resolve;});}});value.page.emit('response',value.response());await value.probe.dispose();assert.equal(signal.aborted,true);assert.equal(value.progress.status,'unavailable');assert.equal(value.progress.cleanup.status,'timed_out');const before=structuredClone(value.progress);finish({status:'extracted',bytes:MODULE_BODY});await new Promise(setImmediate);assert.deepEqual(value.writes,[]);assert.deepEqual(value.progress,before);assert.equal(value.page.listenerCount('response'),0);
+});
+test('module-only parser failure writes no artifact or arbitrary errors',async()=>{
+  const value=setup({moduleOnly:true,extractModule:async()=>({status:'unavailable',reason:'worker_failed'})});value.page.emit('response',value.response());await value.probe.dispose();assert.equal(value.progress.status,'unavailable');assert.equal(value.progress.reason,'worker_failed');assert.deepEqual(value.writes,[]);
+});
+
+test('module-only write rejection reports fixed failure without publishing a successful file/hash',async()=>{const value=setup({moduleOnly:true,writeFailure:true,extractModule:async()=>({status:'extracted',bytes:MODULE_BODY,start:0,end:MODULE_BODY.length,byteStart:0,byteEnd:MODULE_BODY.length})});value.page.emit('response',value.response());await value.probe.dispose();assert.equal(value.progress.status,'unavailable');assert.equal(value.progress.reason,'capture_failed');assert.equal(value.progress.file,undefined);assert.equal(value.progress.module,undefined);assert.equal(JSON.stringify(value.progress).includes('Synthetic'),false);});
+
+for(const[mime,classification]of[['application/javascript; private=DO_NOT_RETAIN','javascript'],['text/html; private=DO_NOT_RETAIN','unsupported']])test('module-only MIME retention uses fixed '+classification+' classification',async()=>{const value=setup({moduleOnly:true,extractModule:async()=>({status:'unavailable',reason:'registration'})});value.page.emit('response',value.response({headers:{'content-type':mime}}));await value.probe.dispose();assert.equal(value.progress.mime,classification);assert.equal(JSON.stringify(value.progress).includes('DO_NOT_RETAIN'),false);assert.deepEqual(value.writes,[]);});

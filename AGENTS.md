@@ -2931,6 +2931,11 @@ The preparer does not copy host credential/config files or serialize environment
 - **Browser workflow path filters can exclude packaging-only pull requests**: apps/action-only packaging, root package and scripts changes may run normal CI and local image checks without matching the installed-browser pull_request paths.
   Such a boundary has no expected installed Test start or artifact and must not be reported as either native acceptance or an installed-test failure.
 
+The explicit Bitbucket native-Bash visit may passively inspect one already-issued, exact first-party app script for optional fozrM source research, without changing preference eligibility or making a request.
+Module-only capture retains the asset SHA and one bounded parser-verified registration-shaped source slice, never the full app or runtime/session state, and reports timeout or unsupported syntax as unavailable.
+The six-MiB response check is applied after Puppeteer buffers decoded bytes and is not a streaming allocation limit.
+A captured registration-shaped source slice does not establish loader binding, runtime getter authority or native preference state.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
