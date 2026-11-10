@@ -71,8 +71,8 @@ export default defineConfig({
       version: manifestVersion,
       // Chrome shows this instead of the raw number; other browsers ignore it.
       ...(browser === 'chrome' || browser === 'edge' ? { version_name: buildNumber === '' ? (nightly ? `${baseVersion} (nightly)` : baseVersion) : `${baseVersion} (${channel} ${buildNumber})` } : {}),
-      description:
-        'Hide test files from GitHub diffs. Review what matters; the tests wait in a tidy section at the bottom.',
+      // Chrome shows it as the listing's summary and caps it at 132 characters.
+      description: 'Code review is broken. Geld fixes it. One digest of each pull request, the noise set aside, and review controls on every tab.',
       homepage_url: 'https://github.com/brandonmcconnell/geld',
       // Black mark on a white tile. Deliberately no 48/96: chrome://extensions
       // requests the smallest icon >= 48 and shows it in a 48 CSS px box, so an
