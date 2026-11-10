@@ -118,3 +118,7 @@ html[data-geld-provider="bitbucket"] tr[data-qa="pull-request-row"] div:has(> di
 ::highlight(geld-bitbucket-shell-meta) { color: var(--ds-text-code-comments); }
 ::highlight(geld-bitbucket-shell-variable) { color: var(--ds-text-accent-blue-bolder, var(--ds-text-code-accent-1)); }
 ::highlight(geld-bitbucket-shell-attr) { color: var(--ds-text-code-tags); }
+
+html[data-geld-provider="bitbucket"] .geld-provider-line-fold {
+  position: relative;
+}
