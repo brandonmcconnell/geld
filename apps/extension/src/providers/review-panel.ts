@@ -813,6 +813,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       }
       const compact = node('span', '', 'geld-provider-review__status-chip');
       compact.dataset.state = reviewer.state;
+      compact.toggleAttribute('data-geld-review-requested', reviewerRequested(reviewer));
       compact.title = `${reviewer.author.login}: ${reviewerLabel(reviewer)}`;
       compact.append(mark.cloneNode(true), node('span', presentation?.displayName ?? reviewer.author.login));
       if (reviewer.state === 'approved') compact.append(digestIcon('check', doc));
@@ -1030,6 +1031,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const open = selected.filter(item => isOpenStatus(item.status)).length;
       const standing = reviewer === undefined ? countLabel(open, 'open thread') : reviewerLabel(reviewer);
       const compact = node('span', '', 'geld-provider-review__status-chip');compact.dataset.state = reviewer?.state ?? 'commented';
+      compact.toggleAttribute('data-geld-review-requested', reviewer !== undefined && reviewerRequested(reviewer));
       compact.append(authorAvatar(author), node('span', label), node('span', standing, 'geld-provider-review__muted'));preview.append(compact);
       const row = disclosure(`automated:${author.id}`, '', false);
       row.dataset.geldAutomatedReviewer = author.id;row.classList.add('geld-provider-review__entry');

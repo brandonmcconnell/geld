@@ -153,9 +153,9 @@ svg.geld-provider-digest-icon[data-geld-outline], svg.geld-provider-digest-icon[
 .geld-provider-review__entry > .geld-provider-review__section-toggle::after { grid-column: -2 / -1; }
 .geld-provider-review__entry-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-inline-size: 0; color: var(--geld-provider-text-subtle); }
 .geld-provider-review__entry time { color: var(--geld-provider-text-subtle); font: var(--geld-provider-font-small); white-space: nowrap; }
-.geld-provider-review__entry[data-state='pending'] > .geld-provider-review__section-toggle > svg { color: var(--geld-provider-warning); }
-.geld-provider-review__status-chip[data-state='pending'] { border-style: dashed; }
-.geld-provider-review__status-chip[data-state='pending']::before { content: ''; inline-size: 6px; block-size: 6px; border-radius: 50%; background: var(--geld-provider-warning); }
+.geld-provider-review__entry[data-state='pending'][data-review-request='pending'] > .geld-provider-review__section-toggle > svg { color: var(--geld-provider-warning); }
+.geld-provider-review__status-chip[data-geld-review-requested] { border-style: dashed; }
+.geld-provider-review__status-chip[data-geld-review-requested]::before { content: ''; inline-size: 6px; block-size: 6px; border-radius: 50%; background: var(--geld-provider-warning); }
 .geld-provider-review .geld-provider-review__reviewers { display: block; }
 .geld-provider-review .geld-provider-review__reviewers > .geld-provider-review__standing { display: block; }
 @media (max-width: 640px) {

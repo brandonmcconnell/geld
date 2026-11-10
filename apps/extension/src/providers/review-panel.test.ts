@@ -665,6 +665,8 @@ describe('provider conversation digest', () => {
     const panel = renderProviderReviewPanel(host(), native, { copyText: (text) => { copied = text; } });
     const section = panel.element.querySelector('[data-geld-review-key="reviewers"]');
     expect(section?.querySelector('.geld-provider-review__reviewer-summary')?.textContent).toBe('Reviews · 1 approval · 1 change request · 2 pending reviews');
+    expect(section?.querySelectorAll('.geld-provider-review__status-chip[data-geld-review-requested]')).toHaveLength(2);
+    expect(section?.querySelector('.geld-provider-review__status-chip[data-state="pending"]')?.hasAttribute('data-geld-review-requested')).toBe(false);
     expect(section?.querySelector('[data-state="approved"] .geld-provider-review__reviewer')?.getAttribute('aria-label')).toBe('alice: Approved · Review requested');
     expect(section?.querySelector('[data-state="approved"] .geld-provider-review__reviewer-request')?.textContent).toBe('Review requested');
     expect(section?.querySelector('[data-state="changes_requested"] .geld-provider-review__reviewer')?.getAttribute('aria-label')).toBe('bob: Changes requested · Review requested');
