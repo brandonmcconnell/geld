@@ -44,7 +44,9 @@ export class ProviderHeaderHints {
     const active = new Set<HTMLElement>();
     for (const target of targets) {
       const host = target.hintHost;
-      if (host === undefined || !host.isConnected || host.closest('[data-geld-ui],[hidden],[aria-hidden="true"],[inert]') !== null || active.has(host)) continue;
+      if (host === undefined || !host.isConnected || host.closest('[data-geld-ui],[hidden],[inert]') !== null || active.has(host)) continue;
+      const hidden = host.closest('[aria-hidden="true"]');
+      if (hidden !== null && (hidden !== target.presentationRoot || hidden.parentElement?.closest('[aria-hidden="true"]') !== null)) continue;
       const showAdditions = totals !== undefined && !visible(target.additions);
       const showDeletions = totals !== undefined && !visible(target.deletions);
       if (label === null && totals === undefined) continue;
@@ -103,7 +105,7 @@ export class ProviderHeaderHints {
       }
       hint.showAdditions = showAdditions;
       hint.showDeletions = showDeletions;
-      hint.root.tabIndex = keyboardOwner ? -1 : 0;
+      hint.root.tabIndex = keyboardOwner || target.presentationRoot !== undefined ? -1 : 0;
       const before = target.hintBefore?.parentElement === host ? target.hintBefore : null;
       if (hint.root.parentElement !== host || hint.root.nextSibling !== before) host.insertBefore(hint.root, before);
     }

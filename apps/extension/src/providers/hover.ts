@@ -14,6 +14,7 @@ export interface ProviderHoverOptions {
 export interface ProviderHoverBindingOptions {
   readonly keyboard?: boolean;
   readonly anchor?: () => HTMLElement | null;
+  readonly presentationRoot?: () => HTMLElement | null;
   readonly onIntent?: () => void;
   readonly status?: () => { readonly status: 'loading' | 'unavailable' | 'provisional' | 'ready'; readonly reason?: string };
 }
@@ -211,8 +212,19 @@ export class ProviderHover {
   }
 
   private valid(active: ActiveHover): boolean {
+    const hidden = active.host.closest('[aria-hidden="true"]');
+    if (hidden !== null) {
+      const presentation = this.bindings.get(active.host)?.options.presentationRoot?.();
+      if (hidden !== presentation || active.pointerY === null || hidden.parentElement?.closest('[aria-hidden="true"]') !== null) return false;
+      for (let node: HTMLElement | null = active.host; node !== null; node = node.parentElement) {
+        const style = this.doc.defaultView?.getComputedStyle(node);
+        if (style?.display === 'none' || style?.visibility === 'hidden' || style?.visibility === 'collapse' || style?.opacity === '0') return false;
+      }
+      const box = active.host.getBoundingClientRect();
+      if (box.width <= 0 || box.height <= 0 || box.bottom <= 0 || box.right <= 0 || box.top >= (this.doc.defaultView?.innerHeight ?? 0) || box.left >= (this.doc.defaultView?.innerWidth ?? 0)) return false;
+    }
     return this.started && !this.doc.hidden && this.settings().enabled && active.host.isConnected && active.visit === this.visit()
-      && active.host.closest('[hidden], [aria-hidden="true"], [inert]') === null
+      && active.host.closest('[hidden], [inert]') === null
       && (!active.ready || active.host.getClientRects().length > 0 || active.host.getBoundingClientRect().width > 0);
   }
 

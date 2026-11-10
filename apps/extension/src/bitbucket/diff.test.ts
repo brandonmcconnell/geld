@@ -206,7 +206,7 @@ it('places overview counts beside the verified native tablist without changing t
   expect(bitbucketHeaderTargets(document)).toEqual([]);
 });
 
-it('keeps both native header copies counted and moves interactive totals to the exposed tab bar', () => {
+it('keeps the compact header mirror outside the tab order without changing native aria-hidden', () => {
   const nav = '<nav aria-label="Pull request"><div role="tablist"><a id="pull-request-tabs-1" role="tab" href="/atlassian/bitbucket-upload-file/pull-requests/27/diff"><div>Files changed<span><span>5</span></span></div></a></div></nav>';
   document.body.innerHTML = `<div id="sticky-header-content" aria-hidden="true">${nav}</div><div id="normal-header">${nav}</div>`;
   const sticky = required(document.getElementById('sticky-header-content'));
@@ -216,14 +216,20 @@ it('keeps both native header copies counted and moves interactive totals to the 
   expect(targets).toHaveLength(2);
   hints.update(targets, '2 tests', { files: 3, additions: 11, deletions: 3 });
   for (const target of targets) counts.write(target.files, 3);
-  expect(sticky.querySelector('.geld-provider-header-stats')).toBeNull();
+  expect(sticky.querySelector('.geld-provider-header-stats')?.textContent).toContain('+11');
+  expect(sticky.querySelector<HTMLElement>('.geld-provider-header-stats')?.tabIndex).toBe(-1);
   expect(normal.querySelector('.geld-provider-header-stats')?.textContent).toContain('+11');
+  expect(normal.querySelector<HTMLElement>('.geld-provider-header-stats')?.tabIndex).toBe(0);
   expect([...document.querySelectorAll('[role="tab"]')].map(tab => tab.textContent)).toEqual(['Files changed3', 'Files changed3']);
-  sticky.setAttribute('aria-hidden', 'false');normal.setAttribute('aria-hidden', 'true');
+  normal.setAttribute('aria-hidden', 'true');
   hints.update(bitbucketHeaderTargets(document), '2 tests', { files: 3, additions: 11, deletions: 3 });
   expect(normal.querySelector('.geld-provider-header-stats')).toBeNull();
   expect(sticky.querySelector('.geld-provider-header-stats')?.textContent).toContain('+11');
-  expect(sticky.querySelector('.geld-provider-header-stats')?.closest('[aria-hidden="true"]')).toBeNull();
+  expect(sticky.getAttribute('aria-hidden')).toBe('true');
+  const wrapper = document.createElement('div');wrapper.setAttribute('aria-hidden', 'true');
+  sticky.before(wrapper);wrapper.append(sticky);
+  hints.update(bitbucketHeaderTargets(document), '2 tests', { files: 3, additions: 11, deletions: 3 });
+  expect(sticky.querySelector('.geld-provider-header-stats')).toBeNull();
   hints.clear();counts.restore();
   expect(document.querySelector('.geld-provider-header-stats')).toBeNull();
   expect([...document.querySelectorAll('[role="tab"]')].map(tab => tab.textContent)).toEqual(['Files changed5', 'Files changed5']);

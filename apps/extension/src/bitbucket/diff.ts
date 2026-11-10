@@ -151,8 +151,12 @@ export function bitbucketHeaderTargets(doc: Document): readonly ProviderHeaderTa
     if (files === null || count(files.textContent) === null || linked?.kind !== 'diff' || linked.url !== page.url) continue;
     const list = tab.parentElement;
     const nav = list?.parentElement;
+    const hidden = nav?.closest<HTMLElement>('[aria-hidden="true"]');
+    const presentationRoot = hidden?.id === 'sticky-header-content' && hidden.parentElement?.closest('[aria-hidden="true"]') === null ? hidden : null;
     const hint = list?.getAttribute('role') === 'tablist' && nav?.tagName === 'NAV' && nav.getAttribute('aria-label') === 'Pull request'
-      && nav.closest('[data-geld-ui], [hidden], [aria-hidden="true"], [inert], a, button, [role="tab"], [role="tablist"], [data-testid="comment"], [data-qa="pull-request-description"], [data-qa="pr-activity"], form, [contenteditable]') === null ? { hintHost: nav, hintBefore: null } : {};
+      && (hidden === null || presentationRoot !== null)
+      && nav.closest('[data-geld-ui], [hidden], [inert], a, button, [role="tab"], [role="tablist"], [data-testid="comment"], [data-qa="pull-request-description"], [data-qa="pr-activity"], form, [contenteditable]') === null
+      ? { hintHost: nav, hintBefore: null, ...(presentationRoot === null ? {} : { presentationRoot }) } : {};
     targets.push({ files, additions: null, deletions: null, hoverHosts: [tab], ...hint });
   }
   const heading = native(doc.querySelectorAll<HTMLElement>('#file-tree h5')).find((node) => node.textContent?.trim() === 'Lines updated');

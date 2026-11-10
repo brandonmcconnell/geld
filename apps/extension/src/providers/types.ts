@@ -128,6 +128,8 @@ export interface ProviderDiffView {
 export interface ProviderHeaderTarget {
   readonly hintHost?: HTMLElement;
   readonly hintBefore?: HTMLElement | null;
+  /** Verified visual duplicate whose native parent stays hidden from assistive technology. */
+  readonly presentationRoot?: HTMLElement;
   readonly additions: HTMLElement | null;
   readonly deletions: HTMLElement | null;
   readonly files: HTMLElement | null;

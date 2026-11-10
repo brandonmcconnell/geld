@@ -65,14 +65,14 @@ export async function verifyProviderUi(page, item, { provider, poll, patchSettin
   const overview = page.url();
   const changes = provider === 'gitlab' ? `${overview.split('?')[0]}/diffs?diff_id=2158520123` : `${overview.replace(/\/$/, '')}/diff`;
   if (provider === 'bitbucket') {
-    const link = await page.$('a#pull-request-tabs-1');assert.ok(link);await link.click();await link.dispose();
+    const link = await page.$('a#pull-request-tabs-1:not(#sticky-header-content a)');assert.ok(link);await link.click();await link.dispose();
   } else await page.goto(changes, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await poll(() => page.$('.geld-provider-category-header'), Boolean, 'File category headings', 45000);
   await poll(() => page.$('.geld-provider-header-stats'), Boolean, 'Adjusted header totals', 15000);
   await page.evaluate(() => scrollTo({ top: 0, behavior: 'instant' }));
   const files = await page.evaluate(() => {
     const rect = el => { const b = el.getBoundingClientRect();return { x: b.x, y: b.y, width: b.width, height: b.height, bottom: b.bottom, right: b.right }; };
-    const nav = document.querySelector('nav[aria-label="Pull request"]:has(> .geld-provider-header-stats)');
+    const nav = [...document.querySelectorAll('nav[aria-label="Pull request"]:has(> .geld-provider-header-stats)')].find(node => node.closest('#sticky-header-content') === null);
     return {
       flowCount: document.querySelectorAll('.geld-provider-flow-button').length,
       categories: [...document.querySelectorAll('.geld-provider-category-header')].map(el => ({ label: el.getAttribute('aria-label'), count: el.querySelector('.geld-provider-category-count')?.textContent, box: rect(el) })),
@@ -115,7 +115,7 @@ export async function verifyProviderUi(page, item, { provider, poll, patchSettin
     const totals = header.querySelector('nav > .geld-provider-header-stats');
     return { top: b.top, bottom: b.bottom, ariaHidden: header.getAttribute('aria-hidden'),
       visible: b.height > 0 && b.width > 0 && b.top < innerHeight && b.bottom > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0',
-      tabs: rect(header.querySelector('nav > [role="tablist"]')), totals: rect(totals), totalsText: totals?.textContent,
+      tabs: rect(header.querySelector('nav > [role="tablist"]')), totals: rect(totals), totalsText: totals?.textContent, totalsTabIndex: totals?.tabIndex,
       hits, headerInFront: hits.every(hit => hit.headerInFront) };
   });
   let stickyError;
@@ -134,6 +134,12 @@ export async function verifyProviderUi(page, item, { provider, poll, patchSettin
     assert.equal(stickyError, undefined, 'Compact header settles with adjusted counts');
   }
   if (sticky !== null) assert.equal(sticky.headerInFront, true, 'Native sticky header paints in front of the diff');
+  if (provider === 'bitbucket') {
+    assert.equal(sticky.ariaHidden, 'true');assert.equal(sticky.totalsTabIndex, -1, 'The native visual duplicate adds no tab stop');
+    await page.hover('#sticky-header-content nav > .geld-provider-header-stats');
+    await poll(() => page.evaluate(() => { const tooltip = document.getElementById('geld-provider-count-tooltip');return !!tooltip && !tooltip.hidden; }), Boolean, 'Compact header pointer popover', 5000);
+    await frame('sticky-popover');await page.keyboard.press('Escape');
+  }
   item.uiAcceptance = { digest, combined, focus, focusError, files, scroll, sticky, stickyError, frames };
   console.log(`PROVIDER_UI_META ${JSON.stringify({ provider, ...item.uiAcceptance })}`);
   assert.equal(focusError, undefined, 'View changes restore keyboard focus');
