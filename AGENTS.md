@@ -3562,3 +3562,6 @@ The provider image viewer also handles Escape inside its dialog before native pa
 
 A settled public MR can verify preserved round boundaries and source identities without containing unresolved work;
 report the Needs attention interaction as unverified in that case, never fabricate open items to satisfy browser acceptance.
+
+Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
+Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
