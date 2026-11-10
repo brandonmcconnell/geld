@@ -2612,6 +2612,13 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   A native discussion containing the owned machine note keeps its human replies and original location and resolution facts when that note is excluded from a summary.
   Format validation is separate from author, provider, repository, review and head trust.
   A native bot finding's source-link evidence uses its actual provider origin, full repository and review routes rather than GitHub-only URL patterns, so source-linked findings do not become false repository-access refusals.
+- **The ordinary GitLab CI template ships inert.**
+  Its first unconditional never rule excludes the job for every variable set, and it supplies no image identity or published component address.
+  Installers copy from a full reviewed commit into protected default-branch YAML, add their actual reviewed literal digest image and only then remove the initial disabled rule.
+  The job invokes only the bundled node runner, excludes YAML default inheritance, scripts, hooks and caches, downloads no previous-job artifacts and serializes by full target project and MR IID.
+  Context and target-shape rules do not authorize callers, and inherit:variables:false does not protect predefined, project or pipeline variables from precedence overrides.
+  The entire parent configuration, runner and entrypoint population must remain trusted, with only approved target identity variables accepted from orchestration.
+  Local parser/rules-contract tests and official syntax research do not establish GitLab CI-lint, a published image or authenticated execution.
 - **Native CI summaries require a separate publisher trust decision.**
   `trustedSummaryPublishers` binds a durable native account ID to one exact cloud repository in personal settings and cannot be supplied by repository configuration.
   The publisher may be a human token owner, and publisher trust never establishes a reviewer bot identity or grants AI access.

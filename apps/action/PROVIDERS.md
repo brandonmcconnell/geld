@@ -6,8 +6,10 @@ Its deterministic review items use the shared provider model, real source anchor
 Comment ownership is a durable user ID from the authenticated `/user` response, never a display name, marker or heading alone.
 Before updating a comment it reads the comment again and verifies the same owner and marker.
 
-The templates require a published trusted image, protected credentials, branch restrictions and a trusted trigger.
-No public CI component or named Pipe version is supplied yet.
+The ordinary GitLab template is an inert source configuration until its trusted copied YAML is configured with a real reviewed image digest and explicitly enabled.
+The Bitbucket example requires an operator-supplied trusted image.
+Both require protected credentials and trusted orchestration.
+No public CI component address, named Pipe version or published Geld image is supplied.
 
 ## Build
 
@@ -15,8 +17,10 @@ Run `pnpm --filter @geld/action build` to generate both standalone CommonJS bund
 The standalone bundle is copied by `Dockerfile.providers`.
 Use `apps/action` as the Docker build context and `Dockerfile.providers` as the Dockerfile.
 Supply a reviewed Node 20 or newer image pinned by immutable digest as the required `NODE_IMAGE` build argument.
-Build and inspect the image, then configure `GELD_TRUSTED_IMAGE` with its immutable digest.
-The GitLab job and Bitbucket custom pipeline use that prebuilt image and disable source checkout.
+Build and inspect the image, then put its real literal `image@sha256:<64 hex characters>` reference in the trusted copied GitLab template.
+Do not obtain that GitLab image from `GELD_TRUSTED_IMAGE` or any trigger/project variable.
+The Bitbucket custom-pipeline example separately uses `GELD_TRUSTED_IMAGE`.
+Both use the prebuilt runner and disable source checkout.
 The image's default command runs `/geld/provider.cjs`, while both job templates invoke it explicitly after their provider checks.
 
 ## Inputs
@@ -42,12 +46,56 @@ Bitbucket app passwords are not supported.
 HTTPS, response size bounds, schema checks, complete pagination, origin checks and head rechecks apply before writing.
 Authentication failures, incomplete data or a changed head fail the job and leave the previous summary intact.
 
+## Install the ordinary GitLab template
+
+Copy [`templates/gitlab-summary.yml`](templates/gitlab-summary.yml) from a **full reviewed Geld commit SHA** into `.gitlab/ci/geld-summary.yml` in your own protected default-branch repository.
+Copy [`examples/gitlab-ci.yml`](examples/gitlab-ci.yml) into that repository's `.gitlab-ci.yml`, or add its ordinary `include:local` to your trusted pipeline.
+Both files must be on the same branch; GitLab resolves the configuration before the job, independently of `GIT_STRATEGY: none`.
+Run this installation command from the target repository working directory; `-C /path/to/reviewed-geld` points at your separately reviewed Geld checkout.
+Replace `REVIEWED_FULL_COMMIT` with the actual full commit SHA you reviewed:
+
+```sh
+mkdir -p .gitlab/ci
+git -C /path/to/reviewed-geld show REVIEWED_FULL_COMMIT:apps/action/templates/gitlab-summary.yml > .gitlab/ci/geld-summary.yml
+```
+
+This is an installation-time copy, not a job checkout or a remotely published GitLab component.
+Do not follow a mutable branch/tag or copy review-branch configuration into a privileged job.
+The template uses the ordinary `test` stage; a trusted pipeline with custom stages must include that stage or deliberately adapt it.
+
+The copied template deliberately has **no image** and starts with an unconditional `when: never` rule.
+Nonempty target variables or an image variable cannot enable that shipped job.
+Before removing that first rule, add an `image` mapping directly to the trusted copied `geld-summary` job: `name` must be your actual reviewed literal image reference ending in `@sha256:` plus its 64-character lowercase hexadecimal digest, and `entrypoint` must be `[""]`.
+No example image identity is supplied because none has been published or audited here.
+A digest pins bytes; it does not establish publisher trust.
+An in-image check runs too late to establish pre-job image authority.
+Keep the remaining rules and literal `node /geld/provider.cjs` script, and review the resulting configuration before enabling it.
+
 ## Trusted execution and serialization
 
-Use the GitLab example only from the protected default branch.
-Keep the secret protected and masked, and trigger that branch from trusted orchestration with the target project path and MR IID.
-The `resource_group` serializes jobs for the review.
-Do not enable this privileged job in a merge request's own configuration or run arbitrary fork/source code before the runner.
+Use a protected default branch, protected masked `GELD_TOKEN`, and an audited ephemeral runner.
+The prepared rule admits only a nonempty default-branch context with `CI_COMMIT_REF_PROTECTED == "true"`, explicit `web`/`api`/`trigger`/`pipeline` sources, a positive MR IID and a conservative ASCII project path with nonempty slash-separated segments.
+These are context and target-shape checks, **not caller authorization** or proof that an arbitrary edited parent configuration is safe.
+Do not enable the job in an MR's own pipeline.
+The entire enclosing configuration, includes, runner hooks and any same-name job overrides must be trusted and reviewed.
+
+Restrict who may invoke each enabled entrypoint and who controls upstream/trigger projects and tokens.
+Use GitLab's **Minimum role to use pipeline variables** restriction for an appropriate trusted Maintainer/Owner population, and enforce an orchestration allowlist: callers may supply only the approved `GELD_REPOSITORY` and `GELD_REVIEW_NUMBER` target values.
+Validate the permitted projects/reviews in that trusted orchestration before creating the pipeline.
+Do not let callers override the image, token, provider/API origin, `CI_*`, `GIT_*`, `NODE_*`, shell/runtime variables or any other job settings.
+Pipeline variables have high precedence and can override predefined or job variables; the YAML rules and job variable declarations do not prevent that.
+Keep protected credentials out of trigger payloads and committed YAML.
+
+`inherit:default: false` excludes inherited default image, services, scripts, hooks, cache and artifact settings.
+Explicit empty before/after scripts, source hooks and cache avoid running inherited YAML commands or restoring its cache; `dependencies: []` prevents automatic earlier-job artifact downloads.
+`inherit:variables: false` excludes YAML default variables only; it does not remove or secure project/group/predefined/pipeline variables.
+These settings do not neutralize an untrusted parent job override or runner administrator configuration.
+The literal runner is bundled in the reviewed image, and `GIT_STRATEGY: none` avoids source checkout when the trusted invoker respects that configuration.
+The full target project path plus MR IID form the `resource_group`, serializing concurrent summaries for that review within the orchestration project.
+Use one such orchestration project for a target review; independent projects do not share a resource lock.
+
+The configuration forms follow GitLab's [YAML reference](https://docs.gitlab.com/ci/yaml/), [rules expressions](https://docs.gitlab.com/ci/jobs/job_rules/) and [pipeline-variable restrictions](https://docs.gitlab.com/ci/variables/#restrict-pipeline-variables).
+Local YAML/selection tests verify this template's contract; they are not GitLab CI-lint, image execution, credential authorization or authenticated note-write acceptance.
 
 For Bitbucket, restrict the `Geld summary` deployment environment to the trusted default branch before supplying credentials.
 Set `GELD_TRUSTED_BRANCH` to that branch and use the custom pipeline on it.
