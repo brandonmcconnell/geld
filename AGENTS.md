@@ -3030,6 +3030,8 @@ Witness-mutation failures retain only a fixed attribute and target kind, current
 After a Rapid whitespace reload, GitLab can place `streaming-element` directly under `data-diffs-list`, while the initial page nests it inside `data-stream-remaining-diffs`.
 The layout adapter recognizes both native structures, validates the same children and normal-flow constraints, and applies grouping through CSS without moving native files or controls.
 Treating the direct native stream as an unknown wrapper forced inline fallback: counts stayed correct while category-hidden file roots became visible.
+The independent two-cycle whitespace test gives each validated trusted input a separate mutation budget rather than accumulating unrelated earlier-cycle records.
+The two-input maximum, current-frame and actor checks, and the per-phase 4,096-record refusal remain in force, with the rejected phase recorded on overflow.
 
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
