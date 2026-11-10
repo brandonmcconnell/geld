@@ -5,6 +5,7 @@ import { fetchBitbucketReview } from './review';
 import { fetchBitbucketConfig } from './config';
 import { bitbucketActionHost, bitbucketDescriptionHost, bitbucketHeaderTargets, bitbucketReviewHost, readBitbucketDiff } from './diff';
 import { bitbucketAuthenticated, readBitbucketActions } from './actions';
+import { readBitbucketPendingReview } from './pending-review';
 import { bitbucketListRows } from './list-surfaces';
 import { fetchBitbucketListAuthors } from './list-authors';
 import { bitbucketConversationRoots, syncBitbucketNativeReviewState } from './conversation';
@@ -61,7 +62,7 @@ export const bitbucketAdapter: ProviderAdapter = {
   actionHost: bitbucketActionHost,
   fetchReview: async (page, signal, doc) => {
     const snapshot = await fetchBitbucketReview(page, signal);
-    return { ...snapshot, get input() { return syncBitbucketNativeReviewState(snapshot.input, doc); }, get actions() { return readBitbucketActions(doc, page); },
+    return { ...snapshot, get input() { return syncBitbucketNativeReviewState(snapshot.input, doc); }, get actions() { const pending = readBitbucketPendingReview(doc, page, snapshot.input.subject);return [...readBitbucketActions(doc, page), ...(pending === null ? [] : [pending])]; },
       get requirements() { return readBitbucketRequirements(page, doc); },
       renderComment: (comment, host) => renderBitbucketComment(comment, host, doc),
       sourceActions: (comment) => bitbucketThreadActions(comment, doc),

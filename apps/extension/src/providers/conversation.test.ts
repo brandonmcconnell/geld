@@ -8,7 +8,7 @@ import type { AiRunRecord } from '../lib/local-state';
 import type { AiCompleteRequest, AiEvaluateRequest } from '../lib/messages';
 import { ProviderConversation, providerReviewWithTrustedAccounts, reviewedItemFingerprint } from './conversation';
 import type { ProviderConversationServices } from './conversation';
-import type { ProviderAdapter, ProviderReviewPage, ProviderReviewSnapshot } from './types';
+import type { ProviderAdapter, ProviderReviewActionContext, ProviderReviewPage, ProviderReviewSnapshot } from './types';
 import type { ProviderSourceActionContext } from './review-panel';
 import { readGitLabBotRequests } from '../gitlab/bot-request';
 import type { ProviderBotRequest } from './bot-request';
@@ -735,5 +735,42 @@ describe('local reviewed source fingerprints', () => {
     const [second] = buildProviderReviewItems(reversed);
     if (first === undefined || second === undefined) throw new Error('Missing ordered source items.');
     expect(await reviewedItemFingerprint(ordered, first, [])).not.toBe(await reviewedItemFingerprint(reversed, second, []));
+  });
+});
+
+
+describe('scoped native review opener lifetime', () => {
+  function opener() {
+    let live = snapshot().input;let scope = 'native-one';let available = true;let context: ProviderReviewActionContext | undefined;
+    const first = vi.fn(async (value?: ProviderReviewActionContext) => { context = value;return value?.current() === true; });
+    const replacement = vi.fn(async () => true);let activate = first;
+    const source: ProviderReviewSnapshot = { ...snapshot(), get input() { return live; }, get actions(): ProviderReviewSnapshot['actions'] { return [{ kind: 'open-pending-review', scopeKey: scope, available, activate }]; } };
+    const native = document.createElement('header');document.body.append(native);
+    const mutablePage = { ...page, headSha: null, version: 'current' };
+    const f = fixture(source, {}, { aiEnabled: false, quickReview: true, prOverview: false }, { actionHost: () => native }, mutablePage);
+    const button = (): HTMLButtonElement | null => native.querySelector('.geld-provider-actions button');
+    return { ...f, native, mutablePage, button, first, replacement, scope: (next: string) => { scope = next; }, unavailable: () => { available = false; }, changeHead: () => { live = { ...live, subject: { ...live.subject, headSha: 'b'.repeat(40) } }; }, refreshSameHead: () => { live = { ...live, subject: { ...live.subject } }; }, changeHandler: () => { activate = replacement; }, context: () => context };
+  }
+  it('keeps the same keyboard-focused navigation button on harmless same-head refresh without another read', async () => {
+    const f = opener();await vi.waitFor(() => expect(f.button()).not.toBeNull());const button = f.button()!;button.focus();expect(button.textContent).toBe('Open pending review');
+    f.refreshSameHead();f.apply();expect(f.button()).toBe(button);expect(document.activeElement).toBe(button);expect(f.fetchReview).toHaveBeenCalledOnce();
+    button.click();await vi.waitFor(() => expect(f.first).toHaveBeenCalledOnce());expect(f.context()?.current()).toBe(true);expect(button.textContent).toBe('Open pending review');
+  });
+  it('does not adopt a new native owner or bootstrap scope at click time', async () => {
+    const f = opener();await vi.waitFor(() => expect(f.button()).not.toBeNull());const old = f.button()!;f.scope('native-two');old.click();expect(f.first).not.toHaveBeenCalled();
+    f.apply();expect(f.button()).not.toBe(old);old.click();expect(f.first).not.toHaveBeenCalled();f.button()!.click();await vi.waitFor(() => expect(f.first).toHaveBeenCalledOnce());
+  });
+  it('uses the original rendered descriptor for an unchanged scope rather than swapping its activation closure', async () => {
+    const f = opener();await vi.waitFor(() => expect(f.button()).not.toBeNull());f.changeHandler();f.button()!.click();await vi.waitFor(() => expect(f.first).toHaveBeenCalledOnce());expect(f.replacement).not.toHaveBeenCalled();
+  });
+  it('rejects a changed known API head before a render pass and retires the old control after reapply', async () => {
+    const f = opener();await vi.waitFor(() => expect(f.button()).not.toBeNull());const old = f.button()!;f.changeHead();old.click();expect(f.first).not.toHaveBeenCalled();f.apply();expect(f.button()).not.toBe(old);f.button()!.click();await vi.waitFor(() => expect(f.first).toHaveBeenCalledOnce());expect(f.context()?.current()).toBe(true);
+  });
+  it('retires a captured caller context when known head, owner, availability or lifecycle changes', async () => {
+    for (const drift of ['head', 'scope', 'availability', 'detached', 'route'] as const) {
+      const f = opener();await vi.waitFor(() => expect(f.button()).not.toBeNull());f.button()!.click();await vi.waitFor(() => expect(f.first).toHaveBeenCalledOnce());const context = f.context()!;expect(context.current()).toBe(true);
+      if (drift === 'head') f.changeHead();if (drift === 'scope') f.scope('other-owner');if (drift === 'availability') f.unavailable();if (drift === 'detached') f.native.remove();if (drift === 'route') f.apply({ ...f.mutablePage, number: '43', url: url.replace('/42', '/43') });
+      expect(context.current()).toBe(false);f.conversation.clear();
+    }
   });
 });

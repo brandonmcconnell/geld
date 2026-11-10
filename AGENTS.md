@@ -2760,6 +2760,17 @@ Owned outline keyboard focus can follow its exact control across a native TBODY 
 The installed whole-context phase requalifies the complete observed immutable response against its retained fixture digest and actual current native head, records unavailable authority explicitly, and never turns a retained D03 snapshot into proof about an unseen target.
 
 
+Bitbucket's source-backed pending mode replaces ordinary review actions with Discard Review and Finish Review, and Geld may expose only an Open pending review navigation control for the unique current original Finish Review button.
+Its source renders one literal Finish Review label plus an optional numeric badge of pending comments and tasks, so neither a full textContent equality check nor a badge inferred from published comments is valid.
+The pending branch does not inherit the ordinary approval controls' sticky tabindex=-1 prop, so unknown or multiple visible eligible triggers stay unavailable.
+The opener focuses and clicks only the original native trigger, preserves drafts and selection, and never selects status, submits, discards, appends or acknowledges a server review.
+A stable adapter-owned opaque action scope binds the known review snapshot head and original bootstrap node and bytes, header, parent and button, while shared activation refuses to adopt a different native owner at click time.
+A same-head refresh with unchanged native scope retains the owned keyboard control, and changed known heads, metadata, ownership, route or lifecycle retire stale descriptors.
+The boolean-only public bootstrap does not establish a durable viewer UUID or an unseen live native head, and this read-only opener must not become authority for future review mutations.
+Native comment source actions already schedule refresh on completion, while a pending-review opener's relay result is not a submitted or approved notification.
+The Finish Review component and localization evidence are source-only protocols until an authenticated native session verifies popup focus, Escape, drafts, errors and submission separately.
+
+
 `pnpm --filter @geld/extension test:browser` runs the installed Chrome extension against public provider pages after `build:chrome`.
 The `Installed browser tests` workflow uses a separate standard GitHub-hosted runner, read-only repository permissions and no provider credentials or publishing steps.
 Set `GELD_BROWSER_EXECUTABLE` to the Chrome executable and `GELD_BROWSER_ARTIFACTS` to the evidence directory when running it in an extension-enabled test environment.

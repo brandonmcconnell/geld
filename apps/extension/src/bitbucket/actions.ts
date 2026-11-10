@@ -4,7 +4,7 @@ import { describeBitbucketPage } from './page';
 const UNTRUSTED = '[data-geld-ui],[data-testid="comment"],[data-testid="comment-content"],[data-qa="pr-activity"],[data-qa="pull-request-description"]';
 const BLOCKED = '[hidden],[aria-hidden="true"],[inert],[aria-disabled="true"],[aria-readonly="true"],fieldset[disabled]';
 
-function nativeControl(control: HTMLButtonElement | HTMLInputElement): boolean {
+export function nativeControl(control: HTMLButtonElement | HTMLInputElement): boolean {
   if (!control.isConnected || control.disabled || control.hasAttribute('readonly') || control.closest(`${UNTRUSTED},${BLOCKED}`) !== null) return false;
   for (let node: HTMLElement | null = control; node !== null; node = node.parentElement) {
     const style = control.ownerDocument.defaultView?.getComputedStyle(node);
@@ -33,7 +33,7 @@ function currentPage(doc: Document, expected?: ProviderReviewPage): ProviderRevi
   return current !== null && (expected === undefined || current.url === expected.url) ? current : null;
 }
 
-function reviewHeader(doc: Document, page: ProviderReviewPage): HTMLElement | null {
+export function reviewHeader(doc: Document, page: ProviderReviewPage): HTMLElement | null {
   const headers = [...doc.querySelectorAll<HTMLElement>('[data-testid="pr-header"]')].filter((node) => node.closest(UNTRUSTED) === null);
   if (headers.length !== 1) return null;
   const header = headers[0];
@@ -68,7 +68,7 @@ function reviewButton(kind: 'approve' | 'request-changes', doc: Document, page: 
 }
 
 export function readBitbucketActions(doc: Document, expected?: ProviderReviewPage): readonly ProviderReviewAction[] {
-  const kinds: readonly ProviderReviewAction['kind'][] = ['approve', 'request-changes', 'comment'];
+  const kinds: readonly ('approve' | 'request-changes' | 'comment')[] = ['approve', 'request-changes', 'comment'];
   const page = currentPage(doc, expected);
   const visit = doc.URL.split('#')[0];
   return kinds.map((kind) => {
