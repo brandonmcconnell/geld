@@ -144,16 +144,16 @@ export function bitbucketHeaderTargets(doc: Document): readonly ProviderHeaderTa
   const page = describeBitbucketProviderPage(new URL(doc.URL));
   if (page === null) return [];
   const targets: ProviderHeaderTarget[] = [];
-  const tab = native(doc.querySelectorAll<HTMLElement>('a#pull-request-tabs-1[role="tab"]'))[0];
-  const files = tab?.querySelector<HTMLElement>(':scope > div > span > span');
-  let linked: ReturnType<typeof describeBitbucketPage> = null;
-  if (tab !== undefined) { try { linked = describeBitbucketPage(new URL(tab.getAttribute('href') ?? '', doc.URL)); } catch { linked = null; } }
-  if (files !== null && files !== undefined && count(files.textContent) !== null && linked?.kind === 'diff' && linked.url === page.url) {
-    const list = tab?.parentElement;
+  for (const tab of native(doc.querySelectorAll<HTMLElement>('a#pull-request-tabs-1[role="tab"]'))) {
+    const files = tab.querySelector<HTMLElement>(':scope > div > span > span');
+    let linked: ReturnType<typeof describeBitbucketPage> = null;
+    try { linked = describeBitbucketPage(new URL(tab.getAttribute('href') ?? '', doc.URL)); } catch { linked = null; }
+    if (files === null || count(files.textContent) === null || linked?.kind !== 'diff' || linked.url !== page.url) continue;
+    const list = tab.parentElement;
     const nav = list?.parentElement;
     const hint = list?.getAttribute('role') === 'tablist' && nav?.tagName === 'NAV' && nav.getAttribute('aria-label') === 'Pull request'
       && nav.closest('[data-geld-ui], [hidden], [aria-hidden="true"], [inert], a, button, [role="tab"], [role="tablist"], [data-testid="comment"], [data-qa="pull-request-description"], [data-qa="pr-activity"], form, [contenteditable]') === null ? { hintHost: nav, hintBefore: null } : {};
-    targets.push({ files, additions: null, deletions: null, hoverHosts: tab === undefined ? [] : [tab], ...hint });
+    targets.push({ files, additions: null, deletions: null, hoverHosts: [tab], ...hint });
   }
   const heading = native(doc.querySelectorAll<HTMLElement>('#file-tree h5')).find((node) => node.textContent?.trim() === 'Lines updated');
   const stats = heading?.parentElement?.parentElement;

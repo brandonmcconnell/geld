@@ -19,11 +19,14 @@ function nativeHeader(additions = 7): HTMLElement {
   header.innerHTML = `<span id="add" aria-label="Added ${additions} lines.">${additions} additions</span><span id="del">0 deletions</span><span id="files" title="2 files changed">2 files changed</span><div id="summary"></div>`;
   return header;
 }
-async function fixture(options: { readonly provider?: ReviewProvider; readonly unknownHead?: boolean; readonly namedCompare?: boolean } = {}) {
+async function fixture(options: { readonly provider?: ReviewProvider; readonly unknownHead?: boolean; readonly namedCompare?: boolean; readonly hints?: boolean } = {}) {
   const provider = options.provider ?? 'gitlab';
   let head = options.unknownHead === true ? null : 'a'.repeat(40);
   let filtered: ReadonlySet<string> = new Set();
   document.body.append(nativeHeader(), document.createElement('main'));
+  const hintHosts = [document.createElement('nav'), document.createElement('nav')];
+  if (options.hints) document.body.append(...hintHosts);
+  let hintHost = hintHosts[0]!;
   const describe = (url: URL): ProviderPage => {
     const origin = provider === 'gitlab' ? 'https://gitlab.com' : 'https://bitbucket.org';
     const repository = { provider, origin, path: 'acme/widgets' };
@@ -40,6 +43,7 @@ async function fixture(options: { readonly provider?: ReviewProvider; readonly u
   const adapter: ProviderAdapter = {
     id: provider, describe, readDiff, fetchDiff, listRows: () => [],
     headerTargets: () => [{ additions: document.getElementById('add'), deletions: document.getElementById('del'), files: document.getElementById('files'), accessibleSummaryHost: required(document.getElementById('summary')),
+      ...(options.hints ? { hintHost } : {}),
       labels: [{ host: required(document.getElementById('add')), attribute: 'aria-label', count: 'additions' }, { host: required(document.getElementById('files')), attribute: 'title', count: 'files' }] }],
   };
   const controller = new ProviderController(adapter, settings, () => undefined);
@@ -47,7 +51,7 @@ async function fixture(options: { readonly provider?: ReviewProvider; readonly u
   await vi.advanceTimersByTimeAsync(200);
   expect(controller.getTabState().visible).toEqual({ files: 1, additions: 2, deletions: 0 });
   expect(fetchDiff).toHaveBeenCalledTimes(1);
-  return { controller, fetchDiff, readDiff, changeHead: () => { head = 'c'.repeat(40); }, filterMain: () => { filtered = new Set(['src/main.ts']); } };
+  return { controller, fetchDiff, readDiff, hintHosts, moveHint: () => { hintHost = hintHosts[1]!;document.body.dataset.headerChanged = 'true'; }, changeHead: () => { head = 'c'.repeat(40); }, filterMain: () => { filtered = new Set(['src/main.ts']); } };
 }
 function remount(additions = 7): void { required(document.getElementById('header')).replaceWith(nativeHeader(additions)); }
 
@@ -73,6 +77,16 @@ it('rewrites remounted native text, labels and accessible summary in the mutatio
   expect(document.querySelector('#summary .geld-provider-accessible-counts')?.textContent).toBe('1 file changed. Added 2 lines. Removed 0 lines.');
   expect(fetchDiff).toHaveBeenCalledTimes(1);
   expect(geometry).not.toHaveBeenCalled();
+});
+
+it('moves settled hints before paint when the native compact header takes over without changing counts', async () => {
+  const { hintHosts, moveHint, fetchDiff } = await fixture({ hints: true });
+  expect(hintHosts[0]?.querySelector('.geld-provider-header-stats')).not.toBeNull();
+  moveHint();
+  await vi.advanceTimersByTimeAsync(20);
+  expect(hintHosts[0]?.querySelector('.geld-provider-header-stats')).toBeNull();
+  expect(hintHosts[1]?.querySelector('.geld-provider-header-stats')).not.toBeNull();
+  expect(fetchDiff).toHaveBeenCalledTimes(1);
 });
 
 it('keeps synchronous writes idempotent when the native framework repeatedly restores its own count text', async () => {

@@ -502,7 +502,7 @@ export class ProviderController {
 
   private snapshotHeaders(targets: readonly ProviderHeaderTarget[]): readonly HeaderSnapshot[] {
     return targets.map((target) => ({
-      nodes: [target.additions, target.deletions, target.files, target.accessibleSummaryHost, ...(target.labels ?? []).map((label) => label.host)],
+      nodes: [target.additions, target.deletions, target.files, target.accessibleSummaryHost, target.hintHost, target.hintBefore, ...(target.labels ?? []).map((label) => label.host)],
       values: JSON.stringify([
         target.additions?.textContent, target.deletions?.textContent, target.files?.textContent,
         target.accessibleSummaryHost?.querySelector('.geld-provider-accessible-counts')?.textContent,

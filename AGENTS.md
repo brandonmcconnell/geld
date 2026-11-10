@@ -3598,4 +3598,7 @@ GitLab's global SVG fill overrides presentation attributes, so owned outline gly
 Standalone Node integration tests that import the digest load raw SVG imports from the actual asset while omitting CSS, matching the browser bundle's asset contract.
 Flow belongs only in the overview digest toolbar, never in a native Files changed toolbar.
 Bitbucket's owned header counts share the verified native tab row as a flex sibling, because adding a second row changes the height assumed by its sticky header.
+Bitbucket keeps separate normal and compact header copies with duplicate tab IDs, so count targets include both and interactive hints follow whichever copy is exposed.
+Include hint hosts in settled-header snapshots so that this handoff repairs counts before the debounced full apply, even when the underlying file numbers are unchanged.
+The browser check waits for the compact header's transition and count handoff before inspecting its paint order.
 Installed UI acceptance checks that geometry and the sticky header's hit-test order after scrolling, alongside disclosures and category controls.

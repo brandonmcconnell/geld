@@ -102,24 +102,39 @@ export async function verifyProviderUi(page, item, { provider, poll, patchSettin
     return { tag: pane.tagName, before, after: pane.scrollTop, range: pane.scrollHeight - pane.clientHeight };
   });
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  const sticky = await page.evaluate(() => {
+  const readSticky = () => page.evaluate(() => {
     const header = document.querySelector('#sticky-header-content');
-    if (!header || header.getBoundingClientRect().height === 0 || getComputedStyle(header).visibility === 'hidden' || header.getAttribute('aria-hidden') === 'true') return null;
+    if (!header) return null;
     const b = header.getBoundingClientRect();
+    const style = getComputedStyle(header);
     const hits = [.2, .5, .8].flatMap(x => [.2, .5, .8].map(y => {
       const front = document.elementFromPoint(b.left + b.width * x, b.top + b.height * y);
       return { x, y, headerInFront: !!front && header.contains(front) };
     }));
-    return { top: b.top, bottom: b.bottom, hits, headerInFront: hits.every(hit => hit.headerInFront) };
+    const rect = el => { if (!el) return null;const r = el.getBoundingClientRect();return { x: r.x, y: r.y, right: r.right, bottom: r.bottom }; };
+    const totals = header.querySelector('nav > .geld-provider-header-stats');
+    return { top: b.top, bottom: b.bottom, ariaHidden: header.getAttribute('aria-hidden'),
+      visible: b.height > 0 && b.width > 0 && b.top < innerHeight && b.bottom > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0',
+      tabs: rect(header.querySelector('nav > [role="tablist"]')), totals: rect(totals), totalsText: totals?.textContent,
+      hits, headerInFront: hits.every(hit => hit.headerInFront) };
   });
-  console.log(`PROVIDER_UI_STAGE ${JSON.stringify({ provider, stage: 'sticky', scroll, sticky })}`);
+  let stickyError;
+  if (provider === 'bitbucket') {
+    try { await poll(readSticky, value => value?.visible && value.headerInFront && value.totals !== null, 'Compact header has settled with adjusted counts', 5000); }
+    catch (error) { stickyError = error.message; }
+  }
+  const sticky = await readSticky();
+  console.log(`PROVIDER_UI_STAGE ${JSON.stringify({ provider, stage: 'sticky', scroll, sticky, stickyError })}`);
   await frame('scrolled');
   if (provider === 'bitbucket') {
     assert.ok(scroll.after > 0, 'Bitbucket native content pane was scrolled');
-    assert.ok(sticky !== null, 'Bitbucket sticky header is visible after scrolling');
+    assert.ok(sticky?.visible, 'Bitbucket sticky header is visible after scrolling');
+    assert.ok(sticky.tabs && sticky.totals, 'Adjusted counts remain in the compact header');
+    assert.ok(sticky.totals.x >= sticky.tabs.right - 1 && sticky.totals.y >= sticky.tabs.y - 1 && sticky.totals.bottom <= sticky.tabs.bottom + 1, 'Compact counts share the right of the tab row');
+    assert.equal(stickyError, undefined, 'Compact header settles with adjusted counts');
   }
   if (sticky !== null) assert.equal(sticky.headerInFront, true, 'Native sticky header paints in front of the diff');
-  item.uiAcceptance = { digest, combined, focus, focusError, files, scroll, sticky, frames };
+  item.uiAcceptance = { digest, combined, focus, focusError, files, scroll, sticky, stickyError, frames };
   console.log(`PROVIDER_UI_META ${JSON.stringify({ provider, ...item.uiAcceptance })}`);
   assert.equal(focusError, undefined, 'View changes restore keyboard focus');
   return { verified: 'Installed digest toolbar, disclosure, icon view choice, counts, categories and sticky header', uiAcceptance: item.uiAcceptance };
