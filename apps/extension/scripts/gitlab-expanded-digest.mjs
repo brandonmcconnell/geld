@@ -19,6 +19,7 @@ export async function verifyExpandedGitLabDigest(page, item, { poll, patchSettin
       humanReviews: panel.querySelector('[data-geld-review-key="reviewers"]')?.textContent,
       duo: panel.querySelector('[data-geld-automated-reviewer="21826781"]')?.textContent,
       checks: panel.querySelector('[data-geld-review-key="requirements"]')?.textContent,
+      nativeChecks: [...document.querySelectorAll('#widget-state [data-testid="merge-checks-full"] [data-testid="merge-check"]')].map(row => row.querySelector('.gl-w-full.gl-min-w-0')?.textContent.trim()).filter(Boolean),
       commentRows: panel.querySelectorAll('[data-geld-comment-row]').length,
       body: panel.querySelector('[data-geld-source="note_4200027701"] .geld-provider-review__body')?.textContent,
       itemTitle: panel.querySelector('[data-geld-automated-reviewer="1786152"] .geld-provider-review__item-title')?.textContent,
@@ -27,10 +28,15 @@ export async function verifyExpandedGitLabDigest(page, item, { poll, patchSettin
       rawHtml: [...panel.querySelectorAll('.geld-provider-review__event .geld-provider-review__body')].some(body => /<\/?(?:a|p|span|div)\b/i.test(body.textContent)),
     };
   });
+  item.expandedDigest = { expanded };
+  console.log(`EXPANDED_DIGEST_STATE ${JSON.stringify(expanded)}`);
+  await page.$eval('.geld-provider-review', panel => panel.scrollIntoView({ block: 'start', behavior: 'instant' }));
+  const png = await page.screenshot({ path: resolve(artifacts, 'gitlab-expanded-digest.png'), fullPage: true, encoding: 'base64' });
+  console.log(`PROVIDER_UI_IMAGE ${JSON.stringify({ provider: 'gitlab', name: 'expanded-digest', png })}`);
   assert.match(expanded.duo ?? '', /Approved/);
   assert.doesNotMatch(expanded.humanReviews ?? '', /GitLabDuo|GitLab Duo/);
-  assert.match(expanded.checks ?? '', /Open threads must be resolved/);
-  assert.match(expanded.checks ?? '', /All required approvals must be given/);
+  assert.ok(expanded.nativeChecks.length > 0, 'The native widget supplies current merge requirements');
+  for (const label of expanded.nativeChecks) assert.ok(expanded.checks?.includes(label), `The digest represents the current native requirement: ${label}`);
   assert.ok(expanded.commentRows >= 3, 'Each represented comment has a nested disclosure');
   assert.match(expanded.body ?? '', /👋/);
   assert.doesNotMatch(expanded.itemTitle ?? '', /:wave:/);
@@ -38,12 +44,11 @@ export async function verifyExpandedGitLabDigest(page, item, { poll, patchSettin
   assert.ok(expanded.represented.every(note => note.folded), 'Digest mode folds every represented native entry');
   assert.ok(expanded.activityGroups.length > 1, 'Native activity is separated by type');
   assert.equal(expanded.rawHtml, false, 'System activity uses rendered native markup');
-  await page.$eval('.geld-provider-review', panel => panel.scrollIntoView({ block: 'start', behavior: 'instant' }));
-  await page.screenshot({ path: resolve(artifacts, 'gitlab-expanded-digest.png'), fullPage: true });
   // An explicit Digest choice must override a previous request to reveal originals.
   await page.evaluate(() => { location.hash = 'note_4200027701'; });
   await poll(() => page.$eval('#note_4200027701', note => note.closest('[data-geld-provider-native-find="folded"]') === null), Boolean, 'Original thread restored through its native link', 15000);
-  await page.$eval('[data-geld-digest-view="digest"]', button => button.click());
+  await page.click('[data-geld-toolbar-control="eye"]');
+  await page.click('[data-geld-digest-view="digest"]');
   await poll(() => page.$eval('#note_4200027701', note => note.closest('[data-geld-provider-native-find="folded"]') !== null), Boolean, 'Digest choice folds the revealed thread again', 15000);
   const description = await page.evaluate(() => {
     const heading = document.querySelector('[data-geld-provider-description-heading]');

@@ -1508,6 +1508,12 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     });
     const sources = [...input.threads.flatMap(thread => thread.comments), ...(options.comments ?? [])];
     const nativeSignatures = sources.map(nativeSourceSignature);
+    const eventSignatures = options.renderEvent === undefined ? null : (options.events ?? []).map(event => {
+      let anchor: string;
+      try { anchor = new URL(event.url).hash.slice(1); } catch { return null; }
+      const root = doc.getElementById(anchor);
+      return root === null || root.closest('[data-geld-ui]') !== null ? null : [event.id, root.innerHTML];
+    });
     const actionSignatures = sources.map(comment => {
       try { return options.actionsForSource?.(comment).map(action => [action.kind, action.label, action.available, action.reason]); }
       catch { return null; }
@@ -1515,7 +1521,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     let derived: readonly unknown[] | null = null;
     try { derived = [buildProviderBotVerdicts(input, options.comments ?? []), options.transformItems?.(buildProviderReviewItems(input))]; } catch { /* Invalid input follows the unavailable rendering path. */ }
     const route = new URL(doc.URL);route.hash = '';
-    const common = [route.href, (options.agentNotes ?? []).map(note => [note.id, note.signature]), options.comments, options.events, options.references, options.complete, options.unavailable, options.suggestedFixes, options.reviewGrouping, options.hasViewChoice, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, requestSignature, commentSignatures, nativeSignatures, actionSignatures, derived, options.onOpenSettings !== undefined, options.onGrouping !== undefined, options.renderComment !== undefined];
+    const common = [route.href, (options.agentNotes ?? []).map(note => [note.id, note.signature]), options.comments, options.events, options.references, options.complete, options.unavailable, options.suggestedFixes, options.reviewGrouping, options.hasViewChoice, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, requestSignature, commentSignatures, nativeSignatures, eventSignatures, actionSignatures, derived, options.onOpenSettings !== undefined, options.onGrouping !== undefined, options.renderComment !== undefined];
     const conversationData = (value: ProviderReviewInput | undefined): unknown => value === undefined ? null : [value.subject, value.threads, value.bots, value.complete, value.closed];
     const conversationSignature = JSON.stringify([common, conversationData(input), conversationData(options.sourceInput)]);
     const signature = JSON.stringify([common, input, options.sourceInput, options.reviewerControls?.available, options.approvalsRequired, options.approvalsLeft, options.requirements]);

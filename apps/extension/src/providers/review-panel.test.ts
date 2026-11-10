@@ -1365,3 +1365,17 @@ it('groups human comments into nested push rounds and separates activity types',
   expect(panel.element.querySelector('[data-geld-review-key="activity:Commits"] [data-geld-event="push"]')).not.toBeNull();
   expect(panel.element.querySelector('[data-geld-review-key="activity:Assignments"] [data-geld-event="assignment"]')).not.toBeNull();
 });
+
+it('refreshes formatted system activity when its native body hydrates without changing API data', () => {
+  const event = { id: '9', url: `${reviewUrl}#note_9`, author: comment('9').author, body: '<a>requested review</a>', createdAt: comment('9').createdAt };
+  const renderEvent = (_event: ProviderReviewPanelEvent, target: HTMLElement): boolean => {
+    const native = document.getElementById('note_9');if (native === null) return false;
+    target.textContent = native.textContent;return true;
+  };
+  const options = { events: [event], renderEvent };
+  const panel = renderProviderReviewPanel(host(), input(), options);
+  const native = document.createElement('div');native.id = 'note_9';native.textContent = 'requested review from Reviewer';document.body.append(native);
+  panel.update(input(), options);
+  expect(panel.element.querySelector('[data-geld-event="9"]')?.textContent).toContain('requested review from Reviewer');
+  expect(panel.element.querySelector('[data-geld-event="9"]')?.textContent).not.toContain('<a>');
+});
