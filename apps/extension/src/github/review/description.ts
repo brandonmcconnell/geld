@@ -65,6 +65,14 @@ const ATTR_TOOLS = 'data-geld-desc-tools';
 const ATTR_TOOL = 'data-geld-desc-tool';
 /** The flex `order` that puts the tools' content after the author's. Mirrored in style.css. */
 const ORDER_PROPERTY = '--geld-desc-order';
+/** On an indented block that is its own scroll container (a bare `<pre>`): Geld's carrier before it draws its rails. */
+const ATTR_SCROLLER = 'data-geld-desc-scroller';
+/** On the carrier of an agent's block, which is lowered with the agents (`liftReactions`). */
+const ATTR_CARRIER_AGENT = 'data-geld-desc-carrier-agent';
+/** On an unwrapped image link that stands on the line of the one before it, inside that one's rails. */
+const ATTR_BESIDE = 'data-geld-desc-beside';
+const CARRIER_CLASS = 'geld-desc-carrier';
+const CLIPPING_OVERFLOW: ReadonlySet<string> = new Set(['auto', 'scroll', 'hidden', 'clip']);
 const RAIL_PROPERTIES = ['--geld-desc-depth', '--geld-desc-rails', '--geld-desc-rail-pos', '--geld-desc-rail-size', '--geld-desc-edge'] as const;
 
 /** One level of indentation, and the chevron's centre within it. Mirrored in style.css (description outline). */
@@ -558,6 +566,8 @@ function keepMetaRoom(body: HTMLElement): void {
 
 function measure(body: HTMLElement): void {
   clearCut(body);
+  measureCarriers(body);
+  markBeside(body);
   keepMetaRoom(body);
   const author = blocksOf(body).filter((block) => !block.hasAttribute(ATTR_AGENT) && !block.hasAttribute(ATTR_TOOL) && !block.hasAttribute(ATTR_BLANK));
   const top = body.getBoundingClientRect().top;
@@ -593,12 +603,14 @@ function observe(body: HTMLElement): void {
     if (observed === null) return;
     // The body and the reactions row both move what `measure` reads; one reading serves the batch.
     if (entries.some((entry) => entry.target === observed || entry.target === observedRow)) measure(observed);
+    else if (entries.some((entry) => entry.target instanceof HTMLElement && observedScrollers.has(entry.target))) measureCarriers(observed);
   });
   if (observed !== body) {
     if (observed !== null) resizeObserver.unobserve(observed);
     observed = body;
     resizeObserver.observe(body);
   }
+  watchScrollers(body);
   // GitHub replaces the row when a reaction lands; the new one is observed, and observing it is a first reading.
   const row = reactionsRowOf(body)?.row ?? null;
   if (row === observedRow) return;
@@ -655,7 +667,9 @@ const RAIL_LINE = 'linear-gradient(var(--geld-desc-rail), var(--geld-desc-rail))
 function dressRails(block: HTMLElement, rails: BlockRails | null): void {
   if (rails === null) {
     setFlag(block, ATTR_DEPTH, null);
+    setFlag(block, ATTR_BESIDE, null);
     for (const name of RAIL_PROPERTIES) setProperty(block, name, null);
+    dressCarrier(block, null);
     return;
   }
   setFlag(block, ATTR_DEPTH, String(rails.depth));
@@ -672,10 +686,90 @@ function dressRails(block: HTMLElement, rails: BlockRails | null): void {
       ? null
       : lines.map((rail) => (rail.kind === 'through' ? '1px 100%' : rail.kind === 'end' ? '1px calc(100% - var(--geld-desc-after) - 1px)' : '1px calc(100% - var(--geld-desc-chevron-y))')).join(', '),
   );
+  const style = lines.length === 0 ? null : getComputedStyle(block);
   // The rails' ::before is placed from the padding edge, so a left border (an alert's, a quote's) would push them
   // right of the heading's. Chrome snaps that border to device pixels, so only its used width lines them up.
-  const edge = lines.length === 0 ? '0px' : getComputedStyle(block).borderLeftWidth;
+  const edge = style?.borderLeftWidth ?? '0px';
   setProperty(block, '--geld-desc-edge', edge === '0px' ? null : edge);
+  // The cut clips the block it runs through, so while it does, whether the block scrolls of itself is what it was.
+  const scrolls = style !== null && (block.hasAttribute(ATTR_CUT_EDGE) ? block.hasAttribute(ATTR_SCROLLER) : CLIPPING_OVERFLOW.has(style.overflowX) || CLIPPING_OVERFLOW.has(style.overflowY));
+  dressCarrier(block, scrolls ? style : null);
+}
+
+/**
+ * A block that scrolls of itself clips its `::before` and scrolls the run past its bottom, and must keep scrolling its
+ * lines, so a carrier of Geld's stands just before it and draws its rails instead, laid out with it (the same flex
+ * `order`, and lowered with the agents). Where it starts and how far it runs are read by `measureCarriers`.
+ */
+function dressCarrier(block: HTMLElement, style: CSSStyleDeclaration | null): void {
+  const previous = block.previousElementSibling;
+  const existing = previous instanceof HTMLElement && previous.classList.contains(CARRIER_CLASS) ? previous : null;
+  setFlag(block, ATTR_SCROLLER, style === null ? null : '');
+  if (style === null) {
+    existing?.remove();
+    return;
+  }
+  const carrier = existing ?? createElement('div', { class: CARRIER_CLASS, 'aria-hidden': 'true', [OWN_UI_ATTRIBUTE]: '' });
+  if (existing === null) block.before(carrier);
+  for (const name of RAIL_PROPERTIES) setProperty(carrier, name, block.style.getPropertyValue(name) || null);
+  setProperty(carrier, '--geld-desc-after', style.getPropertyValue('--geld-desc-after').trim() || null);
+  setProperty(carrier, 'order', style.order === '0' ? null : style.order);
+  setFlag(carrier, ATTR_CARRIER_AGENT, block.hasAttribute(ATTR_AGENT) ? '' : null);
+}
+
+/**
+ * Where each carrier's rails start and how far they run: from its block's padding edge through its padding box and the
+ * gap below it, as the block's own `::before` would have. Read in the resize observer, never on the apply path; reads first, then writes.
+ */
+function measureCarriers(body: HTMLElement): void {
+  const spans = [...body.querySelectorAll<HTMLElement>(`:scope > [${ATTR_SCROLLER}]`)].flatMap((block) => {
+    const carrier = block.previousElementSibling;
+    if (!(carrier instanceof HTMLElement) || !carrier.classList.contains(CARRIER_CLASS)) return [];
+    const style = getComputedStyle(block);
+    const box = block.getBoundingClientRect();
+    const top = box.top + pixels(style.borderTopWidth) - carrier.getBoundingClientRect().top;
+    const after = style.getPropertyValue('--geld-desc-after').trim() || null;
+    return [{ carrier, top, height: box.height - pixels(style.borderTopWidth) - pixels(style.borderBottomWidth), after }];
+  });
+  for (const { carrier, top, height, after } of spans) {
+    setProperty(carrier, '--geld-desc-carry-top', `${top}px`);
+    setProperty(carrier, '--geld-desc-carry-height', `${Math.max(0, height)}px`);
+    setProperty(carrier, '--geld-desc-after', after);
+  }
+}
+
+/**
+ * Unwrapped image links side by side share a line, and the second's rails would stand between the two pictures; one
+ * that wrapped, or any in the agents' column, starts a line of its own and keeps them. Reads first, then writes.
+ */
+function markBeside(body: HTMLElement): void {
+  const links = [...body.querySelectorAll<HTMLElement>(`:scope > a[${ATTR_DEPTH}]`)];
+  const beside = links.map((link) => {
+    const previous = link.previousElementSibling;
+    if (!(previous instanceof HTMLElement) || previous.tagName !== 'A' || !previous.hasAttribute(ATTR_DEPTH)) return false;
+    const before = previous.getBoundingClientRect();
+    const box = link.getBoundingClientRect();
+    return before.height > 0 && box.height > 0 && before.top < box.bottom - 1 && box.top < before.bottom - 1;
+  });
+  links.forEach((link, index) => setFlag(link, ATTR_BESIDE, beside[index] === true ? '' : null));
+}
+
+const observedScrollers = new Set<HTMLElement>();
+
+/** A scrolling block can change size while the body does not (a scrollbar comes or goes), so each is observed too. */
+function watchScrollers(body: HTMLElement): void {
+  if (resizeObserver === null) return;
+  const now = new Set(body.querySelectorAll<HTMLElement>(`:scope > [${ATTR_SCROLLER}]`));
+  for (const block of observedScrollers) {
+    if (now.has(block)) continue;
+    resizeObserver.unobserve(block);
+    observedScrollers.delete(block);
+  }
+  for (const block of now) {
+    if (observedScrollers.has(block)) continue;
+    resizeObserver.observe(block);
+    observedScrollers.add(block);
+  }
 }
 
 /**
@@ -799,10 +893,11 @@ function applyTo(body: HTMLElement): void {
   const lastShown = trailed ? blocks.findLastIndex((_, index) => !hidden.has(index)) : -1;
   for (const block of all) setFlag(block, ATTR_LAST, block === blocks[lastShown] ? '' : null);
   const rails = railsOf(blocks.length, outline, hidden, (heading) => openNow.get(heading.index) ?? true);
+  // `dressRails` reads styles the stylesheet keys on this flag (a block's overflow, its gap), so it stands first.
+  setFlag(body, ATTR_ON, '');
   blocks.forEach((block, index) => {
     if (block instanceof HTMLElement) dressRails(block, rails.get(index) ?? null);
   });
-  setFlag(body, ATTR_ON, '');
   // Folded or not, the description is cut while taller than the cap: a long run of text before a heading near the end
   // folds nothing. Opening a section lifts the cut, so it never hides what the reader opened.
   const cut = state.capped;
@@ -818,6 +913,8 @@ function release(): void {
   wiring = { signal: new AbortController(), blocks: new WeakSet(), bodies: new WeakSet(), buttons: new WeakSet() };
   if (observed !== null) resizeObserver?.unobserve(observed);
   if (observedRow !== null) resizeObserver?.unobserve(observedRow);
+  for (const block of observedScrollers) resizeObserver?.unobserve(block);
+  observedScrollers.clear();
   observed = null;
   observedRow = null;
 }
@@ -837,7 +934,7 @@ function clear(): void {
       element.style.removeProperty(META_ROOM_PROPERTY);
     }
   }
-  for (const element of document.querySelectorAll(`.${TOGGLE_CLASS}, .${MORE_CLASS}, .${AGENTS_CLASS}, .${AGENT_CLASS}`)) element.remove();
+  for (const element of document.querySelectorAll(`.${TOGGLE_CLASS}, .${MORE_CLASS}, .${AGENTS_CLASS}, .${AGENT_CLASS}, .${CARRIER_CLASS}`)) element.remove();
   for (const element of document.querySelectorAll(`[${ATTR_AGENT}]`)) {
     if (element instanceof HTMLElement) element.style.removeProperty(ORDER_PROPERTY);
   }
@@ -851,7 +948,7 @@ function clear(): void {
   for (const element of document.querySelectorAll(`[${ATTR_CUT_EDGE}]`)) {
     if (element instanceof HTMLElement) element.style.removeProperty(CUT_HEIGHT_PROPERTY);
   }
-  for (const name of [ATTR_TOOLS, ATTR_TOOL, ATTR_FOLD, ATTR_CUT, ATTR_CUT_EDGE, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG, ATTR_ON, ATTR_DEPTH, ATTR_BLANK, ATTR_AGENTS, ATTR_AGENT, ATTR_AGENT_HIDDEN, ATTR_LAST]) {
+  for (const name of [ATTR_TOOLS, ATTR_TOOL, ATTR_FOLD, ATTR_CUT, ATTR_CUT_EDGE, ATTR_HEADING, ATTR_KEY, ATTR_CAP, ATTR_LONG, ATTR_ON, ATTR_DEPTH, ATTR_SCROLLER, ATTR_BESIDE, ATTR_BLANK, ATTR_AGENTS, ATTR_AGENT, ATTR_AGENT_HIDDEN, ATTR_LAST]) {
     for (const element of document.querySelectorAll(`[${name}]`)) element.removeAttribute(name);
   }
 }

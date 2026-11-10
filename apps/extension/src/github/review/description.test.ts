@@ -371,6 +371,74 @@ describe('shortenDescription', () => {
     expect(body.querySelector('[data-geld-desc-carry]')).toBeNull();
   });
 
+  it('has Geld’s carrier draw the rails of a block that scrolls of itself, measured off the apply path', async () => {
+    // A bare `<pre>` (raw HTML, not a fence) is its own scroll container, and would clip and scroll rails drawn inside it.
+    const body = mountDescription(`${h(2, 'Notes')}<pre style="overflow-x: auto; overflow-y: auto">a long line</pre><p>after</p>${h(2, 'More')}<p>more</p>`);
+    const [heading, pre, after, more] = [...body.children];
+    if (heading === undefined || !(pre instanceof HTMLElement) || !(after instanceof HTMLElement) || !(more instanceof HTMLElement)) throw new Error('no blocks');
+    layOut(body, new Map([[heading, 40], [pre, 60], [after, 20], [more, 40]]));
+    shortenDescription(true);
+    const carrier = pre.previousElementSibling;
+    if (!(carrier instanceof HTMLElement)) throw new Error('no carrier');
+    expect(carrier.classList.contains('geld-desc-carrier')).toBe(true);
+    expect(pre.hasAttribute('data-geld-desc-scroller')).toBe(true);
+    expect(after.hasAttribute('data-geld-desc-scroller')).toBe(false);
+    expect(carrier.style.getPropertyValue('--geld-desc-rails')).toBe(pre.style.getPropertyValue('--geld-desc-rails'));
+    expect(carrier.style.getPropertyValue('--geld-desc-rail-pos')).toBe(pre.style.getPropertyValue('--geld-desc-rail-pos'));
+    // Nothing is measured while dressing: the height comes from the measure a heading click runs (and the observer).
+    expect(carrier.style.getPropertyValue('--geld-desc-carry-height')).toBe('');
+    more.querySelector<HTMLElement>('.geld-desc-toggle')?.click();
+    await frames();
+    await frame();
+    const measured = pre.previousElementSibling;
+    expect(measured instanceof HTMLElement ? measured.style.getPropertyValue('--geld-desc-carry-height') : null).toBe('60px');
+    shortenDescription(false);
+    expect(body.querySelector('.geld-desc-carrier')).toBeNull();
+    expect(pre.hasAttribute('data-geld-desc-scroller')).toBe(false);
+  });
+
+  it('reads a block’s styles with the body flagged, on the very first pass', async () => {
+    // The stylesheet keys these on `[data-geld-desc]`: a plain fence's wrapper is visible there, and the gap is 16px.
+    const sheet = document.createElement('style');
+    sheet.textContent =
+      '.snippet { overflow-x: auto; overflow-y: auto } [data-geld-desc] > .snippet { overflow-x: visible; overflow-y: visible } [data-geld-desc] > * { --geld-desc-after: 16px }';
+    document.head.append(sheet);
+    try {
+      const body = mountDescription(`${h(2, 'Notes')}<div class="snippet"><pre>plain fence</pre></div><pre style="overflow-x: auto; overflow-y: auto">raw</pre><p>after</p>${h(2, 'More')}<p>more</p>`);
+      const [heading, snippet, pre, after, more] = [...body.children];
+      if (heading === undefined || !(snippet instanceof HTMLElement) || !(pre instanceof HTMLElement) || after === undefined || !(more instanceof HTMLElement)) throw new Error('no blocks');
+      layOut(body, new Map([[heading, 40], [snippet, 50], [pre, 60], [after, 20], [more, 40]]));
+      shortenDescription(true);
+      expect(snippet.hasAttribute('data-geld-desc-scroller')).toBe(false);
+      expect(pre.hasAttribute('data-geld-desc-scroller')).toBe(true);
+      expect(body.querySelectorAll('.geld-desc-carrier')).toHaveLength(1);
+      more.querySelector<HTMLElement>('.geld-desc-toggle')?.click();
+      await frames();
+      await frame();
+      const carrier = pre.previousElementSibling;
+      expect(carrier instanceof HTMLElement ? carrier.style.getPropertyValue('--geld-desc-after') : null).toBe('16px');
+    } finally {
+      sheet.remove();
+    }
+  });
+
+  it('keeps the rails of an unwrapped image that starts its own line, and drops those of one beside the one before', async () => {
+    const body = mountDescription(`${h(2, 'Shots')}<a href="#a"><img src="a.png"></a><a href="#b"><img src="b.png"></a><a href="#c"><img src="c.png"></a>${h(2, 'More')}<p>more</p>`);
+    const [heading, first, second, third, more] = [...body.children];
+    if (heading === undefined || first === undefined || second === undefined || third === undefined || !(more instanceof HTMLElement)) throw new Error('no blocks');
+    // The second stands beside the first; the third wrapped to a line of its own.
+    const rects = new Map<Element, DOMRect>([[heading, new DOMRect(0, 0, 600, 40)], [first, new DOMRect(0, 40, 200, 150)], [second, new DOMRect(220, 40, 200, 150)], [third, new DOMRect(0, 190, 200, 150)], [more, new DOMRect(0, 340, 600, 40)]]);
+    Object.defineProperty(body, 'getBoundingClientRect', { configurable: true, value: () => new DOMRect(0, 0, 600, 0) });
+    for (const [block, rect] of rects) Object.defineProperty(block, 'getBoundingClientRect', { configurable: true, value: () => rect });
+    shortenDescription(true);
+    more.querySelector<HTMLElement>('.geld-desc-toggle')?.click();
+    await frames();
+    await frame();
+    expect([first, second, third].map((link) => link.hasAttribute('data-geld-desc-beside'))).toEqual([false, true, false]);
+    shortenDescription(false);
+    expect(body.querySelector('[data-geld-desc-beside]')).toBeNull();
+  });
+
   it('cuts only the author’s text at 500px, the agents’ summaries below it untouched, and opening an agent keeps the cut', async () => {
     const body = mountDescription(
       `<p>one</p><p>two</p><p>three</p>${h(2, 'Summary by CodeRabbit')}<ul><li>Bug fixes</li></ul>`,
