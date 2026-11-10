@@ -391,6 +391,9 @@ jobs:
             --app_version "$version" \
             --skip_screenshots --skip_metadata false \
             --release_notes "$(jq -n --arg n "$NOTES" '{"en-US":$n}')" \
+            --subtitle "$(jq -n --rawfile t ../../store/listing/subtitle.txt '{"en-US":($t | rtrimstr("\n"))}')" \
+            --description "$(jq -n --rawfile t ../../store/listing/description.txt '{"en-US":($t | rtrimstr("\n"))}')" \
+            --promotional_text "$(jq -n --rawfile t ../../store/listing/promotional-text.txt '{"en-US":($t | rtrimstr("\n"))}')" \
             --app_review_information "$review_information" \
             --submission_information '{"export_compliance_uses_encryption":false,"export_compliance_encryption_updated":false,"add_id_info_uses_idfa":false}' \
             --run_precheck_before_submit false \

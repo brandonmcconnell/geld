@@ -57,6 +57,7 @@ Each App Store version is released once, so new Safari code needs a new `version
 The pattern catalog is signed and committed by CI on push (`GELD_CATALOG_PRIVATE_KEY` to sign, `CATALOG_DEPLOY_KEY` — a write deploy key — to push, with "Deploy keys" on the ruleset bypass list).
 Zips built by CI carry a four-part version (`package.json` version + run number, via `GELD_BUILD_NUMBER` in `wxt.config.ts`), so no bump commit is needed between store releases.
 Credentials and listing assets: `apps/extension/store/PUBLISHING.md`.
+The listing copy for every store is in `apps/extension/store/listing/`: Firefox and the App Store take it from there by API (the `Store listings` workflow, and each Safari submission), Chrome and Edge by hand.
 \n\n
 Releases: every push to `main` that touches the extension (apps/extension, apps/action, packages/core, packages/review, assets/brand, the lockfile, or the workflow) publishes a GitHub Release from CI, tagged `v{version}-build.{run}` with one zip per browser plus `-sources.zip` for Firefox review, auto-generated notes (editable afterwards) and marked latest;
 the site's install buttons read `/releases/latest`.

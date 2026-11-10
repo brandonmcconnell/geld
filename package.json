@@ -36,7 +36,7 @@
     "docs:lines": "tsx scripts/doc-lines.ts",
     "docs:lines:check": "tsx scripts/doc-lines.ts --check",
     "test": "pnpm -r run test && pnpm test:scripts",
-    "test:scripts": "node --test scripts/cla.test.mjs",
+    "test:scripts": "node --test scripts/cla.test.mjs apps/extension/scripts/publish/amo-previews.test.mjs",
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",
     "dev:dashboard": "pnpm --filter @geld/dashboard dev",
