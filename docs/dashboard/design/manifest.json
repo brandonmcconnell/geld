@@ -299,6 +299,39 @@
       "route": "/not-a-dashboard-page"
     },
     {
+      "name": "queue-digest-stale",
+      "label": "queue digest stale",
+      "file": "desktop/queue-digest-stale.png",
+      "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/"
+    },
+    {
+      "name": "queue-digest-missing",
+      "label": "queue digest missing",
+      "file": "desktop/queue-digest-missing.png",
+      "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/"
+    },
+    {
+      "name": "queue-digest-partial",
+      "label": "queue digest partial",
+      "file": "desktop/queue-digest-partial.png",
+      "group": "desktop",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "route": "/"
+    },
+    {
       "name": "not-found-short",
       "label": "Page not found on a short screen",
       "file": "desktop/not-found-short.png",
@@ -1331,6 +1364,39 @@
         "height": 844
       },
       "route": "/not-a-dashboard-page"
+    },
+    {
+      "name": "queue-digest-stale",
+      "label": "queue digest stale",
+      "file": "mobile/queue-digest-stale.png",
+      "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/"
+    },
+    {
+      "name": "queue-digest-missing",
+      "label": "queue digest missing",
+      "file": "mobile/queue-digest-missing.png",
+      "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/"
+    },
+    {
+      "name": "queue-digest-partial",
+      "label": "queue digest partial",
+      "file": "mobile/queue-digest-partial.png",
+      "group": "mobile",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "route": "/"
     },
     {
       "name": "not-found-short",

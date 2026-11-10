@@ -219,6 +219,30 @@ async function configure(context, state = {}) {
       const extraHiddenFiles = pull?.draft ? 1 : 2;
       data = {
         headSha: pull?.headSha ?? fixture.review.pull.headSha,
+        digest:
+          state.queueDigestMissing || pull?.ref.provider !== 'github'
+            ? null
+            : state.queueDigestStale
+              ? { state: 'stale' }
+              : {
+                  state: 'current',
+                  open: pull.ref.number === 127 ? 0 : 2,
+                  needsReply: pull.ref.number === 128 ? 1 : 0,
+                  approvals: pull.ref.number === 124 ? 0 : 1,
+                  changesRequested: pull.ref.number === 124 ? 1 : 0,
+                  partial: !!state.queueDigestPartial,
+                  bots:
+                    pull.ref.number === 124
+                      ? [{ id: 'greptile', name: 'Greptile', verdict: 'earlier' }]
+                      : [
+                          { id: 'greptile', name: 'Greptile', verdict: 'clean', score: 5 },
+                          {
+                            id: 'coderabbit',
+                            name: 'CodeRabbit',
+                            verdict: pull.ref.number === 127 ? 'clean' : 'findings',
+                          },
+                        ],
+                },
         essential: main
           ? count(fixture.review.files.filter((file) => !file.hidden))
           : {
@@ -304,7 +328,7 @@ async function configure(context, state = {}) {
           enabled: input.enabled,
           settings: { ...input },
         };
-        providerRows = [...providerRows.filter((row) => row.id !== id), saved];
+        providerRows = existing ? providerRows.map((row) => (row.id === id ? saved : row)) : [...providerRows, saved];
         data = { id };
       } else data = { configured: true, providers: providerRows };
     } else if (p === '/api/ai/models')

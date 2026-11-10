@@ -1,5 +1,5 @@
 import { REVIEW_BOTS } from '@geld/review/bots';
-import { parseSummaryBody, looksLikeSummaryBody } from '@geld/review/summary-parse';
+import { trustedDigests } from '@/lib/trusted-digest';
 import type { BotVerdictRecord } from '@geld/review/model';
 import type { ReviewData } from '@/lib/review-contracts';
 import { Check, MessageSquare, GitPullRequest, ArrowUpRight, Flag, RefreshCw, X } from './icons';
@@ -12,16 +12,7 @@ function safeLink(url: string): string {
   }
 }
 export function ReviewDigest({ data }: { readonly data: ReviewData }) {
-  const summaries = data.comments.flatMap((comment) => {
-    if (
-      data.pull.ref.provider !== 'github' ||
-      !['github-actions[bot]', 'geld[bot]'].includes(comment.author.toLowerCase()) ||
-      !looksLikeSummaryBody(comment.body)
-    )
-      return [];
-    const parsed = parseSummaryBody(comment.body);
-    return parsed.ok ? [{ id: comment.id, meta: parsed.value }] : [];
-  });
+  const summaries = trustedDigests(data.pull.ref.provider, data.comments);
   const meta = summaries.map((summary) => summary.meta).sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0];
   const summaryIds = new Set(summaries.map((summary) => summary.id));
   const essential = data.files.filter((file) => !file.hidden);
