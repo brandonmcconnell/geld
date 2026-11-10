@@ -163,3 +163,9 @@ svg.geld-provider-digest-icon[data-geld-outline], svg.geld-provider-digest-icon[
   .geld-provider-review__entry-preview { grid-row: 2; grid-column: 3; }
   .geld-provider-review__entry time { display: none; }
 }
+
+.geld-provider-review .geld-provider-review__checks { list-style: none; padding: 0; margin: 0; }
+.geld-provider-review__checks > .geld-provider-review__check { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--geld-provider-space-3); padding-block: var(--geld-provider-space-3); }
+.geld-provider-review__checks > .geld-provider-review__check + .geld-provider-review__check { border-block-start: var(--geld-provider-border-width) solid var(--geld-provider-border); }
+.geld-provider-review__checks > .geld-provider-review__check > :first-child { flex: 1 1 auto; }
+.geld-provider-review__checks > .geld-provider-review__check > .geld-provider-review__check-part { white-space: nowrap; }

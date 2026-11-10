@@ -872,7 +872,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     } else summary?.append(node('span', summaryText, 'geld-provider-review__row-preview'));
     if (coverage !== 'complete') section.append(node('p', coverage === 'unavailable' ? 'CI checks could not be read.' : 'Some CI checks could not be read.'));
     else if (checks?.length === 0) section.append(node('p', 'No CI checks reported.'));
-    const list = node('ul');
+    const list = node('ul', '', 'geld-provider-review__checks');
     for (const check of checks ?? []) {
       const presentation = providerCheckPresentation(check, input.subject.provider);
       const row = node('li', '', 'geld-provider-review__check');
@@ -913,12 +913,13 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     summary?.setAttribute('aria-label', `Merge requirements · ${preview.textContent}`);
     summary?.append(preview);
     if (requirements.length === 0) section.append(node('p', 'No merge requirement details were supplied.'));
-    const list = node('ul');
+    const list = node('ul', '', 'geld-provider-review__checks');
     for (const requirement of requirements) {
       const row = node('li', '', 'geld-provider-review__check');
       row.dataset.geldNativeRequirement = requirement.id;
       row.dataset.state = requirement.state;
-      row.append(node('span', requirement.label), node('span', REQUIREMENT_STATE[requirement.state]));
+      const status = node('span', REQUIREMENT_STATE[requirement.state], 'geld-provider-review__check-part');status.dataset.geldCheckState = requirement.state;
+      row.append(node('span', requirement.label), status);
       list.append(row);
     }
     section.append(list);
