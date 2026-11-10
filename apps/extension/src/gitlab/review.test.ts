@@ -529,6 +529,10 @@ describe('review availability from independent native endpoints', () => {
     { name: 'both endpoints known empty', approvalStatus: 200, approvalBody: { approved_by: [] }, reviewerStatus: 200, reviewerBody: [], known: true, summary: 'Reviews · 0 approvals', complete: true },
     { name: 'known approver survives missing reviewers', approvalStatus: 200, approvalBody: { approved_by: [{ user: { id: 10, username: 'approver' } }] }, reviewerStatus: 403, reviewerBody: [], known: true, summary: 'Reviews · Partial · 1 observed approval', complete: false },
     { name: 'known change request survives missing approvals', approvalStatus: 401, approvalBody: {}, reviewerStatus: 200, reviewerBody: [{ user: { id: 11, username: 'changes' }, state: 'requested_changes' }], known: true, summary: 'Reviews · Partial · 1 observed change request', complete: false },
+    { name: 'malformed reviewer preserves approval', approvalStatus: 200, approvalBody: { approved_by: [{ user: { id: 10, username: 'approver' } }] }, reviewerStatus: 200, reviewerBody: [{ user: null }], known: true, summary: 'Reviews · Partial · 1 observed approval', complete: false },
+    { name: 'malformed approver preserves change request', approvalStatus: 200, approvalBody: { approved_by: [{ user: null }] }, reviewerStatus: 200, reviewerBody: [{ user: { id: 11, username: 'changes' }, state: 'requested_changes' }], known: true, summary: 'Reviews · Partial · 1 observed change request', complete: false },
+    { name: 'two malformed sources are unavailable', approvalStatus: 200, approvalBody: { approved_by: [{ user: null }] }, reviewerStatus: 200, reviewerBody: [{ user: null }], known: false, summary: 'Reviews · Unavailable', complete: false },
+    { name: 'valid rows survive malformed siblings in both sources', approvalStatus: 200, approvalBody: { approved_by: [null, { user: { id: 10, username: 'approver' } }, { user: null }] }, reviewerStatus: 200, reviewerBody: [{ user: null }, { user: { id: 11, username: 'changes' }, state: 'requested_changes' }, false], known: true, summary: 'Reviews · Partial · 1 observed approval · 1 observed change request', complete: false },
     { name: 'malformed approval list is not empty', approvalStatus: 200, approvalBody: { approved_by: null }, reviewerStatus: 200, reviewerBody: [], known: true, summary: 'Reviews · Partial', complete: false },
     { name: 'absent approval list and unread reviewers', approvalStatus: 200, approvalBody: {}, reviewerStatus: 403, reviewerBody: [], known: false, summary: 'Reviews · Unavailable', complete: false },
   ])('$name', async ({ approvalStatus, approvalBody, reviewerStatus, reviewerBody, known, summary, complete }) => {
@@ -557,4 +561,23 @@ describe('review availability from independent native endpoints', () => {
     for (const reviewer of snapshot.input.reviewers ?? []) expect(section?.textContent).toContain(reviewer.author.login);
     panel.destroy(); host.remove();
   });
+});
+
+
+it('keeps discussion evidence and required approval facts when optional reviewer rows are malformed', async () => {
+  vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockImplementation(async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith('/approvals')) return json({ approved_by: [{ user: null }, { user: { id: 10, username: 'approver' } }], approvals_required: 2, approvals_left: 1 });
+    if (url.pathname.endsWith('/reviewers')) return json([{ user: null }, { user: { id: 10, username: 'approver' }, state: 'unreviewed' }]);
+    if (url.pathname.endsWith('/discussions.json')) return json([discussion('abcdef123456', [note(1)], { active: true })]);
+    if (url.pathname.endsWith('/pipelines')) return json([]);
+    return json({ iid: 7, sha: SHA, state: 'opened' });
+  }));
+  const snapshot = await fetchGitLabReview(page, new AbortController().signal);
+  expect(snapshot.input.reviewers).toEqual([{ author: { id: '10', login: 'approver' }, state: 'approved', reviewRequest: 'pending' }]);
+  expect(snapshot.input.threads[0]?.comments[0]?.body).toBe('Could this fail?');
+  expect(snapshot.sourceCoverage.comments).toBe('complete');
+  expect(snapshot.approvalsRequired).toBe(2);expect(snapshot.approvalsLeft).toBe(1);
+  expect(snapshot.complete).toBe(false);
+  expect(snapshot.unavailable).toEqual([expect.objectContaining({ area: 'reviews' }), expect.objectContaining({ area: 'reviews' })]);
 });
