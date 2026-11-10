@@ -275,7 +275,10 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   }
 
   function availableFocus(target: HTMLElement): boolean {
-    if (target.closest('[hidden], [inert], [aria-hidden="true"], details:not([open])') !== null) return false;
+    if (target.closest('[hidden], [inert], [aria-hidden="true"]') !== null) return false;
+    for (let ancestor = target.parentElement; ancestor !== null; ancestor = ancestor.parentElement) {
+      if (ancestor instanceof HTMLDetailsElement && !ancestor.open && ancestor.querySelector(':scope > summary')?.contains(target) !== true) return false;
+    }
     const preview = target.closest('[data-geld-review-preview]');
     const parent = target.hasAttribute('data-geld-review-toggle') ? target.parentElement?.parentElement : preview?.parentElement?.parentElement ?? target;
     return parent?.closest('[data-geld-review-open="false"]') == null;

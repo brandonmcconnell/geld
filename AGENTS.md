@@ -3641,3 +3641,5 @@ Provider video launch controls bind to a live native video with a qualified same
 Digest renderers expose an owned Open video control while the original inline player remains native.
 The larger player preserves position, mute, volume and speed, resumes only an already playing source, and returns state only while the review and original source still match.
 Disposal stops the owned media request, and a changed source closes its dialog.
+Digest refreshes preserve focus on the first summary of a closed details menu, since its trigger remains visible even when the menu body is hidden.
+An outer closed details body still hides nested summaries, and hidden menu items still lose focus.

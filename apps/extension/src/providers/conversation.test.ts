@@ -854,6 +854,8 @@ describe('persistent provider conversation views', () => {
     });
     const digest = f.host.querySelector<HTMLButtonElement>('[data-geld-digest-view="digest"]')!;digest.focus();digest.click();
     await vi.waitFor(() => expect(document.activeElement).toBe(f.host.querySelector('[data-geld-toolbar-control="eye"]')));
+    f.apply();
+    expect(document.activeElement).toBe(f.host.querySelector('[data-geld-toolbar-control="eye"]'));
   });
 
   it('offers re-entry without fetching while off and preserves open threads across all three views', async () => {

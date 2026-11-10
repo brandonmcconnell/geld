@@ -68,6 +68,7 @@ const FOCUSED_CASES = {
   'bitbucket-open-review': ['bitbucket-open-review'],
   'gitlab-summary-preview': ['gitlab-summary-preview'],
   'gitlab-refinements': ['gitlab-ui-polish', 'gitlab-open-review', 'gitlab-summary-preview'],
+  'provider-ui-refinements': ['gitlab-ui-polish', 'bitbucket-ui-polish', 'gitlab-summary-preview'],
   'provider-access': [],
   'walkthrough-render': [],
   'gitlab-walkthrough': ['gitlab-walkthrough'],
@@ -3380,9 +3381,9 @@ try {
   await enableOptionalProviders(options, optionalProvidersForCases(selected), { poll, readState: readPermissionState, confirmPermission, progress: report.providerAccess });
   await prepareInstalledBrowserSettings();
 
-  if (focus === 'gitlab-ui-polish' || focus === 'bitbucket-ui-polish' || focus === 'gitlab-refinements') {
-    const provider = focus.startsWith('gitlab-') ? 'gitlab' : 'bitbucket';
-    await runCase(`${provider}-ui-polish`, provider === 'gitlab' ? GL_OVERVIEW : BITBUCKET_UI_PR, (page, item) => verifyProviderUi(page, item, { provider, poll, patchSettings, artifacts }));
+  if (['gitlab-ui-polish', 'bitbucket-ui-polish', 'gitlab-refinements', 'provider-ui-refinements'].includes(focus)) {
+    const providers = focus === 'provider-ui-refinements' ? ['gitlab', 'bitbucket'] : [focus.startsWith('gitlab-') ? 'gitlab' : 'bitbucket'];
+    for (const provider of providers) await runCase(`${provider}-ui-polish`, provider === 'gitlab' ? GL_OVERVIEW : BITBUCKET_UI_PR, (page, item) => verifyProviderUi(page, item, { provider, poll, patchSettings, artifacts }));
   }
 
   if (focus === 'gitlab-open-review' || focus === 'bitbucket-open-review' || focus === 'gitlab-refinements') {

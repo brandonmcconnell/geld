@@ -31,6 +31,34 @@ function host(): HTMLElement {
 beforeEach(() => { document.body.replaceChildren();window.location.href = reviewUrl; });
 
 describe('provider conversation digest', () => {
+  it('keeps a closed toolbar menu summary focused on unchanged updates', () => {
+    const native = input();
+    const panel = renderProviderReviewPanel(host(), native, { hasViewChoice: true });
+    const summary = panel.element.querySelector<HTMLElement>('[data-geld-toolbar-control="eye"]')!;
+    expect(summary.closest('details')?.open).toBe(false);
+    summary.focus();
+    panel.update(native, { hasViewChoice: true, version: 2 });
+    expect(document.activeElement).toBe(summary);
+    panel.destroy();
+  });
+
+  it('releases focus inside a closed menu without treating its summary as hidden', () => {
+    const native = input();
+    const panel = renderProviderReviewPanel(host(), native, { hasViewChoice: true });
+    const slot = panel.element.querySelector<HTMLElement>('[data-geld-view-slot]')!;
+    const menu = slot.closest('details')!;
+    const nested = document.createElement('details');
+    const summary = document.createElement('summary');summary.textContent = 'Nested menu';nested.append(summary);slot.append(nested);
+    menu.open = true;summary.focus();
+    expect(document.activeElement).toBe(summary);
+    panel.update(native, { hasViewChoice: true, version: 2 });
+    expect(document.activeElement).toBe(summary);
+    menu.open = false;
+    panel.update(native, { hasViewChoice: true, version: 3 });
+    expect(document.activeElement).not.toBe(summary);
+    panel.destroy();
+  });
+
   it('keeps compact reviewer summaries inline and details behind the closed row', () => {
     const native = { ...input([thread('a')]), reviewers: [
       { author: { id: 'user-1', login: 'alice' }, state: 'approved', reviewRequest: 'pending', url: `${reviewUrl}#note_1`, anchor: 'note_1' },
