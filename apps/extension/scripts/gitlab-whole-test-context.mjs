@@ -61,7 +61,9 @@ export function gitLabWholeTestProbe(action='read', argument=null) {
   const unchangedViewed=store.viewed.length===viewed().length&&store.viewed.every(({node,checked,disabled})=>node.isConnected&&root.contains(node)&&node.checked===checked&&node.disabled===disabled);
   if(action==='retain-first'){if(!sameOriginal||!unchangedViewed)throw Error('First opened native source changed before second-test checkpoint');store.firstOpenedRows=currentRows;}
   const folds=[...root.querySelectorAll('[data-geld-provider-fold-row^="test:"]')].map((row)=>({row,button:row.querySelector('button'),title:row.querySelector('.geld-provider-line-fold__title')?.textContent??'',start:Number(row.querySelector('.geld-provider-line-fold__line')?.textContent),expanded:row.querySelector('button')?.getAttribute('aria-expanded'),label:row.querySelector('button')?.getAttribute('aria-label')??''}));
-  const category=(name)=>[...document.querySelectorAll('.geld-provider-category-header')].filter((button)=>new RegExp(`^${name}\\b`).test(button.textContent.trim()));
+  // A header runs its count straight after the label ("Tests1"), so its words are the label's.
+  const labelOf=(button)=>(button.querySelector('.geld-provider-category-label')??button).textContent.trim();
+  const category=(name)=>[...document.querySelectorAll('.geld-provider-category-header')].filter((button)=>labelOf(button)===name);
   if(action==='button'){
     if(!sameOriginal||!unchangedViewed)return null;
     if(argument==='intent')return intent;
@@ -76,7 +78,7 @@ export function gitLabWholeTestProbe(action='read', argument=null) {
     intent:intent?{label:intent.textContent,status:intent.dataset.status,disabled:intent.disabled,nativeClasses:intent.className,style:css(intent),nativeComparison:sampleNative?{classes:sampleNative.className,style:css(sampleNative)}:null}:null,
     visible:getComputedStyle(root).display!=='none'&&root.getBoundingClientRect().height>0,sourceRows:currentRows.map((line)=>({number:line.number,text:line.text,hidden:line.node.hasAttribute('data-geld-provider-line-hidden')})),
     folds:folds.map(({row,button,...fold})=>fold),controls:controls().map(contextSample),events:[...store.events],
-    categories:[...document.querySelectorAll('.geld-provider-category-header')].map((button)=>({text:button.textContent.trim(),expanded:button.getAttribute('aria-expanded')}))};
+    categories:[...document.querySelectorAll('.geld-provider-category-header')].map((button)=>({text:labelOf(button),expanded:button.getAttribute('aria-expanded')}))};
 }
 
 export function qualifyGitLabWholeResponse(sample, response) {
@@ -123,7 +125,10 @@ export async function verifyGitLabWholeTestContext(page,{progress,poll,capture,r
     const work=(async()=>{const length=value.headers()['content-length'];assert.ok(!length||Number(length)<=512*1024,'Whole-file response exceeds discovery read bound');const body=await value.buffer();assert.ok(body.length<=512*1024);responses.push({url:value.url(),status:value.status(),redirected:value.request().redirectChain().length>0,bytes:body.length,sha256:createHash('sha256').update(body).digest('hex'),lines:new TextDecoder('utf-8',{fatal:true}).decode(body).split(/\r?\n/)});})().catch((error)=>{responses.push({url:value.url(),error:error.message});});pending.add(work);void work.finally(()=>pending.delete(work));
   };
   const read=()=>page.evaluate(gitLabWholeTestProbe);
-  const click=async(target)=>{const handle=await page.evaluateHandle(gitLabWholeTestProbe,'button',target);try{const button=handle.asElement();assert.ok(button);await button.scrollIntoView();assert.equal(await page.evaluate(gitLabWholeTestProbe,'arm',button),true);await button.click();}finally{await handle.dispose();}const event=await page.evaluate(gitLabWholeTestProbe,'click-result');assert.equal(event?.trusted,true);return event;};
+  const click=async(target)=>{const handle=await page.evaluateHandle(gitLabWholeTestProbe,'button',target);try{const button=handle.asElement();assert.ok(button);await button.scrollIntoView();const armed=await page.evaluate(gitLabWholeTestProbe,'arm',button);
+    // A refused arm says what moved: the page's address, or how many copies of the file root it found.
+    if(armed!==true){const where=await page.evaluate(()=>({search:location.search,path:location.pathname,roots:document.querySelectorAll('diff-file[data-file-data]').length,observed:'__geldWholeTestObservation' in globalThis}));assert.fail(`Whole-test arm refused (${JSON.stringify(armed)}) at ${JSON.stringify(where)}`);}
+    await button.click();}finally{await handle.dispose();}const event=await page.evaluate(gitLabWholeTestProbe,'click-result');assert.equal(event?.trusted,true);return event;};
   const intact=(sample)=>sample?.sameOriginal&&sample.unchangedViewed;
   try{
     progress.beforeCounts=await readState();assertDisplayedOutlineCounts(progress.beforeCounts,progress.beforeCounts);progress.initial=await page.evaluate(gitLabWholeTestProbe,'setup');setup=progress.initial!==null;assert.ok(intact(progress.initial));assert.equal(progress.initial.folds.length,0);

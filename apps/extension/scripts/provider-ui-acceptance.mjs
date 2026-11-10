@@ -140,7 +140,8 @@ export function providerUiProbe(provider) {
   }
   const popovers = [...document.querySelectorAll('.geld-provider-hover')].filter(visible).map((node) => ({ rect: rect(node), overflowX: getComputedStyle(node).overflowX, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth }));
   const categories = [...document.querySelectorAll('.geld-provider-category-header')].map((node) => {
-    const label = node.textContent?.trim() ?? '';
+    // The rendered header runs its count straight after the label ("Essential2"), so read the label itself.
+    const label = (node.querySelector('.geld-provider-category-label') ?? node).textContent?.trim() ?? '';
     const kind = /^Essential\b/.test(label) ? 'essential' : /^Tests\b/.test(label) ? 'tests' : 'other';
     const id = node.getAttribute('aria-controls');
     const targets = id === null ? [] : [...document.querySelectorAll('[id]')].filter((target) => target.id === id);
@@ -325,7 +326,7 @@ export function providerDashboardProbe(mode = 'read') {
     overviewVisible: visible(panel?.querySelector('.geld-provider-review__header')),
     copyVisible: visible(panel?.querySelector('.geld-provider-review__copy')),
     viewToggleVisible: visible(panel?.querySelector('.geld-provider-review__menu:has([data-geld-view-slot]) > summary')),
-    sectionBindings: sectionBindings.slice(0, 40), truncated: sectionBindings.length > 40 || native.length > 1000,
+    sectionBindings: sectionBindings.slice(0, 200), truncated: sectionBindings.length > 200 || native.length > 1000,
     originalCount: native.length, originalVisible: native.filter((entry) => visible(entry.node)).length,
     representedMounted: represented.size, representedVisible: [...represented].filter(visible).length,
     originalToggleCount: panel?.querySelectorAll('button[data-geld-original-conversation]').length ?? 0,
