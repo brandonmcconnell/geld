@@ -2247,16 +2247,24 @@ The shared controller uses the optional adapter `diffSyntax.apply(view)`/`clear(
 no provider syntax reader is imported by the shared controller.
 Coloring is independent of comment/test folding and pending count fetches;
 master disable, no diff view, navigation and controller stop clear only its owned ranges.
-Bitbucket shell painting additionally requires an enabled native Syntax preference observed in the current document, route and raw bootstrap actor/workspace scope;
-unknown and disabled remove every owned range, including plain ranges, and the unchanged-Text-node cache before any cache reuse, preserving foreign highlights and original native nodes.
+Bitbucket shell painting uses a qualified native Syntax preference in the current document, route and raw bootstrap actor/workspace scope, or a separate file-local initial native-On rendering witness.
+Disabled, or unknown without that positive original-file witness, removes every owned range, including plain ranges, and the unchanged-Text-node cache before any cache reuse, preserving foreign highlights and original native nodes.
 The passive observer never opens Settings or writes preferences, and accepts only a trusted original unique Settings opener, a newly mounted unique original form and untouched initial checkbox, then trusted Cancel followed by actual dialog removal.
 The older source-backed settingsButton/aria-label hook and the current observed Global diff settings aria-live button are bounded to the original Files changed tabpanel, with responsive tabindex-minus-one copies excluded.
 Input, change, submit, unknown closure, form/control remount, ambiguity, actor changes and route changes discard that observation;
 native context expansion and source-node replacement within the same route/actor retain it because Syntax is a global preference rather than acquired count/head state.
-No getter, private store, token-shaped DOM, settings draft or saved result supplies a substitute value, and explicit trust/layout seams exist only in unit protocols.
+No getter, private store, token-shaped DOM, settings draft or saved result supplies a substitute global preference value, and explicit trust/layout seams exist only in unit protocols.
+The initial rendering fallback leaves that preference unknown and considers only the original visible bitbucket-pipelines.yml Diff region/file anchor/article/CodeGrid, numbered native rows, exact gridcell aria labels and span-only native On wrappers with meaningful original token evidence.
+Every considered row must have the verified code-diff, syntax-highlighted and __rbb_syntax_highlight classes and current native rowgroup terminal-LF structure;
+blank inline code may have zero width while its native row/file remains visible.
+Plain, mixed, malformed, authored, owned, hidden, editor/dialog or duplicate source never supplies the fallback, and a highlighted sibling file cannot enable a plain pipeline file.
+Initial empty/plain hydration leaves eligibility unknown without inventing disabled, while native Settings opening, dirty/submit/unknown closure, transient/remounted native forms, route/actor/bootstrap/workspace changes and clear latch local fallback closed for the document even across observer recreation or master toggling.
+Only the existing pristine read/Cancel path may then qualify an explicit native preference.
+Same-route context/source replacement rechecks current original rows and creates fresh ranges without waiting for count or head acquisition, never carrying disconnected Text evidence or inventing a PR full-head witness.
 The retained public PR242 native-off expansion produced 22 owned ranges, including 13 plain ranges, so both disabled and unknown regressions must clear that exact visible-source projection without recreating cached ranges until a new positive observation.
-Positive native Syntax-on and palette acceptance remain unverified publicly;
-the installed unknown branch reports unavailability and the known-off branch requires zero owned ranges, a pre-paint witness, preserved source/Viewed state, empty invalid ranges and exact context/count/head checks before and after capture.
+The dedicated anonymous installed characterization verified native On, fresh pristine On read/Cancel, source-preserving owned painting and exact native Off restoration with the other 12 controls unchanged in the tested light theme.
+That explicit preference case does not establish fresh initial-document fallback acceptance, authenticated/server persistence, dark theme or an independent native Bash-renderer palette match.
+The installed unknown branch reports unavailability and the known-off branch requires zero owned ranges, a pre-paint witness, preserved source/Viewed state, empty invalid ranges and exact context/count/head checks before and after capture.
 The separate bitbucket-pipeline-syntax-on focus is an explicit-only anonymous characterization, excluded from default, regression and all, and requires an entirely free 40-request rolling window because the first native Save/restore cost is unmeasured.
 It reuses the existing Off acceptance before any preference change, then operates only the original native Syntax checkbox and unique same-form submit Save, preserving the other 12 controls including hidden tabSize.
 The current form has 13 controls rather than the 12 visible fields alone, and its original modal heading is Global diff view settings.
