@@ -78,6 +78,15 @@ it('expands the actual original native control only until every required new lin
   const listener=vi.fn();native.addEventListener('click',listener);f.manager.reveal(f.entry,f.fold,()=>true);expect(listener).toHaveBeenCalledTimes(1);expect(f.entry.readLines!().map((line)=>[line.newLine,line.newText])).toEqual(source.map((text,i)=>[i+1,text]));expect(f.manager.source(f.entry)).not.toBeNull();await vi.waitFor(() => expect(f.refresh).toHaveBeenCalledTimes(2));
   expect(listener).toHaveBeenCalledTimes(1);expect(providerMissingNewLines(f.fold,f.entry.readLines!())).toEqual([]);expect(original.isConnected).toBe(true);expect(original.textContent).toBe(text);expect(viewed.checked).toBe(false);
 });
+it.each(['disabled', 'source mismatch', 'revision'] as const)('retains a ready source after its last gap closes but clears it after %s', async change => {
+  const f=fixture();await f.request();const button=f.root.querySelector('[data-geld-test-boundaries]');
+  f.root.querySelector('[data-hunk-header]')!.remove();f.update();
+  expect(f.root.querySelector('[data-geld-test-boundaries]')).toBe(button);expect(f.manager.source(f.entry)?.lines).toEqual(source);expect(f.read).toHaveBeenCalledTimes(1);
+  if(change==='source mismatch') { f.root.querySelector('.rd-line-text')!.textContent='different\n';f.update(); }
+  if(change==='revision') { f.root.setAttribute('data-file-data',JSON.stringify({ ...f.fileData,diff_refs:{...f.fileData.diff_refs,head_sha:'d'.repeat(40)} }));f.update(); }
+  if(change==='disabled') { const view=readGitLabDiff(document)!,page=describeGitLabPage(new URL(document.URL),document)!;const context=providerOutlineContext(page,{files:[],revision:'disabled',complete:false},view);f.manager.update(page,{files:[],revision:'disabled',complete:false},view,{...DEFAULT_SETTINGS,enabled:false},context);f.manager.mount(f.entry); }
+  expect(f.root.querySelector('[data-geld-test-boundaries]')).toBeNull();expect(f.manager.source(f.entry)).toBeNull();expect(f.read).toHaveBeenCalledTimes(1);
+});
 it('rebuilds the source frame immediately before native activation, not only before fetching', async () => {
   const f=fixture();await f.request();const click=vi.fn();f.root.querySelector('[data-click="expandLines"]')!.addEventListener('click',click);
   f.step.mockImplementation((entry,missing) => { const step=createGitLabWholeTestAdapter(new ProviderHttpAdmission()).nextContext(entry,missing);f.app.setAttribute('data-app-data',JSON.stringify({ ...f.appData, is_fork:'true' }));return step; });

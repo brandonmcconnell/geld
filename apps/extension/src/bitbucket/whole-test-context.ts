@@ -4,10 +4,10 @@ import type { ProviderNewFileRevision } from '../providers/source-facts';
 import type { ProviderDiffEntry } from '../providers/types';
 import { ProviderHttpAdmission } from '../providers/http-admission';
 import { readProviderWholeSource } from '../providers/whole-source';
-import type { ProviderNativeContextStep, ProviderWholeTestAdapter } from '../providers/whole-test-context';
+import type { ProviderNativeContextSource, ProviderNativeContextStep, ProviderWholeTestAdapter } from '../providers/whole-test-context';
 import { bitbucketTransport, BitbucketTransportError } from './transport';
 import type { BitbucketTransport } from './transport';
-import { bitbucketPrepareSource } from './source-reference';
+import { bitbucketPrepareSource, bitbucketPrepareContext } from './source-reference';
 
 const headerSelector = '.diff-chunk > .diff-chunk-inner > .chunk-heading-wrapper';
 const controlSelector = 'button[data-qa="pr-diff-show-more-lines-above"], button[data-qa="pr-diff-show-more-lines-below"]';
@@ -27,7 +27,7 @@ export function bitbucketWholeSourceURL(revision: ProviderNewFileRevision): URL 
   return new URL(`/2.0/repositories/${repository.path.split('/').map(encodeURIComponent).join('/')}/src/${headSha}/${path.split('/').map(encodeURIComponent).join('/')}`, 'https://api.bitbucket.org');
 }
 
-export function bitbucketNextTestContext(entry: ProviderDiffEntry, missing: readonly number[]): ProviderNativeContextStep | null {
+export function bitbucketNextTestContext(entry: ProviderDiffEntry, missing: readonly number[], source?: ProviderNativeContextSource): ProviderNativeContextStep | null {
   const lines = entry.readLines?.() ?? [];
   for (const row of headers(entry)) {
     const at = lines.findIndex((line) => line.kind === 'hunk' && line.root === row);
@@ -53,7 +53,11 @@ export function bitbucketNextTestContext(entry: ProviderDiffEntry, missing: read
       const previous = latest.slice(0, index).findLast((line) => line.newLine !== null), following = latest.slice(index + 1).find((line) => line.newLine !== null);
       return index >= 0 && previous?.root === beforeLine?.root && following?.root === afterLine?.root && (previous?.newLine ?? null) === before && (following?.newLine ?? null) === after;
     };
-    return { current, activate: () => { if (!activated && current()) { activated = true;button.click(); } } };
+    return { current, activate: () => {
+      if (activated || !current()) return;
+      if (source?.revision.provenance === 'provider-resolved-native-reference' && !bitbucketPrepareContext(entry, button, before, after, source)) return;
+      activated = true;button.click();
+    } };
   }
   return null;
 }
