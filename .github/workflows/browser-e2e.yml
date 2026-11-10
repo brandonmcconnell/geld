@@ -21,6 +21,7 @@ on:
           - regression
           - gitlab-walkthrough
           - bitbucket-walkthrough
+          - walkthrough-render
           - provider-evidence
           - provider-access-evidence
           - provider-access
@@ -68,6 +69,70 @@ permissions:
 
 # Maintainer-labelled restacks defer public traffic; skipped jobs are not feature passes.
 jobs:
+  render-provider-walkthroughs:
+    needs: select-public-verification
+    if: needs.select-public-verification.outputs.run == 'true' && needs.select-public-verification.outputs.focus == 'walkthrough-render'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Wait for both capture runs
+        uses: actions/github-script@v9
+        with:
+          script: |
+            for (let attempt = 0; attempt < 60; attempt++) {
+              const runs = await Promise.all([42738172549, 42738358843].map(run_id => github.rest.actions.getWorkflowRun({ ...context.repo, run_id })));
+              if (runs.every(run => run.data.status === 'completed')) return;
+              await new Promise(resolve => setTimeout(resolve, 10000));
+            }
+            throw new Error('Capture runs are still pending; rendering has not started.');
+      - uses: actions/download-artifact@v7
+        with:
+          name: geld-installed-browser-e2e
+          run-id: '42738172549'
+          github-token: ${{ github.token }}
+          path: artifacts/raw-gitlab
+      - uses: actions/download-artifact@v7
+        with:
+          name: geld-installed-browser-e2e
+          run-id: '42738358843'
+          github-token: ${{ github.token }}
+          path: artifacts/raw-bitbucket
+      - name: Install media tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ffmpeg fonts-dejavu-core
+      - name: Render titles, narration and timed captions
+        run: |
+          python3 apps/extension/scripts/render-walkthrough.py artifacts/raw-gitlab gitlab --out "$GITHUB_WORKSPACE/artifacts/finished"
+          python3 apps/extension/scripts/render-walkthrough.py artifacts/raw-bitbucket bitbucket --out "$GITHUB_WORKSPACE/artifacts/finished"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: geld-gitlab-guided-walkthrough
+          path: |
+            artifacts/finished/gitlab-guided-walkthrough.mp4
+            artifacts/finished/gitlab-captions.srt
+            artifacts/finished/gitlab-captions.vtt
+            artifacts/finished/gitlab-chapters.md
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: geld-bitbucket-guided-walkthrough
+          path: |
+            artifacts/finished/bitbucket-guided-walkthrough.mp4
+            artifacts/finished/bitbucket-captions.srt
+            artifacts/finished/bitbucket-captions.vtt
+            artifacts/finished/bitbucket-chapters.md
+          if-no-files-found: error
+          retention-days: 30
+
+
+
   select-public-verification:
     runs-on: ubuntu-latest
     outputs:
@@ -79,7 +144,7 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const choices = new Set(['gitlab-walkthrough', 'bitbucket-walkthrough', 'regression', 'provider-evidence', 'provider-access-evidence', 'provider-access', 'bitbucket-diff', 'bitbucket-ui', 'gitlab-ui', 'bitbucket-whitespace-session', 'bitbucket-whitespace-source', 'bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'bitbucket-pipeline-initial-on', 'bitbucket-list', 'bitbucket-authors', 'bitbucket-native-bash', 'bitbucket-native-bash-on', 'bitbucket-native-settings-diagnostic', 'bitbucket-native-file-menu', 'bitbucket-local-reviewed', 'bitbucket-comment', 'bitbucket-commit', 'bitbucket-commit-links', 'bitbucket-list-commit', 'gitlab-lists', 'gitlab-diff', 'gitlab-file-search', 'gitlab-whitespace-viewed', 'gitlab-whitespace-session', 'bitbucket-pr-whole-context', 'bitbucket-whole-context', 'gitlab-shell', 'gitlab-standalone-whole', 'gitlab-review', 'gitlab-local-reviewed', 'gitlab-bot', 'gitlab-coderabbit', 'gitlab-references', 'gitlab-binary', 'github', 'cross-provider-settings', 'all']);
+            const choices = new Set(['walkthrough-render', 'gitlab-walkthrough', 'bitbucket-walkthrough', 'regression', 'provider-evidence', 'provider-access-evidence', 'provider-access', 'bitbucket-diff', 'bitbucket-ui', 'gitlab-ui', 'bitbucket-whitespace-session', 'bitbucket-whitespace-source', 'bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'bitbucket-pipeline-initial-on', 'bitbucket-list', 'bitbucket-authors', 'bitbucket-native-bash', 'bitbucket-native-bash-on', 'bitbucket-native-settings-diagnostic', 'bitbucket-native-file-menu', 'bitbucket-local-reviewed', 'bitbucket-comment', 'bitbucket-commit', 'bitbucket-commit-links', 'bitbucket-list-commit', 'gitlab-lists', 'gitlab-diff', 'gitlab-file-search', 'gitlab-whitespace-viewed', 'gitlab-whitespace-session', 'bitbucket-pr-whole-context', 'bitbucket-whole-context', 'gitlab-shell', 'gitlab-standalone-whole', 'gitlab-review', 'gitlab-local-reviewed', 'gitlab-bot', 'gitlab-coderabbit', 'gitlab-references', 'gitlab-binary', 'github', 'cross-provider-settings', 'all']);
             const parseFocus = (body) => {
               const text = typeof body === 'string' ? body : '';
               const prefixes = text.match(/<!-- geld-browser-focus:/g) ?? [];
@@ -112,7 +177,7 @@ jobs:
             core.info(restack ? 'Public provider verification deferred for this maintainer-labelled restack. Normal CI remains required. No public feature verification ran or passed.' : run ? `Selected public verification slice: ${focus}.` : 'Skipping provider navigation: this event did not request a valid focus change. No feature verification ran or passed.');
   installed-extension:
     needs: select-public-verification
-    if: needs.select-public-verification.outputs.run == 'true' && needs.select-public-verification.outputs.focus != 'bitbucket-whitespace-source' && (github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'geld:restack'))
+    if: needs.select-public-verification.outputs.run == 'true' && needs.select-public-verification.outputs.focus != 'walkthrough-render' && needs.select-public-verification.outputs.focus != 'bitbucket-whitespace-source' && (github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'geld:restack'))
     # Skipped selector updates never enter the browser queue.
     # GitHub keeps one running and one pending job; a new selected job may replace the pending job without FIFO guarantees.
     concurrency:

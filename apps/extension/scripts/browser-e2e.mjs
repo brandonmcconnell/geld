@@ -60,6 +60,7 @@ const WAIT_MS = 90_000;
 const BITBUCKET_ANONYMOUS_COOLDOWN_MS = 62 * 60 * 1000; // Documented rolling-hour quota, plus a conservative two-minute margin.
 const FOCUSED_CASES = {
   'provider-access': [],
+  'walkthrough-render': [],
   'gitlab-walkthrough': ['gitlab-walkthrough'],
   'bitbucket-walkthrough': ['bitbucket-walkthrough'],
   regression: ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'gitlab-local-reviewed', 'github-regression', 'bitbucket-diff'],
