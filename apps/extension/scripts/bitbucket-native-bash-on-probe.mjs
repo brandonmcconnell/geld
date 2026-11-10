@@ -52,13 +52,22 @@ export function nativeBashOnProbe(action = 'read', target = null, fixture = null
   const cookieNotices = () => [...document.querySelectorAll('[role="dialog"][aria-labelledby="cookiesTrackingNoticeLink"]')].filter((n) => native(n) && n.querySelector('input,select,textarea,form') === null && n.querySelector('a[id="cookiesTrackingNoticeLink"][href="https://www.atlassian.com/legal/cookies"]') !== null);
   const dialogs = () => { const passive = cookieNotices();return [...document.querySelectorAll('[role="dialog"]')].filter((n) => native(n) && !passive.includes(n)); };
   const formRead = () => {
-    const ds = dialogs();if (ds.length !== 1 || !visible(ds[0])) return { form: null, diagnostics: { dialogs: ds.length, fields: [] } };
+    const ds = dialogs();const diagnostics = { dialogs: ds.length, fields: [] };
+    const inspection = action === 'diagnose-form' ? { recognized: false, firstRefusal: null, checks: { dialogCount: ds.length, presentationEligible: null, heading: null, formCount: null, containment: null, enabled: null, shape: null, tab: null, radios: null, labels: null, syntaxLabel: null, buttons: null } } : null;
+    if (inspection) diagnostics.inspection = inspection;
+    const refuse = (reason) => { if (inspection) inspection.firstRefusal = reason;return { form: null, diagnostics }; };
+    if (inspection && ds.length === 1) inspection.checks.presentationEligible = visible(ds[0]);
+    if (ds.length !== 1 || !visible(ds[0])) return refuse(ds.length !== 1 ? 'dialog_count' : 'dialog_presentation');
     const dialog = ds[0];const controls = [...dialog.querySelectorAll('input,select,textarea')];
     const safe = (s) => /^[a-zA-Z0-9_-]{0,80}$/.test(s ?? '') ? s : '[omitted]';
-    const diagnostics = { dialogs: 1, fieldCount: controls.length, fields: controls.slice(0, 40).map((f) => ({ id: safe(f.id), name: safe(f.name), type: safe(f.type) })), truncated: controls.length > 40 };
+    Object.assign(diagnostics, { fieldCount: controls.length, fields: controls.slice(0, 40).map((f) => ({ id: safe(f.id), name: safe(f.name), type: safe(f.type) })), truncated: controls.length > 40 });
     const title = document.getElementById(dialog.getAttribute('aria-labelledby'));const forms = [...dialog.querySelectorAll('form')];
-    if (!title || !dialog.contains(title) || title.textContent.trim() !== 'Global diff view settings' || forms.length !== 1) return { form: null, diagnostics };
-    const form = forms[0];const fields = [...form.querySelectorAll('input,select,textarea')];if (fields.length !== controls.length || fields.some((f) => !native(f) || !enabled(f))) return { form: null, diagnostics };
+    const phrase = (text) => text === 'Global diff view settings' ? 'global_diff_view_settings' : text === 'Global diff settings' ? 'global_diff_settings' : text === 'Save' ? 'save' : text === 'Cancel' ? 'cancel' : 'unknown';
+    if (inspection) { inspection.checks.heading = { present: title !== null, contained: title !== null && dialog.contains(title), phrase: title === null ? 'missing' : phrase(title.textContent.trim()), requiredPhrase: title !== null && title.textContent.trim() === 'Global diff view settings' };inspection.checks.formCount = forms.length; }
+    if (!title || !dialog.contains(title) || title.textContent.trim() !== 'Global diff view settings' || forms.length !== 1) return refuse(!title ? 'title_missing' : !dialog.contains(title) ? 'title_outside_dialog' : title.textContent.trim() !== 'Global diff view settings' ? 'title_phrase' : 'form_count');
+    const form = forms[0];const fields = [...form.querySelectorAll('input,select,textarea')];
+    if (inspection) { inspection.checks.containment = { dialogFieldCount: controls.length, formFieldCount: fields.length, equal: fields.length === controls.length };inspection.checks.enabled = fields.slice(0, 40).map((f, index) => ({ index, native: native(f), disabled: f.disabled === true, readOnly: f.readOnly === true, ariaBlocked: f.closest('[aria-disabled="true"],[aria-readonly="true"]') !== null, fieldsetBlocked: f.closest('fieldset[disabled]') !== null, enabled: enabled(f) })); }
+    if (fields.length !== controls.length || fields.some((f) => !native(f) || !enabled(f))) return refuse(fields.length !== controls.length ? 'controls_outside_form' : 'field_not_native_or_enabled');
     const expected = [
       ['', 'diffViewMode', 'radio', 'UNIFIED'], ['', 'diffViewMode', 'radio', 'SIDE_BY_SIDE'],
       ['diff-settings-syntax-highlighting-toggle', 'enableSyntaxHighlighting', 'checkbox', 'enableSyntaxHighlighting'],
@@ -69,17 +78,32 @@ export function nativeBashOnProbe(action = 'read', target = null, fixture = null
       ['', 'isSingleFileModeEnabled', 'radio', 'ALL_FILES_MODE'], ['', 'isSingleFileModeEnabled', 'radio', 'SINGLE_FILE_MODE'],
       ['tab-size-pref', '', 'text', null], ['', 'tabSize', 'hidden', null], ['', 'fileViewMode', 'radio', 'TREE'], ['', 'fileViewMode', 'radio', 'LIST'],
     ];
+    const without = expected.filter((f) => f[1] !== 'enableAnnotations');
+    if (inspection) {
+      const families = [expected, without];const structural = families.find((family) => family.length === fields.length && fields.every((f, i) => f.id === family[i][0] && f.name === family[i][1] && f.type === family[i][2]));
+      inspection.checks.shape = families.map((family) => ({ family: family.length === 13 ? 'standalone_13' : 'standalone_12', countMatches: fields.length === family.length, fields: fields.slice(0, 40).map((f, index) => ({ index, idMatches: family[index] !== undefined && f.id === family[index][0], nameMatches: family[index] !== undefined && f.name === family[index][1], typeMatches: family[index] !== undefined && f.type === family[index][2], enumValueMatches: null })) }));
+      if (structural === undefined) return refuse('shape_mismatch');
+    }
     const shape = fields.map((f) => [f.id, f.name, f.type, ['radio', 'checkbox'].includes(f.type) ? f.value : null]);
-    const annotations = equal(shape, expected);const without = expected.filter((f) => f[1] !== 'enableAnnotations');if (!annotations && !equal(shape, without)) return { form: null, diagnostics };
+    if (inspection) for (const entry of inspection.checks.shape) { const family = entry.family === 'standalone_13' ? expected : without;if (entry.countMatches && fields.every((f, i) => f.id === family[i][0] && f.name === family[i][1] && f.type === family[i][2])) for (const check of entry.fields) check.enumValueMatches = ['radio', 'checkbox'].includes(fields[check.index].type) ? shape[check.index][3] === family[check.index][3] : null; }
+    const annotations = equal(shape, expected);if (!annotations && !equal(shape, without)) return refuse('shape_mismatch');
     const tabValue = (v) => v === '' || /^(?:[1-9]\d?|100)$/.test(v);
-    if (fields.some((f) => ['hidden', 'text'].includes(f.type) && !tabValue(f.value))) return { form: null, diagnostics };
-    for (const name of ['diffViewMode', 'isSingleFileModeEnabled', 'fileViewMode']) if (fields.filter((f) => f.name === name && f.checked).length !== 1) return { form: null, diagnostics };
+    if (inspection) inspection.checks.tab = [];
+    if (fields.some((f, index) => { if (!['hidden', 'text'].includes(f.type)) return false;const valid = tabValue(f.value);if (inspection) inspection.checks.tab.push({ index, valid });return !valid; })) return refuse('tab_value');
+    for (const name of ['diffViewMode', 'isSingleFileModeEnabled', 'fileViewMode']) {
+      const count = fields.filter((f) => f.name === name && f.checked).length;if (inspection) (inspection.checks.radios ??= []).push({ group: name === 'diffViewMode' ? 'diff_view' : name === 'isSingleFileModeEnabled' ? 'file_mode' : 'file_view', selectedCount: count });
+      if (count !== 1) return refuse('radio_selection_count');
+    }
     const labels={enableSyntaxHighlighting:'Syntax highlighting',shouldIgnoreWhitespace:'Whitespace changes',enableWordDiff:'Word diff',enableColorBlindMode:'Color accessibility',enableAnnotations:'Annotations'};
-    if(fields.some((f)=>f.type==='checkbox'&&![...f.labels??[]].some((l)=>l.textContent.trim()===labels[f.name]&&visible(l))))return{form:null,diagnostics};
+    if (inspection) inspection.checks.labels = fields.flatMap((f, index) => f.type === 'checkbox' ? [{ index, labelCount: [...f.labels ?? []].length, exactMatchCount: [...f.labels ?? []].filter((l) => l.textContent.trim() === labels[f.name]).length, visibleMatchCount: [...f.labels ?? []].filter((l) => l.textContent.trim() === labels[f.name] && visible(l)).length }] : []);
+    if(fields.some((f)=>f.type==='checkbox'&&![...f.labels??[]].some((l)=>l.textContent.trim()===labels[f.name]&&visible(l))))return refuse('checkbox_label');
     const field = fields.find((f) => f.id === 'diff-settings-syntax-highlighting-toggle');
-    if (![...field.labels ?? []].some((l) => l.textContent.trim() === 'Syntax highlighting' && visible(l))) return { form: null, diagnostics };
+    if (inspection) inspection.checks.syntaxLabel = [...field.labels ?? []].some((l) => l.textContent.trim() === 'Syntax highlighting' && visible(l));
+    if (![...field.labels ?? []].some((l) => l.textContent.trim() === 'Syntax highlighting' && visible(l))) return refuse('syntax_label');
     const buttons = [...form.querySelectorAll('button')].filter(native);const saves = buttons.filter((b) => b.type === 'submit' && b.textContent.trim() === 'Save' && enabled(b) && visible(b));const cancels = buttons.filter((b) => b.type === 'button' && b.textContent.trim() === 'Cancel' && enabled(b) && visible(b));
-    if (buttons.length !== 2 || saves.length !== 1 || cancels.length !== 1) return { form: null, diagnostics };
+    if (inspection) inspection.checks.buttons = { count: buttons.length, saveCount: saves.length, cancelCount: cancels.length, controls: buttons.slice(0, 40).map((b, index) => ({ index, type: ['submit', 'button', 'reset'].includes(b.type) ? b.type : 'unknown', phrase: phrase(b.textContent.trim()), native: native(b), enabled: enabled(b), visible: visible(b) })) };
+    if (buttons.length !== 2 || saves.length !== 1 || cancels.length !== 1) return refuse(buttons.length !== 2 ? 'button_count' : saves.length !== 1 ? 'save_count' : 'cancel_count');
+    if (inspection) inspection.recognized = true;
     const vector = fields.map((f) => ({ id: f.id, name: f.name, type: f.type, value: f.value, checked: f.checked, disabled: f.disabled, readOnly: f.readOnly }));
     return { form: { dialog, form, fields, field, save: saves[0], cancel: cancels[0], vector, candidate: annotations ? 'source-backed-standalone-13' : 'source-backed-standalone-12-without-annotations' }, diagnostics };
   };
@@ -115,7 +139,9 @@ export function nativeBashOnProbe(action = 'read', target = null, fixture = null
   });
   const cookies = cookieNotices();const sameCookies = cookies.length === store.cookieNotices.length && cookies.every((node,i)=>node===store.cookieNotices[i].node&&node.parentElement===store.cookieNotices[i].parent);
   const same = sameCookies && equal(store.theme,[document.documentElement.getAttribute('data-color-mode'),document.documentElement.getAttribute('data-theme')]) && currentURL() && location.href === store.url && a.node === store.actor.node && a.bytes === store.actor.bytes && a.workspace === store.actor.workspace && sameOwner && sameSemantic && (stable || store.transition!==null);
-  const state = formRead();const f = state.form;
+  let state;
+  if (action === 'diagnose-form') { try { state = formRead(); } catch { state = { form: null, diagnostics: { inspection: { recognized: false, firstRefusal: 'inspection_unavailable', checks: null } } }; } }else state = formRead();
+  const f = state.form;
   const sameForm = f !== null && store.form !== null && f.dialog === store.form.dialog && f.form === store.form.form && f.field === store.form.field && f.save === store.form.save && f.cancel === store.form.cancel && f.fields.length===store.form.fields.length&&f.fields.every((n, i) => n === store.form.fields[i]);
   const canSave=same&&stable&&sameForm&&store.transition===null&&store.saveArm!==null&&store.saveArm.form===f.form&&equal(f.vector,store.saveArm.vector)&&store.events.length===3&&store.events.every((e,i)=>e.trusted&&e.control==='syntax'&&e.type===['click','input','change'][i]&&e.checked===store.saveArm.target);
   if (action === 'bind') {
@@ -133,6 +159,7 @@ export function nativeBashOnProbe(action = 'read', target = null, fixture = null
     if (CSS.highlights.get(b.name)!==b.value||(b.value.priority??null)!==b.priority||(b.value.type??null)!==b.type)return false;
     const current=[...b.value];return current.length===b.ranges.length&&current.every((range,i)=>{const before=b.ranges[i];return range===before.range&&range.startContainer===before.startContainer&&range.startOffset===before.startOffset&&range.endContainer===before.endContainer&&range.endOffset===before.endOffset;});
   });
+  if (action === 'diagnose-form') return { same, sameSemantic, sameOwner, stable, url: location.href, rows: s.records.length, ownedHighlightCount: own().length, ownedUiCount: s.root.querySelectorAll('[data-geld-ui]').length, counts: s.counts.map((r) => r.text), viewedAvailable: s.viewed !== null, forbiddenEventCount: store.events.length + store.early.length, openerEvent: store.expected === store.opener?.node && store.last?.type === 'click' && store.last.url === store.url ? { trusted: store.last.trusted, type: 'click', url: store.url } : null, inspection: state.diagnostics.inspection };
   if (action === 'baseline') {
     if (!same || !sameForm || store.events.length || store.early.length || own().length) return null;
     if(store.transition!==null&&!equal(f.vector,store.transition.vector))return null;

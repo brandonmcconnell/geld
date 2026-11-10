@@ -32,6 +32,7 @@ import { verifyGitLabTableHeights } from './gitlab-table-height-acceptance.mjs';
 import { verifyGitLabRoundAttention } from './round-attention-acceptance.mjs';
 import { SHARED_SETTINGS_NATIVE_ORACLES, assertPatternOnlySettings, restoreCategoryPatterns, settingsRequestEvidence, sharedSettingsSourceIdentity, sharedSettingsSampleValid } from './three-provider-settings.mjs';
 import { assertInitialNativeOnTraffic, initialNativeOnPreflight, initialNativeOnSettings, verifyInitialNativeOn } from './bitbucket-initial-native-on.mjs';
+import { diagnoseNativeSettings, nativeSettingsDiagnosticPreflight } from './bitbucket-native-settings-diagnostic.mjs';
 import { characterizeNativeBashOn, nativeBashMasterScope, nativeBashOnPreflight } from './bitbucket-native-bash-on.mjs';
 import { BITBUCKET_NATIVE_BASH, discoverNativeBash, observeNativeBashSources } from './bitbucket-native-bash.mjs';
 
@@ -52,6 +53,7 @@ const FOCUSED_CASES = {
   'bitbucket-authors': ['bitbucket-list-authors'],
   'bitbucket-native-bash': ['bitbucket-native-bash-style'],
   'bitbucket-native-bash-on': ['bitbucket-native-bash-on'],
+  'bitbucket-native-settings-diagnostic': ['bitbucket-native-settings-diagnostic'],
   'bitbucket-comment': ['bitbucket-comment-digest'],
   'bitbucket-commit': ['bitbucket-commit-counts'],
   'bitbucket-commit-links': ['bitbucket-commit-links'],
@@ -76,6 +78,7 @@ const syntaxOnObservers = new WeakMap();
 const initialOnSettingsScopes = new WeakMap();
 const nativeBashSources = new WeakMap();
 const nativeBashSettingsScopes = new WeakMap();
+const nativeSettingsDiagnosticScopes = new WeakMap();
 const gitLabComparisonSources = new WeakMap();
 const gitLabStandaloneSources = new WeakMap();
 const GL_MIXED = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266334/diffs?diff_id=2158520123';
@@ -344,6 +347,7 @@ async function runCase(name, url, body, discovery = false) {
   let listSettings;
   let nativeSettings;
   let bashSettings;
+  let diagnosticSettings;
   let firstUseSettings;
   let commitLinkSettings;
   let pipelineSettings;
@@ -353,6 +357,7 @@ async function runCase(name, url, body, discovery = false) {
   let syntaxOnTraffic;
   const abort = new AbortController();
   try {
+    if (name === 'bitbucket-native-settings-diagnostic' && focus !== 'bitbucket-native-settings-diagnostic') { item.status = 'not_selected';item.reason = 'Opener-only native Settings diagnosis is literal-only, excluded from default/all/regression. No navigation or form action.';return; }
     if (name === 'bitbucket-pipeline-initial-on' && focus !== 'bitbucket-pipeline-initial-on') { item.status = 'not_selected';item.reason = 'First-use file-local native On acceptance requires its literal focus, excluding default/all/regression. No navigation, master enable or native preference action.';return; }
     if (name === 'bitbucket-native-bash-on' && focus !== 'bitbucket-native-bash-on') { item.status = 'not_selected';item.reason = 'Standalone native Bash On requires its literal focus, excluding default/all/regression. No navigation, field or Save action.';return; }
     if (name === 'bitbucket-pipeline-syntax-on' && focus !== 'bitbucket-pipeline-syntax-on') {
@@ -447,6 +452,15 @@ async function runCase(name, url, body, discovery = false) {
         writeSettings: (saved) => options.evaluate(async (key, saved) => { if (saved === undefined) await chrome.storage.sync.remove(key);else await chrome.storage.sync.set({ [key]: saved }); }, SETTINGS_KEY, saved), progress: item.nativeBashSettings });
       await bashSettings.prepare();
     }
+    if (name === 'bitbucket-native-settings-diagnostic') {
+      const active = bitbucketRequestTimes.filter((at) => at > Date.now() - 60 * 60 * 1000).length;
+      item.nativeSettingsDiagnosticPreflight = nativeSettingsDiagnosticPreflight(active, report.quotaPolicy.conservativeObservedRequestBudget);
+      if (!item.nativeSettingsDiagnosticPreflight.budgetAvailable) { item.navigationSuppressedByBudget = true;throw new Error('Read-only diagnostic forecast needs ten measured requests plus five free. NativeOn still requires full40. No navigation attempted.'); }
+      item.nativeSettingsDiagnosticSettings = {};
+      diagnosticSettings = nativeBashMasterScope({ readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY), patchSettings,
+        writeSettings: (saved) => options.evaluate(async (key, saved) => { if (saved === undefined) await chrome.storage.sync.remove(key);else await chrome.storage.sync.set({ [key]: saved }); }, SETTINGS_KEY, saved), progress: item.nativeSettingsDiagnosticSettings });
+      await diagnosticSettings.prepare();
+    }
     if (name === 'bitbucket-native-bash-style') {
       nativeSettings = await options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY);
       item.nativePreparation = await patchSettings({ enabled: false });
@@ -454,15 +468,16 @@ async function runCase(name, url, body, discovery = false) {
     }
     page = await browser.newPage();
     if (bashSettings !== undefined) nativeBashSettingsScopes.set(page, bashSettings);
+    if (diagnosticSettings !== undefined) nativeSettingsDiagnosticScopes.set(page, diagnosticSettings);
     if (firstUseSettings !== undefined) initialOnSettingsScopes.set(page, firstUseSettings);
     await page.setViewport({ width: 1440, height: 1000, deviceScaleFactor: 1 });
     await page.bringToFront();
     page.on('close', () => { if (!abort.signal.aborted) abort.abort(new Error('Browser case page closed; polling stopped immediately')); });
     observeBitbucketBudget(page, item, abort);
-    page.on('console', (message) => { if (item.console.length < 100) item.console.push({ type: message.type(), text: message.text().slice(0, 2000) }); });
-    page.on('pageerror', (error) => { if (item.pageErrors.length < 100) item.pageErrors.push(errorText(error)); });
+    page.on('console', (message) => { if (name === 'bitbucket-native-settings-diagnostic') { item.suppressedNativeConsoleCount = (item.suppressedNativeConsoleCount ?? 0) + 1;return; }if (item.console.length < 100) item.console.push({ type: message.type(), text: message.text().slice(0, 2000) }); });
+    page.on('pageerror', (error) => { if (name === 'bitbucket-native-settings-diagnostic') { item.suppressedNativePageErrorCount = (item.suppressedNativePageErrorCount ?? 0) + 1;return; }if (item.pageErrors.length < 100) item.pageErrors.push(errorText(error)); });
     page.on('requestfailed', (request) => {
-      if (item.requestFailures.length < 100) item.requestFailures.push({ url: safeUrl(request.url()), method: request.method(), error: request.failure()?.errorText });
+      if (item.requestFailures.length < 100) item.requestFailures.push({ url: safeUrl(request.url()), method: request.method(), error: name === 'bitbucket-native-settings-diagnostic' ? 'native_request_error_text_suppressed' : request.failure()?.errorText });
     });
     page.on('response', (response) => {
       const headers = response.headers();
@@ -500,6 +515,7 @@ async function runCase(name, url, body, discovery = false) {
     }
     if (name === 'bitbucket-commit-counts') commitSources.set(page, observeBitbucketCommitFixture(page, item));
     if (name === 'bitbucket-commit-links') commitSources.set(page, observeBitbucketCommitFixture(page, item));
+    if (name === 'bitbucket-native-settings-diagnostic') nativeBashSources.set(page, observeNativeBashSources(page, item, { safeUrl, extensionId }));
     if (name === 'bitbucket-native-bash-style') nativeBashSources.set(page, observeNativeBashSources(page, item, { safeUrl, extensionId }));
     if (name === 'bitbucket-native-bash-on') {
       item.purpose = 'Reversible anonymous standalone native Bash Syntax-On source/style characterization. Explicit native controls only, no feature or persistence pass.';
@@ -512,19 +528,20 @@ async function runCase(name, url, body, discovery = false) {
     assert.equal(response?.status(), 200, 'Public fixture navigation did not return HTTP200');
     const result = await body(page, item);
     Object.assign(item, result);
-    item.auth = name === 'bitbucket-pipeline-initial-on' ? { status: 'scoped_native_bootstrap', anonymousAtBaseline: item.initialNativeOn?.setup?.same === true ? true : null, scope: 'Same-visit source-backed anonymous actor, no private capability getter' } : name === 'bitbucket-native-bash-on' ? { status: 'scoped_native_bootstrap', anonymousAtBaseline: item.nativeBashOn?.setup?.same === true ? true : null, scope: 'Same-visit original anonymous bootstrap, not a durable actor or authenticated acceptance' } : await authObservation(page, provider);
-    item.artifacts = name === 'bitbucket-pipeline-initial-on' ? item.initialNativeOn?.artifacts ?? { suppressed: 'No safe first-use stage artifact. Unknown form DOM/AX must never be captured.' } : name === 'bitbucket-native-bash-on' ? item.nativeBashOn?.artifacts ?? { suppressed: 'No safe native Bash stage artifact. Generic DOM/AX capture is prohibited for an unknown form.' } : name === 'bitbucket-native-bash-style' ? item.nativeBashStyle.artifacts : await capture(page, name, { fullPage: !['bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'gitlab-standalone-whole-commit', 'gitlab-standalone-whole-compare'].includes(name) });
+    item.auth = name === 'bitbucket-native-settings-diagnostic' ? { status: 'report_only', anonymousSourceLease: item.nativeSettingsDiagnostic?.setup?.same === true, scope: 'No generic authentication observation or form serialization' } : name === 'bitbucket-pipeline-initial-on' ? { status: 'scoped_native_bootstrap', anonymousAtBaseline: item.initialNativeOn?.setup?.same === true ? true : null, scope: 'Same-visit source-backed anonymous actor, no private capability getter' } : name === 'bitbucket-native-bash-on' ? { status: 'scoped_native_bootstrap', anonymousAtBaseline: item.nativeBashOn?.setup?.same === true ? true : null, scope: 'Same-visit original anonymous bootstrap, not a durable actor or authenticated acceptance' } : await authObservation(page, provider);
+    item.artifacts = name === 'bitbucket-native-settings-diagnostic' ? { suppressed: 'Always report only. No HTML, AX, PNG or form serialization.' } : name === 'bitbucket-pipeline-initial-on' ? item.initialNativeOn?.artifacts ?? { suppressed: 'No safe first-use stage artifact. Unknown form DOM/AX must never be captured.' } : name === 'bitbucket-native-bash-on' ? item.nativeBashOn?.artifacts ?? { suppressed: 'No safe native Bash stage artifact. Generic DOM/AX capture is prohibited for an unknown form.' } : name === 'bitbucket-native-bash-style' ? item.nativeBashStyle.artifacts : await capture(page, name, { fullPage: !['bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'gitlab-standalone-whole-commit', 'gitlab-standalone-whole-compare'].includes(name) });
     item.status = result?.status ?? (discovery ? 'discovery' : 'passed');
   } catch (error) {
-    item.status = name === 'bitbucket-native-bash-on' && item.nativeBashOn?.status === 'failed' ? 'failed' : discovery ? item.rateLimitedUntil === undefined ? 'unavailable' : 'rate_limited' : 'failed';
+    item.status = name === 'bitbucket-native-settings-diagnostic' && item.nativeSettingsDiagnostic?.status === 'failed' ? 'failed' : name === 'bitbucket-native-bash-on' && item.nativeBashOn?.status === 'failed' ? 'failed' : discovery ? item.rateLimitedUntil === undefined ? 'unavailable' : 'rate_limited' : 'failed';
     item.error = errorText(error);
     if (item.rateLimitedUntil !== undefined) {
       item.interruptedError = item.error;
       item.error = `${item.holdReason === 'conservative_anonymous_api_budget' ? 'Conservative anonymous API budget hold' : item.navigationSuppressedByCooldown ? 'Inherited provider cooldown' : 'Provider HTTP429 cooldown'} until ${item.rateLimitedUntil}. Native demand stopped and no retry was attempted.`;
     }
+    if (name === 'bitbucket-native-settings-diagnostic') item.artifacts = { suppressed: 'Always report only, including failures. No HTML, AX or PNG.' };
     if (name === 'bitbucket-pipeline-initial-on') item.artifacts = item.initialNativeOn?.artifacts ?? { suppressed: 'Generic failed-case DOM/AX capture is prohibited for the first-use native form.' };
     if (name === 'bitbucket-native-bash-on') item.artifacts = item.nativeBashOn?.artifacts ?? { suppressed: 'Generic failed-case DOM/AX capture is prohibited for the native Bash form.' };
-    if (page !== undefined && !page.isClosed() && !['bitbucket-native-bash-on', 'bitbucket-pipeline-initial-on'].includes(name)) {
+    if (page !== undefined && !page.isClosed() && !['bitbucket-native-bash-on', 'bitbucket-pipeline-initial-on', 'bitbucket-native-settings-diagnostic'].includes(name)) {
       try { item.artifacts = await capture(page, `${name}-failed`, { fullPage: !['bitbucket-native-bash-style', 'bitbucket-pipeline-shell', 'bitbucket-pipeline-syntax-on', 'gitlab-standalone-whole-commit', 'gitlab-standalone-whole-compare'].includes(name) }); } catch (captureError) { item.captureError = errorText(captureError); }
     }
   } finally {
@@ -555,6 +572,13 @@ async function runCase(name, url, body, discovery = false) {
       try { const evidence = name === 'bitbucket-native-bash-on' ? item.nativeBashRequests : item.shellNativeSources;const traffic = name === 'bitbucket-native-bash-on' ? item.nativeBashOnTraffic : item.syntaxOnTraffic;assert.ok(evidence && Array.isArray(evidence.mutations), 'Native source observer evidence unavailable');(name === 'bitbucket-pipeline-initial-on' ? assertInitialNativeOnTraffic : assertSyntaxOnTraffic)(traffic, evidence.mutations);traffic.finalCheckedAfterPageClose = page.isClosed(); }
       catch (error) { item.status = 'failed';item.cleanupError = errorText(error); }
       finally { syntaxOnTraffic.dispose(); }
+    }
+    if (diagnosticSettings !== undefined) {
+      try {
+        const source = page === undefined ? undefined : nativeBashSources.get(page);if (source !== undefined) { await source.flush();assert.deepEqual(source.evidence.mutations, []);assert.deepEqual(source.evidence.errors, []); }
+      } catch { item.status = 'failed';item.cleanupError = 'Native report-only source cleanup failed';report.infrastructureErrors.push(item.cleanupError); }
+      try { await diagnosticSettings.restore(page === undefined || page.isClosed()); }
+      catch { item.status = 'failed';item.cleanupError = 'Native report-only settings restoration failed';report.infrastructureErrors.push(item.cleanupError); }
     }
     if (firstUseSettings !== undefined) {
       try { await firstUseSettings.restore(page === undefined || page.isClosed()); }
@@ -2957,6 +2981,10 @@ try {
     item.featureParity = 'partial';
     return { status: 'passed', verified: `Standalone totals match complete already-issued immutable metadata/diffstat responses. The native heading and badge reach zero under a real synchronized custom rule, hide the actual file, and restore with native IDs/links preserved. The pattern-only shared setting also reaches zero and restores all three public sites without another extension-attributed Bitbucket source request. ${item.commitCounts.parentHover.status === 'passed' ? 'The genuine native parent link also shows its own observed immutable count breakdown by pointer and real Tab input.' : `Parent hover remains unverified: ${item.commitCounts.parentHover.reason}`}` };
   });
+
+  await runCase('bitbucket-native-settings-diagnostic', BITBUCKET_NATIVE_BASH.url, async (page, item) => diagnoseNativeSettings(page, item, {
+    poll, pause, tabState, source: nativeBashSources.get(page), settings: nativeSettingsDiagnosticScopes.get(page), guardBudget: guardBitbucketShellBudget,
+  }), true);
 
   await runCase('bitbucket-native-bash-on', BITBUCKET_NATIVE_BASH.url, async (page, item) => characterizeNativeBashOn(page, item, {
     poll, pause, tabState, source: nativeBashSources.get(page), traffic: syntaxOnObservers.get(page), freshAnonymousProfile: report.auth.freshTemporaryBrowserProfile,
