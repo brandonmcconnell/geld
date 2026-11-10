@@ -23,6 +23,12 @@ describe('renderIssueMarkdown', () => {
     expect(out).toContain('<sub>Sent from Geld.</sub>');
   });
 
+  it('loads nothing from the draft: an image shows as its words and address', () => {
+    const out = html('![shot](https://example.com/private/a.png)');
+    expect(out).not.toContain('<img');
+    expect(out).toContain('Image: shot (https://example.com/private/a.png)');
+  });
+
   it('opens links in a new tab', () => {
     expect(html('[docs](https://geld.sh)')).toContain('<a href="https://geld.sh" target="_blank" rel="noreferrer">docs</a>');
   });

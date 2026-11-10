@@ -263,8 +263,13 @@ async function reopen(opening: FeedbackOpenMessage): Promise<void> {
   if (tab?.id !== undefined) await browser.tabs.update(tab.id, { active: true });
   if (tab?.windowId !== undefined) await browser.windows.update(tab.windowId, { focused: true });
   if (!sent.hidden) startOver();
+  if (sending) return;
   if (opening.tabId !== undefined) openingTab = opening.tabId;
   if (opening.diagnostics === true) choice.diagnostics = true;
+  // The page may be another one now, perhaps a private repository's: its address and the consent are asked for afresh.
+  choice.page = false;
+  consent.checked = false;
+  renderAccount();
   context = await gatherContext();
   renderChoices();
   renderPreview();
