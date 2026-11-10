@@ -30,7 +30,8 @@ import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, queryAll, restoreManaged
 import { conversationHeadSha, detectHeadSha, documentNavigatedSinceLoad, fetchHeadSha, forgetAskedHead, rememberAskedHead, shaFromCommitUrl, watchFilesRefresh } from './head-sha';
 import { applyQuickReview, quickReviewStandBusy, reassertStatusPills, rememberReviewGroup, removeQuickReview } from './quick-review';
 import type { HeaderStatGroup } from './header-stats';
-import { applyHeaderStats, findHeaderStatGroups, holdsHeaderStats, isCountsStandIn, isSrOnlyText, removeCountsStandIn, restoreHeaderStats, syncCountsStandIn } from './header-stats';
+import { applyHeaderStats, branchGroupTotals, findHeaderStatGroups, holdsHeaderStats, isCountsStandIn, isSrOnlyText, removeCountsStandIn, restoreHeaderStats, syncCountsStandIn } from './header-stats';
+import { rememberTabCounts, setTabCounts } from './tab-counts';
 import type { StandIn } from './header-stats';
 import { headerDiffstat } from './header-diffstat';
 import type { DiffEntry, DiffView, TreeFileNode } from './model';
@@ -514,6 +515,8 @@ export class GeldController {
     }
     for (const region of regions) this.pendingScope.add(region);
     markCrawlDirty(records);
+    // Before the stand-in below, which stands in the tab row only while GitHub's own counts are hidden.
+    this.syncTabCounts();
     // Header first, synchronously: this callback runs before the browser
     // paints, so a (re-)rendered header never shows GitHub's number when the
     // filtered one is already known or cached.
@@ -1129,6 +1132,7 @@ export class GeldController {
     }
     if (!this.settings.enabled) {
       rememberReviewGroup(repoFromPathname(window.location.pathname), false);
+      rememberTabCounts(repoFromPathname(window.location.pathname), false);
       this.teardown();
       this.publish({ ...IDLE_STATE, allowed: false });
       return;
@@ -1150,8 +1154,9 @@ export class GeldController {
     const decision = repo === null ? { allowed: true, rule: null } : decideRepo(this.repoRules, repo);
 
     if (!decision.allowed) {
-      // A repository left out: GitHub's review button shows there from the next load's first frame too.
+      // A repository left out: GitHub's review button and counts show there from the next load's first frame too.
       rememberReviewGroup(repo, false);
+      rememberTabCounts(repo, false);
       this.teardown();
       this.publish({ ...IDLE_STATE, repo, allowed: false, rule: decision.rule?.raw ?? null });
       return;
@@ -1159,6 +1164,7 @@ export class GeldController {
     this.askHeadOnArrival(page);
 
     if (!document.documentElement.hasAttribute(ATTR_DRESSED)) document.documentElement.setAttribute(ATTR_DRESSED, '');
+    this.syncTabCounts();
     applyAttachmentLightbox(this.settings.attachmentLightbox);
 
     // Another page state (a navigation) is always the whole page, whatever the batches said.
@@ -1875,7 +1881,8 @@ export class GeldController {
       want = 'skeleton';
     } else if (standsIn && page.diffUrl !== null && pullPath !== null) {
       // GitHub's totals are the whole pull request's, so a Files tab narrowed to a commit or range counts its own diff.
-      const github = page.commits === undefined ? headerDiffstat(pullPath, sha, () => this.onCountsStandInChanged()) : null;
+      // The new page's header shows GitHub's totals beside the branch names, hidden while Geld's stand in the tab row.
+      const github = page.commits === undefined ? (branchGroupTotals() ?? headerDiffstat(pullPath, sha, () => this.onCountsStandInChanged())) : null;
       const state = this.diffSource.request(page.diffUrl, sha, 'page');
       if (state.status === 'failed') want = github ?? null;
       else if (state.status === 'ready' && github !== undefined && !this.configPending(repoFromPathname(url.pathname))) {
@@ -2118,6 +2125,25 @@ export class GeldController {
     onReviewBeforeMatch(event, this.settings);
   };
 
+  /**
+   * GitHub's counts beside the new page's branch names give way to Geld's in the tab row (`tab-counts.ts`) on every
+   * pull request page Geld dresses, and the decision is kept for the next load's first frame.
+   */
+  private syncTabCounts(): void {
+    const path = window.location.pathname;
+    if (!/^\/[^/]+\/[^/]+\/pull\/\d+(?:\/|$)/.test(path)) {
+      setTabCounts(false);
+      return;
+    }
+    const on = this.mayDressPage();
+    if (setTabCounts(on)) {
+      this.headerScan = null;
+      this.headerDirty = true;
+    }
+    // A sign-in page says nothing about the repository, and a dead context about the settings.
+    if (!isSignInInterstitial() && extensionAlive()) rememberTabCounts(repoFromPathname(path), on);
+  }
+
   /** What a pass checks before touching the page, for the work done before paint between passes. */
   private mayDressPage(): boolean {
     if (!this.settings.enabled || !extensionAlive() || isSignInInterstitial()) return false;
@@ -2128,6 +2154,8 @@ export class GeldController {
   /** `rebuild`: the page is dressed again right after, so the digest keeps what the reader opened and unfolded. */
   private teardown(rebuild = false): void {
     document.documentElement.removeAttribute(ATTR_DRESSED);
+    // A rebuild stands the counts in the tab row again at once: GitHub's beside the branch names would show for a frame.
+    if (!rebuild) setTabCounts(false);
     removeAttachmentLightbox();
     this.settledHeader = null;
     this.headerGroups = [];

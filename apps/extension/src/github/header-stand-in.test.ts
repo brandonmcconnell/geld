@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { allCategories, DEFAULT_SETTINGS } from '@geld/core';
 import { EMPTY_BREAKDOWN } from './breakdown';
-import { applyHeaderStats, ATTR_COUNTS_STAND_IN, countsSkeletonStandIn, findHeaderStatGroups, isCountsStandIn, syncCountsStandIn } from './header-stats';
+import { applyHeaderStats, ATTR_COUNTS_STAND_IN, branchGroupTotals, countsSkeletonStandIn, findHeaderStatGroups, isCountsStandIn, syncCountsStandIn } from './header-stats';
+import { setTabCounts } from './tab-counts';
 
 /** A pull request header's tab row as GitHub renders it, its counts wrapper empty for a change of binary files only. */
 function header(wrapper: string | null): void {
@@ -148,51 +149,102 @@ describe("the counts' narrow-screen copy", () => {
   });
 });
 
-/** The Overview's header: GitHub's counts slot is the line beside the branch names, and the tab row's wrapper stays empty. */
-function overview(slot: string): { group: Element; tabs: Element } {
+/** The new page's header: GitHub's counts beside the branch names, the tab row's wrapper empty, and its bar over the page. */
+function overview(slot: string, stuck = false): { branches: Element; tabs: Element; bar: Element } {
   document.body.innerHTML = `
+    <div data-testid="diff-comparison-viewer-sticky-header-slot" class="StickyHeaderSlotPersistent__x">
+      <div data-testid="diff-comparison-viewer-sticky-header-bar"><div class="miniHeaderInner__x">
+        ${stuck ? '<button data-testid="mini-header-tab-switcher-trigger" type="button"></button>' : ''}
+        <div class="metadata__x">#1</div>
+        <div class="actions__x"><button type="button">Merge status</button><div class="divider__x"></div></div>
+      </div></div>
+    </div>
     <div data-component="PageHeader">
-      <div class="branchGroup__x"><div class="branches__x">main ← topic</div>${slot}</div>
+      <div data-component="PageHeader.Description"><div class="branchGroup__x"><div class="branches__x">main ← topic</div>${slot}</div></div>
       <div class="prc-PageHeader-Navigation--uLav">
-        ${EMPTY_WRAPPER}
-        <div class="flex-auto"><nav class="TabNav__qHkBGx"><a id="prs-files-anchor-tab" href="/o/r/pull/1/changes">Files changed</a></nav></div>
+        <div class="rightContentWrapper__DE7XPN reducedTopPadding__x"></div>
+        <div class="flex-auto"><nav class="prc-UnderlineNav-UnderlineWrapper-x"><a id="prs-files-anchor-tab" href="/o/r/pull/1/changes">Files changed</a></nav></div>
       </div>
     </div>`;
-  return { group: document.querySelector('[class*="branchGroup"]')!, tabs: document.querySelector('[class*="rightContentWrapper"]')! };
+  return {
+    branches: document.querySelector('[class*="branchGroup"]')!,
+    tabs: document.querySelector('[class*="rightContentWrapper"]')!,
+    bar: document.querySelector('[class*="actions"]')!,
+  };
 }
 
-describe('syncCountsStandIn on the Overview', () => {
+function stick(on: boolean): void {
+  const inner = document.querySelector('[class*="miniHeaderInner"]')!;
+  if (on) inner.insertAdjacentHTML('afterbegin', '<button data-testid="mini-header-tab-switcher-trigger" type="button"></button>');
+  else inner.querySelector('[data-testid="mini-header-tab-switcher-trigger"]')?.remove();
+}
+
+describe('syncCountsStandIn on the new page', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
+    setTabCounts(true);
   });
 
-  it("waits while GitHub's skeleton stands beside the branch names", () => {
+  afterEach(() => {
+    setTabCounts(false);
+  });
+
+  it("leaves GitHub's counts beside the branch names out of the header's groups and reads their totals", () => {
+    overview(REAL_COUNTS);
+    expect(findHeaderStatGroups()).toHaveLength(0);
+    expect(branchGroupTotals()).toEqual({ additions: 22, deletions: 12 });
+    setTabCounts(false);
+    expect(findHeaderStatGroups()).toHaveLength(1);
+  });
+
+  it('reads no totals while GitHub shows its skeleton there', () => {
     overview('<div class="skeleton__c5fLaY" style="width: 96px"></div>');
-    expect(syncCountsStandIn('skeleton')).toBe(false);
-    expect(syncCountsStandIn(ZERO)).toBe(false);
-    expect(document.querySelector(`[${ATTR_COUNTS_STAND_IN}]`)).toBeNull();
+    expect(branchGroupTotals()).toBeNull();
   });
 
-  it('stands after the branch names, never in the tab row, and turns into counts in place', () => {
-    const { group, tabs } = overview('');
+  it('stands at the end of the tab row in Geld’s own skeleton, then turns into counts in its place', () => {
+    const { branches, tabs } = overview(REAL_COUNTS);
     expect(syncCountsStandIn('skeleton')).toBe(true);
     const skeleton = countsSkeletonStandIn();
-    expect(skeleton?.parentElement).toBe(group);
-    expect(skeleton?.previousElementSibling?.className).toBe('branches__x');
+    expect(skeleton?.parentElement).toBe(tabs);
+    expect(skeleton?.className).toBe('geld-counts-skeleton');
+    expect(tabs.hasAttribute('data-geld-counts-home')).toBe(true);
     expect(syncCountsStandIn('skeleton')).toBe(false);
     expect(syncCountsStandIn(ZERO)).toBe(true);
     const counts = document.querySelector(`[${ATTR_COUNTS_STAND_IN}]`);
     expect(counts === skeleton).toBe(false);
-    expect(counts?.parentElement).toBe(group);
-    expect(counts?.getAttribute(ATTR_COUNTS_STAND_IN)).toBe('0:0');
-    expect(tabs.querySelector('*')).toBeNull();
+    expect(counts?.parentElement).toBe(tabs);
+    expect(branches.querySelector(`[${ATTR_COUNTS_STAND_IN}]`)).toBeNull();
+    expect(findHeaderStatGroups().map((group) => isCountsStandIn(group.host))).toEqual([true]);
   });
 
-  it("gives way to GitHub's own counts there", () => {
-    const { group } = overview('');
+  it("rides GitHub's bar while its tabs are scrolled under it, the same node, after the review group, and comes back", () => {
+    const { tabs, bar } = overview(REAL_COUNTS);
     syncCountsStandIn(ZERO);
-    group.insertAdjacentHTML('beforeend', REAL_COUNTS);
+    const counts = document.querySelector(`[${ATTR_COUNTS_STAND_IN}]`);
+    bar.insertAdjacentHTML('afterbegin', '<span class="geld-quick-review" data-geld-ui></span>');
+    stick(true);
+    // A move, not a new node: nothing for the header to read again.
+    expect(syncCountsStandIn(ZERO)).toBe(false);
+    expect(document.querySelector(`[${ATTR_COUNTS_STAND_IN}]`)).toBe(counts);
+    expect(counts?.parentElement).toBe(bar);
+    expect(counts?.previousElementSibling?.className).toBe('geld-quick-review');
+    stick(false);
+    expect(syncCountsStandIn(ZERO)).toBe(false);
+    expect(counts?.parentElement).toBe(tabs);
+  });
+
+  it('stands first in the bar when the page loads scrolled past the tabs', () => {
+    const { bar } = overview(REAL_COUNTS, true);
     expect(syncCountsStandIn(ZERO)).toBe(true);
+    expect(bar.firstElementChild?.hasAttribute(ATTR_COUNTS_STAND_IN)).toBe(true);
+  });
+
+  it('goes when Geld has nothing to show', () => {
+    const { tabs } = overview(REAL_COUNTS);
+    syncCountsStandIn(ZERO);
+    expect(syncCountsStandIn(null)).toBe(true);
     expect(document.querySelector(`[${ATTR_COUNTS_STAND_IN}]`)).toBeNull();
+    expect(tabs.hasAttribute('data-geld-counts-home')).toBe(false);
   });
 });

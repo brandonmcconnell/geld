@@ -834,6 +834,49 @@ html[data-geld-on] section[class*='stickyHeader'][class*='toolbar'] {
 }
 
 /*
+ * The new pull request page writes its counts beside the branch names and leaves the tab row's wrapper empty: Geld's
+ * stand there instead, as the conversation has them (`syncCountsStandIn`, `tab-counts.ts`). Keyed on `<html>` from the
+ * content script's first moment, so GitHub's never show beside the branches and the tab row's box is in its final shape
+ * from GitHub's first frame: the UnderlineNav's 48px row, the counts and the group centred on its 32px tabs.
+ */
+html[data-geld-tab-counts] [data-component='PageHeader'] [class*='branchGroup'] > :not([class*='branches']) {
+  display: none !important;
+}
+
+html[data-geld-tab-counts] [data-component='PageHeader']:has([class*='branchGroup']) [class*='PageHeader-Navigation'] > [class*='rightContentWrapper'] {
+  box-sizing: border-box;
+  height: 48px;
+  padding-top: 0 !important;
+  align-items: center;
+}
+
+/* Until Geld's counts stand there (React has to hydrate the header first), the skeleton they start as holds their place. */
+html[data-geld-tab-counts] [data-component='PageHeader']:has([class*='branchGroup']) [class*='PageHeader-Navigation'] > [class*='rightContentWrapper']:not([data-geld-counts-home]):empty::before {
+  content: '';
+  width: 80px;
+  height: 1lh;
+  background-color: var(--bgColor-neutral-muted, rgba(129, 139, 152, 0.12));
+}
+
+/* Gone on a narrow header as the conversation's are: the copy beside the status label shows them, and GitHub's bar holds the group. */
+@container (width <= 768px) {
+  html[data-geld-tab-counts] [data-component='PageHeader']:has([class*='branchGroup']) [class*='PageHeader-Navigation'] > [class*='rightContentWrapper'] {
+    display: none !important;
+  }
+}
+
+/* Geld's counts riding GitHub's bar after the review group, 8px from it as in the tab row, then "Merge status" and the panel toggles. */
+[class*='miniHeaderInner'] > [class*='actions'] > [data-geld-counts-stand-in] {
+  align-self: center;
+  flex-shrink: 0;
+}
+
+[class*='miniHeaderInner'] > [class*='actions'] > [data-geld-counts-stand-in]:has(+ button),
+.geld-quick-review[data-geld-place='bar']:has(+ [data-geld-counts-stand-in]) {
+  margin-right: 8px;
+}
+
+/*
  * [✓ | ✗ | 💬]: a Primer button group dressed as the Files changed toolbar's own default buttons (Merge status, the
  * settings gear): their surface, border and resting shadow, from the same tokens.
  */

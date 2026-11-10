@@ -6,7 +6,9 @@ import { hidesAnything } from './breakdown';
 import type { StatsBreakdown } from './breakdown';
 import { hiddenLabel, hiddenNounPlural, statsBreakdown } from './breakdown';
 import { createElement, OWN_UI_ATTRIBUTE, originalText, parseLineStats, queryAll, restoreManagedText, setManagedText } from './dom';
+import { newHeaderBranchGroup, persistentBarActions, persistentBarStuck } from './persistent-bar';
 import { headerReactSettled, reactSettled, subtreeSettled } from './react-hydration';
+import { tabCountsOn } from './tab-counts';
 import { attachBreakdownTooltip, detachBreakdownTooltip } from './ui/tooltip';
 
 /** A "+93 −53" pair somewhere in the page header, plus the element to hang a tooltip on. */
@@ -28,6 +30,7 @@ const FIRST_COUNT = new RegExp(COUNT_PATTERN);
 const BARE_COUNT = new RegExp(String.raw`^\s*[+\-\u2212]?\s*${COUNT_PATTERN}\s*$`);
 
 const HEADER_HOST_SELECTOR = '#diffstat, .toc-diff-stats';
+const BRANCH_GROUP = '[data-component="PageHeader"] [class*="branchGroup"]';
 const SR_ONLY_SELECTOR = 'span.sr-only, span[class*="VisuallyHidden"]';
 const LINES_CHANGED = /^\s*Lines changed:/i;
 
@@ -141,6 +144,8 @@ function findReactGroups(): HeaderStatGroup[] {
     if (isInsideDiffEntry(srOnly)) continue;
     const host = srOnly.parentElement;
     if (host === null) continue;
+    // Hidden while Geld's own stand in the tab row (`syncCountsStandIn`).
+    if (tabCountsOn() && host.closest(BRANCH_GROUP) !== null) continue;
     const additions =
       host.querySelector<HTMLElement>('.fgColor-success, .color-fg-success') ??
       Array.from(host.children).find(
@@ -205,17 +210,22 @@ export function isCountsStandIn(element: Element): boolean {
   return element.hasAttribute(ATTR_COUNTS_STAND_IN);
 }
 
-/**
- * The Overview's header line beside the branch names (Nov 2026): GitHub draws its line counts there, after the branch
- * names (its skeleton while they load, then `diffStat`), and never in the tab row, whose counts wrapper stays empty.
- */
-function overviewBranchGroup(): HTMLElement | null {
-  return document.querySelector<HTMLElement>('[data-component="PageHeader"] [class*="branchGroup"]:has(> [class*="branches"])');
-}
+/** On the tab row's counts wrapper once Geld's counts have stood there: the stylesheet's first-frame skeleton gives way. */
+const ATTR_COUNTS_HOME = 'data-geld-counts-home';
 
-/** Whether GitHub's counts slot beside the branch names holds anything of GitHub's (its skeleton or its counts). */
-function branchGroupBusy(group: Element): boolean {
-  return [...group.children].some((child) => !/\bbranches/.test(child.className.toString()) && !child.hasAttribute(OWN_UI_ATTRIBUTE) && !child.hasAttribute(ATTR_COUNTS_STAND_IN));
+/**
+ * GitHub's own totals as its new header shows them beside the branch names (`diffStat`, hidden while Geld's stand in
+ * the tab row), or null while that slot holds only GitHub's skeleton.
+ */
+export function branchGroupTotals(): StandInTotals | null {
+  const group = newHeaderBranchGroup();
+  if (group === null) return null;
+  for (const span of queryAll<HTMLElement>(SR_ONLY_SELECTOR, group)) {
+    if (!LINES_CHANGED.test(originalText(span))) continue;
+    const stats = parseLineStats(originalText(span));
+    if (stats !== null) return stats;
+  }
+  return null;
 }
 
 /** The pull request header's tab row, where GitHub floats its line counts. */
@@ -253,10 +263,11 @@ function noteGithubSkeleton(wrapper: Element): void {
   if (skeleton instanceof HTMLElement) githubSkeleton = { className: skeleton.className.toString(), width: skeleton.style.width || '80px' };
 }
 
-function standInElement(want: StandIn): HTMLElement {
+function standInElement(want: StandIn, githubLook = true): HTMLElement {
   if (want === SKELETON) {
-    const skeleton = createElement('div', { class: githubSkeleton?.className ?? 'geld-counts-skeleton', [ATTR_COUNTS_STAND_IN]: SKELETON, 'aria-hidden': 'true' });
-    skeleton.style.width = githubSkeleton?.width ?? '80px';
+    const copied = githubLook ? githubSkeleton : null;
+    const skeleton = createElement('div', { class: copied?.className ?? 'geld-counts-skeleton', [ATTR_COUNTS_STAND_IN]: SKELETON, 'aria-hidden': 'true' });
+    skeleton.style.width = copied?.width ?? '80px';
     return skeleton;
   }
   return createElement('div', { class: 'd-flex flex-items-center gap-1', [ATTR_COUNTS_STAND_IN]: standInKey(want) }, [
@@ -285,9 +296,8 @@ export function syncCountsStandIn(asked: StandIn | null): boolean {
   // Not among React's header nodes before React has hydrated them (`react-hydration.ts`).
   const want = headerReactSettled() ? asked : null;
   const existing = document.querySelector<HTMLElement>(`[${ATTR_COUNTS_STAND_IN}]`);
-  // On the Overview GitHub's counts stand beside the branch names, so the stand-in does too: never in the tab row.
-  const branches = overviewBranchGroup();
-  if (branches !== null) return syncStandInBeside(branches, existing, want);
+  // The new page's header writes its counts beside the branch names, which Geld hides: its own always stand in the tab row.
+  if (tabCountsOn() && newHeaderBranchGroup() !== null) return syncStandInTabs(existing, want);
   const row = pullTabRow();
   const real = row !== null && queryAll<HTMLElement>(SR_ONLY_SELECTOR, row).some((span) => LINES_CHANGED.test(originalText(span)) && span.closest(`[${ATTR_COUNTS_STAND_IN}]`) === null);
   const wrapper = row?.querySelector(':scope > [class*="rightContentWrapper"]') ?? null;
@@ -316,26 +326,47 @@ export function syncCountsStandIn(asked: StandIn | null): boolean {
   return true;
 }
 
-/** The Overview's stand-in: after the branch names, where GitHub puts its skeleton and its counts, while that slot is empty. */
-function syncStandInBeside(group: HTMLElement, existing: HTMLElement | null, want: StandIn | null): boolean {
-  noteGithubSkeleton(group);
-  const real = queryAll<HTMLElement>(SR_ONLY_SELECTOR, group).some((span) => LINES_CHANGED.test(originalText(span)) && span.closest(`[${ATTR_COUNTS_STAND_IN}]`) === null);
-  if (want === null || real || branchGroupBusy(group)) {
+/**
+ * The new page's stand-in: at the end of the tab row, as the conversation has its counts, and in GitHub's bar while the
+ * bar stands for the header (its tabs scrolled under it). Called before paint on every batch, so it moves in the frame
+ * GitHub's own parts move. A move keeps the node, so the review group before it and its breakdown go with it.
+ */
+function syncStandInTabs(existing: HTMLElement | null, want: StandIn | null): boolean {
+  const wrapper = pullTabRow()?.querySelector<HTMLElement>(':scope > [class*="rightContentWrapper"]') ?? null;
+  const bar = persistentBarStuck() ? persistentBarActions() : null;
+  const home = bar !== null && reactSettled(bar) ? bar : wrapper;
+  if (want === null || home === null) {
     if (existing === null) return false;
     removeCountsStandIn();
     return true;
   }
   const key = want === SKELETON ? SKELETON : standInKey(want);
-  if (existing !== null && group.contains(existing) && existing.getAttribute(ATTR_COUNTS_STAND_IN) === key) return false;
-  const next = standInElement(want);
-  if (existing !== null && group.contains(existing)) {
+  if (existing !== null && existing.getAttribute(ATTR_COUNTS_STAND_IN) === key) {
+    if (existing.parentElement !== home) placeStandIn(home, existing);
+    return false;
+  }
+  // Geld's own skeleton, not one in GitHub's classes: it is the shape the stylesheet holds the place with before then.
+  const next = standInElement(want, false);
+  if (existing !== null && existing.parentElement === home) {
     detachBreakdownTooltip(existing);
     existing.replaceWith(next);
     return true;
   }
   removeCountsStandIn();
-  group.append(next);
+  placeStandIn(home, next);
   return true;
+}
+
+function placeStandIn(home: HTMLElement, standIn: HTMLElement): void {
+  if (home.matches('[class*="rightContentWrapper"]')) {
+    home.append(standIn);
+    if (!home.hasAttribute(ATTR_COUNTS_HOME)) home.setAttribute(ATTR_COUNTS_HOME, '');
+    return;
+  }
+  // GitHub's bar: first among its actions, after the review group when it already stands there.
+  const group = home.querySelector(':scope > .geld-quick-review');
+  if (group !== null) group.after(standIn);
+  else home.prepend(standIn);
 }
 
 export function removeCountsStandIn(): void {
@@ -343,6 +374,7 @@ export function removeCountsStandIn(): void {
     detachBreakdownTooltip(host);
     host.remove();
   }
+  for (const home of queryAll<HTMLElement>(`[${ATTR_COUNTS_HOME}]`)) home.removeAttribute(ATTR_COUNTS_HOME);
   for (const stand of queryAll<HTMLElement>(`.${COUNTS_STAND_CLASS}`)) stand.remove();
   // Its narrow-screen copy in the state row; GitHub's counts, if they took its place, make their own.
   for (const mirror of queryAll<HTMLElement>(`.${MIRROR_CLASS}`)) {

@@ -4,6 +4,7 @@ import { GeldController, IDLE_STATE } from '../../src/github/controller';
 import { prefetchStatusOptions } from '../../src/github/quick-review';
 import { applyTopCardHint } from '../../src/github/review/top-card';
 import { applyReviewGroupHint, withdrawReviewGroupHint } from '../../src/github/quick-review';
+import { applyTabCountsHint, withdrawTabCountsHint } from '../../src/github/tab-counts';
 import { applyDescriptionFoldHint, releaseDescription, stopEarlyDescriptionFold } from '../../src/github/review/description';
 import type { TabState, TabStateMessage } from '../../src/lib/messages';
 import { isGetTabStateMessage, isPerfReportMessage, isRevealFileMessage, isToggleHiddenMessage } from '../../src/lib/messages';
@@ -37,6 +38,7 @@ export default defineContentScript({
     // Before any await: GitHub can paint the Overview's top card before the settings arrive.
     applyTopCardHint();
     applyReviewGroupHint();
+    applyTabCountsHint();
     applyDescriptionFoldHint();
     const stopErrorCapture = installErrorCapture('content');
     document.dispatchEvent(new CustomEvent(TAKEOVER));
@@ -50,7 +52,10 @@ export default defineContentScript({
       retired = true;
       mark(`retired:${why}`);
       // A takeover's copy decides GitHub's review button itself; an invalidated context leaves nobody to, so the hint goes.
-      if (why === 'invalidated') withdrawReviewGroupHint();
+      if (why === 'invalidated') {
+        withdrawReviewGroupHint();
+        withdrawTabCountsHint();
+      }
       // The early fold's handling goes too (its heading listeners, its observer), the description left as shown: a
       // copy taking over handles it from here, and two copies would each take a heading's click.
       stopEarlyDescriptionFold();
