@@ -3004,6 +3004,19 @@ The default raw collector remains pinned to its original exact URL, and no eligi
   Fixed operation phases, handle/asElement and actual arm/hit results are retained before assertions, and handle/listener cleanup cannot replace the primary rejected stage.
   URL-omitted response failures report only safe known-provider and standard-Bitbucket-API enums, without retroactively identifying295's unclassified429 or claiming all HTTP mutations are observed.
 
+The literal installed `gitlab-whitespace-session` case has a separate current-native-reload model and leaves the older `gitlab-whitespace-viewed` selected-target acceptance and historical failures unchanged.
+Its one public diff visit uses the original anonymous Preferences controls for at most two trusted whitespace choices and independently observes the original overlay, whole-list clear, streaming start and finish before accepting fresh known-path files.
+Every completed native frame requires one coherent full base, start and head tuple with canonical raw and context resources at each file's own head, without inventing a target version ID or merge kind from the API.
+The selected bootstrap, independent acquired comparison and current native rendered tuple remain separate report evidence, and a return to the original preference mode does not claim restoration of initial code nodes or head.
+Within each ready native frame, the session harness preserves original code and text nodes, anchors, links and disabled Viewed values before and after Geld count and category observations.
+The independent session retains its original positive sign-in node, parent, URL and presentation, rejects contradictory signed-in title controls and retires on a trusted competing native view choice even when reverted.
+The session-only settings lease enables the real whitespace policy, admits only the observed current-review opt-out update and restores exact raw synchronized settings and local key presence after page closure.
+The case never captures HTML, AX, PNG, raw bootstrap or unknown native field values, and cleanup failures retain fixed diagnostics.
+Full conversation digest acceptance remains the separate Overview regression because the digest is not rendered on the diff route.
+The actual298 Bitbucket file-menu observation measured the original32px button with6px radius, owned center and cardinal hits, and an old bottom-right corner outside the native hit target.
+Its one trusted original opener click succeeded, but the observed popup satisfied none of the four checked associations and exposed only the safe12-character source reference9777bca47119, granting no native full-head authority.
+Those recorded geometry facts do not explain295's unrecorded rejection stage, and the298 URL-omitted429 remains provider-unclassified with the `not_bitbucket_standard` API classification and unknown emitter while any subsequently carried cooldown remains authoritative.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 

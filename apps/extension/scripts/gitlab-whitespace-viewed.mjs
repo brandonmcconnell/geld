@@ -2,6 +2,8 @@ import { isDeepStrictEqual } from 'node:util';
 import { GITLAB_FILE_SEARCH, gitLabFileSearchSelection } from './gitlab-file-search.mjs';
 import { gitLabWhitespaceProbe } from './gitlab-whitespace-probe.mjs';
 
+export { acquisitionMatches, retainedBaseline };
+
 export const GITLAB_WHITESPACE = Object.freeze({ ...GITLAB_FILE_SEARCH, paths: ['app/graphql/mutations/boards/issues/issue_move_list.rb', 'app/services/boards/base_item_move_service.rb', GITLAB_FILE_SEARCH.path] });
 const error = (code) => Object.assign(new Error(`GitLab whitespace characterization: ${code}`), { code });
 const check = (value, code) => { if (!value) throw error(code); };
@@ -173,7 +175,7 @@ function selection(snapshot) {
   return { source: { id: String(value.source.id), head: value.source.head_sha }, target: { id: String(value.target.id), head: value.target.head_sha, mergeHead: value.target.is_merge_head } };
 }
 
-function acquisitionMatches(snapshot, evidence) {
+function acquisitionMatches(snapshot, evidence, expectedWhitespace = null) {
   const selected = selection(snapshot);const responses = evidence?.responses ?? [];
   const fullHead = (value) => typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
   const version = (value, target) => value?.state === 'observed' && value.selectedCount === 1 && Array.isArray(value.values) && value.values.length === 1
@@ -181,10 +183,12 @@ function acquisitionMatches(snapshot, evidence) {
     && (!target || typeof value.values[0].mergeHead === 'boolean' && fullHead(value.values[0].startSha));
   const pinned = (entry, kind) => {
     if (entry.status !== 'projected' || entry.kind !== kind || entry.httpStatus !== 200 || entry.selectionRedacted !== false
-      || entry.selection?.diff_id !== GITLAB_WHITESPACE.version || Object.keys(entry.selection).length !== 1) return false;
+      || entry.selection?.diff_id !== GITLAB_WHITESPACE.version || Object.keys(entry.selection).length !== (expectedWhitespace === null ? 1 : 2)
+      || expectedWhitespace !== null && (expectedWhitespace !== '1' || entry.selection.w !== expectedWhitespace)) return false;
     try {
       const url = new URL(entry.url);return url.origin === 'https://gitlab.com' && url.pathname === `/gitlab-org/gitlab/-/merge_requests/266334/${kind === 'versions' ? 'versions' : 'diffs_metadata.json'}`
-        && !url.username && !url.password && !url.hash && [...url.searchParams].length === 1 && url.searchParams.get('diff_id') === GITLAB_WHITESPACE.version;
+        && !url.username && !url.password && !url.hash && [...url.searchParams].length === (expectedWhitespace === null ? 1 : 2) && url.searchParams.getAll('diff_id').length === 1 && url.searchParams.get('diff_id') === GITLAB_WHITESPACE.version
+        && (expectedWhitespace === null || url.searchParams.getAll('w').length === 1 && url.searchParams.get('w') === expectedWhitespace);
     } catch { return false; }
   };
   const source = (entry) => pinned(entry, 'versions') && version(entry.projection?.source, false)
