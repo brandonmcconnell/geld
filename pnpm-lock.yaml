@@ -194,12 +194,18 @@ importers:
       '@geld/review':
         specifier: workspace:*
         version: link:../../packages/review
+      dompurify:
+        specifier: ^3.4.17
+        version: 3.4.17
       highlight.js:
         specifier: ^11.12.0
         version: 11.12.0
       hyperellipse:
         specifier: ^1.0.5
         version: 1.0.5
+      marked:
+        specifier: ^18.2.0
+        version: 18.2.0
       video.js:
         specifier: 8.24.2
         version: 8.24.2
@@ -4038,6 +4044,11 @@ packages:
   many-keys-map@3.0.3:
     resolution: {integrity: sha512-1DiZmDHPXMBgMRjeUtHy1q1VYmeJscHxhIAexX9z/zjRMP80+0ETuPfssi8z+kMY4DwUgsKuHqpjxgmeA9gBNA==}
     engines: {node: '>=18'}
+
+  marked@18.2.0:
+    resolution: {integrity: sha512-KaeL+tAbtvI930q7HE2PN5lYXYdT8EiSmxHlN6F3rsfb57wd5mp5W5TLazpdj4inTQBJdgjYwbs40W/0VUGU+Q==}
+    engines: {node: '>= 20'}
+    hasBin: true
 
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
@@ -9047,6 +9058,8 @@ snapshots:
       source-map-js: 1.2.1
 
   many-keys-map@3.0.3: {}
+
+  marked@18.2.0: {}
 
   math-intrinsics@1.1.0: {}
 

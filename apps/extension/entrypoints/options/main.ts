@@ -50,7 +50,6 @@ import type { AiModelsRequest } from '../../src/lib/messages';
 import { isAiModelsResponse } from '../../src/lib/messages';
 import type { CatalogCheckMessage, ClearDiffCacheMessage } from '../../src/lib/messages';
 import { formatDiagnostics, readDiagnostics } from '../../src/lib/diagnostics';
-import { diagnosticsReportUrl, REPORT_URL_BUDGET, trimReportForUrl } from '../../src/lib/diagnostics-report';
 import { collectTabPerf } from '../../src/lib/perf-report';
 import { settingsItem } from '../../src/lib/storage';
 import type { JevSource } from '../../src/lib/local-state';
@@ -63,7 +62,7 @@ import { accountItem, appClientIdItem, BUILT_IN_CLIENT_ID, EMPTY_SYNC_STATE, syn
 import type { GitHubAccount, SyncState } from '../../src/lib/account';
 import { svgFromString } from '../../src/github/dom';
 import { categoryIcon } from '../../src/github/ui/icons';
-import { wireFeedbackLink } from '../../src/ui/feedback-link';
+import { openFeedback, wireFeedbackLink } from '../../src/ui/feedback-link';
 import { mountAccountWidget } from '../../src/ui/account-widget';
 import { polyfillCornerShape } from '../../src/ui/corner-shape';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
@@ -1389,43 +1388,11 @@ async function main(): Promise<void> {
       }
     },
     'report-diagnostics': async () => {
-      // Order matters twice over. The clipboard is written while this page still has focus: Chromium refuses
-      // navigator.clipboard.writeText from an unfocused document (the extension asks for no clipboard
-      // permission), and a tab opened first would take the focus with it. And the tab is opened through
-      // tabs.create, which an extension page may call without user activation, so the time spent gathering
-      // every GitHub tab's answer cannot cost the click its activation the way window.open would be blocked.
-      // The report reaches the form through the link; a long one is trimmed to what a URL carries, and the
-      // whole report is on the clipboard for pasting over it. Nothing is posted until the issue is submitted.
-      let text: string;
       try {
-        text = await diagnosticsReport();
-      } catch (error) {
-        maintenanceStatus(`Could not gather diagnostics: ${error instanceof Error ? error.message : String(error)}`, 'error');
-        return;
-      }
-      let copied = true;
-      try {
-        await navigator.clipboard.writeText(text);
+        await openFeedback({ diagnostics: true });
       } catch {
-        copied = false;
+        maintenanceStatus('Could not open the feedback form', 'error');
       }
-      // The copy's outcome decides what a trimmed report's note says: paste from the clipboard, or come back for it.
-      const { trimmed } = trimReportForUrl(text, REPORT_URL_BUDGET, copied);
-      const url = diagnosticsReportUrl(text, browser.runtime.getManifest().version, navigator.userAgent, navigator.platform, copied);
-      try {
-        await browser.tabs.create({ url: url.toString() });
-      } catch {
-        maintenanceStatus(copied ? 'Could not open a new tab; the report is on your clipboard' : 'Could not open a new tab or write the clipboard', 'error');
-        return;
-      }
-      maintenanceStatus(
-        trimmed
-          ? copied
-            ? 'Opened a new issue with the report (trimmed to fit; the full report is on your clipboard)'
-            : 'Opened a new issue with the report trimmed to fit the link; the clipboard could not be written, so use Copy diagnostics for the rest'
-          : 'Opened a new issue with the report filled in',
-        trimmed && !copied ? 'error' : 'success',
-      );
     },
     reset: async () => {
       await settingsItem.setValue(DEFAULT_SETTINGS);

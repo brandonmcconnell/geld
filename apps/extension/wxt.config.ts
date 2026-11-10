@@ -119,8 +119,12 @@ export default defineConfig({
                 // Its own id, so a nightly build installs beside Geld Stable rather than over it.
                 id: nightly ? 'geld-nightly@brandonmcconnell.com' : 'geld@brandonmcconnell.com',
                 strict_min_version: '128.0',
-                // Dashboard sign-in and tracker status are optional and need separate host permission.
-                data_collection_permissions: { required: ['none'], optional: ['authenticationInfo','personallyIdentifyingInfo','websiteContent'] },
+                // Dashboard sign-in and tracker status are optional and need separate host permission. The feedback form sends the
+                // diagnostics report and the page address only when the reader ticks them and sends the issue.
+                data_collection_permissions: {
+                  required: ['none'],
+                  optional: ['authenticationInfo', 'personallyIdentifyingInfo', 'websiteContent', 'technicalAndInteraction', 'browsingActivity'],
+                },
               },
             },
           }

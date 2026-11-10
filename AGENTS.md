@@ -1138,14 +1138,31 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   a *retired* copy still answers the perf report, late (`RETIRED_ANSWER_MS`), so its trail is what gets reported when no live copy is there, and a copy that retires before its controller ran says so in the trail only (`retired:takeover` / `retired:invalidated`), never the console: a newer copy or a reloading extension is always behind it, and Chrome's Errors page lists every console warning as an error;
   a tab that answers nothing at all is listed as such.
   The background's injection decisions (`ensureContentScript`, `lib/inject.ts`) land in the same session log as `inject <tab> injected|present|failed on=install|activated|popup`, since a second copy taking a page over is how the two-copies flicker began.
-  **"Report with diagnostics"** (`report-diagnostics`, extension-only, beside Copy diagnostics) opens a new GitHub issue from the `diagnostics.yml` form with the same report, version and browser filled in and an optional "What was happening?" field;
-  it links **straight to GitHub's `issues/new?template=diagnostics.yml`**, not through the site like Feedback does: the report names pull requests (private ones included) and rides in the query, so the only host that sees it is the one the issue goes to, and only when the form is opened — the privacy page's "nothing about your browsing is sent anywhere" holds.
-  A URL carries only so much, so `trimReportForUrl` (`lib/diagnostics-report.ts`) keeps the header and the newest lines under `REPORT_URL_BUDGET` (6 KB encoded) with a note, and the whole report is copied to the clipboard first so it can be pasted over the trimmed text.
-  Nothing is posted until the issue is submitted, and no sign-in with Geld is needed: GitHub asks for its own if the reader is signed out there.
-  Templates are read from the default branch, so the form is live once this is on `main`.
+  **"Report with diagnostics"** (`report-diagnostics`, extension-only, beside Copy diagnostics) opens the extension's feedback form with the same report ticked (`feedback.html?diagnostics=1`, below).
   `local:debugScopes` (set from the harness, never the UI) runs the full pass after every scoped one and logs `[geld] scope disagreement`.
   Numbers at the end of this work (vitest#10554): the review pass 149 ms → 36 ms mean (`checksSection()` used to scan the whole page's text on every call on a merged PR), the crawl 7.4 → 2.9 ms, main-thread time in the first 30 s of the conversation page 4.5 s → 2.85 s, a 14-row `/pulls` page 14 + 12 storage writes → 3 + 4;
   the largest item left is the files adapters' DOM read (`read`, ~13 ms a pass on a 124-file diff).
+- **Feedback stays in the extension** (`entrypoints/feedback/`, `src/lib/feedback.ts`, `src/ui/feedback-link.ts`).
+  The popup's and options page's Feedback links and Report with diagnostics open the extension's own `feedback.html` in a tab, never the site or GitHub's issue form;
+  a tab rather than the popup, which closes when it loses focus.
+  The reader picks a kind (`FEEDBACK_KINDS`, the title's `[Bug]`/`[Idea]`/`[Question]`/`[Feedback]` prefix), writes a title and details, and ticks what to attach (`ContextChoice`): Geld's version and `version_name` with the browser, the kind of page (`whereWords`), the page's address, and the Copy diagnostics report.
+  Version and page kind start ticked, the address never does (the issue is public and the repository may be private), and diagnostics only when Report with diagnostics opened the form.
+  The page is the GitHub tab the popup was opened on (`?tab=<id>`, read with `tabs.get`, only on a GitHub host Geld runs on).
+  The preview shows the exact title and body (`feedbackIssue`), rendered by default and as Markdown source behind "Show markdown".
+  It is rendered on the device (`src/ui/issue-markdown.ts`: `marked` with GitHub-flavoured Markdown and line breaks, then DOMPurify), never by GitHub's Markdown API, so the draft goes nowhere before it is sent.
+  For the same reason the preview fetches nothing the draft names: an image is shown as its words and address, and the tags and attributes that load something (`srcset`, `style` with its `url()`, `poster`, `background`, `<picture>`, `<video>`, `<svg>`) are removed.
+  happy-dom cannot run DOMPurify faithfully (it keeps event handlers and `<script>`), so the sanitizer is checked in Chrome, not in the unit tests.
+  A required checkbox names the account and the repository, and the draft is kept in `local:feedbackDraft` until it is sent, saved on every edit, so closing the tab or signing in loses nothing.
+  There is one feedback tab: a Feedback link first asks an open feedback page to come forward (`geld:feedback-open`, answered `true`, carrying the link's tab and diagnostics), and opens a new tab only when nothing answers.
+  Coming forward unticks the page address and the consent, since the page may now be a private repository's.
+  Sending clears the draft only when the stored one is still the draft that was sent, and the title, details and kind are read-only while the request is out.
+  The background opens the issue on `brandonmcconnell/geld` with the reader's own Geld App user token (`submitFeedback` in `account-service.ts`, `POST /repos/…/issues` through `withToken`), so it is the reader's issue, marked by GitHub as made with the App, and no bot account posts on anyone's behalf.
+  That needs the reader signed in with GitHub (the same device flow as settings sync, which signing in also turns on) and the Geld App installed on Geld's own repository, which user tokens can only write to where the App is installed;
+  without it GitHub answers "Resource not accessible by integration" and the form says the App cannot open issues there yet.
+  Only `feedback.html` may send `geld:feedback-submit`: the background checks `sender.url`, so a content script on a GitHub page can never post as the reader.
+  A long report loses its oldest lines to fit GitHub's 65,536-character body, and the reader's words are never cut.
+  When the words alone run over (`FeedbackIssue.overBy`), the form says by how much and sends nothing, and the background refuses such a body too.
+  Images are not supported: GitHub has no API for issue attachments.
 - **Test files read as their titles** (`testOutline`, on by default, and `testSyntaxes`, the reader's own declarations;
   the "Test files" card on the options page and geld.sh, not the popup;
   both personal keys).
@@ -2185,9 +2202,9 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
   **A selected logo reads like selected text** (`components/brand-selection.tsx`, `[data-brand-logo]`): `::selection` never paints an image (Chrome only tints over it, and a `filter` on the image inverts the tint too), so a `selectionchange` listener marks every logo a selection range intersects `data-selected`, and globals.css turns the image's own tint off, gives the wrapper the selection's background and inverts the image.
   Ranges, not `Selection.containsNode`, which in Chrome answers false for a node with no text.
   The digest's emblem does the same on GitHub (`review/brand.ts`), with the browser's `Highlight`/`HighlightText`, since GitHub sets no selection style.
-- **Feedback goes through the site.**
-  The extension's Feedback links (popup footer, options footer, `src/ui/feedback-link.ts`) point at `https://www.geld.sh/feedback?version=…&browser=…&page=…` (never a URL or a login), and `app/feedback/route.ts` forwards to a new issue on the repository with the issue form `.github/ISSUE_TEMPLATE/feedback.yml` pre-filled.
-  The hop exists so the destination can change (a form on the site opening issues through the Geld App on a private tracker, once the source is closed) without a store release.
+- **`/feedback` is for installs from before the extension's own feedback form.**
+  Older builds link `https://www.geld.sh/feedback?version=…&browser=…&page=…`, and `app/feedback/route.ts` forwards to a new issue with `.github/ISSUE_TEMPLATE/feedback.yml` pre-filled.
+  Current builds send feedback from the extension itself (see "Feedback stays in the extension").
 - **Pages:** `/` (hero with the two lines of `HEADLINE`, sized in container units so each fills the column at most and never wraps;
   install buttons;
   the pile (`components/pile/`, physics in `lib/pile-physics.ts`, content in `lib/pile-items.ts`): files, comments, bot notes, an agent review that names no real bot, checks, previews, reports and verdicts tumble into the column right of the hero's words (the band under them where there is no room beside), from 640px wide only, since below that the hero has no room for either the pile or the digest, kept there by walls of their own (`Body.fence`, dropped once a card is dragged) and overlapping at their edges like a heap of papers, and Geld's switch gathers each into its line of a digest card (centred over the switch, kept 40px off the heading and pushed right as it nears;

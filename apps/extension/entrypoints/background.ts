@@ -4,7 +4,7 @@ import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
 import { parseUnifiedDiff } from '@geld/core';
 import { completeChat, decisionModelsPath, evaluateDecision, listModels, servesDecisions, TYPESAFE_API } from '@geld/review';
-import { handleAccountMessage, startAccountSync } from '../src/lib/account-service';
+import { handleAccountMessage, handleFeedbackMessage, startAccountSync } from '../src/lib/account-service';
 import { checkCatalog, startCatalogUpdates } from '../src/lib/catalog';
 import { syncEnterpriseHosts } from '../src/lib/enterprise';
 import { hasGatewayPermission } from '../src/lib/ai-gateway';
@@ -18,6 +18,7 @@ import { blockedLoginsIn } from '../src/github/blocked-list';
 import type { EnsureContentResponse } from '../src/lib/messages';
 import {
   isAccountActionMessage,
+  isFeedbackSubmitMessage,
   isAiCompleteRequest,
   isAiEvaluateRequest,
   isAiModelsRequest,
@@ -562,6 +563,11 @@ export default defineBackground(() => {
     }
     if (isAccountActionMessage(message)) {
       void handleAccountMessage(message).then(sendResponse);
+      return true;
+    }
+    // Only the feedback page may post an issue as the reader, never a content script on a GitHub page.
+    if (isFeedbackSubmitMessage(message) && sender.url?.startsWith(browser.runtime.getURL('/feedback.html')) === true) {
+      void handleFeedbackMessage(message).then(sendResponse);
       return true;
     }
     if (isCatalogCheckMessage(message)) {

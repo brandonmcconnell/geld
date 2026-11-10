@@ -6,7 +6,8 @@ import { browser } from 'wxt/browser';
 import type { AuthFlowState, GitHubAccount, RemoteInvalid, SyncState } from './account';
 import { accountItem, authFlowItem, effectiveClientId, EMPTY_SYNC_STATE, syncStateItem, tokensOf, withTokens } from './account';
 import { loadCatalog } from './catalog';
-import type { AccountActionMessage, AccountActionResponse } from './messages';
+import { FEEDBACK_REPO, ISSUE_BODY_LIMIT, parseCreatedIssue, refusalMessage } from './feedback';
+import type { AccountActionMessage, AccountActionResponse, FeedbackSubmitMessage, FeedbackSubmitResponse } from './messages';
 import { settingsItem } from './storage';
 
 /**
@@ -343,6 +344,53 @@ async function handleSyncError(error: unknown): Promise<void> {
   // `withToken` already cleared the account and recorded why.
   if (error instanceof SignedOutError) return;
   await setSync({ lastError: error instanceof Error ? error.message : String(error) });
+}
+
+/* ---------------------------------------------------------------- feedback */
+
+function refuse(message: string): FeedbackSubmitResponse {
+  return { ok: false, message };
+}
+
+async function createIssue(token: string, title: string, body: string): Promise<FeedbackSubmitResponse> {
+  const response = await fetch(`https://api.github.com/repos/${FEEDBACK_REPO}/issues`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${token}`,
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json',
+    },
+    // GitHub drops labels from anyone without push access, so this only sorts the owner's own reports.
+    body: JSON.stringify({ title, body, labels: ['feedback'] }),
+  });
+  if (response.status === 401) throw new SignedOutError();
+  const answer: unknown = await response.json().catch(() => null);
+  if (response.ok) {
+    const issue = parseCreatedIssue(answer);
+    return issue === null ? refuse('GitHub opened the issue but its answer could not be read.') : { ok: true, ...issue };
+  }
+  return refuse(refusalMessage(response.status, answer, response.headers.get('x-ratelimit-remaining') === '0'));
+}
+
+/** Open the reader's feedback as an issue from their own account, through the Geld App's user token. */
+async function submitFeedback(message: FeedbackSubmitMessage): Promise<FeedbackSubmitResponse> {
+  const account = await accountItem.getValue();
+  if (account === null) return refuse('Sign in with GitHub to send feedback.');
+  // An OAuth App token only carries the gist scope.
+  if (account.auth !== 'app') return refuse('Sign in with GitHub again to send feedback.');
+  if (message.title.trim() === '' || message.body.trim() === '') return refuse('Add a title and some details first.');
+  if (message.body.length > ISSUE_BODY_LIMIT) return refuse('The details are too long for one GitHub issue. Shorten them and send again.');
+  try {
+    return await withToken((token) => createIssue(token, message.title, message.body));
+  } catch (error) {
+    if (error instanceof SignedOutError) return refuse('GitHub signed Geld out. Sign in again to send it.');
+    return refuse(`Could not reach GitHub: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+export function handleFeedbackMessage(message: FeedbackSubmitMessage): Promise<FeedbackSubmitResponse> {
+  return submitFeedback(message);
 }
 
 /* ------------------------------------------------------------------ wiring */

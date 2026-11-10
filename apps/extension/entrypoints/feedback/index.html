@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Geld feedback</title>
+    <link rel="stylesheet" href="../../src/ui/base.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="feedback">
+      <header class="geld-brand feedback__header">
+        <h1 class="feedback__brand-text">
+          <picture><source media="(prefers-color-scheme: dark)" srcset="../../../../assets/brand/geld-logo-white.svg" /><img class="geld-brand__logo" src="../../../../assets/brand/geld-logo.svg" alt="Geld" width="91" height="24" /></picture>
+          <span class="geld-brand__tagline">Tell us what broke, or what you wish Geld did.</span>
+        </h1>
+        <div class="geld-account" id="account"></div>
+      </header>
+      <div id="account-prompt"></div>
+
+      <form class="feedback__card" id="form" novalidate>
+        <fieldset class="feedback__kinds">
+          <legend class="geld-label">What is it about?</legend>
+          <div class="feedback__kind-row" id="kinds"></div>
+        </fieldset>
+
+        <label class="feedback__field">
+          <span class="geld-label">Title</span>
+          <input class="geld-input" id="title" type="text" maxlength="160" autocomplete="off" required />
+        </label>
+
+        <label class="feedback__field">
+          <span class="geld-label">Details</span>
+          <span class="geld-help">What you did, what you expected and what happened instead. Markdown works.</span>
+          <textarea class="geld-textarea feedback__text" id="text" rows="8" required></textarea>
+        </label>
+
+        <fieldset class="feedback__context">
+          <legend class="geld-label">Attach</legend>
+          <p class="geld-help">Only what you tick goes into the issue. The preview below shows all of it.</p>
+          <div class="feedback__choices" id="choices"></div>
+        </fieldset>
+
+        <section class="feedback__preview" aria-labelledby="preview-heading">
+          <div class="feedback__preview-head">
+            <h2 class="geld-label" id="preview-heading">Preview</h2>
+            <button class="geld-button geld-button--small" id="preview-mode" type="button" aria-controls="preview-rendered preview-body">Show markdown</button>
+          </div>
+          <div class="feedback__issue">
+            <p class="feedback__preview-title" id="preview-title"></p>
+            <div class="feedback__rendered" id="preview-rendered"></div>
+            <pre class="feedback__preview-body" id="preview-body" hidden></pre>
+          </div>
+        </section>
+
+        <label class="feedback__consent">
+          <input class="geld-checkbox" id="consent" type="checkbox" required />
+          <span id="consent-words"></span>
+        </label>
+
+        <div class="feedback__actions">
+          <span class="geld-status" id="status" role="status" aria-live="polite"></span>
+          <button class="geld-button geld-button--primary" id="send" type="submit">Send feedback</button>
+        </div>
+      </form>
+
+      <section class="feedback__card feedback__sent" id="sent" hidden>
+        <h2 class="feedback__sent-title">Thanks. Your feedback is on GitHub.</h2>
+        <p class="geld-help">GitHub will notify you when someone replies, as with any issue you open.</p>
+        <div class="feedback__actions feedback__actions--start">
+          <a class="geld-button geld-button--primary" id="sent-link" target="_blank" rel="noreferrer"></a>
+          <button class="geld-button" id="again" type="button">Send more feedback</button>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
