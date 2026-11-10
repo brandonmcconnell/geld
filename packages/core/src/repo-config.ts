@@ -69,6 +69,7 @@ const PERSONAL_KEYS = [
   'showBadge',
   'autoUpdatePatterns',
   'errorReports',
+  'usageStats',
   'enterpriseHosts',
   'repoConfigs',
   'hideTests',

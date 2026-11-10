@@ -102,6 +102,8 @@ export interface GeldSettings {
   readonly autoUpdatePatterns: boolean;
   /** Send Geld's own errors, scrubbed of anything naming a page, repository or person, to geld.sh. Opt-in. */
   readonly errorReports: boolean;
+  /** Send anonymous usage statistics (installs, updates, one daily ping with the version) to geld.sh. On by default. */
+  readonly usageStats: boolean;
   /** GitHub Enterprise Server hostnames Geld also runs on (permission granted by the user). */
   readonly enterpriseHosts: readonly string[];
   /**
@@ -258,6 +260,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   showBadge: true,
   autoUpdatePatterns: true,
   errorReports: false,
+  usageStats: true,
   enterpriseHosts: [],
   repoConfigs: 'ask',
   prOverview: true,
@@ -519,6 +522,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     showBadge: bool(record, 'showBadge', DEFAULT_SETTINGS.showBadge),
     autoUpdatePatterns: bool(record, 'autoUpdatePatterns', DEFAULT_SETTINGS.autoUpdatePatterns),
     errorReports: bool(record, 'errorReports', DEFAULT_SETTINGS.errorReports),
+    usageStats: bool(record, 'usageStats', DEFAULT_SETTINGS.usageStats),
     enterpriseHosts: isStringArray(record.enterpriseHosts)
       ? record.enterpriseHosts.map(normalizeHost).filter((host): host is string => host !== null)
       : DEFAULT_SETTINGS.enterpriseHosts,

@@ -10,7 +10,7 @@ import type { NightlyBrowser, NightlyRelease, ZipEntry } from '@geld/core/nightl
 import { BACKGROUND_CHECK_MINUTES, limitedUntil, navigationDue, needsDetails } from './schedule';
 import { startPauseWatch } from './pause';
 import { nightlyConflictItem, nightlyFolderItem, nightlyPrefsItem, nightlyProfileTokenItem, nightlyStatusItem, readNightlyStatus, nightlyTabCountsItem } from './state';
-import type { NightlyFailure, NightlyStatus, NightlyWrite, UpdateMode } from './state';
+import type { NightlyFailure, NightlyInstall, NightlyStatus, NightlyWrite, UpdateMode } from './state';
 import { decode, sha256Hex, unzip } from './unzip';
 import { BUSY, folderLock, readInstallRecord, copyRunningBuild, downloadsReach, downloadsTarget, folderIsOurs, folderPermission, folderTarget, versionOnDisk } from './writers';
 import type { BuildTarget } from './writers';
@@ -109,6 +109,12 @@ async function showBadge(status: NightlyStatus): Promise<void> {
 
 async function mode(): Promise<UpdateMode> {
   return (await nightlyPrefsItem.getValue()).mode;
+}
+
+/** What the usage statistics say about this build: its Update setting, and how it came to be running `version` when it wrote that build itself. */
+export async function nightlyUsage(version: string): Promise<{ readonly mode: UpdateMode; readonly install: NightlyInstall | null }> {
+  const install = (await readNightlyStatus()).lastInstall;
+  return { mode: await mode(), install: install?.to === version ? install : null };
 }
 
 /** Automatic leaves alone a build the reader rolled back from, and one whose write already broke off. */
@@ -285,8 +291,8 @@ async function underLock(target: BuildTarget, refused: NightlyFailure, run: () =
 }
 
 /** Another profile that loads the same folder may have written this build already: it needs only a reload. */
-async function sharedInstall(from: string, to: string): Promise<NightlyInstallResult> {
-  await patchStatus({ installing: null, failure: null, writing: null, lastInstall: { from, to, at: new Date().toISOString(), method: 'shared' } });
+async function sharedInstall(from: string, to: string, trigger: UpdateMode): Promise<NightlyInstallResult> {
+  await patchStatus({ installing: null, failure: null, writing: null, lastInstall: { from, to, at: new Date().toISOString(), method: 'shared', trigger } });
   reloadSoon();
   return { ok: true, version: to };
 }
@@ -325,8 +331,9 @@ async function install(explicit: boolean): Promise<NightlyInstallResult> {
   const current = installedVersion();
   if (latest === null || !isNewer(status)) return { ok: false, reason: 'Geld is up to date.' };
   if (!explicit && !installsOnItsOwn(status)) return { ok: false, reason: 'Waiting for a newer build.' };
+  const trigger: UpdateMode = explicit ? 'manual' : 'automatic';
   // The manifest is written last, so a folder already naming this build holds all of it: no lock or target needed.
-  if ((await versionOnDisk()) === latest.version) return sharedInstall(current, latest.version);
+  if ((await versionOnDisk()) === latest.version) return sharedInstall(current, latest.version, trigger);
   const target = await installTarget();
   if ('ok' in target) return target;
   await patchStatus({ installing: latest.version, failure: null });
@@ -338,7 +345,7 @@ async function install(explicit: boolean): Promise<NightlyInstallResult> {
     return fail(failed(message(error)));
   }
   return underLock(target, failed(BUSY), async () => {
-    if ((await versionOnDisk()) === latest.version) return sharedInstall(current, latest.version);
+    if ((await versionOnDisk()) === latest.version) return sharedInstall(current, latest.version, trigger);
     let previous: BuildBackup;
     try {
       // After a write that did not end whole the folder is half one build, half the other: the backup is the whole old one.
@@ -357,7 +364,7 @@ async function install(explicit: boolean): Promise<NightlyInstallResult> {
       failure: null,
       skipped: explicit ? null : status.skipped,
       backup: previous.version,
-      lastInstall: { from: current, to: latest.version, at: new Date().toISOString(), method: target.method },
+      lastInstall: { from: current, to: latest.version, at: new Date().toISOString(), method: target.method, trigger },
     });
     reloadSoon();
     return { ok: true, version: latest.version };
@@ -385,7 +392,7 @@ async function restorePrevious(): Promise<NightlyInstallResult> {
       // A repair leaves the build whose write broke the folder alone, as a failure that was undone would.
       skipped: repairing ? (status.writing?.version ?? status.skipped) : current,
       backup: null,
-      lastInstall: { from: current, to: backup.version, at: new Date().toISOString(), method: target.method, rollback: true },
+      lastInstall: { from: current, to: backup.version, at: new Date().toISOString(), method: target.method, rollback: true, trigger: 'manual' },
     });
     reloadSoon();
     return { ok: true, version: backup.version };

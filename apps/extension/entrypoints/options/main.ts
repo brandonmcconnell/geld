@@ -200,8 +200,8 @@ async function main(): Promise<void> {
     const section = sections.find((candidate) => candidate.id === sectionId);
     const host = requireElement(hostId, HTMLDivElement);
     const saved = statusReporter(el('span'));
-    // Firefox wants its own data-collection permission before an add-on sends error reports; until Geld asks for it, its builds keep errors local.
-    const shown = toggleFields(section?.fields ?? []).filter((field) => !(import.meta.env.FIREFOX && field.key === 'errorReports'));
+    // Firefox wants its own data-collection permission before an add-on sends reports or statistics; until Geld asks for it, its builds send neither.
+    const shown = toggleFields(section?.fields ?? []).filter((field) => !(import.meta.env.FIREFOX && (field.key === 'errorReports' || field.key === 'usageStats')));
     shown.forEach((field, index) => {
       if (index > 0) host.append(el('hr', 'options__divider'));
       const label = el('span', 'geld-label', [field.label]);

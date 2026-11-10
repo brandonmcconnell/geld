@@ -12,6 +12,7 @@ import { settingsItem } from '../src/lib/storage';
 import { diagnosticSubject, recordDiagnostic } from '../src/lib/diagnostics';
 import { installErrorCapture } from '../src/lib/error-capture';
 import { queueErrorReports, startErrorReports } from '../src/lib/error-uplink';
+import { startUsageReports } from '../src/lib/usage-uplink';
 import type { BlockedUsersResponse, FetchDiffResponse, FetchFileResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
 import { blockedLoginsIn } from '../src/github/blocked-list';
 import type { EnsureContentResponse } from '../src/lib/messages';
@@ -35,7 +36,7 @@ import { ensureContentScript, hostOf, tabsOnHosts } from '../src/lib/inject';
 import { grantedHosts } from '../src/lib/enterprise';
 import { looksLikeHtml } from '../src/lib/http';
 import { retireDashboardSession } from '../src/lib/dashboard-session';
-import { showTabBadge, startNightly } from '../src/nightly/updater';
+import { nightlyUsage, showTabBadge, startNightly } from '../src/nightly/updater';
 import { isNightlyPaused } from '../src/nightly/state';
 
 /** Refuse to parse diffs larger than this; GitHub's UI is unusable there anyway. */
@@ -531,6 +532,7 @@ async function toggleHiddenInActiveTab(): Promise<void> {
 export default defineBackground(() => {
   installErrorCapture('background', (reports) => void queueErrorReports(reports).catch(() => undefined));
   startErrorReports();
+  startUsageReports(__GELD_NIGHTLY__ ? nightlyUsage : null);
   // Each start is a previous stop: a run of these around failing fetches says the worker is being killed mid-request.
   recordDiagnostic({ kind: 'worker-start' });
   browser.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {

@@ -1,5 +1,5 @@
 export const PRIVACY_CONTACT = 'privacy@geld.sh';
-export const PRIVACY_UPDATED = 'November 4, 2026';
+export const PRIVACY_UPDATED = 'November 10, 2026';
 export const PRIVACY_SECTIONS: readonly {
   readonly id: string;
   readonly title: string;
@@ -19,6 +19,7 @@ export const PRIVACY_SECTIONS: readonly {
       'The extension can hide review noise without a Geld account. It reads the Git provider page you are viewing and fetches diffs, page data and repository configuration using the provider session you already have. Settings and parsed diff counts are stored on your device. Diff counts can include file paths. Your browser may sync extension settings through its own sync service.',
       'The extension downloads a signed pattern catalog from GitHub. Optional GitHub settings sync stores your settings in a secret gist on your own GitHub account. A secret gist is unlisted, not a substitute for encrypted storage. Feedback and diagnostic reports are shared only when you choose to submit them.',
       'Error reports are off by default. If you turn on Send error reports in the extension options (Chrome, Edge and Safari), the extension sends its own errors to geld.sh at most every few minutes: the error message, where in the extension’s code it happened, how often and when, the extension version and the browser. Web addresses, file paths, logins, email addresses and quoted page text are removed before sending and again on receipt, and no identifier is attached. Errors from GitHub’s own scripts are never included. Reports are written to the hosting logs on Vercel, kept there for a limited time and stored nowhere else. Turning the setting off drops reports not yet sent. Whether or not reports are on, errors stay on your device in Copy diagnostics.',
+      'Anonymous usage statistics are on by default and can be turned off with Send anonymous usage statistics in the extension options (Chrome, Edge and Safari; Firefox builds send none). When Geld is installed or updated, and once a day while your browser runs it, the extension tells geld.sh the extension version (and, after an update, the version before it), the browser and the release channel. A nightly build also says whether it updates itself automatically or waits for you, and whether you or the build started an update. No identifier is attached, not even a random one, so the events can be counted but not linked to each other or to you. Nothing about the pages you visit, repositories, files, accounts or your settings is sent. geld.sh forwards the events to PostHog from its own server, so PostHog does not receive your IP address, and records no location for them. Turning the setting off drops events not yet sent.',
     ],
   },
   {
@@ -50,7 +51,7 @@ export const PRIVACY_SECTIONS: readonly {
     id: 'processors',
     title: 'Service providers and transfers',
     paragraphs: [
-      'Hosted Geld uses Vercel for hosting, Neon for Postgres, Stripe for payments, a configured transactional email provider for account and billing messages, and PostHog for optional measurement and feature configuration. AI gateways, model providers and read-only tracker connections process data needed for the features you enable. Self-hosted deployments use the services selected by their operator.',
+      'Hosted Geld uses Vercel for hosting, Neon for Postgres, Stripe for payments, a configured transactional email provider for account and billing messages, and PostHog for optional measurement, feature configuration and the extension’s anonymous usage statistics. AI gateways, model providers and read-only tracker connections process data needed for the features you enable. Self-hosted deployments use the services selected by their operator.',
       'Data may be processed outside the country where you live, including outside the European Economic Area. Applicable processor agreements and transfer safeguards, such as standard contractual clauses, must be in place before the relevant hosted processing begins. We do not sell your personal data or share it for cross-context behavioral advertising.',
     ],
   },
@@ -59,7 +60,7 @@ export const PRIVACY_SECTIONS: readonly {
     title: 'Optional measurement and your choices',
     paragraphs: [
       'Optional analytics loads only after you opt in to measurement. You can opt in to all optional categories, cancel, or manage categories individually. Optional categories start off. Global Privacy Control is treated as a refusal. You can change your choice using Privacy settings in the footer.',
-      'Without measurement, Geld does not collect optional visits, feature usage, setup funnel events, navigation patterns or struggle signals. The product features and feature flags continue to work. When enabled, measurement uses normalized routes, excludes private repository identities, masks text and inputs by default and strips sensitive content before sending events. The extension requires a separate consent choice before its own optional measurement can run.',
+      'Without measurement, Geld does not collect optional visits, feature usage, setup funnel events, navigation patterns or struggle signals. The product features and feature flags continue to work. When enabled, measurement uses normalized routes, excludes private repository identities, masks text and inputs by default and strips sensitive content before sending events. The extension’s anonymous usage statistics, described under Using the extension without an account, are separate from this measurement and are turned off in the extension’s own options.',
     ],
   },
   {
@@ -96,7 +97,7 @@ export const PRIVACY_SECTIONS: readonly {
     id: 'changes',
     title: 'Changes to this policy',
     paragraphs: [
-      'This policy was updated on November 4, 2026. Material changes are announced in the product or by account email before they take effect where appropriate. The public source history records policy changes.',
+      'This policy was updated on November 10, 2026. Material changes are announced in the product or by account email before they take effect where appropriate. The public source history records policy changes.',
     ],
   },
 ];

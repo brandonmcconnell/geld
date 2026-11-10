@@ -1958,6 +1958,20 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The site route (`apps/site/app/api/diagnostics/route.ts`) parses and scrubs again (`parseErrorPayload`, frames must match the strict `file:line:col` shape) and writes one `{ event: 'extension_error', … }` JSON line per error to the runtime logs, nothing stored;
   a Vercel log drain carries them further.
   The privacy policy's extension section (`@geld/domain/privacy.ts`) says exactly what is sent: keep it in step with `ErrorReport`.
+- **Anonymous usage statistics count installs, updates and active installs with no identifier at all** (`usageStats`, General, on by default, extension only, hidden and never sent on Firefox like `errorReports`;
+  `src/lib/usage-uplink.ts`, `@geld/core/usage-report.ts`, `apps/site/app/api/usage/route.ts`).
+  The background notes `extension_installed` (onInstalled `install`), `extension_updated` with the version before (onInstalled `update`'s `previousVersion`, else the version it last recorded, checked 5 s after the worker starts so the browser's own word comes first) and `extension_active` once per UTC day (an hourly alarm), flagged `firstOfWeek` and `firstOfMonth` on the install's first ping of the ISO week and month.
+  There is no install id on purpose, not even a random one: every number is a count of events, a day's pings being its active installs and the week-flagged ones the week's, so nothing can be linked across days or to a person.
+  Keep it that way: a feature that needs a stable id needs a consent decision first.
+  Events wait in `local:usageState` until a send succeeds (`no-cors` `text/plain` to `https://www.geld.sh/api/usage`, as error reports go, so no host permission), and are dropped unsent while the setting is off.
+  The day is marked whatever the setting, so turning it on mid-day sends no second ping.
+  The channel is the build's (`__GELD_CHANNEL__`, a Vite define: `nightly` for every nightly build, `stable` otherwise), so a store build never carries the word nightly.
+  A self-updating nightly build adds its Update setting (`selfUpdate.mode`, named so the key a store build leaves out never puts the word in it) and, for an update it wrote itself, the install record's `trigger` (`manual` for the reader's Install or Roll back, `automatic` for Automatic), `method` and `rollback` (`nightlyUsage` in updater.ts, `NightlyInstall.trigger`), passed in by the background so `src/nightly/` stays out of the store builds.
+  The site parses the payload again (`parseUsagePayload` keeps only named fields), derives `build`, `from_build`, `build_delta`, `version_jump`, `upgrade_path` and `update_trigger` (`store` for a stable update, `by_hand` for nightly files the build did not write) in `usageCaptures`, and forwards to PostHog's `/batch/` from the server with `POSTHOG_USAGE_KEY` (and `POSTHOG_USAGE_HOST`, US by default): each event gets a random `distinct_id` of its own, `$process_person_profile: false` and `$geoip_disable: true`, and PostHog sees Vercel's address, never the reader's.
+  Without the key (previews, local) the events go to the runtime logs as `extension_usage` lines.
+  The dashboards are data in `scripts/posthog/dashboards.ts`, applied by `pnpm posthog:dashboards` with `POSTHOG_PERSONAL_API_KEY` and `POSTHOG_PROJECT_ID` (found by name and the `geld-usage` tag, so a rerun updates them in place);
+  they belong in the dreamthinkbuild PostHog organisation, never Mintlify's.
+  The privacy policy's extension section and the Safari review notes say what is sent: keep them in step with `UsagePayload`.
 - **A diff that could not be had is never cached, and the row says so.**
   Signed out of a private repository, GitHub answers a `.diff` request with 404 (`text/plain` "Not Found");
   with a lapsed SSO session it answers 200 with its sign-in page, which parsed as a diff of no files and used to be cached and shown as `0 hidden +0 −0`.

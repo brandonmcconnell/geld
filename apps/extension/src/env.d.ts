@@ -7,6 +7,9 @@ interface ImportMetaEnv {
 /** True only in the self-updating nightly builds (`GELD_CHANNEL=nightly`, Chrome and Edge, wxt.config.ts); store builds compile every use away. */
 declare const __GELD_NIGHTLY__: boolean;
 
+/** The release channel the build was made for: `nightly` for every nightly build (`GELD_CHANNEL=nightly`), self-updating or not, else `stable`. */
+declare const __GELD_CHANNEL__: 'stable' | 'nightly';
+
 /** Chromium's File System Access additions that TypeScript's DOM library does not ship; nightly builds only. */
 interface FileSystemHandlePermissionDescriptor {
   readonly mode?: 'read' | 'readwrite';

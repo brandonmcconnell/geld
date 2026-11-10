@@ -39,6 +39,8 @@ export interface NightlyInstall {
   readonly at: string;
   readonly method: InstallMethod;
   readonly rollback?: true;
+  /** Whether the reader pressed Install or Roll back (`manual`), or Automatic installed it on its own; absent in records from earlier builds. */
+  readonly trigger?: UpdateMode;
 }
 
 export interface NightlyFailure {

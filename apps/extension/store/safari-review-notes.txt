@@ -32,7 +32,9 @@ f. Open Geld's settings from the popup to try optional categories and custom pat
 - Geld's GitHub App (optional device-flow sign-in): its token only reads and writes the user's own settings gist.
 - An AI gateway the user configures (optional, experimental, off by default): only when the user enters their own gateway, model and key and asks for a triage are that pull request's review comments sent there, from the browser. Geld runs no AI service.
 
-Geld has no server or database, and no analytics, ads, payments or in-app purchases. Diffs are processed locally, except the optional AI triage, which goes only to the user's gateway. Geld never receives repository content or user data. Synced settings stay in a secret gist on the user's own GitHub account.
+- geld.sh: anonymous usage statistics (on by default, a switch in Geld's settings): when Geld is installed or updated, and once a day, its version, the browser and the release channel. No identifier, page, repository or account is sent.
+
+Geld has no ads, payments or in-app purchases. Diffs are processed locally, except the optional AI triage, which goes only to the user's gateway. Geld never receives repository content or user data. Synced settings stay in a secret gist on the user's own GitHub account.
 
 5. Regional differences
 

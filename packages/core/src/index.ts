@@ -14,6 +14,7 @@ export * from './category-icons';
 export * from './diff-parse';
 export * from './diff-summaries';
 export * from './error-report';
+export * from './usage-report';
 export * from './format';
 export * from './gist-sync';
 export * from './glob';
