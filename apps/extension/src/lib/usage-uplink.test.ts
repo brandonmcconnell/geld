@@ -118,7 +118,7 @@ describe('usage statistics', () => {
     await addUsageCount('digest_shown', 1);
     await start();
     await vi.advanceTimersByTimeAsync(6_000);
-    expect(sent[0]?.events).toEqual([{ name: 'extension_active', at: expect.any(Number), firstOfWeek: false, firstOfMonth: false, counts: { flow_opened: 3, digest_shown: 1 } }]);
+    expect(sent[0]?.events).toEqual([{ name: 'extension_active', at: expect.any(Number), version: '0.9.3.412', firstOfWeek: false, firstOfMonth: false, counts: { flow_opened: 3, digest_shown: 1 } }]);
     expect(stored.get('local:usageState')).toMatchObject({ counts: {} });
   });
 
