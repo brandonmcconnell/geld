@@ -296,3 +296,13 @@ test('Bitbucket whole context selects one literal full-commit case and never ent
 });
 
 test('PR whole context is a separate literal and does not select the standalone case',()=>{const literal=/const FOCUSED_CASES = (\{[\s\S]*?\n\});/.exec(harness)?.[1],cases=new vm.Script(`(${literal})`).runInNewContext({},{timeout:1000});assert.deepEqual(Array.from(cases['bitbucket-pr-whole-context']),['bitbucket-pr-whole-context']);for(const[k,v]of Object.entries(cases))if(k!=='bitbucket-pr-whole-context')assert.equal(v.includes('bitbucket-pr-whole-context'),false);assert.deepEqual(select({body:marker('bitbucket-pr-whole-context'),from:marker('github')}),{focus:'bitbucket-pr-whole-context',run:'true',failures:[]});assert.match(harness,/prWhole && focus !== 'bitbucket-pr-whole-context'/);});
+
+test('static whitespace-source focus selects no browser job and retains its own artifact without replacing cooldown evidence',()=>{
+  assert.deepEqual(select({body:marker('bitbucket-whitespace-source'),from:marker('github')}),{focus:'bitbucket-whitespace-source',run:'true',failures:[]});
+  const browser=workflow.slice(workflow.indexOf('  installed-extension:'),workflow.indexOf('  bitbucket-static-source:'));
+  const source=workflow.slice(workflow.indexOf('  bitbucket-static-source:'));
+  assert.match(browser,/focus != 'bitbucket-whitespace-source'/);assert.match(source,/focus == 'bitbucket-whitespace-source'/);
+  assert.match(source,/node apps\/extension\/scripts\/bitbucket-whitespace-source-research\.mjs/);assert.match(source,/name: geld-bitbucket-source-research/);
+  assert.doesNotMatch(source,/test:browser|build:chrome|google-chrome|geld-installed-browser-e2e|GELD_BROWSER_PREVIOUS_REPORT/);
+  assert.doesNotMatch(harness,/bitbucket-whitespace-source/);
+});

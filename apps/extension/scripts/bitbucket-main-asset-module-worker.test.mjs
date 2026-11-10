@@ -44,3 +44,21 @@ for (const value of [Buffer.alloc(0), Buffer.alloc(6*1024*1024+1), 'not bytes'])
 
 test('actual worker ignores ordinary fozrM imports around one supported registration-shaped slice',async()=>{const imports=Array.from({length:40},(_,i)=>`const value${i}=require("fozrM");`).join('');const result=await extract(body(imports+registration+';'+imports.replaceAll('value','after')));assert.equal(result.status,'extracted');assert.deepEqual(Buffer.from(result.bytes),body(registration));assert.equal(result.start,imports.length);});
 test('ordinary imports do not conceal duplicate supported factory definitions',async()=>{assert.deepEqual(await extract(body('require("fozrM");'+registration+';'+registration)),{status:'unavailable',reason:'registration'});});
+
+test('allowlisted h43l2 extraction is independent of absent or duplicate fozrM registrations',async()=>{
+  const loader='o("h43l2",function(e,r){e.exports={DiffLoader:()=>{throw Error("never execute")}};})';
+  const result=await extract(body(registration+';'+registration+';'+loader),{moduleId:'h43l2'});
+  assert.equal(result.status,'extracted');assert.equal(result.moduleId,'h43l2');assert.deepEqual(Buffer.from(result.bytes),body(loader));
+  assert.deepEqual(await extract(body(loader),{moduleId:'fozrM'}),{status:'unavailable',reason:'registration'});
+});
+test('unknown module ID is refused before creating a worker',async()=>{
+  for(const moduleId of ['other','__proto__','h43l2;fetch("bad")',null])assert.deepEqual(await extract(body(),{moduleId,workerFactory:()=>{throw Error('must not create worker');}}),{status:'unavailable',reason:'module_id'});
+});
+test('worker result for the other allowlisted module cannot qualify selected module',async()=>{
+  const worker=pendingWorker();const script=body();const result=extract(script,{workerFactory:()=>worker});
+  worker.emit('message',{status:'extracted',moduleId:'h43l2',bytes:script,start:0,end:script.length,byteStart:0,byteEnd:script.length});
+  assert.deepEqual(await result,{status:'unavailable',reason:'worker_result'});
+});
+test('duplicate DiffLoader factory remains ambiguous even beside one valid settings factory',async()=>{
+  const loader='r("h43l2",function(e,r){})';assert.deepEqual(await extract(body(registration+';'+loader+';'+loader),{moduleId:'h43l2'}),{status:'unavailable',reason:'registration'});
+});
