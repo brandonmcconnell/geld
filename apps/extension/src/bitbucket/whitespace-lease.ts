@@ -5,6 +5,7 @@ export interface NativeWhitespaceSnapshot {
   readonly current: boolean;
   readonly detached: boolean;
   readonly value: boolean;
+  readonly unset: boolean;
   readonly open: boolean;
   readonly loading: boolean;
   readonly busy: boolean;
@@ -15,8 +16,8 @@ export interface NativeWhitespaceSnapshot {
   readonly stats: object;
 }
 export interface WhitespaceReceipt { readonly status: 'legacy' | 'pending' | 'ready'; readonly value: boolean | null; readonly epoch: number }
-interface Owned { readonly owner: object; readonly subject: string; readonly baseline: boolean; readonly value: boolean; settings: object }
-interface Waiting { readonly diff: object; readonly stats: object; readonly value: boolean; readonly after: 'ready' | 'legacy'; diffStarted: boolean; statsStarted: boolean }
+interface Owned { readonly owner: object; readonly subject: string; readonly baseline: boolean | undefined; readonly value: boolean; settings: object }
+interface Waiting { readonly diff: object; readonly stats: object; readonly value: boolean; readonly unset: boolean; readonly after: 'ready' | 'legacy'; diffStarted: boolean; statsStarted: boolean }
 interface Editing { readonly subject: string; opened: boolean; submitted: boolean; loading: boolean; intent: boolean | null }
 
 /** Owns only a native in-memory field. No persistence action is accepted here. */
@@ -29,25 +30,26 @@ export class BitbucketWhitespaceLease {
   private waiting: Waiting | null = null;
   private editing: Editing | null = null;
   private dispatching = false;
-  private stable: { readonly subject: string; readonly value: boolean; readonly diff: object; readonly stats: object; readonly at: number } | null = null;
+  private stable: { readonly subject: string; readonly value: boolean; readonly unset: boolean; readonly diff: object; readonly stats: object; readonly at: number } | null = null;
   private epoch = 0;
   private subject: string | null = null;
   private receipt: WhitespaceReceipt = { status: 'legacy', value: null, epoch: 0 };
-  constructor(private readonly read: () => NativeWhitespaceSnapshot | null, private readonly dispatch: (value: boolean) => void, private readonly changed: (receipt: WhitespaceReceipt) => void, private readonly now: () => number = Date.now) {}
+  constructor(private readonly read: () => NativeWhitespaceSnapshot | null, private readonly dispatch: (value: boolean | undefined) => void, private readonly changed: (receipt: WhitespaceReceipt) => void, private readonly now: () => number = Date.now) {}
 
   update(enabled: boolean, force = true): void { this.enabled = enabled;this.force = force;if (!enabled) { this.blocked = null;this.choice = null; }this.tick(); }
   private publish(status: WhitespaceReceipt['status'], value: boolean | null): void {
     if (this.receipt.status === status && this.receipt.value === value) return;
     this.receipt = { status, value, epoch: ++this.epoch };this.changed(this.receipt);
   }
-  private set(snapshot: NativeWhitespaceSnapshot, value: boolean, after: Waiting['after']): void {
-    this.waiting = { diff: snapshot.diff, stats: snapshot.stats, value, after, diffStarted: false, statsStarted: false };this.publish('pending', null);
+  private set(snapshot: NativeWhitespaceSnapshot, raw: boolean | undefined, after: Waiting['after']): void {
+    const value = raw === true, unset = raw === undefined;
+    this.waiting = { diff: snapshot.diff, stats: snapshot.stats, value, unset, after, diffStarted: false, statsStarted: false };this.publish('pending', null);
     this.dispatching = true;
-    try { this.dispatch(value); } finally { this.dispatching = false; }
-    const now = this.read();if (this.owned !== null && now?.owner === this.owned.owner && now.value === value) this.owned.settings = now.settings;
+    try { this.dispatch(raw); } finally { this.dispatching = false; }
+    const now = this.read();if (this.owned !== null && now?.owner === this.owned.owner && now.value === value && now.unset === unset) this.owned.settings = now.settings;
   }
   private owns(snapshot: NativeWhitespaceSnapshot, owned: Owned): boolean {
-    if (snapshot.owner !== owned.owner || snapshot.value !== owned.value) return false;
+    if (snapshot.owner !== owned.owner || snapshot.unset || snapshot.value !== owned.value) return false;
     if (snapshot.settings === owned.settings) return true;
     const keys = Object.keys(snapshot.settings), previous = Object.keys(owned.settings);
     return keys.length !== previous.length || keys.some(key => Reflect.get(snapshot.settings, key) !== Reflect.get(owned.settings, key));
@@ -67,7 +69,7 @@ export class BitbucketWhitespaceLease {
     }
     if (!snapshot.current || !this.enabled) {
       this.release(snapshot);
-      if (snapshot.detached && this.waiting?.after === 'legacy' && snapshot.value === this.waiting.value) this.waiting = null;
+      if (snapshot.detached && this.waiting?.after === 'legacy' && snapshot.value === this.waiting.value && snapshot.unset === this.waiting.unset) this.waiting = null;
       if (this.waiting !== null) this.settle(snapshot);else this.publish('legacy', null);
       return;
     }
@@ -77,7 +79,7 @@ export class BitbucketWhitespaceLease {
       const edit = this.editing;
       edit.opened ||= snapshot.open;edit.loading ||= edit.submitted && snapshot.loading;
       if (edit.opened && !snapshot.open && !snapshot.loading) {
-        if (edit.submitted && edit.loading && edit.intent !== null && snapshot.value === edit.intent) this.choice = { subject: edit.subject, value: edit.intent };
+        if (edit.submitted && edit.loading && edit.intent !== null && !snapshot.unset && snapshot.value === edit.intent) this.choice = { subject: edit.subject, value: edit.intent };
         this.editing = null;this.waiting = null;
       } else { this.publish('pending', null);return; }
     }
@@ -92,11 +94,11 @@ export class BitbucketWhitespaceLease {
     const desired = !this.force || this.blocked === snapshot.subject ? snapshot.value : this.choice?.subject === snapshot.subject ? this.choice.value : true;
     if (snapshot.value === desired) {
       const stable = this.stable;
-      if (stable === null || stable.subject !== snapshot.subject || stable.value !== snapshot.value || stable.diff !== snapshot.diff || stable.stats !== snapshot.stats) { this.stable = { subject: snapshot.subject, value: snapshot.value, diff: snapshot.diff, stats: snapshot.stats, at: this.now() };this.publish('pending', null);return; }
+      if (stable === null || stable.subject !== snapshot.subject || stable.value !== snapshot.value || stable.unset !== snapshot.unset || stable.diff !== snapshot.diff || stable.stats !== snapshot.stats) { this.stable = { subject: snapshot.subject, value: snapshot.value, unset: snapshot.unset, diff: snapshot.diff, stats: snapshot.stats, at: this.now() };this.publish('pending', null);return; }
       if (this.now() - stable.at >= 150) this.publish('ready', snapshot.value);return;
     }
     this.stable = null;
-    this.owned = { owner: snapshot.owner, subject: snapshot.subject, baseline: snapshot.value, value: desired, settings: snapshot.settings };
+    this.owned = { owner: snapshot.owner, subject: snapshot.subject, baseline: snapshot.unset ? undefined : snapshot.value, value: desired, settings: snapshot.settings };
     this.set(snapshot, desired, 'ready');
   }
   private observeLoading(snapshot: NativeWhitespaceSnapshot): void {
@@ -105,8 +107,8 @@ export class BitbucketWhitespaceLease {
   private settle(snapshot: NativeWhitespaceSnapshot): boolean {
     this.observeLoading(snapshot);
     const waiting = this.waiting;if (waiting === null) return true;
-    if (snapshot.value !== waiting.value || !waiting.diffStarted || !waiting.statsStarted || snapshot.busy || snapshot.diff === waiting.diff || snapshot.stats === waiting.stats) { this.publish('pending', null);return false; }
-    this.waiting = null;this.stable = { subject: snapshot.subject, value: snapshot.value, diff: snapshot.diff, stats: snapshot.stats, at: this.now() - 150 };this.publish(waiting.after, waiting.after === 'ready' ? snapshot.value : null);return true;
+    if (snapshot.value !== waiting.value || snapshot.unset !== waiting.unset || !waiting.diffStarted || !waiting.statsStarted || snapshot.busy || snapshot.diff === waiting.diff || snapshot.stats === waiting.stats) { this.publish('pending', null);return false; }
+    this.waiting = null;this.stable = { subject: snapshot.subject, value: snapshot.value, unset: snapshot.unset, diff: snapshot.diff, stats: snapshot.stats, at: this.now() - 150 };this.publish(waiting.after, waiting.after === 'ready' ? snapshot.value : null);return true;
   }
   suspend(): void {
     const snapshot = this.read();if (snapshot === null) return;

@@ -71,6 +71,24 @@ function dom() {
   const addDialog = checked => { const d = w.document.createElement('div');d.setAttribute('role', 'dialog');d.innerHTML = '<form><label id="diff-settings-ignore-whitespace-toggle-label" for="diff-settings-ignore-whitespace-toggle">Whitespace changes<input id="diff-settings-ignore-whitespace-toggle" type="checkbox" name="shouldIgnoreWhitespace" value="shouldIgnoreWhitespace"></label><button type="button">Cancel</button><button type="submit">Save</button></form>';w.document.body.append(d);d.querySelector('input').checked = checked;for (const n of [d, ...d.querySelectorAll('*')]) n.getBoundingClientRect = () => ({ width: 20, height: 20 });return d; };
   return { w, addDialog, close() { probe('dispose');for (const [k, value] of old) if (value) Object.defineProperty(globalThis, k, value);else delete globalThis[k];w.happyDOM.abort(); } };
 }
+test('bridge diagnostics retain only bounded public states and do not qualify a response pair', () => {
+  const d = dom();try {
+    probe('bind');
+    const emit = (type, value) => d.w.document.dispatchEvent(new d.w.CustomEvent(type, { detail: JSON.stringify(value) }));
+    emit('geld:bitbucket-whitespace-request', { id: 'private-id', active: true, hide: true, secret: 'not-retained' });
+    emit('geld:bitbucket-whitespace-response', { route: URL, status: 'ready', value: true, epoch: 1, comparison: 'not-a-source-proof', secret: 'not-retained' });
+    emit('geld:bitbucket-whitespace-response', { route: 'https://unrelated.invalid', status: 'ready', value: true, epoch: 2, comparison: 'ignored' });
+    const result = probe();
+    assert.deepEqual(result.bridge, { requests: [{ active: true, hide: true }], responses: [{ status: 'ready', value: true, epoch: 1, hasComparison: true }], truncated: false });
+    assert.equal(JSON.stringify(result.bridge).includes('private'), false);assert.equal(JSON.stringify(result.bridge).includes('source-proof'), false);
+    assert.throws(() => qualify([], 'hide', true));
+    for (let epoch = 2; epoch < 30; epoch++) emit('geld:bitbucket-whitespace-response', { route: URL, status: 'pending', value: null, epoch, comparison: '' });
+    assert.equal(probe().bridge.responses.length, 16);assert.equal(probe().bridge.truncated, true);
+    const snapshot = structuredClone(probe().bridge);probe('dispose');
+    emit('geld:bitbucket-whitespace-response', { route: URL, status: 'ready', value: false, epoch: 100, comparison: '' });
+    assert.equal(snapshot.responses.length, 16);
+  } finally { d.close(); }
+});
 const retainedCookieNotice = readFileSync(new globalThis.URL('../src/bitbucket/fixtures/passive-cookie-notice.html', import.meta.url), 'utf8');
 function installRetainedCookie(d) {
   d.w.document.body.insertAdjacentHTML('beforeend', retainedCookieNotice);

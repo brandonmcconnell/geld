@@ -3215,6 +3215,22 @@ The native Atlassian cookie notice uses `role="dialog"` while remaining a passiv
 Whitespace acceptance excludes only the retained native cookie shape and ownership from its active-dialog guard, preserving every notice node and never choosing consent.
 Unknown dialogs, changed notices and dialogs containing fields remain blockers, and the report separates passive notice counts from actionable Settings matches.
 
+A hydrated anonymous Bitbucket page can have its own `globalShouldIgnoreWhitespace` property set to `undefined` when the bootstrap omits the preference.
+Native controls and requests treat that as Off, so the bridge exposes an effective boolean while retaining the exact raw baseline for internal restoration.
+Only a present data property with boolean or undefined value is accepted after the existing hydration checks, and the external bridge protocol remains boolean-only.
+Bitbucket also retains a hidden sticky-header copy of All changes.
+Whitespace qualification uses the one visible original control in the current diff panel, excluding hidden, inert and Geld-owned copies.
+
+The static Bitbucket source collector has an explicit PR-page mode for the fixed page bundle mapped by the captured native app.
+It performs one credential-free CDN read and retains compressed source with hashes for offline inspection, without navigating a provider page or executing the vendor code.
+
+The PR-renderer source investigation can capture the exact JavaScript dependencies listed by the retained native PR-page loader in one bounded static batch.
+That mode has four concurrent reads, an eight MiB per-file cap, a sixty-four MiB aggregate stream cap and a ninety-second wall limit, with no retries or code execution.
+
+The PR full-context acceptance also scopes All changes to the active native diff panel and keeps the original control identity through scrolling.
+A hidden sticky copy must not discard its file lease or erase the failure diagnostic.
+Its source-menu probe recognizes the same untouched passive cookie notice while rejecting any unknown dialog, and a placeholder text hint is not evidence of a native error.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
