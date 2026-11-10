@@ -31,6 +31,7 @@ import type { ReviewData } from '@/lib/review-contracts';
 import { useDashboard, EmptyState } from './app-shell';
 import { FileNavigation, fileGroups } from './file-navigation';
 import { ReviewDigest } from './review-digest';
+import { ProviderSourceLink } from './provider-source-link';
 import { DiffView } from './diff-view';
 import type { LineSelection } from './diff-view';
 import { ConsolidatedFindings } from './consolidated-findings';
@@ -57,7 +58,9 @@ export function ReviewScreen({ reference }: { readonly reference: PullRef }) {
     return (
       <div className="page" role="status">
         <span className="review-loading-skeleton" aria-label="Loading review workspace">
-          <span /><span /><span />
+          <span />
+          <span />
+          <span />
         </span>
       </div>
     );
@@ -380,16 +383,7 @@ function ReviewWorkspace({
               </span>{' '}
             </p>
           </div>
-          <a
-            href={data.pull.url.startsWith('https://') ? data.pull.url : '#'}
-            className="icon-button"
-            aria-label="Open on Git host"
-            target="_blank"
-            rel="noreferrer"
-          >
-            <ArrowUpRight size={18} />
-            <span className="touch-target" aria-hidden="true" />
-          </a>
+          <ProviderSourceLink provider={reference.provider} href={data.pull.url} />
         </div>
         <div className="review-tabs">
           <div role="tablist" aria-label="Review views">
@@ -458,9 +452,7 @@ function ReviewWorkspace({
         </div>
       )}
       {data.threadsUnavailable && (
-        <p className="review-banner">
-          Review threads could not be loaded. Open the provider for the complete discussion.
-        </p>
+        <p className="review-banner">Review threads could not be loaded. Reload to try again.</p>
       )}
       {notice && (
         <div className="review-banner" role="status">
@@ -556,7 +548,12 @@ function ReviewWorkspace({
         )}
         <div className="review-main">
           {mode === 'conversation' ? (
-            <>
+            <ReviewDigest
+              revision={revision}
+              data={data}
+              onOpenDiff={() => setMode('files')}
+              onChange={() => setRevision((value) => value + 1)}
+            >
               <ConsolidatedFindings
                 data={data}
                 reference={reference}
@@ -572,8 +569,7 @@ function ReviewWorkspace({
                 }}
                 onChange={() => setRevision((value) => value + 1)}
               />
-              <ReviewDigest data={data} />
-            </>
+            </ReviewDigest>
           ) : mode === 'files' ? (
             <>
               <div className="review-section-heading">

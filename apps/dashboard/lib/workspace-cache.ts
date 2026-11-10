@@ -1,6 +1,7 @@
 import type { QueueData } from './contracts';
 import type { QueueInsight } from './queue-insight';
 import type { ReviewData } from './review-contracts';
+import type { ReviewFeed } from './review-feed';
 
 export class MemoryCache<T> {
   private readonly entries = new Map<string, { value: T; expires: number }>();
@@ -31,6 +32,7 @@ export function workspaceCache() {
     queues: new MemoryCache<QueueSnapshot>(30),
     insights: new MemoryCache<QueueInsight>(500),
     reviews: new MemoryCache<ReviewData>(10, 60_000),
+    feeds: new MemoryCache<ReviewFeed>(10, 60_000),
   };
 }
 export type WorkspaceCache = ReturnType<typeof workspaceCache>;

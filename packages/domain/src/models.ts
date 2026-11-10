@@ -108,6 +108,31 @@ export interface ProviderThread {
   readonly comments: readonly ProviderComment[];
 }
 
+export const activitySchema = z.object({
+  id: z.string(),
+  targetId: z.string().optional(),
+  kind: z.enum(['comment', 'review', 'commit', 'event']),
+  actor: z.string(),
+  avatar: z.string().nullable(),
+  at: z.string(),
+  title: z.string(),
+  body: z.string(),
+  state: z.string().nullable(),
+  sha: z.string().nullable(),
+});
+export type ProviderActivity = z.infer<typeof activitySchema>;
+export const checkSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: z.string(),
+  conclusion: z.string().nullable(),
+  sha: z.string(),
+  description: z.string(),
+  startedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
+});
+export type ProviderCheck = z.infer<typeof checkSchema>;
+
 export interface ReviewSubmission {
   readonly event: ReviewEvent;
   readonly body: string;
@@ -128,6 +153,8 @@ export interface ProviderClient {
   repositories(cursor?: string | null): Promise<ProviderResult<Page<RepositorySummary>>>;
   pulls(repo: RepositoryRef, cursor?: string | null): Promise<ProviderResult<Page<PullSummary>>>;
   pull(ref: PullRef): Promise<ProviderResult<PullDetail>>;
+  activity?(ref: PullRef, cursor?: string | null): Promise<ProviderResult<Page<ProviderActivity>>>;
+  checks?(ref: PullRef, revision: string, cursor?: string | null): Promise<ProviderResult<Page<ProviderCheck>>>;
   reviewRequesters?(
     ref: PullRef,
   ): Promise<ProviderResult<readonly { readonly reviewer: string; readonly requester: string }[]>>;
