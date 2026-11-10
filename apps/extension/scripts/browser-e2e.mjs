@@ -11,7 +11,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
-import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, GITLAB_LOCAL_REVIEW, providerHeaderHintTarget, openProviderReviewAncestors, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
+import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, GITLAB_LOCAL_REVIEW, providerHeaderHintTarget, providerHoverTargetPoint, openProviderReviewAncestors, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
 import { commentBodyPresentationProbe, compareCommentBodyPresentation } from './comment-body-branding.mjs';
 import { BITBUCKET_LOCAL_REVIEW, localReviewStorageScope, observeLocalReview, verifyBitbucketLocalReview } from './bitbucket-local-reviewed.mjs';
 import { bitbucketListRowSnapshot, countHoverVisibilityProbe } from './native-list-row.mjs';
@@ -1224,6 +1224,7 @@ async function installedHover(page, selector, interaction, artifactName, anchorS
     await page.mouse.move(1, 1);
   }
   let keyboardNavigation;
+  let pointerProof;
   if (interaction === 'keyboard') {
     const previous = await page.evaluate((target) => {
       const anchor = [...(typeof target === 'string' ? document.querySelectorAll(target) : [target])].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
@@ -1263,8 +1264,20 @@ async function installedHover(page, selector, interaction, artifactName, anchorS
     const handle = await page.evaluateHandle((target) => [...(typeof target === 'string' ? document.querySelectorAll(target) : [target])].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden') ?? null, selector);
     const control = handle.asElement();
     assert.ok(control !== null, 'Visible count hover host is missing');
-    await control.hover();
-    await discardHandle(handle);
+    await control.evaluate(node => node.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' }));
+    const point = await pollStable(() => control.evaluate(providerHoverTargetPoint), value => value.ready, 'Count hover target settles after native scrolling', 8000, value => JSON.stringify(value));
+    await control.evaluate(node => {
+      const listener = event => { globalThis.__geldHoverInput.receipt = { trusted: event.isTrusted, inside: node.contains(event.target), fromInside: event.relatedTarget instanceof Node && node.contains(event.relatedTarget) }; };
+      globalThis.__geldHoverInput = { node, listener, receipt: null };node.addEventListener('mouseover', listener, true);
+    });
+    try {
+      await page.mouse.move(point.x, point.y);
+      pointerProof = { settled: point, observed: await control.evaluate(node => ({ receipt: globalThis.__geldHoverInput.receipt, connected: node.isConnected, hovered: node.matches(':hover'), documentHidden: document.hidden, bound: node.hasAttribute('data-geld-hover-bound'), box: { x: node.getBoundingClientRect().x, y: node.getBoundingClientRect().y, width: node.getBoundingClientRect().width, height: node.getBoundingClientRect().height } })) };
+      if (!preserveNativeCard) assert.ok(pointerProof.observed.receipt?.trusted && pointerProof.observed.receipt.inside && pointerProof.observed.hovered, `The settled count owner must receive real pointer input: ${JSON.stringify(pointerProof)}`);
+    } finally {
+      await control.evaluate(node => { node.removeEventListener('mouseover', globalThis.__geldHoverInput.listener, true);delete globalThis.__geldHoverInput; });
+      await discardHandle(handle);
+    }
   }
   const snapshot = await poll(() => page.evaluate((target, anchorSelector) => {
     const host = [...(typeof target === 'string' ? document.querySelectorAll(target) : [target])].find((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0 && getComputedStyle(node).visibility !== 'hidden');
@@ -1279,7 +1292,14 @@ async function installedHover(page, selector, interaction, artifactName, anchorS
       rows: [...tip.querySelectorAll('.geld-provider-hover__row')].map((row) => ({ label: row.querySelector('.geld-provider-hover__label')?.textContent, files: row.querySelector('.geld-provider-hover__files')?.textContent, additions: row.querySelector('.geld-provider-hover__add')?.textContent, deletions: row.querySelector('.geld-provider-hover__del')?.textContent })),
       described: [...document.querySelectorAll('[aria-describedby~="geld-provider-count-tooltip"]')].some((owner) => owner === host || host?.contains(owner)),
       bounds: { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom }, viewport: { width: innerWidth, height: innerHeight } };
-  }, selector, anchorSelector), (value) => value !== null && value.described && /Essential/.test(value.text) && /Tests/.test(value.text) && /Total/.test(value.text) && (expectedRows === undefined || isDeepStrictEqual(value.rows, expectedRows)), 'Installed native count hover breakdown and accessible owner', 12_000);
+  }, selector, anchorSelector), (value) => value !== null && value.described && /Essential/.test(value.text) && /Tests/.test(value.text) && /Total/.test(value.text) && (expectedRows === undefined || isDeepStrictEqual(value.rows, expectedRows)), 'Installed native count hover breakdown and accessible owner', 12_000).catch(async error => {
+    const current = await page.evaluate(target => {
+      const node = [...(typeof target === 'string' ? document.querySelectorAll(target) : [target])].find(node => node?.getBoundingClientRect().width > 0);
+      const tip = document.querySelector('#geld-provider-count-tooltip');
+      return { documentHidden: document.hidden, hovered: node?.matches(':hover') ?? false, bound: node?.hasAttribute('data-geld-hover-bound') ?? false, described: node?.getAttribute('aria-describedby') ?? null, tooltipHidden: tip?.hidden ?? null, focusIsOwner: document.activeElement === node };
+    }, selector);
+    throw new Error(`${errorText(error)} Pointer input: ${JSON.stringify(pointerProof ?? null)}. Current ownership: ${JSON.stringify(current)}`);
+  });
   assert.ok(snapshot.bounds.left >= 0 && snapshot.bounds.right <= snapshot.viewport.width + 1 && snapshot.bounds.top >= 0 && snapshot.bounds.bottom <= snapshot.viewport.height + 1, 'Count tooltip escapes the tested viewport');
   snapshot.compactUi = await page.evaluate(providerUiProbe, providerOf(page.url()));
   assertCompactProviderPopover(snapshot.compactUi);
