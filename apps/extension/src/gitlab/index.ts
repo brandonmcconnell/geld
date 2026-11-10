@@ -1,3 +1,4 @@
+import { gitLabSidebarPeople } from './sidebar-people';
 import { gitLabAttachmentLink } from './attachment';
 import type { ProviderCommentRenderContext } from '../providers/comment-render';
 import { isProviderReviewPage } from '../providers/types';
@@ -39,6 +40,7 @@ export const gitlabAdapter: ProviderAdapter = {
   referenceAnchor: gitLabReferenceAnchor,
   conversationRoots: gitLabConversationRoots,
   personRoots: gitLabPersonRoots,
+  sidebarPeople: gitLabSidebarPeople,
   descriptionHost: gitLabDescriptionHost,
   fetchDiff: (page, signal) => isProviderReviewPage(page) ? fetchGitLabDiff(page, signal) : fetchGitLabStandaloneDiff(page, signal),
   fetchConfig: fetchGitLabConfig,

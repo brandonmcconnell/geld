@@ -34,6 +34,23 @@ it('hides only qualified native sources and restores them without moving nodes',
   expect(control?.isConnected).toBe(false);
 });
 
+it('folds observed sidebar identities and restores their original node on a visit peek', () => {
+  const host = document.createElement('main'), sidebar = document.createElement('aside'), row = document.createElement('div');
+  row.textContent = 'Alice approved';sidebar.append(row);document.body.append(host, sidebar);
+  const show = vi.fn(), view = new ProviderHiddenPeopleView(show);
+  const people = [{ root: row, authorId: 'id' }];
+  view.update(host, projection, [], people);
+  expect(row.hasAttribute('data-geld-provider-person-hidden')).toBe(true);
+  expect(row.parentElement).toBe(sidebar);
+  const control = row.previousElementSibling;control?.querySelector<HTMLButtonElement>('button')?.click();
+  expect(show).toHaveBeenCalledWith('id', true);
+  view.update(host, { ...projection, people: projection.people.map(person => ({ ...person, shown: true })) }, [], people);
+  expect(row.hasAttribute('data-geld-provider-person-hidden')).toBe(false);
+  expect(control?.isConnected).toBe(false);
+  expect(row.textContent).toBe('Alice approved');
+  view.clear();
+});
+
 
 it('removes the exact canonical rule rather than the display login', () => {
   const host = document.createElement('main');document.body.append(host);

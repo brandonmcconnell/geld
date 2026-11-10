@@ -1,6 +1,6 @@
 import { element } from './dom';
 import type { ProviderPeopleProjection } from './hidden-people';
-import type { ProviderConversationRoot } from './types';
+import type { ProviderConversationRoot, ProviderSidebarPerson } from './types';
 
 const HIDDEN = 'data-geld-provider-person-hidden';
 let listId = 0;
@@ -14,11 +14,16 @@ export class ProviderHiddenPeopleView {
 
   constructor(private readonly show: (id: string, shown: boolean) => void, private readonly unhide?: (login: string) => Promise<void>) {}
 
-  update(host: HTMLElement | null, projection: ProviderPeopleProjection, roots: readonly ProviderConversationRoot[]): void {
+  update(host: HTMLElement | null, projection: ProviderPeopleProjection, roots: readonly ProviderConversationRoot[], sidebar: readonly ProviderSidebarPerson[] = []): void {
     const names = new Map(projection.people.map((person) => [person.id, person.login]));
     const active = new Set<HTMLElement>();
-    for (const entry of roots) {
-      const ids = [...entry.anchors.map((anchor) => projection.hiddenAnchors.get(anchor)), ...(entry.eventIds ?? []).map((id) => projection.hiddenEvents.get(id))];
+    const hidden = new Set(projection.people.filter(person => !person.shown).map(person => person.id));
+    const targets = [
+      ...roots.map(entry => ({ root: entry.root, ids: [...entry.anchors.map(anchor => projection.hiddenAnchors.get(anchor)), ...(entry.eventIds ?? []).map(id => projection.hiddenEvents.get(id))] })),
+      ...sidebar.filter(person => hidden.has(person.authorId)).map(person => ({ root: person.root, ids: [person.authorId] })),
+    ];
+    for (const entry of targets) {
+      const ids = entry.ids;
       if (ids.length === 0 || ids.some((id) => id === undefined) || entry.root.closest('[data-geld-ui]') !== null || entry.root.matches('form,textarea,input,[contenteditable="true"]') || entry.root.querySelector('form,textarea,input,[contenteditable="true"]') !== null) continue;
       const people = [...new Set(ids.filter((id): id is string => id !== undefined))];
       const key = JSON.stringify(people);
