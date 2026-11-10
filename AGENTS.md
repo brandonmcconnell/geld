@@ -2538,6 +2538,7 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   The review's counts stand on the right of the tab bar on every tab, as GitHub's do: on GitLab in `.merge-request-tabs-actions` before the thread counter (`#discussionCounter`, or `#js-vue-discussion-counter` until Vue mounts it), on Overview and Changes alike.
   Only those counts open the breakdown: the Changes tab, its badge and the Changes toolbar's own totals are rewritten in place but never bound (`ProviderHeaderTarget.passive`), since a popover opened from a tab and anchored at the counts read as belonging to neither (triage-ops!4544, Nov 2026).
   Bitbucket's Files tab and its commit sidebar's Files tab are passive the same way.
+  The provider's link hover also passes over links to the review being read (`candidate` in `providers/hover.ts`): on Overview the Changes tab links to the same review under its `/diffs` path, and read as another review's link it opened the breakdown at the tab.
   Only keyboard focus (`:focus-visible`) holds the breakdown open: a click that focused a host used to keep it open until focus moved, so switching tabs left it pinned.
   Bitbucket's verified pull-request navigation provides a neutral count slot after its direct native tablist, keeping owned overview line counts outside tab badges and hidden sticky headers.
   The native line-count `aria-label` lives on a wrapper outside the numeric span, so update its count alongside the visible text and restore the latest native wording during teardown.
