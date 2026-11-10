@@ -49,7 +49,7 @@ scripts/             catalog-build.ts (generate/check), catalog-sign.mjs, catalo
                      deployments, previews and reports the digest shows.
 ```
 
-Store publishing (`.github/workflows/publish.yml`) runs after every CI release on `main`, every six hours and on demand: it submits the latest release to Chrome, Edge, Firefox and Safari, skipping a store that already has that version or has a submission under review.
+Store publishing (`.github/workflows/publish.yml`) runs twice a day (05:17 and 17:17 UTC), after a successful CI run on `main` whose commit message contains `[publish]`, and on demand: it submits the latest release to Chrome, Edge, Firefox and Safari, skipping a store that already has that version or has a submission under review.
 **The Safari job never withdraws a submission**: it used to (`--reject_if_possible`), twice a day for each newer build, and Apple finished no review in ten tries from Sep to Nov 2026, so it was paused until the first approval (Nov 9, 2026).
 It now asks App Store Connect first (`asc-review-busy.mjs`) and skips while a review is waiting or under way, as Chrome and Edge are skipped;
 the repository variable `SAFARI_AUTO_PUBLISH=false` keeps Safari to manual runs.

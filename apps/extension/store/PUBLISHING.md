@@ -12,7 +12,7 @@ Two things reach users, through two separate, fully automated paths. Nothing is 
 
 - **submits** the latest release when the store has an older version and nothing under review;
 - **skips** when the store already has this version (repeated runs are idempotent). Firefox and Safari check this with a read-only API call *before* uploading anything, so a re-run costs no AMO quota and no macOS runner time;
-- **skips with a warning** when a submission is under review, or when Firefox's daily quota is used up (the warning says roughly when it frees up). Chrome and Edge have no API to cancel a review, so the newest release is picked up by the next scheduled run once the review clears. Apple can withdraw a submission that is still *waiting* for review, and the Safari job does, so there the newest build replaces the pending one. **Safari is therefore paused on the schedule and after CI** (see below).
+- **skips with a warning** when a submission is under review, or when Firefox's daily quota is used up (the warning says roughly when it frees up). The newest release is picked up by the next scheduled run once the review clears. Chrome and Edge have no API to cancel a review; Apple can withdraw a submission still *waiting* for review, but the Safari job never does (see below), so every store's review runs to the end.
 
 Nothing fails silently: a skipped store is a warning annotation on the run, and the next scheduled run retries it with the newest release. The only recurring task is glancing at the "Publish to stores" run summary now and then: it names any store that skipped or failed, and a bad credential shows up there.
 
@@ -21,7 +21,7 @@ Nothing fails silently: a skipped store is a warning annotation on the run, and 
 | Chrome Web Store | uploads the zip, publishes to the default (public) target | hours–days |
 | Edge Add-ons | uploads to the draft, submits it with the notes | 1–7 days |
 | Firefox AMO | `web-ext sign --channel listed` with the sources zip | usually minutes (auto-approval) |
-| Safari | macOS runner: `safari:sync` (build number = CI run number), `xcodebuild archive` + export with cloud signing, then `fastlane deliver` uploads the `.pkg`, attaches it to the version, sets the release notes and **submits for review** (withdrawing a submission still *waiting* for review; one already *in* review cannot be replaced and is reported as skipped) | 1–2 days |
+| Safari | macOS runner: `safari:sync` (build number = CI run number), `xcodebuild archive` + export with cloud signing, then `fastlane deliver` uploads the `.pkg`, attaches it to the version, sets the release notes and **submits for review**; skipped while a submission is waiting for or in review (checked with a read-only API call first), never withdrawing it | 1–2 days |
 
 ## One-time setup
 
