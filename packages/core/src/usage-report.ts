@@ -26,15 +26,19 @@ export interface NightlyUsage {
   readonly mode: UpdateMode;
 }
 
-export interface InstalledEvent {
-  readonly name: 'extension_installed';
+/** Every event says which version was running when it was noted, so one queued across an update keeps its own (the payload's when absent). */
+interface Noted {
   readonly at: number;
+  readonly version?: string;
 }
 
-export interface UpdatedEvent {
+export interface InstalledEvent extends Noted {
+  readonly name: 'extension_installed';
+}
+
+export interface UpdatedEvent extends Noted {
   readonly name: 'extension_updated';
-  readonly at: number;
-  /** The version before the update; the payload's `version` is the one after. */
+  /** The version before the update; the event's `version` is the one after. */
   readonly from: string;
   /** A self-updating nightly build's own record of the update, when it made it. */
   readonly trigger?: UpdateTrigger;
@@ -42,9 +46,8 @@ export interface UpdatedEvent {
   readonly rollback?: true;
 }
 
-export interface ActiveEvent {
+export interface ActiveEvent extends Noted {
   readonly name: 'extension_active';
-  readonly at: number;
   /** This install's first ping of the ISO week (UTC), so the week's flagged pings count weekly active installs. */
   readonly firstOfWeek: boolean;
   /** Its first ping of the calendar month (UTC). */
@@ -83,20 +86,21 @@ function oneOf<T extends string>(options: readonly T[], value: unknown): T | und
 
 function parseEvent(value: unknown): UsageEvent | null {
   if (!isRecord(value) || !isTime(value.at)) return null;
-  const at = value.at;
+  if (value.version !== undefined && (typeof value.version !== 'string' || !VERSION.test(value.version))) return null;
+  const noted: Noted = { at: value.at, ...(typeof value.version === 'string' ? { version: value.version } : {}) };
   switch (value.name) {
     case 'extension_installed':
-      return { name: 'extension_installed', at };
+      return { name: 'extension_installed', ...noted };
     case 'extension_active':
       if (typeof value.firstOfWeek !== 'boolean' || typeof value.firstOfMonth !== 'boolean') return null;
-      return { name: 'extension_active', at, firstOfWeek: value.firstOfWeek, firstOfMonth: value.firstOfMonth };
+      return { name: 'extension_active', ...noted, firstOfWeek: value.firstOfWeek, firstOfMonth: value.firstOfMonth };
     case 'extension_updated': {
       if (typeof value.from !== 'string' || !VERSION.test(value.from)) return null;
       const trigger = oneOf(MODES, value.trigger);
       const method = oneOf(METHODS, value.method);
       return {
         name: 'extension_updated',
-        at,
+        ...noted,
         from: value.from,
         ...(trigger === undefined ? {} : { trigger }),
         ...(method === undefined ? {} : { method }),
@@ -156,8 +160,12 @@ export interface UsageCapture {
   readonly properties: Readonly<Record<string, UsageProperty>>;
 }
 
-/** A client clock this far off is not believed: the event is stamped when it arrived. */
-const MAX_PAST_MS = 7 * 86_400_000;
+/**
+ * Events older than this are dropped, by the extension before sending and here on arrival: a ping kept through a
+ * long outage is counted on its own day up to then, never re-dated to the day it arrived.
+ */
+export const USAGE_MAX_AGE_MS = 30 * 86_400_000;
+/** A client clock this far ahead is not believed: the event is stamped when it arrived. */
 const MAX_FUTURE_MS = 60 * 60_000;
 
 /**
@@ -169,25 +177,27 @@ const MAX_FUTURE_MS = 60 * 60_000;
  * for a nightly build that found new files it did not write itself.
  */
 export function usageCaptures(payload: UsagePayload, receivedAt: number): UsageCapture[] {
-  const build = usageBuildOf(payload.version);
-  const common: Record<string, UsageProperty> = {
-    version: payload.version,
-    build,
-    channel: payload.channel,
-    browser: payload.browser,
-    ...(payload.selfUpdate === undefined ? {} : { nightly_mode: payload.selfUpdate.mode }),
-  };
-  return payload.events.map((event) => {
-    const at = event.at < receivedAt - MAX_PAST_MS || event.at > receivedAt + MAX_FUTURE_MS ? receivedAt : event.at;
+  return payload.events.flatMap((event): UsageCapture[] => {
+    if (event.at < receivedAt - USAGE_MAX_AGE_MS) return [];
+    const at = event.at > receivedAt + MAX_FUTURE_MS ? receivedAt : event.at;
     const timestamp = new Date(at).toISOString();
+    const version = event.version ?? payload.version;
+    const build = usageBuildOf(version);
+    const common: Record<string, UsageProperty> = {
+      version,
+      build,
+      channel: payload.channel,
+      browser: payload.browser,
+      ...(payload.selfUpdate === undefined ? {} : { nightly_mode: payload.selfUpdate.mode }),
+    };
     switch (event.name) {
       case 'extension_installed':
-        return { event: event.name, timestamp, properties: common };
+        return [{ event: event.name, timestamp, properties: common }];
       case 'extension_active':
-        return { event: event.name, timestamp, properties: { ...common, first_of_week: event.firstOfWeek, first_of_month: event.firstOfMonth } };
+        return [{ event: event.name, timestamp, properties: { ...common, first_of_week: event.firstOfWeek, first_of_month: event.firstOfMonth } }];
       case 'extension_updated': {
         const fromBuild = usageBuildOf(event.from);
-        return {
+        return [{
           event: event.name,
           timestamp,
           properties: {
@@ -195,13 +205,13 @@ export function usageCaptures(payload: UsagePayload, receivedAt: number): UsageC
             from_version: event.from,
             from_build: fromBuild,
             build_delta: build === null || fromBuild === null ? null : build - fromBuild,
-            version_jump: versionJump(event.from, payload.version),
-            upgrade_path: `${event.from} → ${payload.version}`,
+            version_jump: versionJump(event.from, version),
+            upgrade_path: `${event.from} → ${version}`,
             update_trigger: event.trigger ?? (payload.channel === 'stable' ? 'store' : 'by_hand'),
             update_method: event.method ?? null,
             rollback: event.rollback === true,
           },
-        };
+        }];
       }
     }
   });

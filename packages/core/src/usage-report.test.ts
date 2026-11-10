@@ -75,13 +75,37 @@ describe('usageCaptures', () => {
     expect(byHand?.properties.update_trigger).toBe('by_hand');
   });
 
-  it('calls a stable build’s update the store’s, and stamps a far-off clock with the arrival', () => {
-    const payload = parseUsagePayload({ ...base, events: [{ name: 'extension_updated', at: 5, from: '0.9.2' }, { name: 'extension_active', at: now, firstOfWeek: true, firstOfMonth: true }] });
+  it('calls a stable build’s update the store’s', () => {
+    const payload = parseUsagePayload({ ...base, events: [{ name: 'extension_updated', at: now, from: '0.9.2' }, { name: 'extension_active', at: now, firstOfWeek: true, firstOfMonth: true }] });
     if (payload === null) throw new Error('payload refused');
     const [update, active] = usageCaptures(payload, now);
-    expect(update?.timestamp).toBe(new Date(now).toISOString());
     expect(update?.properties).toMatchObject({ update_trigger: 'store', from_build: null, build_delta: null, version_jump: 'patch' });
     expect(active?.properties).toEqual({ version: '0.9.3.412', build: 412, channel: 'stable', browser: 'chrome', first_of_week: true, first_of_month: true });
+  });
+
+  it('keeps each event’s own version and date, drops what is too old and re-dates a clock ahead', () => {
+    const day = 86_400_000;
+    const payload = parseUsagePayload({
+      ...base,
+      events: [
+        { name: 'extension_active', at: now - 10 * day, version: '0.9.2.400', firstOfWeek: true, firstOfMonth: false },
+        { name: 'extension_updated', at: now - 9 * day, version: '0.9.2.400', from: '0.9.1.390' },
+        { name: 'extension_active', at: now - 31 * day, version: '0.9.1.390', firstOfWeek: true, firstOfMonth: true },
+        { name: 'extension_installed', at: now + 2 * 60 * 60_000 },
+      ],
+    });
+    if (payload === null) throw new Error('payload refused');
+    const captures = usageCaptures(payload, now);
+    expect(captures.map((capture) => [capture.event, capture.timestamp, capture.properties.version])).toEqual([
+      ['extension_active', new Date(now - 10 * day).toISOString(), '0.9.2.400'],
+      ['extension_updated', new Date(now - 9 * day).toISOString(), '0.9.2.400'],
+      ['extension_installed', new Date(now).toISOString(), '0.9.3.412'],
+    ]);
+    expect(captures[1]?.properties).toMatchObject({ upgrade_path: '0.9.1.390 → 0.9.2.400', build_delta: 10, build: 400 });
+  });
+
+  it('refuses an event whose own version is not one', () => {
+    expect(parseUsagePayload({ ...base, events: [{ name: 'extension_installed', at: 1, version: 'owner/repo' }] })).toBeNull();
   });
 });
 

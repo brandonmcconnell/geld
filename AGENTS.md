@@ -1963,7 +1963,12 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The background notes `extension_installed` (onInstalled `install`), `extension_updated` with the version before (onInstalled `update`'s `previousVersion`, else the version it last recorded, checked 5 s after the worker starts so the browser's own word comes first) and `extension_active` once per UTC day (an hourly alarm), flagged `firstOfWeek` and `firstOfMonth` on the install's first ping of the ISO week and month.
   There is no install id on purpose, not even a random one: every number is a count of events, a day's pings being its active installs and the week-flagged ones the week's, so nothing can be linked across days or to a person.
   Keep it that way: a feature that needs a stable id needs a consent decision first.
-  Events wait in `local:usageState` until a send succeeds (`no-cors` `text/plain` to `https://www.geld.sh/api/usage`, as error reports go, so no host permission), and are dropped unsent while the setting is off.
+  Events wait in `local:usageState` until geld.sh takes them (`text/plain` with no credentials to `https://www.geld.sh/api/usage`, a simple request the route answers with `Access-Control-Allow-Origin: *`, so the status is readable with no host permission), and are dropped unsent while the setting is off.
+  Each event carries the version that noted it, so one queued across an update is not counted against the new version.
+  The batch goes on a 2xx, and on a 400 or 413 (sending it again would not help);
+  a 5xx (the route answers 503 when PostHog did not take the batch, after writing it to the logs), a network failure or a missing route keeps it for the next ping.
+  Events older than 30 days (`USAGE_MAX_AGE_MS`) are dropped by the extension before sending and by the site on arrival, so a ping kept through a long outage counts on its own day or not at all, never re-dated to the day it arrived;
+  only a clock more than an hour ahead is re-dated to the arrival.
   The day is marked whatever the setting, so turning it on mid-day sends no second ping.
   The channel is the build's (`__GELD_CHANNEL__`, a Vite define: `nightly` for every nightly build, `stable` otherwise), so a store build never carries the word nightly.
   A self-updating nightly build adds its Update setting (`selfUpdate.mode`, named so the key a store build leaves out never puts the word in it) and, for an update it wrote itself, the install record's `trigger` (`manual` for the reader's Install or Roll back, `automatic` for Automatic), `method` and `rollback` (`nightlyUsage` in updater.ts, `NightlyInstall.trigger`), passed in by the background so `src/nightly/` stays out of the store builds.

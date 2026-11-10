@@ -1,7 +1,7 @@
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import type { GeldSettings, UpdateMethod, UpdateMode, UsageBrowser, UsageEvent, UsagePayload } from '@geld/core';
-import { MAX_USAGE_EVENTS, USAGE_PAYLOAD_VERSION, usagePeriods } from '@geld/core';
+import { MAX_USAGE_EVENTS, USAGE_MAX_AGE_MS, USAGE_PAYLOAD_VERSION, usagePeriods } from '@geld/core';
 import { recordDiagnostic } from './diagnostics';
 import { settingsItem } from './storage';
 
@@ -10,7 +10,8 @@ import { settingsItem } from './storage';
  * is installed, one when the running version changes (with the version before),
  * and one ping per UTC day while the browser runs. Nothing identifies the
  * install: the events carry the version, channel and browser and nothing else,
- * and the queue lives in local storage only until geld.sh has it. Development
+ * and the queue lives in local storage only until geld.sh has taken it (events
+ * older than 30 days are dropped unsent). Development
  * builds never send, and neither does Firefox, which wants its own
  * data-collection permission for this (not yet requested).
  */
@@ -82,6 +83,7 @@ async function updatedEvent(from: string, nightly: NightlyUsageSource | null, at
   return {
     name: 'extension_updated',
     at,
+    version: currentVersion(),
     from,
     ...(install?.trigger === undefined ? {} : { trigger: install.trigger }),
     ...(install === null ? {} : { method: install.method }),
@@ -103,10 +105,14 @@ async function noteInstalled(reason: string, previousVersion: string | undefined
   const version = currentVersion();
   const update = reason === 'update' && previousVersion !== undefined && previousVersion !== version ? await updatedEvent(previousVersion, nightly, now) : null;
   await serially(async (state) => {
-    if (reason === 'install') return { next: { ...enqueue(state, { name: 'extension_installed', at: now }), version }, result: undefined };
+    if (reason === 'install') return { next: { ...enqueue(state, { name: 'extension_installed', at: now, version }), version }, result: undefined };
     if (update === null || state.version === version) return { next: { ...state, version }, result: undefined };
     return { next: { ...enqueue(state, update), version }, result: undefined };
   });
+}
+
+function eventKey(event: UsageEvent): string {
+  return `${event.name}\u0000${event.at}`;
 }
 
 /** A version change onInstalled did not report (a worker that missed it): told from the version last recorded. */
@@ -125,24 +131,39 @@ async function ping(): Promise<void> {
   const periods = usagePeriods(now);
   await serially(async (state) => {
     if (state.day === periods.day) return { next: state, result: undefined };
-    const event: UsageEvent = { name: 'extension_active', at: now, firstOfWeek: state.week !== periods.week, firstOfMonth: state.month !== periods.month };
+    const event: UsageEvent = { name: 'extension_active', at: now, version: currentVersion(), firstOfWeek: state.week !== periods.week, firstOfMonth: state.month !== periods.month };
     return { next: { ...enqueue(state, event), day: periods.day, week: periods.week, month: periods.month }, result: undefined };
   });
 }
 
-function eventKey(event: UsageEvent): string {
-  return `${event.name}\u0000${event.at}`;
-}
-
 let flushing: Promise<void> | null = null;
+
+/** The answer to a send: taken (drop the batch), refused as malformed (drop it too, sending it again would not help), or to be tried again. */
+type SendOutcome = 'sent' | 'refused' | 'retry';
+
+async function send(payload: UsagePayload): Promise<SendOutcome> {
+  try {
+    // A simple request (text/plain, no credentials) needs no preflight; geld.sh answers with CORS, so the status can be read with no host permission.
+    const response = await fetch(USAGE_ENDPOINT, { method: 'POST', credentials: 'omit', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) });
+    if (response.ok) return 'sent';
+    return response.status === 400 || response.status === 413 ? 'refused' : 'retry';
+  } catch {
+    // Offline, or no CORS answer at all (the route not deployed yet): kept for the next ping.
+    return 'retry';
+  }
+}
 
 async function flush(nightly: NightlyUsageSource | null): Promise<void> {
   const settings = await settingsItem.getValue();
-  const queue = (await stateItem.getValue()).queue;
   if (!sendsUsage(settings)) {
-    if (queue.length > 0) await serially(async (state) => ({ next: { ...state, queue: [] }, result: undefined }));
+    if ((await stateItem.getValue()).queue.length > 0) await serially(async (state) => ({ next: { ...state, queue: [] }, result: undefined }));
     return;
   }
+  const oldest = Date.now() - USAGE_MAX_AGE_MS;
+  const queue = await serially(async (state) => {
+    const kept = state.queue.filter((event) => event.at >= oldest);
+    return { next: kept.length === state.queue.length ? state : { ...state, queue: kept }, result: kept };
+  });
   if (queue.length === 0) return;
   const info = nightly === null ? null : await nightly(currentVersion()).catch(() => null);
   const payload: UsagePayload = {
@@ -153,14 +174,9 @@ async function flush(nightly: NightlyUsageSource | null): Promise<void> {
     ...(info === null ? {} : { selfUpdate: { mode: info.mode } }),
     events: queue,
   };
-  try {
-    // A simple request (text/plain, no credentials) needs no CORS preflight and no host permission; the answer is not read.
-    await fetch(USAGE_ENDPOINT, { method: 'POST', mode: 'no-cors', credentials: 'omit', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) });
-  } catch {
-    recordDiagnostic({ kind: 'usage-report', subject: `${queue.length} events`, outcome: 'failed' });
-    return;
-  }
-  recordDiagnostic({ kind: 'usage-report', subject: `${queue.length} events`, outcome: 'sent' });
+  const outcome = await send(payload);
+  recordDiagnostic({ kind: 'usage-report', subject: `${queue.length} events`, outcome });
+  if (outcome === 'retry') return;
   // Events noted while the request was out stay for the next send.
   const sent = new Set(queue.map(eventKey));
   await serially(async (state) => ({ next: { ...state, queue: state.queue.filter((event) => !sent.has(eventKey(event))) }, result: undefined }));
