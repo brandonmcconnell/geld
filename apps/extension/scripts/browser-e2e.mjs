@@ -2784,9 +2784,14 @@ function compareAuthorPresentation(value) {
 }
 
 async function authorThemeEvidence(page, provider, anchor) {
-  const baseline = await authorPresentationProbe(page, provider, anchor);
-  const evidence = { baseline, darkPreferenceProbe: null };
+  const selector = '.geld-provider-review button[data-geld-original-conversation]';
+  const originallyShown = await page.$eval(selector, button => button.getAttribute('aria-pressed') === 'true');
+  if (!originallyShown) await clickReviewButton(page, selector, 'Show original conversation');
+  const evidence = { baseline: null, darkPreferenceProbe: null, nativeMeasurement: 'Retained native originals explicitly shown through their real control before comparing rendered styles.' };
   try {
+    await poll(() => page.evaluate(anchor => { const node = document.getElementById(anchor);return node !== null && node.closest('[hidden]') === null && node.getBoundingClientRect().height > 0; }, anchor), Boolean, 'Retained original author is rendered before style comparison');
+    const baseline = await authorPresentationProbe(page, provider, anchor);
+    evidence.baseline = baseline;
     await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]);
     await pause(300);
     const dark = await authorPresentationProbe(page, provider, anchor);
@@ -2799,7 +2804,10 @@ async function authorThemeEvidence(page, provider, anchor) {
     const changed = nativeSignature(baseline) !== nativeSignature(dark) || bodyNativeThemeChanged;
     evidence.darkPreferenceProbe = { mechanism: 'OS prefers-color-scheme emulation on the same loaded page only; no manual theme class, CSS injection or extra API request', nativeThemeChanged: changed, bodyNativeThemeChanged, status: changed ? 'native_scheme_observed' : 'site_did_not_select_dark_theme', measurement: dark };
     if (changed) evidence.darkPreferenceProbe.artifacts = await capture(page, `${provider}-author-os-dark`);
-  } finally { await page.emulateMediaFeatures([]); }
+  } finally {
+    await page.emulateMediaFeatures([]);
+    if (!originallyShown && !page.isClosed()) await clickReviewButton(page, selector, 'Hide original conversation');
+  }
   return evidence;
 }
 
@@ -3328,7 +3336,25 @@ try {
       if (name === 'bitbucket-diff') {
         await bitbucketFiltering(page, item);
         assert.equal(item.restored.hasDiff, true, 'Bitbucket diff adapter did not activate');
-        await verifyBitbucketShell(page, item, { poll, pause, tabState, bitbucketDom, capture, guardBudget: guardBitbucketShellBudget });
+        const groupedBeforeContext = await options.evaluate(async key => {
+          const settings = (await chrome.storage.sync.get(key))[key] ?? {};
+          return { present: Object.hasOwn(settings, 'groupHidden'), value: settings.groupHidden };
+        }, SETTINGS_KEY);
+        try {
+          await patchSettings({ groupHidden: false });
+          await poll(() => page.evaluate(() => {
+            const link = document.querySelector('#file-tree ul[role="list"] li > a[href="#chg-bitbucket-pipelines.yml"]');
+            const box = link?.getBoundingClientRect();
+            return link !== null && !link.closest('[data-geld-ui],[hidden]') && box?.width > 0 && box?.height > 0;
+          }), Boolean, 'Native file tree is visible for the independent context-control check');
+          await verifyBitbucketShell(page, item, { poll, pause, tabState, bitbucketDom, capture, guardBudget: guardBitbucketShellBudget });
+        } finally {
+          await options.evaluate(async (key, saved) => {
+            const settings = (await chrome.storage.sync.get(key))[key] ?? {};
+            if (saved.present) settings.groupHidden = saved.value;else delete settings.groupHidden;
+            await chrome.storage.sync.set({ [key]: settings });
+          }, SETTINGS_KEY, groupedBeforeContext);
+        }
       } else {
         item.digest = await poll(() => page.evaluate(() => {
           const panel = document.querySelector('.geld-provider-review');

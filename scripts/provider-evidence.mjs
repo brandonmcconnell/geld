@@ -70,6 +70,15 @@ export function summarizeProviderEvidence(report, raw) {
     cases: report.cases.filter(item => names.has(item.name)).map(item => ({
       name: item.name, status: statuses.has(item.status) ? item.status : 'unknown', startedAt: timestamp(item.startedAt), finishedAt: timestamp(item.finishedAt),
       errorKind: errorKind(item),
+      continuity: item.uiContinuity === undefined ? null : {
+        digestPassed: item.uiContinuity.digest?.status === 'passed',
+        diffPassed: item.uiContinuity.diff?.status === 'passed',
+        nativePreserved: item.uiContinuity.inventoryRestoration?.sameNative === true,
+        nativeFiles: Array.isArray(item.uiContinuity.inventoryRestoration?.files) ? item.uiContinuity.inventoryRestoration.files.length : null,
+        mismatches: Object.fromEntries(['anchor', 'root', 'link', 'checkbox'].map(key => [key, count(item.uiContinuity.inventoryRestoration?.mismatches?.[key])])),
+        cacheIdentityPreserved: item.uiContinuity.cacheIdentityPreserved === true,
+        cacheStorageTimes: Object.fromEntries(['initial', 'afterTransition', 'afterFiltering'].map(key => [key, count(item.uiContinuity.cacheStorageTimes?.[key])])),
+      },
       custody: Object.fromEntries(['identityMismatches', 'parentMismatches', 'idMismatches', 'bodyMismatches', 'unqualifiedPayloads'].map(key => [key, count(item.dashboardUi?.baseline?.custody?.[key])])),
     })),
   };

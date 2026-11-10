@@ -18,6 +18,7 @@ export async function bitbucketUiSourceCache() {
 export function assertBitbucketUiSource(entries, state) {
   assert.equal(entries.length, 1, 'One complete cached PR22 source is required');
   const source = entries[0];
+  assert.ok(Number.isSafeInteger(source.storedAt) && source.storedAt >= 0, 'Cache storage time must be a valid timestamp');
   const key = JSON.parse(source.key);
   assert.deepEqual(JSON.parse(key[0]), ['bitbucket', 'https://bitbucket.org', REPOSITORY]);
   assert.equal(key[1], BITBUCKET_UI_PR);
@@ -45,6 +46,17 @@ export function assertBitbucketUiSource(entries, state) {
   assert.equal(state.hasDiff, true);
   assert.deepEqual(state.all, totals, 'Rendered state must agree with the complete cached inventory');
   return source;
+}
+
+function sourceIdentity(source) {
+  const { storedAt, ...identity } = source;
+  return identity;
+}
+
+function assertSameSource(actual, expected, message) {
+  const left = sourceIdentity(actual), right = sourceIdentity(expected);
+  const changed = [...new Set([...Object.keys(left), ...Object.keys(right)])].filter(key => !isDeepStrictEqual(left[key], right[key]));
+  assert.equal(changed.length, 0, `${message}: ${changed.filter(key => ['schema', 'key', 'revision', 'files', 'sourceFacts'].includes(key)).join(',') || 'other metadata'}`);
 }
 
 /** Install one document-bound lease for the actual visible Files tab and its trusted input. */
@@ -127,7 +139,7 @@ export async function verifyBitbucketUiContinuity(page, item, context) {
     const cached = await context.poll(context.readSource, entries => Array.isArray(entries) && entries.length === 1, 'Complete cached PR22 source receipt', 3000);
     const source = assertBitbucketUiSource(cached, state);
     assert.equal(source.sourceFacts.comparison.headSha, digestHead, 'Digest and cached diff must describe the same head');
-    result.source = { repository: REPOSITORY, review: 22, head: source.sourceFacts.comparison.headSha, base: source.sourceFacts.comparison.baseSha, files: source.files.length, selectedPath: BITBUCKET_UI_PATH, totals: state.all, fingerprint: createHash('sha256').update(JSON.stringify(source)).digest('hex') };
+    result.source = { repository: REPOSITORY, review: 22, head: source.sourceFacts.comparison.headSha, base: source.sourceFacts.comparison.baseSha, files: source.files.length, selectedPath: BITBUCKET_UI_PATH, totals: state.all, fingerprint: createHash('sha256').update(JSON.stringify(sourceIdentity(source))).digest('hex') };
     await checkpoint();
     context.guard();
     result.nativeTab = await page.evaluate(prepareBitbucketUiTransition);
@@ -141,7 +153,8 @@ export async function verifyBitbucketUiContinuity(page, item, context) {
     assert.deepEqual(result.transition.clicks, [{ trusted: true, href: `${BITBUCKET_UI_PR}/diff`, same: true }]);
     const diffState = await context.poll(() => context.readState(page), value => value.onDiffPage === true && value.hasDiff === true, 'PR22 diff adapter after native transition');
     const diffSource = assertBitbucketUiSource(await context.readSource(), diffState);
-    assert.ok(isDeepStrictEqual(diffSource, source), 'The same complete cached source must survive the native tab transition');
+    assertSameSource(diffSource, source, 'The same complete cached source must survive the native tab transition');
+    result.cacheStorageTimes = { initial: source.storedAt, afterTransition: diffSource.storedAt };
     const inventory = await context.poll(() => page.evaluate(bitbucketUiNativeInventory, true), value => value !== null && value.files.length === source.files.length && value.files.every(file => file.href !== null), 'Complete native PR22 file inventory');
     assert.deepEqual(inventory.files.map(file => file.path).sort(), source.files.map(file => file.path).sort());
     await context.verifyFiltering(page, item, { source, originalState: diffState });
@@ -152,7 +165,8 @@ export async function verifyBitbucketUiContinuity(page, item, context) {
     assert.deepEqual(restoredInventory.files, expectedFiles, 'Native paths, links or Viewed flags changed during filtering');
     result.nativeInventory = { files: inventory.files.length, preserved: true, fingerprint: createHash('sha256').update(JSON.stringify(inventory.files)).digest('hex') };
     const finalSource = assertBitbucketUiSource(await context.readSource(), await context.readState(page));
-    assert.ok(isDeepStrictEqual(finalSource, source), 'Filtering must retain the same complete source');
+    result.cacheStorageTimes.afterFiltering = finalSource.storedAt;
+    assertSameSource(finalSource, source, 'Filtering must retain the same complete source');
     result.cacheIdentityPreserved = true;
     result.diff = { status: 'passed' };
     result.status = 'passed';

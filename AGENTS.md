@@ -3397,6 +3397,11 @@ GitLab conversation cards use gl-background-color-section and gl-border-color-se
 They coincide in light mode but diverge in dark mode, so the provider digest overrides only its own card surface and border with those native section tokens.
 An offline replay of retained GitLab application and notes CSS reproduces the prior dark mismatch and verifies light, dark and restored-light equality.
 
+A refreshed complete provider cache entry receives a new storedAt timestamp even when its immutable source identity and parsed files are unchanged.
+Bitbucket UI continuity compares the exact semantic cache snapshot while recording storage times separately, so a legitimate refresh does not masquerade as source mutation.
+Schema, cache key, revision, source facts, file metadata and unknown extra fields remain compared, with bounded changed-field diagnostics.
+The retained evidence summary exports fixed continuity checkpoint flags, native identity mismatch counts and cache storage times without emitting file paths or source content.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
@@ -3411,6 +3416,10 @@ Replying false wins the extension message race against the owning client and rej
 
 GitLab created, pending, preparing, scheduled and waiting_for_resource jobs remain queued in trusted CI input.
 Published CI totals count both queued and manual jobs as waiting, and only native running jobs as in progress.
+
+Native author style acceptance shows the retained original conversation through its actual control before comparing theme-dependent rendered colors.
+A hidden-until-found subtree can retain rendering from an earlier theme, so its folded computed styles are not a visible native color oracle.
+The Bitbucket regression checks category navigation first, then temporarily disables grouping through the shared setting to exercise the original native context tree, restoring the exact setting presence afterward.
 
 Provider configuration caching is best-effort when local storage fails, but aborted or cleared generations still reject before applying fetched rules.
 **The Overview tab can be rendered from a signed-out session**: its route code is in the page's public bundles and every `page_data/*` endpoint it reads (`conversation_comments`, `threads`, `timeline`, `description`, `tab_counts`) answers signed out.
