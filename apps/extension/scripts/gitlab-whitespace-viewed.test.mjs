@@ -44,7 +44,9 @@ async function protocol(options = {}) {
           if (options.mountUnknownControl) { live.qualified = false;live.code = 'MENU_SCHEMA_UNQUALIFIED'; }
         }
       }
-      if (action === 'cleanup') { order.push('release');if (options.probeCleanupFailure) throw Error('DO_NOT_RETAIN_CLEANUP_CANARY');return { released: true }; }
+      if (action === 'mark-toggle' || action === 'mark-restore') order.push(action);
+      if (options.lifecycleEvidence) live.lifecycle = options.lifecycleEvidence;
+      if (action === 'cleanup') { order.push('release');if (options.probeCleanupFailure) throw Error('DO_NOT_RETAIN_CLEANUP_CANARY');return { released: true, ...(options.lifecycleEvidence ? { lifecycle: { ...options.lifecycleEvidence, stopped: true, status: 'closed', code: 'CLOSED' } } : {}) }; }
       if (action === 'arm-opener') live.armed = true;
       if (action === 'bind') { live.bound = true;binds++; }
       if (action === 'frame' && phase === 'toggle' && options.closedAfterToggle) live.open = false;
@@ -191,6 +193,23 @@ for (const detail of [{ reason: 'DO_NOT_RETAIN_REASON' }, { reason: 'FILE_HEAD_M
   const f = await protocol({ fileDataAfterToggle: detail });await assert.rejects(f.run(), AggregateError);assert.deepEqual(f.progress.failureProbe, { qualified: false, code: 'FILE_DATA_UNQUALIFIED' });assert.doesNotMatch(JSON.stringify(f.progress), /DO_NOT_RETAIN/);
 });
 
+
+test('orchestrator phase marks add no native clicks or acceptance authority and cleanup retains only the fixed trace schema', async () => {
+  const trace = { status: 'observing', code: 'OBSERVING', stateTiming: 'observation_drain', fileReferenceBasis: 'phase_native_files', limit: 128, overflow: false, stopped: false, history: [], secret: 'DO_NOT_RETAIN' };
+  const f = await protocol({ lifecycleEvidence: trace });assert.equal((await f.run()).status, 'discovery');assert.equal(f.clicks(), 3);assert.equal(f.binds(), 1);
+  assert.deepEqual(f.order.filter((value) => value.startsWith('mark-')), ['mark-toggle', 'mark-restore']);assert.equal(f.progress.lifecycle.stopped, true);assert.equal(f.progress.nativeRestored, true);assert.doesNotMatch(JSON.stringify(f.progress), /DO_NOT_RETAIN/);
+});
+test('malformed lifecycle evidence never changes qualification or exposes arbitrary fields', async () => {
+  const f = await protocol({ lifecycleEvidence: { status: 'DO_NOT_RETAIN', history: ['DO_NOT_RETAIN'] } });assert.equal((await f.run()).status, 'discovery');assert.equal(f.clicks(), 3);assert.equal(f.progress.lifecycle.code, 'DIAGNOSTIC_SCHEMA_UNQUALIFIED');assert.doesNotMatch(JSON.stringify(f.progress), /DO_NOT_RETAIN/);
+});
+
+
+test('diagnostic failure history and cleanup do not replace the original failure or skip close-first raw restoration', async () => {
+  const trace = { status: 'observing', code: 'OBSERVING', stateTiming: 'observation_drain', fileReferenceBasis: 'phase_native_files', limit: 128, overflow: false, stopped: false, history: [] };
+  const f = await protocol({ lifecycleEvidence: trace, unknownAfterToggle: true, observerFailure: true });await assert.rejects(f.run(), AggregateError);
+  assert.equal(f.progress.primaryFailure, 'MENU_SCHEMA_UNQUALIFIED');assert.equal(f.progress.failureLifecycle.status, 'observing');assert.equal(f.progress.lifecycle.stopped, true);assert.ok(f.progress.cleanup.codes.includes('OBSERVER_CLEANUP_FAILED'));assert.equal(f.clicks(), 2);assert.deepEqual(f.storage(), f.original);
+});
+
 test('pairing timeout retains the qualified original baseline and finite setup diagnostics before any toggle', async () => {
   const f = await protocol({ noAcquisition: true, snapshotExtras: true });await assert.rejects(f.run(), AggregateError);
   assert.equal(f.progress.failurePhase, 'INDEPENDENT_ACQUISITION');assert.equal(f.progress.primaryFailure, 'OBSERVATION_DEADLINE');
@@ -330,8 +349,8 @@ async function withDOM(run) {
     Object.assign(globalThis, { document: w.document, location: w.location, getComputedStyle: w.getComputedStyle.bind(w) });w.HTMLElement.prototype.getBoundingClientRect = () => new w.DOMRect(1, 1, 100, 20);
     w.document.body.dataset.projectId = '278964';w.document.body.dataset.projectFullPath = 'gitlab-org/gitlab';
     document.body.innerHTML = '<a data-testid="topbar-signin-button" href="/users/sign_in">Sign in</a><article data-rapid-diffs><header class="rd-app-header" aria-label="View controls"><div class="gl-new-dropdown" aria-label="Preferences"><button type="button" class="js-show-diff-settings" data-testid="base-dropdown-toggle" role="combobox" aria-expanded="true">Preferences</button><div data-testid="base-dropdown-menu"><input type="checkbox" value="true" id="ws" data-testid="show-whitespace"><label for="ws">Show whitespace changes</label><input type="checkbox" value="true" id="fb" data-testid="file-by-file"><label for="fb">Show one file at a time</label></div></div></header></article>';
-    const app = document.querySelector('article');const base = state();app.setAttribute('data-app-data', JSON.stringify({ mr_path: base.app.path, iid: 266334, file_by_file_mode: false, diff_view_type: 'inline', reload_stream_url: '/gitlab-org/gitlab/-/merge_requests/266334/diffs_stream?diff_id=2158520123', show_whitespace: false, update_user_endpoint: '/api/v4/user/preferences', versions: { source_versions: base.app.sourceVersions, target_versions: base.app.targetVersions } }));
-    for (const [i, path] of F.paths.entries()) { const file = document.createElement('diff-file');file.id = String(i).repeat(40);file.setAttribute('data-file-data', JSON.stringify({ new_path: path, diff_refs: { head_sha: T } }));file.innerHTML = '<input type="checkbox" data-viewed-checkbox disabled><table><tr class="rd-hunk-lines-inline"><td class="rd-line-text">Source canary remains hashed</td></tr></table><diff-file-mounted></diff-file-mounted>';app.append(file); }
+    const app = document.querySelector('article');app.insertAdjacentHTML('beforeend', '<div data-diffs-overlay></div><div data-diffs-list-alert></div><div data-diffs-list></div><div data-list-loading hidden="hidden"></div>');const base = state();app.setAttribute('data-app-data', JSON.stringify({ mr_path: base.app.path, iid: 266334, file_by_file_mode: false, diff_view_type: 'inline', reload_stream_url: '/gitlab-org/gitlab/-/merge_requests/266334/diffs_stream?diff_id=2158520123', show_whitespace: false, update_user_endpoint: '/api/v4/user/preferences', versions: { source_versions: base.app.sourceVersions, target_versions: base.app.targetVersions } }));
+    for (const [i, path] of F.paths.entries()) { const file = document.createElement('diff-file');file.id = String(i).repeat(40);file.setAttribute('data-file-data', JSON.stringify({ new_path: path, diff_refs: { head_sha: T } }));file.innerHTML = '<input type="checkbox" data-viewed-checkbox disabled><table><tr class="rd-hunk-lines-inline"><td class="rd-line-text">Source canary remains hashed</td></tr></table><diff-file-mounted></diff-file-mounted>';app.querySelector('[data-diffs-list]').append(file); }
     await run({ w, app, menu: document.querySelector('[data-testid="base-dropdown-menu"]'), checkbox: document.querySelector('#ws') });
   } finally { await probe('cleanup');for (const [name, value] of before) { if (value) Object.defineProperty(globalThis, name, value);else delete globalThis[name]; }await w.happyDOM.abort(); }
 }
@@ -356,6 +375,77 @@ test('actor and project guards refuse before reading or retaining malformed file
   document.body.insertAdjacentHTML('afterbegin', `<div id="js-vue-mr-discussions" data-current-user-data='{"id":7}'></div>`);assert.deepEqual(await probe('read', F), { qualified: false, code: 'ACTOR_UNQUALIFIED' });
 }));
 
+
+const marker = (name) => document.querySelector(`[data-${name}]`);
+test('native lifecycle records same-turn all-list clear and loading transitions with fresh mounts without confirming mode', async () => withDOM(async ({ w }) => {
+  const list = marker('diffs-list');const overlay = marker('diffs-overlay');const loading = marker('list-loading');const originals = [...list.children];
+  await probe('bind', F);
+  for (const phase of ['toggle', 'restore']) {
+    await probe(`mark-${phase}`, F);const incoming = [...list.children].map((node) => node.cloneNode(true));overlay.dataset.loading = 'true';list.replaceChildren();delete overlay.dataset.loading;loading.hidden = false;list.append(...incoming);loading.setAttribute('hidden', 'hidden');
+    for (const file of incoming) file.dispatchEvent(new w.CustomEvent('DiffFileMounted', { bubbles: true }));
+    const result = await probe('read', F);assert.equal(result.qualified, true);const history = result.lifecycle.history.filter((entry) => entry.phase === phase);
+    assert.deepEqual(history.filter((entry) => entry.kind === 'overlay').map(({ before, after }) => [before, after]), [['absent', 'true'], ['true', 'absent']]);
+    assert.deepEqual(history.filter((entry) => entry.kind === 'loading').map(({ before, after }) => [before, after]), [['present', 'absent'], ['absent', 'present']]);
+    assert.equal(history.filter((entry) => entry.kind === 'list_structure').reduce((sum, entry) => sum + entry.removedOriginalRefs, 0), 3);assert.equal(history.filter((entry) => entry.kind === 'file_mounted').length, 3);assert.ok(history.filter((entry) => entry.kind === 'file_mounted').every((entry) => !entry.originalFile && entry.trusted === false));
+  }
+  const result = await probe('read', F);
+  assert.equal(result.lifecycle.completed, undefined);assert.equal(result.lifecycle.effectiveMode, undefined);assert.doesNotMatch(JSON.stringify(result.lifecycle), /Source canary/);
+}));
+test('transient native alert insertion and removal survives the final empty state', async () => withDOM(async () => {
+  await probe('bind', F);await probe('mark-toggle', F);const alert = marker('diffs-list-alert');const message = document.createElement('div');message.textContent = 'DO_NOT_RETAIN_ERROR';alert.append(message);message.remove();
+  const result = await probe('read', F);assert.equal(result.qualified, true);const changes = result.lifecycle.history.filter((entry) => entry.kind === 'alert');assert.ok(changes.some((entry) => entry.addedNodes === 1));assert.ok(changes.some((entry) => entry.removedNodes === 1));assert.ok(changes.every((entry) => entry.alertEmpty));assert.doesNotMatch(JSON.stringify(result.lifecycle), /DO_NOT_RETAIN/);
+}));
+test('a prior busy baseline and repeated toggle phases remain observations without fabricated completion', async () => withDOM(async () => {
+  marker('diffs-overlay').dataset.loading = 'true';marker('list-loading').hidden = false;await probe('bind', F);await probe('mark-toggle', F);await probe('mark-toggle', F);
+  const value = await probe('read', F);assert.equal(value.lifecycle.history[0].overlayLoading, 'loading');assert.equal(value.lifecycle.history[0].loadingHidden, false);assert.equal(value.lifecycle.history.filter((entry) => entry.kind === 'phase').length, 2);assert.equal(value.lifecycle.completed, undefined);
+}));
+test('single-file-shaped overlay ordering is retained independently rather than classified as all-files success', async () => withDOM(async () => {
+  await probe('bind', F);await probe('mark-toggle', F);marker('diffs-overlay').dataset.loading = 'true';marker('list-loading').hidden = false;marker('list-loading').hidden = true;delete marker('diffs-overlay').dataset.loading;
+  const history = (await probe('read', F)).lifecycle.history;assert.deepEqual(history.filter((entry) => ['overlay', 'loading'].includes(entry.kind)).map((entry) => entry.kind), ['overlay', 'loading', 'loading', 'overlay']);
+}));
+test('context remount never fabricates original whole-list removal', async () => withDOM(async ({ w }) => {
+  await probe('bind', F);await probe('mark-toggle', F);const file = document.querySelector('diff-file');file.dispatchEvent(new w.CustomEvent('DiffFileMounted', { bubbles: true }));file.querySelector('tr').append(document.createElement('td'));
+  const history = (await probe('read', F)).lifecycle.history;assert.ok(history.some((entry) => entry.kind === 'file_mounted' && entry.originalFile));assert.equal(history.some((entry) => entry.removedOriginalRefs > 0), false);assert.equal(history.some((entry) => ['overlay', 'loading'].includes(entry.kind)), false);
+}));
+test('a moved owned layout wrapper records removals and current original ancestry without treating them as a source-mode clear', async () => withDOM(async () => {
+  const list = marker('diffs-list');const wrapper = document.createElement('div');wrapper.className = 'geld-layout-wrapper';wrapper.append(...list.children);list.append(wrapper);await probe('bind', F);await probe('mark-toggle', F);wrapper.remove();list.append(wrapper);
+  const history = (await probe('read', F)).lifecycle.history;assert.ok(history.some((entry) => entry.removedOriginalRefs === 3 && entry.originalConnected === 3 && entry.originalInList === 3 && entry.originalParentsSame === 3));
+}));
+for (const name of ['diffs-list', 'diffs-overlay', 'list-loading', 'diffs-list-alert']) test(`replaced original ${name} remains an ownership diagnostic without new qualification rules`, async () => withDOM(async () => {
+  await probe('bind', F);await probe('mark-toggle', F);const node = marker(name);node.replaceWith(node.cloneNode(true));const value = await probe('read', F);assert.equal(value.qualified, true);assert.ok(value.lifecycle.history.some((entry) => entry.kind === 'owner_lost' && !entry.ownersCurrent));
+}));
+
+test('transient duplicate marker insertion is retained even after its same-turn removal', async () => withDOM(async () => {
+  await probe('bind', F);await probe('mark-toggle', F);const copy = marker('diffs-overlay').cloneNode(true);document.querySelector('article').append(copy);copy.remove();const value = await probe('read', F);
+  assert.equal(value.qualified, true);assert.equal(value.lifecycle.history.filter((entry) => entry.kind === 'marker_structure').length, 2);
+}));
+
+
+for (const [name, selector] of [['owner', '.gl-new-dropdown'], ['menu', '[data-testid="base-dropdown-menu"]'], ['opener', 'button'], ['root', 'article']]) test(`transient original ${name} removal and same-parent reinsertion retains identity-break history with qualified final source`, async () => withDOM(async () => {
+  await probe('bind', F);await probe('mark-toggle', F);const node = document.querySelector(selector);const parent = node.parentNode;node.remove();parent.append(node);
+  const value = await probe('read', F);assert.equal(value.qualified, true);const changes = value.lifecycle.history.filter((entry) => entry.kind === 'owner_structure');assert.ok(changes.some((entry) => entry.removedOwnerRefs > 0));assert.ok(changes.some((entry) => entry.addedOwnerRefs > 0));assert.ok(changes.every((entry) => entry.ownersCurrent));assert.equal(value.lifecycle.history.some((entry) => entry.kind === 'owner_lost'), false);
+}));
+
+test('missing markers leave existing qualification intact and report only unavailable lifecycle', async () => withDOM(async () => {
+  marker('diffs-overlay').remove();const value = await probe('bind', F);assert.equal(value.qualified, true);assert.equal(value.lifecycle.code, 'MARKER_SCHEMA_UNAVAILABLE');
+}));
+test('unknown marker values and overflowing same-turn history stay bounded without weakening source checks', async () => withDOM(async () => {
+  await probe('bind', F);await probe('mark-toggle', F);const overlay = marker('diffs-overlay');overlay.dataset.loading = 'DO_NOT_RETAIN';delete overlay.dataset.loading;
+  let value = await probe('read', F);assert.ok(value.lifecycle.history.some((entry) => entry.after === 'unknown'));assert.doesNotMatch(JSON.stringify(value.lifecycle), /DO_NOT_RETAIN/);
+  for (let i = 0; i < 150; i++) overlay.toggleAttribute('data-loading');value = await probe('read', F);assert.equal(value.qualified, true);assert.equal(value.eventOverflow, false);assert.equal(value.lifecycle.history.length, 128);assert.equal(value.lifecycle.overflow, true);assert.equal(value.lifecycle.code, 'HISTORY_BOUND');
+}));
+test('cleanup drains pending lifecycle records, disconnects observers and listeners and preserves source DOM', async () => withDOM(async ({ w }) => {
+  await probe('bind', F);await probe('mark-restore', F);marker('diffs-overlay').dataset.loading = 'true';const before = document.body.innerHTML;const result = await probe('cleanup', F);assert.equal(result.released, true);assert.equal(result.lifecycle.stopped, true);assert.ok(result.lifecycle.history.some((entry) => entry.kind === 'overlay'));
+  const length = result.lifecycle.history.length;delete marker('diffs-overlay').dataset.loading;document.querySelector('diff-file').dispatchEvent(new w.CustomEvent('DiffFileMounted', { bubbles: true }));await Promise.resolve();assert.equal(result.lifecycle.history.length, length);marker('diffs-overlay').dataset.loading = 'true';assert.equal(document.body.innerHTML, before);
+}));
+
+
+test('diagnostic observer shutdown failure is reported without changing original proof release', async () => withDOM(async ({ w }) => {
+  await probe('bind', F);const stop = w.MutationObserver.prototype.disconnect;w.MutationObserver.prototype.disconnect = () => { throw Error('DO_NOT_RETAIN_OBSERVER'); };
+  try { const result = await probe('cleanup', F);assert.equal(result.released, true);assert.equal(result.lifecycle.stopped, true);assert.equal(result.lifecycle.code, 'OBSERVER_FAILED');assert.doesNotMatch(JSON.stringify(result), /DO_NOT_RETAIN/); }
+  finally { w.MutationObserver.prototype.disconnect = stop; }
+}));
+
 test('actual DOM probe reads current checked property rather than absent HTML attribute and never exposes code text', async () => withDOM(async ({ checkbox }) => {
   checkbox.checked = true;assert.equal(checkbox.hasAttribute('checked'), false);const value = await probe('read', F);assert.equal(value.qualified, true);assert.equal(value.checked, true);assert.equal(value.initialShowWhitespace, false);assert.doesNotMatch(JSON.stringify(value), /Source canary/);
 }));
@@ -364,20 +454,20 @@ for (const shape of ['input', 'select', 'textarea', 'form', 'editable']) test(`u
   assert.deepEqual(await probe('read', F), { qualified: false, code: 'MENU_SCHEMA_UNQUALIFIED' });
 }));
 test('bound original native field replacement is rejected rather than adopted', async () => withDOM(async ({ checkbox }) => {
-  assert.equal((await probe('bind', F)).bound, true);checkbox.replaceWith(checkbox.cloneNode(true));assert.deepEqual(await probe('read', F), { qualified: false, code: 'ORIGINAL_OWNER_CHANGED' });
+  assert.equal((await probe('bind', F)).bound, true);checkbox.replaceWith(checkbox.cloneNode(true));assert.equal((await probe('read', F)).code, 'ORIGINAL_OWNER_CHANGED');
 }));
 test('closed same-owner probe exposes only its original opener and retains the original binding', async () => withDOM(async ({ menu, checkbox }) => {
   const opener = document.querySelector('button');assert.equal((await probe('bind', F)).bound, true);opener.setAttribute('aria-expanded', 'false');menu.hidden = true;
   const closed = await probe('read', F);assert.equal(closed.qualified, true);assert.equal(closed.bound, true);assert.equal(closed.open, false);
   assert.equal(await probe('opener', F), opener);assert.equal(await probe('toggle-target', F), null);assert.equal(checkbox.checked, false);
-  assert.deepEqual(await probe('bind', F), { qualified: false, code: 'BIND_UNQUALIFIED' });
+  assert.equal((await probe('bind', F)).code, 'BIND_UNQUALIFIED');
 }));
 for (const drift of ['owner', 'opener', 'actor']) test(`actual closed-menu probe declines a changed ${drift} instead of exposing a replacement opener`, async () => withDOM(async ({ menu }) => {
   assert.equal((await probe('bind', F)).bound, true);const opener = document.querySelector('button');opener.setAttribute('aria-expanded', 'false');menu.hidden = true;
   if (drift === 'owner') { const owner = document.querySelector('.gl-new-dropdown');owner.replaceWith(owner.cloneNode(true)); }
   if (drift === 'opener') opener.replaceWith(opener.cloneNode(true));
   if (drift === 'actor') document.body.insertAdjacentHTML('afterbegin', '<div id="js-vue-mr-discussions" data-current-user-data=\'{"id":7}\'></div>');
-  const value = await probe('opener', F);assert.deepEqual(value, { qualified: false, code: drift === 'actor' ? 'ACTOR_UNQUALIFIED' : 'ORIGINAL_OWNER_CHANGED' });
+  const value = await probe('opener', F);assert.equal(value.qualified, false);assert.equal(value.code, drift === 'actor' ? 'ACTOR_UNQUALIFIED' : 'ORIGINAL_OWNER_CHANGED');
 }));
 test('numeric native actor refuses before menu values or arbitrary authored content is returned', async () => withDOM(async () => {
   document.body.insertAdjacentHTML('afterbegin', '<div id="js-vue-mr-discussions" data-current-user-data=\'{"id":7,"secret":"DO_NOT_RETAIN"}\'></div>');
