@@ -3393,6 +3393,10 @@ Bitbucket lazy file placeholders have no Viewed checkbox until the native diff i
 The UI continuity lease retains original anchors, wrapper roots, tree links and existing Viewed controls, while permitting a newly hydrated native Viewed control only in its unchecked state.
 Its final comparison records field-specific identity mismatches and still rejects replaced existing controls, changed links or newly checked files.
 
+GitLab conversation cards use gl-background-color-section and gl-border-color-section, rather than the page-default surface tokens.
+They coincide in light mode but diverge in dark mode, so the provider digest overrides only its own card surface and border with those native section tokens.
+An offline replay of retained GitLab application and notes CSS reproduces the prior dark mismatch and verifies light, dark and restored-light equality.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
