@@ -13,7 +13,8 @@ it('owns mount/dispose generations and preserves boolean state only for the exac
   };
   const panel = renderProviderReviewPanel(host, input, { comments: [comment, comment], renderComment });
   expect(mounted).toBe(2);expect(contexts[0]?.idNamespace).not.toBe(contexts[1]?.idNamespace);contexts[0]?.state.set('local-choice', true);expect(contexts[1]?.state.has('local-choice')).toBe(false);
-  panel.update(input, { comments: [comment, comment], renderComment, version: 1 });expect(disposals).toBe(2);expect(contexts[0]?.current()).toBe(false);expect(contexts[2]?.state.get('local-choice')).toBe(true);expect(contexts[3]?.state.has('local-choice')).toBe(false);
+  panel.update(input, { comments: [comment, comment], renderComment, version: 1 });expect(disposals).toBe(0);expect(contexts).toHaveLength(2);expect(contexts[0]?.current()).toBe(true);expect(contexts[0]?.state.get('local-choice')).toBe(true);
+  panel.update(input, { comments: [comment, comment], renderComment, hasViewChoice: true });expect(disposals).toBe(2);expect(contexts[0]?.current()).toBe(false);expect(contexts[2]?.state.get('local-choice')).toBe(true);expect(contexts[3]?.state.has('local-choice')).toBe(false);
   panel.update(input, { comments: [{ ...comment, body: 'Edited source' }], renderComment });expect(contexts.at(-1)?.state.size).toBe(0);
   panel.update({ ...input, subject: { ...input.subject, headSha: 'b'.repeat(40) } }, { comments: [comment], renderComment });expect(contexts.at(-1)?.state.size).toBe(0);
   panel.destroy();expect(contexts.every((context) => !context.current() && context.state.size === 0)).toBe(true);expect(disposals).toBe(contexts.length);host.remove();

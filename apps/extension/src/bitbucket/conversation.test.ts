@@ -67,6 +67,18 @@ it('reconstructs safe rich markup while dropping active elements, handlers and u
   expect(host.querySelector('code.language-python')?.textContent).toBe('print(1)');
 });
 
+it('represents qualified native video attachments without duplicating their inline players', () => {
+  const body = document.querySelector('.ak-renderer-document');
+  if (body === null) throw new Error('Missing body');
+  body.innerHTML = '<video controls src="https://bitbucket.org/atlassian/bitbucket-upload-file/downloads/recording.webm"></video><video src="https://elsewhere.example/recording.mp4"></video>';
+  const original = body.innerHTML;
+  const host = document.createElement('div');
+  expect(renderBitbucketComment(comment, host, document)).toBe(true);
+  expect(host.querySelectorAll('[data-geld-video-open]')).toHaveLength(1);
+  expect(host.querySelector('video')).toBeNull();
+  expect(body.innerHTML).toBe(original);
+});
+
 it('rejects wrong review, wrong anchor and mismatched native permalink sources without replacing fallback text', () => {
   for (const candidate of [{ ...comment, url: comment.url.replace('/22/', '/27/') }, { ...comment, anchor: 'comment-1' }, { ...comment, url: 'https://example.com/#comment-471253038' }]) {
     const host = document.createElement('div');

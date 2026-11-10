@@ -70,6 +70,7 @@ const BOOLEAN_KEYS = [
   'autoUpdatePatterns',
   'errorReports',
   'prOverview',
+  'digestAboveDescription',
   'quickReview',
   'holdToMerge',
   'collapseDescription',

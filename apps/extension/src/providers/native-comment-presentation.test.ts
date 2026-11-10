@@ -66,6 +66,9 @@ it('refreshes native typography on unchanged panel updates and viewport resize w
   window.dispatchEvent(new Event('resize'));
   expect(body.style.getPropertyValue('--geld-bitbucket-body-line-height')).toBe('31px');
   expect(body.firstElementChild).toBe(rendered);
+  carrier.replaceChildren(source.cloneNode(true));
+  panel.update(input, options);
+  expect(panel.element.querySelector('.geld-provider-review__body')).not.toBe(body);
   const reads = vi.spyOn(window, 'getComputedStyle');
   panel.destroy();
   window.dispatchEvent(new Event('resize'));

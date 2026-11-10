@@ -117,6 +117,7 @@ export interface GeldSettings {
    * bot verdicts, timeline compaction). Off: leave the conversation tab alone.
    */
   readonly prOverview: boolean;
+  readonly digestAboveDescription: boolean;
   /**
    * How far to fold the PR timeline. `off` only shows the panel. `compact`
    * (default) folds bot review comments and low-signal events. `minimal` also
@@ -267,6 +268,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   enterpriseHosts: [],
   repoConfigs: 'ask',
   prOverview: true,
+  digestAboveDescription: false,
   compactTimeline: 'compact',
   digestViewChosenAt: '',
   reviewGrouping: 'type',
@@ -532,6 +534,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
       : DEFAULT_SETTINGS.enterpriseHosts,
     repoConfigs: isRepoConfigMode(record.repoConfigs) ? record.repoConfigs : DEFAULT_SETTINGS.repoConfigs,
     prOverview: bool(record, 'prOverview', DEFAULT_SETTINGS.prOverview),
+    digestAboveDescription: bool(record, 'digestAboveDescription', DEFAULT_SETTINGS.digestAboveDescription),
     compactTimeline: isCompactTimelineMode(record.compactTimeline) ? record.compactTimeline : DEFAULT_SETTINGS.compactTimeline,
     digestViewChosenAt: typeof record.digestViewChosenAt === 'string' ? record.digestViewChosenAt : DEFAULT_SETTINGS.digestViewChosenAt,
     reviewGrouping: isReviewGrouping(record.reviewGrouping) ? record.reviewGrouping : DEFAULT_SETTINGS.reviewGrouping,

@@ -160,7 +160,10 @@ export interface ProviderListAuthor {
 
 export type ProviderListAuthorFetcher = (listUrl: URL, visibleReviewUrls: readonly string[], signal: AbortSignal) => Promise<readonly ProviderListAuthor[]>;
 
-export interface ProviderReviewActionContext { readonly current: () => boolean }
+export interface ProviderReviewActionContext {
+  readonly current: () => boolean;
+  readonly commentKind?: 'comment' | 'review';
+}
 
 export interface ProviderReviewAction {
   readonly kind: 'approve' | 'request-changes' | 'comment' | 'open-pending-review' | 'open-review';
@@ -168,7 +171,17 @@ export interface ProviderReviewAction {
   readonly scopeKey?: string;
   readonly available: boolean;
   readonly reason?: string;
+  readonly requiresConfirmation?: boolean;
+  readonly commentKinds?: readonly ('comment' | 'review')[];
+  readonly instant?: (context?: ProviderReviewActionContext) => Promise<boolean>;
   activate(context?: ProviderReviewActionContext): Promise<boolean>;
+}
+
+export interface ProviderStatusAction {
+  readonly label: HTMLElement;
+  readonly control: HTMLButtonElement;
+  readonly key: string;
+  activate(): Promise<boolean>;
 }
 
 export interface ProviderReviewSnapshot {
@@ -239,6 +252,7 @@ export interface ProviderAdapter {
   descriptionHost?(doc: Document): HTMLElement | null;
   attachmentLink?(image: HTMLImageElement, page: ProviderReviewPage): HTMLAnchorElement | null;
   actionHost?(doc: Document): HTMLElement | null;
+  statusAction?(doc: Document, page: ProviderReviewPage): ProviderStatusAction | null;
   diffFlowHost?(doc: Document): HTMLElement | null;
   fetchReview?(page: ProviderReviewPage, signal: AbortSignal, doc: Document): Promise<ProviderReviewSnapshot>;
 }

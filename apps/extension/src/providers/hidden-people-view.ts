@@ -19,7 +19,7 @@ export class ProviderHiddenPeopleView {
     const active = new Set<HTMLElement>();
     const hidden = new Set(projection.people.filter(person => !person.shown).map(person => person.id));
     const targets = [
-      ...roots.map(entry => ({ root: entry.root, ids: [...entry.anchors.map(anchor => projection.hiddenAnchors.get(anchor)), ...(entry.eventIds ?? []).map(id => projection.hiddenEvents.get(id))] })),
+      ...roots.map(entry => ({ root: entry.root, ids: [...entry.anchors.map(anchor => projection.hiddenCommentAnchors.get(anchor)), ...(entry.eventIds ?? []).map(id => projection.hiddenEvents.get(id))] })),
       ...sidebar.filter(person => hidden.has(person.authorId)).map(person => ({ root: person.root, ids: [person.authorId] })),
     ];
     for (const entry of targets) {

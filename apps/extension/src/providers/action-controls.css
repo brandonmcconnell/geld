@@ -1,0 +1,12 @@
+.geld-provider-actions { position: relative; display: inline-flex; align-items: center; gap: 0; }
+.geld-provider-actions > button[data-geld-review-action] { display: inline-flex; align-items: center; justify-content: center; min-inline-size: var(--geld-provider-button-min-height); padding: var(--geld-provider-space-2) var(--geld-provider-space-3); border-radius: 0; }
+.geld-provider-actions > button[data-geld-review-action]:first-child { border-start-start-radius: var(--geld-provider-button-radius); border-end-start-radius: var(--geld-provider-button-radius); }
+.geld-provider-actions > button[data-geld-review-action]:last-of-type { border-start-end-radius: var(--geld-provider-button-radius); border-end-end-radius: var(--geld-provider-button-radius); }
+.geld-provider-actions svg[data-geld-outline], .geld-provider-actions svg[data-geld-outline] > * { fill: none; stroke: currentColor; }
+.geld-provider-actions__panel { position: absolute; z-index: var(--geld-provider-overlay-z-index); inset-block-start: calc(100% + var(--geld-provider-space-2)); inset-inline-end: 0; display: grid; gap: var(--geld-provider-space-3); inline-size: min(300px, 80vw); padding: var(--geld-provider-space-4); background: var(--geld-provider-overlay-bg); color: var(--geld-provider-text); border: var(--geld-provider-border-width) solid var(--geld-provider-border); border-radius: var(--geld-provider-radius); box-shadow: var(--geld-provider-overlay-shadow); font: var(--geld-provider-font); }
+.geld-provider-actions__panel p { margin: 0; font: var(--geld-provider-font-small); }
+.geld-provider-actions__feedback:empty { display: none; }
+.geld-provider-actions__feedback { font: var(--geld-provider-font-small); color: var(--geld-provider-text-subtle); }
+.geld-provider-status { display: inline-flex; align-items: center; gap: var(--geld-provider-space-2); font: inherit; cursor: pointer; }
+.geld-provider-status:focus-visible { outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset); box-shadow: var(--geld-provider-focus-ring); }
+.geld-provider-status__caret { font-size: .75em; }

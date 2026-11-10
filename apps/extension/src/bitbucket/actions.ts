@@ -4,6 +4,18 @@ import { describeBitbucketPage } from './page';
 const UNTRUSTED = '[data-geld-ui],[data-testid="comment"],[data-testid="comment-content"],[data-qa="pr-activity"],[data-qa="pull-request-description"]';
 const BLOCKED = '[hidden],[aria-hidden="true"],[inert],[aria-disabled="true"],[aria-readonly="true"],fieldset[disabled]';
 
+interface ActionScope {
+  readonly key: string;
+  readonly control: HTMLElement;
+  readonly parent: Node | null;
+  readonly header: HTMLElement | null;
+  readonly bootstrap: Element;
+  readonly actor: string;
+  readonly visit: string;
+}
+const actionScopes = new WeakMap<Document, Map<ProviderReviewAction['kind'], ActionScope>>();
+let actionSequence = 0;
+
 export function nativeControl(control: HTMLButtonElement | HTMLInputElement): boolean {
   if (!control.isConnected || control.disabled || control.hasAttribute('readonly') || control.closest(`${UNTRUSTED},${BLOCKED}`) !== null) return false;
   for (let node: HTMLElement | null = control; node !== null; node = node.parentElement) {
@@ -71,24 +83,43 @@ export function readBitbucketActions(doc: Document, expected?: ProviderReviewPag
   const kinds: readonly ('approve' | 'request-changes' | 'comment')[] = ['approve', 'request-changes', 'comment'];
   const page = currentPage(doc, expected);
   const visit = doc.URL.split('#')[0];
+  const bootstrap = doc.head.querySelector('meta#bb-bootstrap[data-current-user]');
+  const actor = bootstrap?.getAttribute('data-current-user');
+  const currentActor = (): boolean => doc.head.querySelector('meta#bb-bootstrap[data-current-user]') === bootstrap && bootstrap?.getAttribute('data-current-user') === actor && bitbucketAuthenticated(doc);
+  let scopes = actionScopes.get(doc);
+  if (scopes === undefined) { scopes = new Map();actionScopes.set(doc, scopes); }
   return kinds.map((kind) => {
     const control = page === null || !bitbucketAuthenticated(doc) ? null : kind === 'comment' ? composer(doc) : reviewButton(kind, doc, page);
     const available = control !== null;
-    return {
-      kind, available,
-      ...(!available ? { reason: !bitbucketAuthenticated(doc) ? 'Sign in to Bitbucket to review.' : 'The native Bitbucket review control is unavailable on this page.' } : {}),
-      activate: async () => {
-        if (control === null || page === null || doc.URL.split('#')[0] !== visit || !bitbucketAuthenticated(doc) || currentPage(doc, page) === null) return false;
+    let scope = scopes.get(kind);
+    const header = page === null ? null : reviewHeader(doc, page);
+    if (control === null || bootstrap === null || actor == null || visit === undefined) { scopes.delete(kind);scope = undefined; }
+    else if (scope?.control !== control || scope.parent !== control.parentNode || scope.header !== header || scope.bootstrap !== bootstrap || scope.actor !== actor || scope.visit !== visit) {
+      scope = { key: `bitbucket-review-action-${++actionSequence}`, control, parent: control.parentNode, header, bootstrap, actor, visit };
+      scopes.set(kind, scope);
+    }
+    const original = scope;
+    const activate: ProviderReviewAction['activate'] = async (context) => {
+        if (context?.current() === false) return false;
+        if (control === null || page === null || original === undefined || scopes.get(kind) !== original || control.parentNode !== original.parent || reviewHeader(doc, page) !== original.header
+          || doc.URL.split('#')[0] !== visit || !currentActor() || currentPage(doc, page) === null) return false;
         const current = kind === 'comment' ? composer(doc) : reviewButton(kind, doc, page);
         if (current !== control || !nativeControl(control)) return false;
         if (kind === 'comment') {
           control.focus();
           // Focus can run native handlers: recheck before opening the composer.
-          if (doc.URL.split('#')[0] !== visit || !bitbucketAuthenticated(doc) || composer(doc) !== control || !nativeControl(control) || doc.activeElement !== control) return false;
+          if (doc.URL.split('#')[0] !== visit || !currentActor() || composer(doc) !== control || !nativeControl(control) || doc.activeElement !== control) return false;
         }
+        if (context?.current() === false) return false;
         control.click();
         return true;
-      },
+    };
+    return {
+      kind, available,
+      ...(scope === undefined ? {} : { scopeKey: scope.key }),
+      ...(kind === 'comment' || !available ? {} : { requiresConfirmation: true, instant: activate }),
+      ...(!available ? { reason: !bitbucketAuthenticated(doc) ? 'Sign in to Bitbucket to review.' : 'The native Bitbucket review control is unavailable on this page.' } : {}),
+      activate,
     };
   });
 }

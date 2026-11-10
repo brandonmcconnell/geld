@@ -1,6 +1,7 @@
 import { gitLabReviewIdentity } from './review';
 import type { GitLabReviewCapabilities } from './review';
 import { describeGitLabPage } from './page';
+import type { ProviderReviewActionContext } from '../providers/types';
 
 export type GitLabReviewAction = 'approve' | 'request-changes' | 'comment';
 
@@ -8,7 +9,9 @@ export interface GitLabActionDescriptor {
   readonly kind: GitLabReviewAction;
   readonly available: boolean;
   readonly reason?: string;
-  activate(): Promise<boolean>;
+  readonly commentKinds?: readonly ('comment' | 'review')[];
+  readonly instant?: (context?: ProviderReviewActionContext) => Promise<boolean>;
+  activate(context?: ProviderReviewActionContext): Promise<boolean>;
 }
 
 export interface GitLabActionVisit {
@@ -145,11 +148,17 @@ function waitForNative<T extends HTMLElement>(doc: Document, find: () => T | nul
   });
 }
 
-async function activate(kind: GitLabReviewAction, ceiling: GitLabReviewCapabilities, doc: Document, visit: GitLabActionVisit, expected?: HTMLElement): Promise<boolean> {
+async function activate(kind: GitLabReviewAction, ceiling: GitLabReviewCapabilities, doc: Document, visit: GitLabActionVisit, expected?: HTMLElement, commentKind?: 'comment' | 'review'): Promise<boolean> {
   const permissions = livePermissions(doc, ceiling, visit);
+  if (kind === 'comment' && commentKind === 'comment') {
+    const field = permissions.signedIn ? mainComposer(doc) : null;
+    if (field === null) return false;
+    field.focus();
+    return sameVisit(doc, visit) && mainComposer(doc) === field && editable(field) && doc.activeElement === field;
+  }
   if (!permitted(kind, permissions, doc) || expected !== undefined && actionControl(doc, kind) !== expected) return false;
   const currentVisit = (): boolean => ceiling.signedIn && sameVisit(doc, visit);
-  if (kind === 'comment' && permissions.canComment && outcome(doc, kind) === null) {
+  if (kind === 'comment' && commentKind !== 'review' && permissions.canComment && outcome(doc, kind) === null) {
     const field = mainComposer(doc);
     if (field !== null) {
       field.focus();
@@ -177,6 +186,37 @@ async function activate(kind: GitLabReviewAction, ceiling: GitLabReviewCapabilit
   return current() && editable(field) && reviewComposer(form) === field && doc.activeElement === field;
 }
 
+function instantScope(doc: Document, visit: GitLabActionVisit): boolean {
+  if (!/^user:[1-9]\d*$/.test(visit.user ?? '') || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(visit.headSha ?? '') || !sameVisit(doc, visit)) return false;
+  const page = describeGitLabPage(new URL(doc.URL), doc);
+  return page !== null && 'number' in page && page.headSha === visit.headSha;
+}
+
+async function instantReview(kind: Exclude<GitLabReviewAction, 'comment'>, ceiling: GitLabReviewCapabilities, doc: Document, visit: GitLabActionVisit, expected: HTMLElement, context?: ProviderReviewActionContext): Promise<boolean> {
+  const current = (): boolean => context?.current() !== false && instantScope(doc, visit);
+  if (!current() || !await activate(kind, ceiling, doc, visit, expected) || !current()) return false;
+  const radio = outcome(doc, kind);
+  const form = radio?.closest<HTMLFormElement>('form[data-testid="submit-gl-form"]');
+  const field = form === null || form === undefined ? null : reviewComposer(form);
+  const buttons = [...form?.querySelectorAll<HTMLButtonElement>('button[data-testid="submit-review-button"][type="submit"]') ?? []].filter(enabled);
+  const button = buttons.length === 1 ? buttons[0] : undefined;
+  if (radio === null || form == null || field === null || button === undefined) return false;
+  const emptyReview = (): boolean => {
+    const headings = [...form.parentElement?.parentElement?.querySelectorAll<HTMLElement>('[data-testid="reviewer-drawer-heading"]') ?? []].filter(nativeControl);
+    return headings.length === 1 && headings[0]?.textContent?.trim() === 'No pending comments';
+  };
+  const valid = (): boolean => current() && outcome(doc, kind) === radio && radio.checked && enabled(radio)
+    && reviewComposer(form) === field && field.value.trim() === '' && editable(field) && button.closest('form') === form && enabled(button)
+    && emptyReview()
+    && (kind !== 'approve' || ![...form.querySelectorAll<HTMLElement>('[data-testid="approve_password"], input[type="password"]')].some(nativeControl))
+    && form.checkValidity();
+  if (!valid()) return false;
+  button.focus({ preventScroll: true });
+  if (!valid()) return false;
+  button.click();
+  return true;
+}
+
 export function openGitLabReviewAction(kind: GitLabReviewAction, permissions: GitLabReviewCapabilities, doc: Document = document): Promise<boolean> {
   return permissions.requestChanges === 'unavailable' && kind === 'request-changes' ? Promise.resolve(false) : activate(kind, permissions, doc, gitLabActionVisit(doc));
 }
@@ -185,13 +225,23 @@ export function readGitLabActions(doc: Document, ceiling: GitLabReviewCapabiliti
   const permissions = livePermissions(doc, ceiling, visit);
   const kinds: readonly GitLabReviewAction[] = ['approve', 'request-changes', 'comment'];
   return kinds.map((kind) => {
-    const available = permitted(kind, permissions, doc);
+    const plainComment = kind === 'comment' && permissions.signedIn && mainComposer(doc) !== null;
+    const originalComment = plainComment ? mainComposer(doc) : null;
+    const available = plainComment || permitted(kind, permissions, doc);
     const control = available ? actionControl(doc, kind) : null;
+    const commentKinds = kind === 'comment' ? [
+      ...(plainComment ? ['comment' as const] : []),
+      ...(permissions.canReview && permitted(kind, permissions, doc) ? ['review' as const] : []),
+    ] : undefined;
     return {
       kind,
       available,
+      ...(commentKinds === undefined ? {} : { commentKinds }),
+      ...(kind !== 'comment' && available && control !== null && instantScope(doc, visit) ? { instant: (context?: ProviderReviewActionContext) => instantReview(kind, ceiling, doc, visit, control, context) } : {}),
       ...(!permissions.signedIn ? { reason: 'Sign in to GitLab to review.' } : !available ? { reason: 'This action is unavailable in GitLab on this page.' } : {}),
-      activate: () => !available || control === null ? Promise.resolve(false) : activate(kind, ceiling, doc, visit, control),
+      activate: (context?: ProviderReviewActionContext) => !available || control === null || context?.current() === false
+        || context?.commentKind === 'comment' && (originalComment === null || mainComposer(doc) !== originalComment)
+        ? Promise.resolve(false) : activate(kind, ceiling, doc, visit, control, context?.commentKind),
     };
   });
 }

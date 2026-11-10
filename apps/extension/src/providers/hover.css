@@ -29,8 +29,8 @@
 .geld-provider-hover__row { display: contents; }
 .geld-provider-hover__label { overflow-wrap: anywhere; }
 .geld-provider-hover__files { text-align: end; color: var(--geld-provider-text-subtle); }
-.geld-provider-hover__add { text-align: end; color: var(--geld-provider-success); }
-.geld-provider-hover__del { text-align: end; color: var(--geld-provider-danger); }
+.geld-provider-hover__add { text-align: end; color: var(--geld-provider-addition, var(--geld-provider-success)); }
+.geld-provider-hover__del { text-align: end; color: var(--geld-provider-deletion, var(--geld-provider-danger)); }
 .geld-provider-hover__rule { grid-column: 1 / -1; border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); margin-block: var(--geld-provider-space-1); }
 .geld-provider-hover-anchor { cursor: help; }
 .geld-provider-hover-anchor:focus-visible { outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset); box-shadow: var(--geld-provider-focus-ring); }

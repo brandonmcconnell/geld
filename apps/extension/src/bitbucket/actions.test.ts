@@ -96,6 +96,41 @@ function nativeButton(kind: 'approve' | 'request-changes'): HTMLButtonElement {
   return button;
 }
 
+it('exposes immediate native intent separately from the normal confirmation workflow', () => {
+  nativeReviewHeader();
+  const [approve, request, comment] = readBitbucketActions(document);
+  expect(approve?.requiresConfirmation).toBe(true);
+  expect(request?.requiresConfirmation).toBe(true);
+  expect(approve?.instant).toBeTypeOf('function');
+  expect(request?.instant).toBeTypeOf('function');
+  expect(comment?.instant).toBeUndefined();
+});
+
+it.each(['actor', 'bootstrap', 'context'])('rejects native instant intent after the %s changes', async condition => {
+  nativeReviewHeader();
+  const action = readBitbucketActions(document)[0];
+  const clicked = vi.fn();nativeButton('approve').addEventListener('click', clicked);
+  const meta = document.head.querySelector('meta');
+  if (condition === 'actor') meta?.setAttribute('data-current-user', '{"isAuthenticated":true,"uuid":"other-viewer"}');
+  if (condition === 'bootstrap' && meta !== null) meta.replaceWith(meta.cloneNode(true));
+  expect(await action?.instant?.({ current: () => condition !== 'context' })).toBe(false);
+  expect(clicked).not.toHaveBeenCalled();
+});
+
+it('keeps an action scope stable until the native actor or control lifetime changes', async () => {
+  nativeReviewHeader();
+  const original = readBitbucketActions(document)[0];
+  expect(original?.scopeKey).toBeTruthy();
+  expect(readBitbucketActions(document)[0]?.scopeKey).toBe(original?.scopeKey);
+  const button = nativeButton('approve');button.replaceWith(button.cloneNode(true));
+  expect(readBitbucketActions(document)[0]?.scopeKey).not.toBe(original?.scopeKey);
+  expect(await original?.activate()).toBe(false);
+  const replacement = readBitbucketActions(document)[0];
+  document.head.querySelector('meta')?.setAttribute('data-current-user', '{"isAuthenticated":true,"uuid":"another-viewer"}');
+  expect(readBitbucketActions(document)[0]?.scopeKey).not.toBe(replacement?.scopeKey);
+  expect(await replacement?.activate()).toBe(false);
+});
+
 it('relays each exact unselected native review action once without changing the composer draft', async () => {
   nativeReviewHeader();
   const field = document.querySelector('input');

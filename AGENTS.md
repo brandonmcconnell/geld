@@ -3590,7 +3590,7 @@ GitLab and Bitbucket use Geld's compact digest structure with the provider's own
 The toolbar contains a conditional resolved-thread meter, Flow, grouping, View, copy and settings controls rather than a separate metric dashboard.
 Reviewer summaries stay inline with the Reviews row while conversation details remain inside its disclosure, and an unknown pending-request state is not presented as a review verdict.
 Merge checks use a short row label and inline native-state totals, keeping long rule names inside the disclosure instead of wrapping the label into several lines.
-The combined view uses the Geld and provider marks with a plus sign and an accessible full label.
+The inline combined view uses the Geld and provider marks with a plus sign and an accessible full label, while its View menu option also spells out Digest and Timeline.
 View changes restore focus to the selected native timeline option when the digest is off and to its View control when it returns.
 Browser checks wait for the selected view to finish changing before checking focus or switching again, since the clicked option already has focus while its settings save is pending.
 While review sources load, keep the native conversation visible and mount view choices only in the ready digest toolbar so a temporary standalone button strip does not flash above it.
@@ -3604,3 +3604,33 @@ Only the verified compact-header ancestor can allow this visual mirror's pointer
 Include hint hosts in settled-header snapshots so that this handoff repairs counts before the debounced full apply, even when the underlying file numbers are unchanged.
 The browser check waits for the compact header's transition and count handoff before inspecting its paint order.
 Installed UI acceptance checks that geometry and the sticky header's hit-test order after scrolling, alongside disclosures and category controls.
+
+The provider digest follows the description by default, with a shared `digestAboveDescription` preference exposed in its View menu and extension settings.
+Only owned digest and view controls move, preserving the provider's original description and reaction nodes.
+Bitbucket's tab underline belongs to the tablist pseudo-element, so an owned count sibling needs the same baseline drawn across the containing nav.
+Its native line-count badges use semibold small text and accent foreground/background pairs, including blue/yellow instead of green/red when the native colorblind preference is enabled.
+The MAIN-world observer reads the current native Redux preference and subscription without dispatching an action or requesting settings.
+GitLab counts keep its semantic success/danger variables so the active theme controls their colors.
+Owned Bitbucket category containers suppress horizontal overflow like the native sidebar, while native code panes retain horizontal scrolling.
+
+GitLab's Your review trigger appears only for assigned reviewers or pending drafts, so its absence is not proof that all approval permission is absent.
+Provider status buttons retain the native badge classes and open the current native permission-filtered More menu.
+Bitbucket Declined never gains an invented reopen action.
+GitLab instant verdicts require an empty native summary and the exact native No pending comments heading, plus current viewer/head/form authority, to avoid publishing existing drafts.
+Bitbucket ordinary verdict clicks offer the native comment writer before explicit no-comment submission, and no relay is reported as acknowledged server success.
+Public open-request acceptance discovers a current open request and checks anonymous permission gating without submitting a review or changing status.
+
+Hidden-person projection excludes starter-owned threads from the digest but hides only that person's own native comments, preserving other people's native replies.
+Provider-qualified hidden-author rules apply on list pages as well as inside the digest.
+A visit peek cannot remove the provider's own hidden state, and provider account suspension is not evidence of a viewer's hide-content preference.
+
+Metadata-only provider review refreshes keep the digest mounted, while CI/reviewer/merge-rule changes replace only affected status rows and restore the visible comment's reading position.
+Native source node identity and markup must remain unchanged to reuse bindings, so same-text React replacements still retire old table/media controls.
+Registered bot chip marks use bound native avatars, otherwise the shared registry's app mark, and the shared shape sampler honors native circles and cutouts.
+Actual comment, head, grouping or AI changes still rebuild safely.
+
+Provider image lightboxes fit against the measured enlarged stage, and pointer zoom uses that canvas rather than the letterboxed image dimensions.
+Provider video launch controls bind to a live native video with a qualified same-origin attachment or raw URL, never a copied control attribute or URL guessed from comment text.
+Digest renderers expose an owned Open video control while the original inline player remains native.
+The larger player preserves position, mute, volume and speed, resumes only an already playing source, and returns state only while the review and original source still match.
+Disposal stops the owned media request, and a changed source closes its dialog.

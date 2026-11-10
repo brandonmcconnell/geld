@@ -16,6 +16,7 @@ export interface ProviderPeopleProjection {
   readonly events: readonly ProviderReviewPanelEvent[];
   readonly people: readonly HiddenProviderPerson[];
   readonly hiddenAnchors: ReadonlyMap<string, string>;
+  readonly hiddenCommentAnchors: ReadonlyMap<string, string>;
   readonly hiddenEvents: ReadonlyMap<string, string>;
 }
 
@@ -36,6 +37,9 @@ export function projectProviderPeople(input: ProviderReviewInput, comments: read
     return normalized === identity.toLowerCase() || normalized === `${input.subject.provider}:${identity}`.toLowerCase();
   }) }));
   const hidden = new Set(people.filter((person) => !person.shown).map((person) => person.id));
+  // Digest exclusion follows thread ownership, but native folds must follow each comment's author.
+  const hiddenCommentAnchors = new Map([...input.threads.flatMap((thread) => thread.comments), ...comments]
+    .filter((comment) => hidden.has(comment.author.id)).map((comment) => [comment.anchor, comment.author.id]));
   const hiddenAnchors = new Map<string, string>();
   const threads = input.threads.flatMap((thread) => {
     const starter = thread.comments[0];
@@ -59,6 +63,6 @@ export function projectProviderPeople(input: ProviderReviewInput, comments: read
     input: { ...input, threads, ...(input.reviewers === undefined ? {} : { reviewers: input.reviewers.filter((reviewer) => !hidden.has(reviewer.author.id)) }), ...(input.bots === undefined ? {} : { bots: input.bots.filter((bot) => !hidden.has(bot.authorId)) }), ...(input.checks === undefined ? {} : { checks: input.checks.filter((check) => check.authorId === undefined || !hidden.has(check.authorId)) }) },
     comments: visibleComments,
     events: events.filter((event) => !hiddenEvents.has(event.id)),
-    people, hiddenAnchors, hiddenEvents,
+    people, hiddenAnchors, hiddenCommentAnchors, hiddenEvents,
   };
 }

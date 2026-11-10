@@ -16,6 +16,61 @@ beforeEach(() => { window.location.href = 'https://gitlab.com/group/repo/-/merge
 afterEach(() => { document.body.innerHTML = ''; vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe('GitLab native quick action relay', () => {
+  it('keeps a normal comment separate from a review summary when both native writers exist', async () => {
+    mount(`<textarea id="note-body">Main draft</textarea>${writer()}`);
+    const action = readGitLabActions(document, permissions).find(entry => entry.kind === 'comment');
+    expect(action?.commentKinds).toEqual(['comment', 'review']);
+    expect(await action?.activate({ current: () => true, commentKind: 'comment' })).toBe(true);
+    expect(document.activeElement?.id).toBe('note-body');
+    expect(document.querySelector<HTMLInputElement>('input[value="reviewed"]')?.checked).toBe(false);
+    expect(await action?.activate({ current: () => true, commentKind: 'review' })).toBe(true);
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('comment-textarea');
+    expect(document.querySelector<HTMLInputElement>('input[value="reviewed"]')?.checked).toBe(true);
+  });
+
+  it('submits only the native empty review with a verified identity, head and explicit instant intent', async () => {
+    mount(`<div data-noteable-type="MergeRequest" data-noteable-data='{"diff_head_sha":"${'a'.repeat(40)}"}'></div><section><div>${writer()}</div><div><h3 data-testid="reviewer-drawer-heading">No pending comments</h3></div></section>`);
+    const submit = vi.fn((event: Event) => event.preventDefault());
+    document.querySelector('form')?.addEventListener('submit', submit);
+    const action = readGitLabActions(document, permissions, gitLabActionVisit(document, 'a'.repeat(40))).find(entry => entry.kind === 'approve');
+    expect(action?.instant).toBeTypeOf('function');
+    expect(await action?.activate()).toBe(true);
+    expect(submit).not.toHaveBeenCalled();
+    expect(await action?.instant?.({ current: () => true })).toBe(true);
+    expect(submit).toHaveBeenCalledOnce();
+  });
+
+  it.each(['draft', 'pending-comments', 'unknown-pending', 'password', 'submit-disabled', 'submit-duplicate', 'new-head', 'lost-context', 'focus-context'])('refuses instant submission after %s without discarding native drafts', async condition => {
+    mount(`<div data-noteable-type="MergeRequest" data-noteable-data='{"diff_head_sha":"${'a'.repeat(40)}"}'></div><section><div>${writer()}</div><h3 data-testid="reviewer-drawer-heading">No pending comments</h3></section>`);
+    const submit = vi.fn((event: Event) => event.preventDefault());
+    const form = document.querySelector('form');
+    const field = form?.querySelector('textarea');
+    const button = form?.querySelector('button');
+    if (form === null || field == null || button == null) throw new Error('Missing native form');
+    form.addEventListener('submit', submit);
+    const action = readGitLabActions(document, permissions, gitLabActionVisit(document, 'a'.repeat(40))).find(entry => entry.kind === 'approve');
+    expect(action?.instant).toBeTypeOf('function');
+    let current = condition !== 'lost-context';
+    if (condition === 'draft') field.value = 'Unsent review';
+    if (condition === 'pending-comments') document.querySelector('[data-testid="reviewer-drawer-heading"]')?.replaceChildren(document.createTextNode('1 pending comment'));
+    if (condition === 'unknown-pending') document.querySelector('[data-testid="reviewer-drawer-heading"]')?.remove();
+    if (condition === 'password') form.insertAdjacentHTML('beforeend', '<div data-testid="approve_password"><input type="password"></div>');
+    if (condition === 'submit-disabled') button.disabled = true;
+    if (condition === 'submit-duplicate') button.after(button.cloneNode(true));
+    if (condition === 'new-head') document.querySelector('[data-noteable-data]')?.setAttribute('data-noteable-data', JSON.stringify({ diff_head_sha: 'b'.repeat(40) }));
+    if (condition === 'focus-context') button.addEventListener('focus', () => { current = false; });
+    expect(await action?.instant?.({ current: () => current })).toBe(false);
+    expect(submit).not.toHaveBeenCalled();
+    expect(field.value).toBe(condition === 'draft' ? 'Unsent review' : '');
+  });
+
+  it('withholds instant intent when the native full head is not known', () => {
+    mount(writer());
+    const action = readGitLabActions(document, permissions, gitLabActionVisit(document, 'a'.repeat(40))).find(entry => entry.kind === 'approve');
+    expect(action?.available).toBe(true);
+    expect(action?.instant).toBeUndefined();
+  });
+
   it('opens the actual native drawer and selects an outcome without submitting', async () => {
     mount('<button data-testid="review-drawer-toggle">Your review</button>');
     const clicked = vi.fn(() => { document.body.insertAdjacentHTML('beforeend', writer()); });

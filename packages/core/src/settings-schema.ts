@@ -235,6 +235,14 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       },
       {
         kind: 'toggle',
+        key: 'digestAboveDescription',
+        label: 'Digest above description',
+        description: 'On GitLab and Bitbucket, show the digest before the description. Off: keep the description first.',
+        popup: false,
+        surfaces: ['extension'],
+      },
+      {
+        kind: 'toggle',
         key: 'groupHidden',
         label: 'Group hidden files',
         description:

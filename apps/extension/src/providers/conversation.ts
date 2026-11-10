@@ -1,5 +1,9 @@
 import { providerAgentNotes } from './agent-notes';
 import { ProviderDescription } from './description';
+import { renderProviderActionControls } from './action-controls';
+import type { ProviderActionControls } from './action-controls';
+import { ProviderStatusControls } from './status-controls';
+import './action-controls.css';
 import type { DigestView, GeldSettings } from '@geld/core';
 import { compileAuthorRules, digestViewOf, repositoryKey, trustedReviewAccountFor } from '@geld/core';
 import { botById, buildProviderReviewItems, PROVIDER_BOT_CAPABILITIES, providerBotSupport } from '@geld/review';
@@ -10,6 +14,7 @@ import type { ProviderAiDependencies } from './ai';
 import type { ProviderReviewReference } from './references';
 import { element } from './dom';
 import { providerDigestViewChoice } from './digest-view';
+import { placeProviderDigest } from './digest-placement';
 import { projectProviderPeople } from './hidden-people';
 import { ProviderHiddenPeopleView } from './hidden-people-view';
 import { ProviderRelatedContext } from './related-context';
@@ -21,7 +26,6 @@ import { ProviderNativeFind } from './native-find';
 import type { ProviderNativeFindEntry, ProviderNativeFindEnvironment } from './native-find';
 import './conversation-compact.css';
 
-const ACTION_NAMES = { approve: 'Approve', 'request-changes': 'Request changes', comment: 'Comment', 'open-pending-review': 'Open pending review', 'open-review': 'Open your review' };
 const actionSubject = (input: ProviderReviewInput): string => JSON.stringify([input.subject.provider, input.subject.origin, input.subject.repository, input.subject.id, input.subject.headSha]);
 
 
@@ -29,6 +33,7 @@ export interface ProviderConversationServices {
   readonly openSettings?: () => Promise<void>;
   readonly unhidePerson?: (login: string) => Promise<void>;
   readonly chooseDigestView?: (view: DigestView) => Promise<void>;
+  readonly chooseDigestPosition?: (above: boolean) => Promise<void>;
   readonly chooseReviewGrouping?: (grouping: 'type' | 'batch') => Promise<void>;
   readonly saveTrustedBot?: (input: ProviderReviewInput, comment: ProviderReviewComment, botId: string) => Promise<void>;
   readonly saveTrustedPublisher?: (input: ProviderReviewInput, comment: ProviderReviewComment) => Promise<void>;
@@ -87,6 +92,8 @@ export class ProviderConversation {
   private snapshot: ProviderReviewSnapshot | null = null;
   private panel: ProviderReviewPanel | null = null;
   private actions: HTMLElement | null = null;
+  private actionControls: ProviderActionControls | null = null;
+  private readonly statusControls = new ProviderStatusControls();
   private status: HTMLElement | null = null;
   private nextRefresh = 0;
   private error = '';
@@ -122,6 +129,7 @@ export class ProviderConversation {
     if (page === null || !settings.enabled) { this.clear(); return; }
     const key = JSON.stringify([repositoryKey(page.repository), page.url]);
     if (key !== this.key) { this.clear(); this.key = key; }
+    this.statusControls.update(settings.quickReview ? this.adapter.statusAction?.(document, page) ?? null : null);
     if (page.headSha !== null && page.headSha !== this.observedHead) {
       this.observedHead = page.headSha;
       this.generation += 1;
@@ -147,7 +155,7 @@ export class ProviderConversation {
       if (this.abort !== null) { this.generation += 1; this.abort.abort(); this.abort = null; this.nextRefresh = 0; this.snapshotVersion += 1; }
       if (this.panel !== null) this.panel.element.hidden = true;
       this.status?.remove(); this.status = null;
-      this.actions?.remove(); this.actions = null; this.signature = '';
+      this.clearActions();
       this.restoreCompact(); this.hiddenPeople.clear();
       return;
     }
@@ -155,7 +163,7 @@ export class ProviderConversation {
     const host = page.kind === 'overview' && settings.prOverview ? this.adapter.reviewHost?.(document) ?? null : null;
     const actionHost = settings.quickReview ? this.adapter.actionHost?.(document) ?? null : null;
     if (host === null) { if (this.panel !== null) this.panel.element.hidden = true; this.status?.remove(); this.status = null; this.restoreCompact(); }
-    if (actionHost === null) { this.actions?.remove(); this.actions = null; this.signature = ''; }
+    if (actionHost === null) this.clearActions();
     if (host === null && actionHost === null && !wantsPeople) return;
     if (this.abort === null && Date.now() >= this.nextRefresh) {
       const abort = new AbortController();
@@ -371,6 +379,7 @@ export class ProviderConversation {
         this.panel = renderProviderReviewPanel(host, input, options);
       } else this.panel.update(input, options);
       this.panel.element.hidden = false;
+      placeProviderDigest(host, this.panel.element, descriptionHost, settings.digestAboveDescription);
       this.updateViewChoice(viewHost, settings);
       if (this.panel.element.dataset.state !== 'unavailable') this.description.update(descriptionHost, descriptionKey, agentNotes, true, settings.collapseDescription);
       if (this.panel.element.dataset.state === 'unavailable') { this.restoreCompact(); }
@@ -387,23 +396,15 @@ export class ProviderConversation {
     if (actionHost !== null && snapshot !== null) {
       const available = snapshot.actions.filter((action) => action.available);
       const sourceSubject = actionSubject(snapshot.input);
-      const signature = JSON.stringify([this.key, available.some((action) => action.scopeKey !== undefined) ? sourceSubject : null, available.map((action) => [action.kind, action.scopeKey ?? null])]);
+      const signature = JSON.stringify([this.key, sourceSubject, available.map((action) => [action.kind, action.scopeKey ?? null, action.instant !== undefined, action.requiresConfirmation, action.commentKinds])]);
       if (signature !== this.signature || this.actions?.isConnected !== true || this.actions.parentElement !== actionHost) {
-        this.actions?.remove();
+        this.clearActions();
         this.signature = signature;
-        if (available.length === 0) { this.actions = null; return; }
-        this.actions = element('div', '', 'geld-provider-actions');
-        this.actions.setAttribute('role', 'group');
-        this.actions.setAttribute('aria-label', 'Review actions');
-        const group = this.actions;
+        if (available.length === 0) return;
         const key = this.key;
-        for (const action of available) {
-          const button = element('button', ACTION_NAMES[action.kind]);
-          button.type = 'button';
-          button.addEventListener('click', () => {
-            if (this.key !== key || !button.isConnected) return;
+        const controls = renderProviderActionControls(document, this.adapter.id === 'gitlab' ? 'GitLab' : 'Bitbucket', available, async (action, instant, commentKind) => {
             const scopedCurrent = (): boolean => {
-              if (this.key !== key || this.actions !== group || !button.isConnected || button.parentElement !== group || group.parentElement !== actionHost || this.snapshot === null || actionSubject(this.snapshot.input) !== sourceSubject) return false;
+              if (this.key !== key || this.actionControls !== controls || this.actions !== controls.element || !controls.element.isConnected || controls.element.parentElement !== actionHost || this.snapshot === null || actionSubject(this.snapshot.input) !== sourceSubject) return false;
               const currentPage = this.adapter.describe(new URL(document.URL), document);
               if (currentPage === null || !isProviderReviewPage(currentPage) || currentPage.url !== page.url || currentPage.version !== page.version || repositoryKey(currentPage.repository) !== repositoryKey(page.repository)
                 || currentPage.headSha !== null && currentPage.headSha !== this.snapshot.input.subject.headSha) return false;
@@ -411,19 +412,21 @@ export class ProviderConversation {
               return matches.length === 1 && matches[0]?.scopeKey === action.scopeKey;
             };
             const current = this.snapshot?.actions.find((candidate) => candidate.kind === action.kind && candidate.available);
-            if (current === undefined || action.scopeKey !== undefined && !scopedCurrent()) { button.title = 'The review controls are unavailable'; return; }
-            button.disabled = true;
-            // A scoped rendered action keeps its original native owner; it cannot adopt a new descriptor at click time.
-            const activated = action.scopeKey === undefined ? current.activate() : action.activate({ current: scopedCurrent });
-            void activated.then((triggered) => { if (!triggered) button.title = 'Open the provider review controls to continue'; })
-              .catch(() => { button.title = 'The review controls are unavailable'; })
-              .finally(() => { button.disabled = false; });
-          });
-          this.actions.append(button);
-        }
-        actionHost.append(this.actions);
+            if (current === undefined || !scopedCurrent()) return false;
+            const selected = action.scopeKey === undefined ? current : action;
+            const context = { current: scopedCurrent, ...(commentKind === undefined ? {} : { commentKind }) };
+            return instant ? selected.instant?.(context) ?? false : selected.activate(context);
+        });
+        this.actionControls = controls;
+        this.actions = controls.element;
+        actionHost.append(controls.element);
       }
     }
+  }
+
+  private clearActions(): void {
+    this.actionControls?.destroy();this.actionControls = null;
+    this.actions?.remove();this.actions = null;this.signature = '';
   }
 
   private updateViewChoice(host: HTMLElement | null, settings: GeldSettings): void {
@@ -433,18 +436,24 @@ export class ProviderConversation {
         ? this.panel.element.querySelector<HTMLElement>('[data-geld-view-slot]') : null;
     }
     if (host === null || choose === undefined) { this.viewControls?.remove(); this.viewControls = null; this.viewSignature = ''; return; }
-    const signature = JSON.stringify([this.key, settings.prOverview, settings.compactTimeline]);
-    if (signature === this.viewSignature && this.viewControls?.parentElement === host) { this.restoreViewFocus(settings);return; }
+    const signature = JSON.stringify([this.key, settings.prOverview, settings.compactTimeline, settings.digestAboveDescription]);
+    if (signature === this.viewSignature && this.viewControls?.parentElement === host) {
+      if (!settings.prOverview) placeProviderDigest(host, this.viewControls, this.adapter.descriptionHost?.(document) ?? null, false);
+      this.restoreViewFocus(settings);return;
+    }
     const focused = this.viewControls?.contains(document.activeElement) === true ? document.activeElement?.getAttribute('data-geld-digest-view') : null;
+    const positionFocused = this.viewControls?.contains(document.activeElement) === true && document.activeElement?.hasAttribute('data-geld-digest-position') === true;
     this.viewControls?.remove();
     this.viewControls = providerDigestViewChoice(this.adapter.id, settings, async view => {
       const from = document.activeElement;
       if (from !== null && this.viewControls?.contains(from)) this.viewFocus = { key: this.key, view, from };
       try { await choose(view); } catch (error) { this.viewFocus = null;throw error; }
-    });
+    }, { menu: settings.prOverview, aboveDescription: settings.digestAboveDescription, ...(this.services.chooseDigestPosition === undefined ? {} : { choosePosition: this.services.chooseDigestPosition }) });
     this.viewSignature = signature;
-    host.prepend(this.viewControls);
+    if (settings.prOverview) host.prepend(this.viewControls);
+    else placeProviderDigest(host, this.viewControls, this.adapter.descriptionHost?.(document) ?? null, false);
     if (focused !== null) this.viewControls.querySelector<HTMLButtonElement>(`[data-geld-digest-view="${focused}"]`)?.focus();
+    if (positionFocused) this.viewControls.querySelector<HTMLButtonElement>('[data-geld-digest-position]')?.focus({ preventScroll: true });
     this.restoreViewFocus(settings);
   }
 
@@ -635,7 +644,7 @@ export class ProviderConversation {
     this.abort?.abort();
     this.abort = null;
     this.panel?.destroy(); this.panel = null;
-    this.actions?.remove(); this.actions = null;
+    this.clearActions();this.statusControls.clear();
     this.status?.remove(); this.status = null;
     this.snapshot = null;
     this.publication.reset();

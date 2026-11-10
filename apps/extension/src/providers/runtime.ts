@@ -249,6 +249,10 @@ export async function startProvider(ctx: ContentScriptContext, adapter: Provider
     if (retired) return;
     const value = await settingsItem.update(() => ({ reviewGrouping }));
     if (!retired) controller?.updateSettings(value);
+  }, chooseDigestPosition: async (digestAboveDescription) => {
+    if (retired) return;
+    const value = await settingsItem.update(() => ({ digestAboveDescription }));
+    if (!retired) controller?.updateSettings(value);
   }, chooseDigestView: async (view) => {
     if (retired) return;
     const value = await settingsItem.update((current) => digestViewPatch(current, view, new Date().toISOString()));

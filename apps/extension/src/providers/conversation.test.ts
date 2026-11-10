@@ -750,16 +750,16 @@ describe('scoped native review opener lifetime', () => {
     return { ...f, native, mutablePage, button, first, replacement, scope: (next: string) => { scope = next; }, unavailable: () => { available = false; }, changeHead: () => { live = { ...live, subject: { ...live.subject, headSha: 'b'.repeat(40) } }; }, refreshSameHead: () => { live = { ...live, subject: { ...live.subject } }; }, changeHandler: () => { activate = replacement; }, context: () => context };
   }
   it('keeps the same keyboard-focused navigation button on harmless same-head refresh without another read', async () => {
-    const f = opener();await vi.waitFor(() => expect(f.button()).not.toBeNull());const button = f.button()!;button.focus();expect(button.textContent).toBe('Open pending review');
+    const f = opener();await vi.waitFor(() => expect(f.button()).not.toBeNull());const button = f.button()!;button.focus();expect(button.getAttribute('aria-label')).toBe('Open pending review');
     f.refreshSameHead();f.apply();expect(f.button()).toBe(button);expect(document.activeElement).toBe(button);expect(f.fetchReview).toHaveBeenCalledOnce();
-    button.click();await vi.waitFor(() => expect(f.first).toHaveBeenCalledOnce());expect(f.context()?.current()).toBe(true);expect(button.textContent).toBe('Open pending review');
+    button.click();await vi.waitFor(() => expect(f.first).toHaveBeenCalledOnce());expect(f.context()?.current()).toBe(true);expect(button.getAttribute('aria-label')).toBe('Open pending review');
   });
   it('labels the separate GitLab opener neutrally and retains its original scoped activation', async () => {
     const f = opener('open-review');await vi.waitFor(() => expect(f.button()).not.toBeNull());const button = f.button()!;
-    expect(button.textContent).toBe('Open your review');expect(button.textContent).not.toContain('pending');
+    expect(button.getAttribute('aria-label')).toBe('Open your review');expect(button.getAttribute('aria-label')).not.toContain('pending');
     f.refreshSameHead();f.apply();expect(f.button()).toBe(button);f.changeHandler();button.click();
     await vi.waitFor(() => expect(f.first).toHaveBeenCalledOnce());expect(f.replacement).not.toHaveBeenCalled();expect(f.context()?.current()).toBe(true);
-    f.scope('new-native-review');expect(f.context()?.current()).toBe(false);f.apply();expect(f.button()).not.toBe(button);expect(f.button()?.textContent).toBe('Open your review');
+    f.scope('new-native-review');expect(f.context()?.current()).toBe(false);f.apply();expect(f.button()).not.toBe(button);expect(f.button()?.getAttribute('aria-label')).toBe('Open your review');
   });
   it('does not adopt a new native owner or bootstrap scope at click time', async () => {
     const f = opener();await vi.waitFor(() => expect(f.button()).not.toBeNull());const old = f.button()!;f.scope('native-two');old.click();expect(f.first).not.toHaveBeenCalled();
@@ -809,6 +809,26 @@ it('folds represented human comments in the digest and restores originals on req
 });
 
 describe('persistent provider conversation views', () => {
+  it('keeps the description first by default and changes placement without refetching or losing native content', async () => {
+    const description = document.createElement('article');description.textContent = 'Original description';
+    const f = fixture(snapshot(), { chooseDigestView: async () => undefined,
+      chooseDigestPosition: async above => { f.apply(page, { ...DEFAULT_SETTINGS, aiEnabled: false, quickReview: false, digestAboveDescription: above }); },
+    }, { aiEnabled: false, quickReview: false }, { descriptionHost: () => description });
+    f.host.prepend(description);
+    await vi.waitFor(() => expect(f.host.querySelector('.geld-provider-review')).not.toBeNull());
+    const panel = f.host.querySelector('.geld-provider-review');
+    expect(f.host.lastElementChild).toBe(panel);
+    f.host.querySelector<HTMLDetailsElement>('details:has([data-geld-view-slot])')!.open = true;
+    const position = f.host.querySelector<HTMLButtonElement>('[data-geld-digest-position]')!;
+    position.focus();position.click();
+    await vi.waitFor(() => expect(f.host.firstElementChild).toBe(panel));
+    expect(document.activeElement?.hasAttribute('data-geld-digest-position')).toBe(true);
+    f.host.querySelector<HTMLButtonElement>('[data-geld-digest-position]')?.click();
+    await vi.waitFor(() => expect(f.host.lastElementChild).toBe(panel));
+    expect(description.textContent).toBe('Original description');
+    expect(f.fetchReview).toHaveBeenCalledOnce();
+  });
+
   it('mounts view choices in the ready toolbar without flashing a standalone strip while reading sources', async () => {
     let finish: ((value: ProviderReviewSnapshot) => void) | undefined;
     const f = fixture(snapshot(), { chooseDigestView: async () => undefined }, { aiEnabled: false, quickReview: false }, {

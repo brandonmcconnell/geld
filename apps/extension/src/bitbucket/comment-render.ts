@@ -2,6 +2,7 @@ import type { ProviderReviewComment } from '@geld/review';
 import { nativeBitbucketComment } from './conversation';
 import { bindBitbucketCommentTypography } from './comment-typography';
 import type { ProviderCommentRenderContext } from '../providers/comment-render';
+import { providerVideoPreview } from '../providers/attachment-video';
 
 const ELEMENTS = new Set(['a', 'abbr', 'b', 'bdi', 'blockquote', 'br', 'code', 'dd', 'del', 'details', 'div', 'dl', 'dt', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'kbd', 'li', 'ol', 'p', 'pre', 's', 'small', 'span', 'strong', 'sub', 'summary', 'sup', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr', 'u', 'ul']);
 const DROP = new Set(['script', 'style', 'iframe', 'object', 'embed', 'link', 'meta', 'base', 'form', 'button', 'input', 'select', 'textarea', 'audio', 'video', 'canvas', 'svg', 'math']);
@@ -25,6 +26,7 @@ export function renderBitbucketComment(comment: ProviderReviewComment, host: HTM
     if (node.nodeType === Node.TEXT_NODE) return doc.createTextNode(node.textContent ?? '');
     if (!(node instanceof Element) || node.namespaceURI !== 'http://www.w3.org/1999/xhtml') return null;
     const tag = node.localName;
+    if (node instanceof HTMLVideoElement) return providerVideoPreview(node, 'bitbucket', comment.url);
     if (DROP.has(tag) || node.hasAttribute('contenteditable')) return null;
     const element = ELEMENTS.has(tag) ? doc.createElement(tag) : doc.createDocumentFragment();
     if (element instanceof HTMLElement) {

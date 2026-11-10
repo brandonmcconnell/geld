@@ -1,0 +1,30 @@
+.geld-provider-review__bot-icon {
+  display: inline-block;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  border-radius: 4px;
+  background: var(--geld-provider-bg-subtle);
+  outline: 1px solid var(--geld-provider-border);
+  outline-offset: -1px;
+}
+
+.geld-provider-review__bot-icon[data-shape='round'] {
+  border-radius: 50%;
+}
+
+.geld-provider-review__bot-icon[data-shape='cutout'] {
+  background: none;
+  outline-color: transparent;
+}
+
+.geld-provider-review__bot-icon[data-shape='cutout'][data-ink='dark'] {
+  background: light-dark(transparent, var(--geld-provider-bg-subtle));
+  outline-color: light-dark(transparent, var(--geld-provider-border));
+}
+
+.geld-provider-review__bot-icon[data-shape='cutout'][data-ink='light'] {
+  background: light-dark(var(--geld-provider-bg-subtle), transparent);
+  outline-color: light-dark(var(--geld-provider-border), transparent);
+}

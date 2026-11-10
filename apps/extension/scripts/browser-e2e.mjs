@@ -5,6 +5,7 @@ import { BITBUCKET_UI_PR, BITBUCKET_UI_PATH, bitbucketUiSourceCache, verifyBitbu
 /** Live installed-extension smoke. Run only where unpacked extensions are permitted by policy. */
 import assert from 'node:assert/strict';
 import { verifyProviderUi } from './provider-ui-polish.mjs';
+import { OPEN_REVIEW_SOURCES, verifyOpenProviderReview } from './provider-open-review.mjs';
 import { recordProviderWalkthrough } from './provider-walkthrough.mjs';
 import { isDeepStrictEqual } from 'node:util';
 import { createHash } from 'node:crypto';
@@ -62,6 +63,8 @@ const BITBUCKET_ANONYMOUS_COOLDOWN_MS = 62 * 60 * 1000; // Documented rolling-ho
 const FOCUSED_CASES = {
   'gitlab-ui-polish': ['gitlab-ui-polish'],
   'bitbucket-ui-polish': ['bitbucket-ui-polish'],
+  'gitlab-open-review': ['gitlab-open-review'],
+  'bitbucket-open-review': ['bitbucket-open-review'],
   'provider-access': [],
   'walkthrough-render': [],
   'gitlab-walkthrough': ['gitlab-walkthrough'],
@@ -3377,6 +3380,11 @@ try {
   if (focus === 'gitlab-ui-polish' || focus === 'bitbucket-ui-polish') {
     const provider = focus.startsWith('gitlab-') ? 'gitlab' : 'bitbucket';
     await runCase(focus, provider === 'gitlab' ? GL_OVERVIEW : BITBUCKET_UI_PR, (page, item) => verifyProviderUi(page, item, { provider, poll, patchSettings, artifacts }));
+  }
+
+  if (focus === 'gitlab-open-review' || focus === 'bitbucket-open-review') {
+    const provider = focus.startsWith('gitlab-') ? 'gitlab' : 'bitbucket';
+    await runCase(focus, OPEN_REVIEW_SOURCES[provider], (page, item) => verifyOpenProviderReview(page, item, { provider, poll, patchSettings, artifacts }));
   }
 
   if (focus.endsWith('-walkthrough') || focus === 'bitbucket-walkthrough-files') {
