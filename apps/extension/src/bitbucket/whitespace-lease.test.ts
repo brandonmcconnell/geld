@@ -4,12 +4,48 @@ import type { NativeWhitespaceSnapshot } from './whitespace-lease';
 function fixture(raw: boolean | 'unset' = false) {
   const value = raw === true;
   let now = 0;
-  let state: NativeWhitespaceSnapshot = { owner: {}, settings: { globalShouldIgnoreWhitespace: raw === 'unset' ? undefined : raw }, subject: 'acme/repo!1:a', current: true, detached: false, value, unset: raw === 'unset', open: false, loading: false, busy: false, failed: false, diffLoading: false, statsLoading: false, diff: [], stats: [] };
+  let state: NativeWhitespaceSnapshot = { owner: {}, settings: { globalShouldIgnoreWhitespace: raw === 'unset' ? undefined : raw }, subject: 'acme/repo!1:a', panel: {}, current: true, loadingCurrent: false, detached: false, value, unset: raw === 'unset', open: false, loading: false, busy: false, failed: false, diffLoading: false, statsLoading: false, diff: [], stats: [] };
   const values: (boolean | undefined)[] = [];
   const lease = new BitbucketWhitespaceLease(() => state, value => { values.push(value);state = { ...state, settings: { ...state.settings, globalShouldIgnoreWhitespace: value }, value: value === true, unset: value === undefined }; }, () => undefined, () => now);
   return { lease, values, raw: () => Reflect.get(state.settings, 'globalShouldIgnoreWhitespace'), patch: (patch: Partial<NativeWhitespaceSnapshot>) => { now += 250;state = { ...state, ...patch };lease.tick(); }, settle: () => { now += 250;state = { ...state, diffLoading: true, statsLoading: true, busy: true };lease.tick();state = { ...state, diffLoading: false, statsLoading: false, diff: [], stats: [], busy: false };lease.tick(); } };
 }
 describe('Bitbucket native in-memory whitespace lease', () => {
+  it('holds only its existing acquisition through source-qualified missing-region loading', () => {
+    const f = fixture('unset');f.lease.update(true);f.patch({ current: false, loadingCurrent: true, diffLoading: true, statsLoading: true, busy: true });
+    expect(f.values).toEqual([true]);expect(f.lease.state()).toMatchObject({ status: 'pending', value: null });
+    f.patch({ current: false, loadingCurrent: true, diffLoading: false, statsLoading: false, busy: false, diff: [], stats: [] });
+    expect(f.values).toEqual([true]);expect(f.lease.state()).toMatchObject({ status: 'pending', value: null });
+    f.patch({ current: true, loadingCurrent: false });
+    expect(f.values).toEqual([true]);expect(f.lease.state()).toMatchObject({ status: 'ready', value: true });
+    f.lease.stop();expect(f.values).toEqual([true, undefined]);
+  });
+  it.each(['disable', 'suspend'])('restores exact undefined on %s during region-free loading without reacquiring', action => {
+    const f = fixture('unset');f.lease.update(true);f.patch({ current: false, loadingCurrent: true, diffLoading: true, statsLoading: true, busy: true });
+    if (action === 'disable') f.lease.update(false);else f.lease.suspend();
+    expect(f.values).toEqual([true, undefined]);
+    f.patch({ current: true, loadingCurrent: false, diffLoading: false, statsLoading: false, busy: false, diff: [], stats: [] });f.patch({});
+    expect(f.values).toEqual([true, undefined]);expect(f.lease.state().value).not.toBe(true);
+  });
+  it('restores exact undefined before original Settings opens during the owned loading transition', () => {
+    const f = fixture('unset');f.lease.update(true);f.patch({ current: false, loadingCurrent: true, diffLoading: true, statsLoading: true, busy: true });
+    expect(f.lease.beforePreferences()).toBe(true);expect(f.values).toEqual([true, undefined]);expect(f.raw()).toBeUndefined();
+    f.patch({ current: true, loadingCurrent: false, open: true });f.settle();f.patch({ open: false });
+    expect(f.values).toEqual([true, undefined, true]);f.settle();expect(f.lease.state()).toMatchObject({ status: 'ready', value: true });
+  });
+  it('does not acquire merely because a loading snapshot is qualified', () => {
+    const f = fixture();f.patch({ current: false, loadingCurrent: true, diffLoading: true, busy: true });f.lease.update(true);expect(f.values).toEqual([]);
+  });
+  it.each(['owner', 'subject', 'panel'])('does not retain a pending acquisition after %s custody changes', key => {
+    const f = fixture('unset');f.lease.update(true);
+    f.patch({ current: false, loadingCurrent: true, diffLoading: true, statsLoading: true, busy: true, [key]: key === 'subject' ? 'other' : {} });
+    expect(f.values).toEqual(key === 'owner' ? [true] : [true, undefined]);expect(f.lease.state().status).not.toBe('ready');
+  });
+  it('restores an owned acquisition when loading ends without a qualified region', () => {
+    const f = fixture('unset');f.lease.update(true);f.patch({ current: false, loadingCurrent: true, diffLoading: true, statsLoading: true, busy: true });
+    f.patch({ current: false, loadingCurrent: false, diffLoading: false, statsLoading: false, busy: false, diff: [], stats: [] });
+    expect(f.values).toEqual([true, undefined]);expect(f.lease.state().status).not.toBe('ready');
+  });
+
   it('restores own undefined before Settings and re-acquires only after Cancel', () => {
     const f = fixture('unset');f.lease.update(true);f.settle();expect(f.values).toEqual([true]);
     expect(f.lease.beforePreferences()).toBe(true);expect(f.values).toEqual([true, undefined]);expect(f.raw()).toBeUndefined();

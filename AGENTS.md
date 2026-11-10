@@ -3238,6 +3238,11 @@ Conversation comment and started-thread counts are labelled as activity in this 
 GitLab reviewer links use only the unique newest matching native system verdict note with the exact account ID and a supplied same-MR note URL.
 Ordinary comments, ambiguous timestamps and missing or foreign note URLs cannot supply that link, and Bitbucket standings remain non-links while its activity source lacks an event permalink.
 
+Bitbucket's native DiffLoader removes the Diff region while either its diff or diffstat request is loading, retaining the surrounding diff panel.
+An already-owned whitespace transition preserves its lease through that exact loading state only with the same store, comparison, original panel and visible native spinner plus the usual route, header, settings and All changes guards.
+When Redux settles before React remounts the Diff region, only the same previously witnessed spinner can retain that pending lease, and no ready receipt is published until the original-panel region returns.
+The missing region cannot authorize initial acquisition or a ready receipt, and errors, duplicate regions, changed custody or a settled missing region still release the exact raw preference.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
