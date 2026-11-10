@@ -2332,6 +2332,11 @@ Boundary structure participates in the fold cache signature even when every disp
 This folding reads only displayed source and neither fetches whole files nor activates native context expansion.
 Installed GitLab mixed-file acceptance toggles the real test-outline setting on retained native suite declarations, verifies original row/text/control/Viewed identities and corrected counts, opens one outline with trusted input and restores settings and category state.
 That displayed-outline phase retains an unknown source head explicitly and does not establish whole-file extents or native context expansion.
+  Bitbucket full-hash standalone commits can explicitly load test boundaries through the shared whole-source cache and the original above/below chunk controls.
+  The file action uses Atlassian theme variables, never replaces native rows, shares the persisted API cooldown, and declines dummy-only chunks, stale controls and missing native source authority.
+  Bitbucket pull requests and abbreviated standalone routes still have no whole-file grant until their current native source is independently bound.
+  Bitbucket Syntax-on code rows omit their renderer-added terminal LF only when original rowgroup position and exact native gridcell aria text agree, while malformed or ambiguous row text stays unavailable.
+  Shell ranges retain the original Text nodes and exclude that verified terminal LF from their offsets.
 
 
 - **Selected GitLab diffs require immutable comparisons.**
@@ -3066,6 +3071,14 @@ Qualify both native link media and effective stylesheet media through loaded rea
 Only a real mouse drag supplies selection evidence, and unsupported copy remains explicitly unverified.
 Keep the complete original raw settings vector, change only the master flag, remove owned highlighting and test selection, close the native page, then restore exact original storage presence and value.
 Missing native source, original controls or usable native palettes is unavailable rather than a substitute source pass, and failure reporting omits unknown fields, raw bootstrap, console, exception and URL details.
+
+The literal Bitbucket local-reviewed acceptance uses the existing public PR22 outdated human comment and already-issued review/commit responses, with no helper request or fabricated source identity.
+A local mark on an already-outdated item preserves its native Outdated state and group while its explicit device-local notice survives a real reload and Undo removes only that mark.
+The case closes its provider page before restoring exact raw settings and local storage presence, and any observed review API write fails acceptance.
+
+A GitLab Rapid Diff page can report idle before its client-side target file and native file tree have hydrated.
+The installed shell acceptance waits within its existing bounded poll for a mounted target or a qualified original reveal control, and records only its final bounded readiness fields when neither becomes available.
+An idle server-rendered page alone does not establish target unavailability or authorize a guessed reveal action.
 
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.

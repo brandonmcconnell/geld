@@ -16,6 +16,7 @@ import { readBitbucketRequirements } from './requirements';
 import { createBitbucketDiffSyntax } from './diff-syntax';
 export { createBitbucketDiffSyntax } from './diff-syntax';
 import { bitbucketReferenceAnchor, readBitbucketReferences } from './references';
+import { createBitbucketWholeTestAdapter } from './whole-test-context';
 
 
 export { BitbucketClient, BitbucketApiError, bitbucketCapabilities } from './api';
@@ -25,6 +26,7 @@ export type { BitbucketReviewSnapshot } from './review';
 
 export const bitbucketAdapter: ProviderAdapter = {
   id: 'bitbucket',
+  wholeTests: createBitbucketWholeTestAdapter(),
   describe: describeBitbucketProviderPage,
   readDiff: readBitbucketDiff,
   diffSyntax: createBitbucketDiffSyntax(),
