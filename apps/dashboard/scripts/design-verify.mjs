@@ -119,7 +119,7 @@ try {
   await q.page.getByRole('heading', { name: 'Hidden from your review', exact: true }).waitFor();
   assert.equal(await q.page.locator('.counts-popover dl > div').count(), 4);
   await q.page.keyboard.press('Escape');
-  await q.page.getByRole('button', { name: 'Open a review', exact: true }).click();
+  await q.page.getByRole('button', { name: 'Open a pull request by URL', exact: true }).click();
   await q.page
     .getByLabel('Pull request URL', { exact: true })
     .filter({ visible: true })

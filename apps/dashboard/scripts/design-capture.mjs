@@ -109,7 +109,6 @@ let browser;
       ['security', 'Audit log', '/settings/security'],
       ['enterprise', 'Enterprise instances', '/settings/enterprise'],
       ['preferences', 'Review preferences', '/settings/review'],
-      ['privacy', 'Privacy information', '/privacy'],
       ['not-found', 'Page not found', '/not-a-dashboard-page'],
     ];
     for (const [name, label, url] of routes) {
@@ -160,7 +159,7 @@ let browser;
       .click();
     await shot(page, 'queue-hidden-counts', 'Hidden change counts', group);
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Open a review', exact: true }).click();
+    await page.getByRole('button', { name: 'Open a pull request by URL', exact: true }).click();
     await shot(page, 'open-review', 'Open a pull request by URL', group);
     await page.keyboard.press('Escape');
     await go(page, '/settings/billing');

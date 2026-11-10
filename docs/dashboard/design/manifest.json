@@ -277,17 +277,6 @@
       "route": "/settings/review"
     },
     {
-      "name": "privacy",
-      "label": "Privacy information",
-      "file": "desktop/privacy.png",
-      "group": "desktop",
-      "viewport": {
-        "width": 1440,
-        "height": 1000
-      },
-      "route": "/privacy"
-    },
-    {
       "name": "not-found",
       "label": "Page not found",
       "file": "desktop/not-found.png",
@@ -1353,17 +1342,6 @@
         "height": 844
       },
       "route": "/settings/review"
-    },
-    {
-      "name": "privacy",
-      "label": "Privacy information",
-      "file": "mobile/privacy.png",
-      "group": "mobile",
-      "viewport": {
-        "width": 390,
-        "height": 844
-      },
-      "route": "/privacy"
     },
     {
       "name": "not-found",

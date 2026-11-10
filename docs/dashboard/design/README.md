@@ -44,7 +44,6 @@ Queue rows show current Digest findings, replies needed, approvals and bot resul
 | Audit log | `/settings/security` | [View](./screenshots/desktop/security.png) | [View](./screenshots/mobile/security.png) | — |
 | Enterprise instances | `/settings/enterprise` | [View](./screenshots/desktop/enterprise.png) | [View](./screenshots/mobile/enterprise.png) | — |
 | Review preferences | `/settings/review` | [View](./screenshots/desktop/preferences.png) | [View](./screenshots/mobile/preferences.png) | — |
-| Privacy information | `/privacy` | [View](./screenshots/desktop/privacy.png) | [View](./screenshots/mobile/privacy.png) | — |
 | Page not found | `/not-a-dashboard-page` | [View](./screenshots/desktop/not-found.png) | [View](./screenshots/mobile/not-found.png) | [View](./screenshots/dark/not-found.png) |
 | queue digest stale | `/` | [View](./screenshots/desktop/queue-digest-stale.png) | [View](./screenshots/mobile/queue-digest-stale.png) | — |
 | queue digest missing | `/` | [View](./screenshots/desktop/queue-digest-missing.png) | [View](./screenshots/mobile/queue-digest-missing.png) | — |
@@ -142,3 +141,5 @@ Review actions, sign-in operations and billing interactions in these captures ne
 
 Projects and roadmap remain disabled feature stubs and are not part of the enabled dashboard views.
 Git provider and identity-provider pages outside Geld are not included.
+
+The app’s `/privacy` route now redirects to the [website privacy policy](https://www.geld.sh/privacy); it is no longer a separate dashboard capture.
