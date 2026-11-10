@@ -3231,6 +3231,13 @@ The PR full-context acceptance also scopes All changes to the active native diff
 A hidden sticky copy must not discard its file lease or erase the failure diagnostic.
 Its source-menu probe recognizes the same untouched passive cookie notice while rejecting any unknown dialog, and a placeholder text hint is not evidence of a native error.
 
+Provider reviewer standings use one compact identity per account, with native font, colour, spacing and focus tokens.
+An already identity-bound comment avatar may represent that reviewer, otherwise the login initial is shown.
+A known pending request remains separate from the current verdict, while an unknown request stays explicitly unavailable.
+Conversation comment and started-thread counts are labelled as activity in this conversation, with observed counts for incomplete sources, never as one grouped review.
+GitLab reviewer links use only the unique newest matching native system verdict note with the exact account ID and a supplied same-MR note URL.
+Ordinary comments, ambiguous timestamps and missing or foreign note URLs cannot supply that link, and Bitbucket standings remain non-links while its activity source lacks an event permalink.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
@@ -3246,3 +3253,6 @@ Signed in, a copy of the desktop Chrome's profile (`~/.config/google-chrome`, it
 
 Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
 Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
+
+Malformed GitLab approval or reviewer rows are isolated individually and mark reviews partial without discarding valid standings, discussion evidence or native required/remaining counts.
+An all-malformed source supplies no known empty reviewer list.

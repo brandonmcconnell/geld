@@ -30,6 +30,62 @@ function host(): HTMLElement {
 beforeEach(() => { document.body.replaceChildren();window.location.href = reviewUrl; });
 
 describe('provider conversation digest', () => {
+  it('shows individual reviewer identities and independent request markers in the collapsed row', () => {
+    const native = { ...input([thread('a')]), reviewers: [
+      { author: { id: 'user-1', login: 'alice' }, state: 'approved', reviewRequest: 'pending', url: `${reviewUrl}#note_1`, anchor: 'note_1' },
+      { author: { id: 'user-2', login: 'bob' }, state: 'changes_requested', reviewRequest: 'unknown' },
+    ] } satisfies ProviderReviewInput;
+    const opened = vi.fn((_url: string, _anchor: string, event: MouseEvent) => event.preventDefault());
+    const panel = renderProviderReviewPanel(host(), native, {
+      onOpenSource: opened,
+      authorPresentation: source => ({ authorId: source.author.id, displayName: 'Alice', avatar: { src: 'https://gitlab.com/avatar.png', width: 24, height: 24 } }),
+    });
+    const section = panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-key="reviewers"]');
+    expect(section?.open).toBe(false);
+    const chips = section?.querySelectorAll('.geld-provider-review__reviewer');expect(chips).toHaveLength(2);
+    expect(chips?.[0]?.closest('summary')).not.toBeNull();
+    expect(chips?.[0]?.querySelector('img')?.getAttribute('alt')).toBe('');
+    expect(chips?.[0]?.getAttribute('aria-label')).toBe('alice: Approved · Review requested');
+    expect(chips?.[1]?.querySelector('.geld-provider-review__reviewer-avatar')?.textContent).toBe('B');
+    expect(chips?.[1]?.querySelector('.geld-provider-review__reviewer-request')).toBeNull();
+    expect(chips?.[1]?.textContent).toContain('Request state unavailable');
+    section?.querySelector<HTMLAnchorElement>('a.geld-provider-review__reviewer')?.click();expect(opened).toHaveBeenCalledWith(`${reviewUrl}#note_1`, 'note_1', expect.any(MouseEvent));
+    expect(section?.open).toBe(false);
+  });
+
+  it('counts identity-bound conversation activity without claiming it belongs to one review', () => {
+    const first = comment('1'), reply = comment('2'), second = comment('3'), top = comment('4');
+    const impostor = { ...comment('5'), author: { id: 'different-id', login: 'alice' } };
+    const invalid = { ...comment('6'), url: 'https://other.example/#note_6' };
+    const native: ProviderReviewInput = { ...input([
+      thread('a', { comments: [first, reply, impostor] }), thread('b', { comments: [second] }),
+    ]), complete: false, reviewers: [{ author: first.author, state: 'approved', reviewRequest: 'not-pending' }] };
+    const panel = renderProviderReviewPanel(host(), native, { comments: [first, top] });
+    const activity = panel.element.querySelector('.geld-provider-review__reviewer-activity');
+    expect(activity?.textContent).toBe('In this conversation: 2 observed threads started · 4 observed comments');
+    expect(activity?.getAttribute('title')).toContain('not grouped into a review');
+    expect(panel.element.querySelector('.geld-provider-review__reviewer')?.tagName).toBe('SPAN');
+    expect(panel.element.textContent).not.toContain('latest review');
+    const secondPanel = renderProviderReviewPanel(host(), { ...input(), reviewers: native.reviewers ?? [] }, { comments: [invalid] });
+    expect(secondPanel.element.querySelector('.geld-provider-review__reviewer-activity')).toBeNull();
+  });
+
+  it.each(['pending', 'foreign', 'wrong-review', 'missing-anchor'] as const)('does not make an unproven reviewer target clickable: %s', change => {
+    const reviewer: ProviderReviewReviewer = { author: { id: '1', login: 'alice' }, state: change === 'pending' ? 'pending' : 'approved', reviewRequest: 'unknown',
+      url: change === 'foreign' ? 'https://elsewhere.example/#note_1' : change === 'wrong-review' ? `${reviewUrl}0#note_1` : `${reviewUrl}#note_1`, ...(change === 'missing-anchor' ? {} : { anchor: 'note_1' }) };
+    const panel = renderProviderReviewPanel(host(), { ...input(), reviewers: [reviewer] });
+    expect(panel.element.querySelector('.geld-provider-review__reviewer')?.tagName).toBe('SPAN');
+    expect(panel.element.querySelector('.geld-provider-review__reviewer-request')).toBeNull();
+  });
+
+  it('retires a reviewer link when its head changes or the panel is destroyed', () => {
+    const opened = vi.fn();
+    const native: ProviderReviewInput = { ...input(), reviewers: [{ author: { id: '1', login: 'alice' }, state: 'approved', anchor: 'note_1', url: `${reviewUrl}#note_1` }] };
+    const panel = renderProviderReviewPanel(host(), native, { onOpenSource: opened });
+    const old = panel.element.querySelector<HTMLAnchorElement>('.geld-provider-review__reviewer');
+    panel.update({ ...native, subject: { ...subject, headSha: 'b'.repeat(40) } });old?.click();expect(opened).not.toHaveBeenCalled();
+    const current = panel.element.querySelector<HTMLAnchorElement>('.geld-provider-review__reviewer');panel.destroy();current?.click();expect(opened).not.toHaveBeenCalled();
+  });
   it('offers an available focus-only reviewer handoff in the existing review action styling, including a known empty reviewer list', async () => {
     const native = document.createElement('button');native.type = 'button';native.textContent = 'Edit';document.body.append(native);
     const activate = vi.fn(async (context?: ProviderSourceActionContext) => { if (context?.current?.() !== true) return false;native.focus();return true; });
@@ -418,11 +474,11 @@ describe('provider conversation digest', () => {
     ] };
     const panel = renderProviderReviewPanel(host(), native, { copyText: (text) => { copied = text; } });
     const section = panel.element.querySelector('[data-geld-review-key="reviewers"]');
-    expect(section?.querySelector('summary')?.textContent).toBe('Reviews · 1 approval · 1 change request · 2 pending reviews');
-    expect(section?.querySelector('[data-state="approved"]')?.textContent).toBe('aliceApproved · Review requested');
-    expect(section?.querySelector('[data-state="approved"]')?.lastElementChild?.classList.contains('geld-provider-review__muted')).toBe(true);
-    expect(section?.querySelector('[data-state="changes_requested"]')?.textContent).toBe('bobChanges requested · Review requested');
-    expect(section?.querySelector('[data-state="pending"]')?.textContent).toBe('carolReviewer · Request state unavailable');
+    expect(section?.querySelector('.geld-provider-review__reviewer-summary')?.textContent).toBe('Reviews · 1 approval · 1 change request · 2 pending reviews');
+    expect(section?.querySelector('[data-state="approved"] .geld-provider-review__reviewer')?.getAttribute('aria-label')).toBe('alice: Approved · Review requested');
+    expect(section?.querySelector('[data-state="approved"] .geld-provider-review__reviewer-request')?.textContent).toBe('Review requested');
+    expect(section?.querySelector('[data-state="changes_requested"] .geld-provider-review__reviewer')?.getAttribute('aria-label')).toBe('bob: Changes requested · Review requested');
+    expect(section?.querySelector('[data-state="pending"] .geld-provider-review__reviewer')?.getAttribute('aria-label')).toBe('carol: Reviewer · Request state unavailable');
     expect(section?.querySelector('a')?.href).toBe(`${reviewUrl}#note_1`);
     panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
     await vi.waitFor(() => expect(copied).toContain('- alice: Approved · Review requested'));
@@ -431,10 +487,10 @@ describe('provider conversation digest', () => {
     expect(copied).not.toMatch(/asked again|latest push/i);
     expect(native.reviewers?.[0]?.state).toBe('approved');
     panel.update(native, { approvalsRequired: 2, approvalsLeft: 0 });
-    expect(panel.element.querySelector('[data-geld-review-key="reviewers"] > summary')?.textContent).toBe('Reviews · 2/2 required approvals · 1 change request · 2 pending reviews');
+    expect(panel.element.querySelector('[data-geld-review-key="reviewers"] .geld-provider-review__reviewer-summary')?.textContent).toBe('Reviews · 2/2 required approvals · 1 change request · 2 pending reviews');
     panel.update({ ...native, reviewers: (native.reviewers ?? []).map((reviewer): ProviderReviewReviewer => ({ ...reviewer, reviewRequest: 'not-pending' })) }, {});
-    expect(panel.element.querySelector('[data-geld-review-key="reviewers"] > summary')?.textContent).toBe('Reviews · 1 approval · 1 change request');
-    expect(panel.element.querySelector('[data-state="approved"]')?.textContent).toBe('aliceApproved');
+    expect(panel.element.querySelector('[data-geld-review-key="reviewers"] .geld-provider-review__reviewer-summary')?.textContent).toBe('Reviews · 1 approval · 1 change request');
+    expect(panel.element.querySelector('[data-state="approved"] .geld-provider-review__reviewer')?.getAttribute('aria-label')).toBe('alice: Approved');
   });
 
   it('retains state-only legacy presentation while explicit unknown never invents a request', () => {
@@ -445,10 +501,10 @@ describe('provider conversation digest', () => {
     ] };
     const panel = renderProviderReviewPanel(host(), native, {});
     const section = panel.element.querySelector('[data-geld-review-key="reviewers"]');
-    expect(section?.querySelector('summary')?.textContent).toBe('Reviews · 1 approval · 1 pending review');
-    expect(section?.querySelectorAll('li')[0]?.textContent).toBe('legacyReview requested');
-    expect(section?.querySelectorAll('li')[1]?.textContent).toBe('assignedReviewer · Request state unavailable');
-    expect(section?.querySelectorAll('li')[2]?.textContent).toBe('approverApproved · Request state unavailable');
+    expect(section?.querySelector('.geld-provider-review__reviewer-summary')?.textContent).toBe('Reviews · 1 approval · 1 pending review');
+    expect(section?.querySelectorAll('.geld-provider-review__reviewer')[0]?.getAttribute('aria-label')).toBe('legacy: Review requested');
+    expect(section?.querySelectorAll('.geld-provider-review__reviewer')[1]?.getAttribute('aria-label')).toBe('assigned: Reviewer · Request state unavailable');
+    expect(section?.querySelectorAll('.geld-provider-review__reviewer')[2]?.getAttribute('aria-label')).toBe('approver: Approved · Request state unavailable');
   });
 
   it('copies native source links and leaves navigation to the provider callback', async () => {
@@ -812,7 +868,7 @@ describe('provider conversation digest', () => {
     expect(section?.querySelector('summary')?.textContent).toBe('Merge requirements · 2 shown');
     expect(section?.querySelectorAll('[data-geld-native-requirement]')).toHaveLength(2);
     expect(section?.textContent).toContain('1+ approval from default reviewers');
-    expect(panel.element.querySelector('[data-geld-review-key="reviewers"] > summary')?.textContent).toBe('Reviews · 1 approval');
+    expect(panel.element.querySelector('[data-geld-review-key="reviewers"] .geld-provider-review__reviewer-summary')?.textContent).toBe('Reviews · 1 approval');
     expect(panel.element.textContent).not.toContain('/2 required approvals');
     expect(panel.element.querySelector('[data-geld-review-key="checks"]')?.textContent).toContain('CI checks · Unavailable');
     expect(panel.element.textContent).toContain('Authentication is required.');
@@ -844,7 +900,7 @@ describe('review standing availability', () => {
     let copied = '';
     const native: ProviderReviewInput = { ...input(), reviewers: [{ author: { id: '1', login: 'known-approver' }, state: 'approved', reviewRequest: 'unknown' }] };
     const panel = renderProviderReviewPanel(host(), native, { unavailable: [{ area: 'reviews', reason: 'The reviewer endpoint returned403.' }], copyText: (text) => { copied = text; } });
-    expect(panel.element.querySelector('[data-geld-review-key="reviewers"] > summary')?.textContent).toBe('Reviews · Partial · 1 observed approval');
+    expect(panel.element.querySelector('[data-geld-review-key="reviewers"] .geld-provider-review__reviewer-summary')?.textContent).toBe('Reviews · Partial · 1 observed approval');
     panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
     await vi.waitFor(() => expect(copied).toContain('Reviews · Partial · 1 observed approval'));
     expect(copied).toContain('Reviews source unavailable: The reviewer endpoint returned403.');
@@ -884,7 +940,7 @@ describe('review standing availability', () => {
 
   it('retains an independently known required-approval fraction even when no author list is readable', () => {
     const panel = renderProviderReviewPanel(host(), { subject, threads: [] }, { approvalsRequired: 2, approvalsLeft: 1, unavailable: [{ area: 'reviews', reason: 'Author lists unavailable' }] });
-    expect(panel.element.querySelector('[data-geld-review-key="reviewers"] > summary')?.textContent).toBe('Reviews · Partial · 1/2 required approvals');
+    expect(panel.element.querySelector('[data-geld-review-key="reviewers"] .geld-provider-review__reviewer-summary')?.textContent).toBe('Reviews · Partial · 1/2 required approvals');
     panel.destroy();
   });
 });

@@ -32,6 +32,29 @@ function json(value: unknown, status = 200, headers: Readonly<Record<string, str
 afterEach(() => { vi.unstubAllGlobals(); document.body.innerHTML = ''; });
 
 describe('GitLab discussion normalization', () => {
+  it.each(['valid', 'foreign', 'wrong-review', 'missing-anchor', 'ambiguous'] as const)('binds only a unique latest matching native verdict note: %s', async change => {
+    const date = (hour: number): string => `2026-11-01T${hour}:00:00Z`;
+    const newestUrl = change === 'foreign' ? 'https://other.example/note_3' : change === 'wrong-review' ? `${page.url}0#note_3` : change === 'missing-anchor' ? page.url : `${page.url}#note_3`;
+    const native = [
+      note(3, 'approved this merge request', { system: true, created_at: date(12), noteable_note_url: newestUrl }),
+      note(1, 'approved this merge request', { system: true, created_at: date(10) }),
+      note(2, 'requested changes', { system: true, created_at: date(11) }),
+      note(5, 'approved this merge request', { system: false, created_at: date(14) }),
+      ...(change === 'ambiguous' ? [note(4, 'approved this merge request', { system: true, created_at: date(12) })] : []),
+    ];
+    vi.stubGlobal('fetch', vi.fn(async (value: string | URL | Request) => {
+      const url = new URL(typeof value === 'string' ? value : value instanceof URL ? value.href : value.url);
+      if (url.pathname.endsWith('/approvals')) return json({ approved_by: [{ user: { id: 23, username: 'reviewer' } }] });
+      if (url.pathname.endsWith('/reviewers')) return json([{ user: { id: 23, username: 'reviewer' }, state: 'unreviewed' }]);
+      if (url.pathname.endsWith('/discussions.json')) return json([discussion('a'.repeat(40), native, { resolvable: false })]);
+      if (url.pathname.endsWith('/pipelines')) return json([]);
+      return json({ iid: 7, sha: SHA, state: 'opened', project_id: 1 });
+    }));
+    const snapshot = await fetchGitLabReview(page, new AbortController().signal);
+    expect(snapshot.input.reviewers?.[0]).toMatchObject({ state: 'approved', reviewRequest: 'pending' });
+    expect(snapshot.input.reviewers?.[0]?.anchor).toBe(change === 'valid' ? 'note_3' : undefined);
+    expect(snapshot.input.reviewers?.[0]?.url).toBe(change === 'valid' ? `${page.url}#note_3` : undefined);
+  });
   it('keeps resolvable ordinary discussions, top-level comments and system activity distinct', () => {
     const parsed = parseGitLabDiscussions([
       discussion('a'.repeat(40), [note(11), note(12, 'Yes, I will fix it.')]),
@@ -506,6 +529,10 @@ describe('review availability from independent native endpoints', () => {
     { name: 'both endpoints known empty', approvalStatus: 200, approvalBody: { approved_by: [] }, reviewerStatus: 200, reviewerBody: [], known: true, summary: 'Reviews · 0 approvals', complete: true },
     { name: 'known approver survives missing reviewers', approvalStatus: 200, approvalBody: { approved_by: [{ user: { id: 10, username: 'approver' } }] }, reviewerStatus: 403, reviewerBody: [], known: true, summary: 'Reviews · Partial · 1 observed approval', complete: false },
     { name: 'known change request survives missing approvals', approvalStatus: 401, approvalBody: {}, reviewerStatus: 200, reviewerBody: [{ user: { id: 11, username: 'changes' }, state: 'requested_changes' }], known: true, summary: 'Reviews · Partial · 1 observed change request', complete: false },
+    { name: 'malformed reviewer preserves approval', approvalStatus: 200, approvalBody: { approved_by: [{ user: { id: 10, username: 'approver' } }] }, reviewerStatus: 200, reviewerBody: [{ user: null }], known: true, summary: 'Reviews · Partial · 1 observed approval', complete: false },
+    { name: 'malformed approver preserves change request', approvalStatus: 200, approvalBody: { approved_by: [{ user: null }] }, reviewerStatus: 200, reviewerBody: [{ user: { id: 11, username: 'changes' }, state: 'requested_changes' }], known: true, summary: 'Reviews · Partial · 1 observed change request', complete: false },
+    { name: 'two malformed sources are unavailable', approvalStatus: 200, approvalBody: { approved_by: [{ user: null }] }, reviewerStatus: 200, reviewerBody: [{ user: null }], known: false, summary: 'Reviews · Unavailable', complete: false },
+    { name: 'valid rows survive malformed siblings in both sources', approvalStatus: 200, approvalBody: { approved_by: [null, { user: { id: 10, username: 'approver' } }, { user: null }] }, reviewerStatus: 200, reviewerBody: [{ user: null }, { user: { id: 11, username: 'changes' }, state: 'requested_changes' }, false], known: true, summary: 'Reviews · Partial · 1 observed approval · 1 observed change request', complete: false },
     { name: 'malformed approval list is not empty', approvalStatus: 200, approvalBody: { approved_by: null }, reviewerStatus: 200, reviewerBody: [], known: true, summary: 'Reviews · Partial', complete: false },
     { name: 'absent approval list and unread reviewers', approvalStatus: 200, approvalBody: {}, reviewerStatus: 403, reviewerBody: [], known: false, summary: 'Reviews · Unavailable', complete: false },
   ])('$name', async ({ approvalStatus, approvalBody, reviewerStatus, reviewerBody, known, summary, complete }) => {
@@ -525,7 +552,7 @@ describe('review availability from independent native endpoints', () => {
     const host = document.createElement('div'); document.body.append(host);
     const panel = renderProviderReviewPanel(host, snapshot.input, { unavailable: snapshot.unavailable, complete: snapshot.complete, approvalsRequired: snapshot.approvalsRequired, approvalsLeft: snapshot.approvalsLeft });
     const section = panel.element.querySelector('[data-geld-review-key="reviewers"]');
-    expect(section?.querySelector('summary')?.textContent).toBe(summary);
+    expect(section?.querySelector('.geld-provider-review__reviewer-summary')?.textContent).toBe(summary);
     if (!complete) {
       expect(section?.textContent).not.toContain('0 approvals');
       expect(section?.textContent).not.toContain('No reviewer standings.');
@@ -534,4 +561,23 @@ describe('review availability from independent native endpoints', () => {
     for (const reviewer of snapshot.input.reviewers ?? []) expect(section?.textContent).toContain(reviewer.author.login);
     panel.destroy(); host.remove();
   });
+});
+
+
+it('keeps discussion evidence and required approval facts when optional reviewer rows are malformed', async () => {
+  vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockImplementation(async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith('/approvals')) return json({ approved_by: [{ user: null }, { user: { id: 10, username: 'approver' } }], approvals_required: 2, approvals_left: 1 });
+    if (url.pathname.endsWith('/reviewers')) return json([{ user: null }, { user: { id: 10, username: 'approver' }, state: 'unreviewed' }]);
+    if (url.pathname.endsWith('/discussions.json')) return json([discussion('abcdef123456', [note(1)], { active: true })]);
+    if (url.pathname.endsWith('/pipelines')) return json([]);
+    return json({ iid: 7, sha: SHA, state: 'opened' });
+  }));
+  const snapshot = await fetchGitLabReview(page, new AbortController().signal);
+  expect(snapshot.input.reviewers).toEqual([{ author: { id: '10', login: 'approver' }, state: 'approved', reviewRequest: 'pending' }]);
+  expect(snapshot.input.threads[0]?.comments[0]?.body).toBe('Could this fail?');
+  expect(snapshot.sourceCoverage.comments).toBe('complete');
+  expect(snapshot.approvalsRequired).toBe(2);expect(snapshot.approvalsLeft).toBe(1);
+  expect(snapshot.complete).toBe(false);
+  expect(snapshot.unavailable).toEqual([expect.objectContaining({ area: 'reviews' }), expect.objectContaining({ area: 'reviews' })]);
 });

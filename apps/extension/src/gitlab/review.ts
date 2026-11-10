@@ -441,29 +441,49 @@ export async function fetchGitLabReview(page: ProviderReviewPage, signal: AbortS
   const approvers: readonly unknown[] | null = approvals !== null && Array.isArray(approvals.approved_by) ? approvals.approved_by : null;
   if (approvers === null) areaError('reviews', approvalResult?.status === 'rejected' ? approvalResult.reason : 'GitLab did not return an approval list.');
   const reviewerMap = new Map<string, ProviderReviewReviewer>();
+  let approvalsKnown = approvers?.length === 0;
   if (approvers !== null) {
     for (const item of approvers) {
-      if (!record(item)) throw new GitLabReviewError('GitLab returned invalid approver data.');
-      const author = authorOf(item.user);
-      reviewerMap.set(author.id, { author, state: 'approved', reviewRequest: 'unknown' });
+      try {
+        if (!record(item)) throw new GitLabReviewError('GitLab returned invalid approver data.');
+        const author = authorOf(item.user);
+        reviewerMap.set(author.id, { author, state: 'approved', reviewRequest: 'unknown' });
+        approvalsKnown = true;
+      } catch (error) { areaError('reviews', error); }
     }
   }
   const reviewerResult = results[3];
+  let reviewersKnown = reviewerResult?.status === 'fulfilled' && reviewerResult.value.length === 0;
   if (reviewerResult?.status === 'fulfilled') {
     for (const item of reviewerResult.value) {
-      if (!record(item)) throw new GitLabReviewError('GitLab returned invalid reviewer data.');
-      const author = authorOf(item.user);
-      const standing = reviewerMap.get(author.id);
-      if (item.state === 'approved' || item.state === 'requested_changes') {
-        reviewerMap.set(author.id, { author, state: item.state === 'approved' ? 'approved' : 'changes_requested', reviewRequest: 'not-pending' });
-      } else if (item.state === 'reviewed' || item.state === 'unreviewed') {
-        reviewerMap.set(author.id, { author, state: standing?.state ?? (item.state === 'reviewed' ? 'commented' : 'pending'), reviewRequest: item.state === 'unreviewed' ? 'pending' : 'not-pending' });
-      } else {
-        reviewerMap.set(author.id, { author, state: standing?.state ?? 'pending', reviewRequest: 'unknown' });
-        areaError('reviews', 'GitLab returned an unknown reviewer state.');
-      }
+      try {
+        if (!record(item)) throw new GitLabReviewError('GitLab returned invalid reviewer data.');
+        const author = authorOf(item.user);
+        const standing = reviewerMap.get(author.id);
+        if (item.state === 'approved' || item.state === 'requested_changes') {
+          reviewerMap.set(author.id, { author, state: item.state === 'approved' ? 'approved' : 'changes_requested', reviewRequest: 'not-pending' });
+        } else if (item.state === 'reviewed' || item.state === 'unreviewed') {
+          reviewerMap.set(author.id, { author, state: standing?.state ?? (item.state === 'reviewed' ? 'commented' : 'pending'), reviewRequest: item.state === 'unreviewed' ? 'pending' : 'not-pending' });
+        } else {
+          reviewerMap.set(author.id, { author, state: standing?.state ?? 'pending', reviewRequest: 'unknown' });
+          areaError('reviews', 'GitLab returned an unknown reviewer state.');
+        }
+        reviewersKnown = true;
+      } catch (error) { areaError('reviews', error); }
     }
   } else if (reviewerResult?.status === 'rejected') areaError('reviews', reviewerResult.reason);
+  for (const [id, reviewer] of reviewerMap) {
+    const wording = reviewer.state === 'approved' ? 'approved this merge request' : reviewer.state === 'changes_requested' ? 'requested changes' : null;
+    if (wording === null) continue;
+    const matching = parsed.events.filter(event => event.author.id === id && event.body.trim() === wording);
+    const newest = matching.reduce((latest, event) => Math.max(latest, Date.parse(event.createdAt)), -Infinity);
+    const latest = matching.filter(event => Date.parse(event.createdAt) === newest);
+    const event = latest.length === 1 ? latest[0] : undefined;
+    if (event === undefined) continue;
+    const url = new URL(event.url);
+    if (url.origin !== origin || url.pathname !== new URL(base).pathname || url.search !== '' || url.username || url.password || url.hash !== `#note_${event.id}`) continue;
+    reviewerMap.set(id, { ...reviewer, url: url.href, anchor: url.hash.slice(1) });
+  }
   const pipelineResult = results[2];
   const pipelines = pipelineResult?.status === 'fulfilled' ? pipelineResult.value : [];
   if (pipelineResult?.status === 'rejected') areaError('checks', pipelineResult.reason);
@@ -505,7 +525,7 @@ export async function fetchGitLabReview(page: ProviderReviewPage, signal: AbortS
   const state = mergeRequestState(latest.state);
   const complete = unavailable.length === 0;
   return {
-    input: { subject, threads: parsed.threads, ...(approvers !== null || reviewerResult?.status === 'fulfilled' ? { reviewers: [...reviewerMap.values()] } : {}), checks, checksCoverage, complete, closed: state === 'closed' || state === 'merged' },
+    input: { subject, threads: parsed.threads, ...(approvalsKnown || reviewersKnown ? { reviewers: [...reviewerMap.values()] } : {}), checks, checksCoverage, complete, closed: state === 'closed' || state === 'merged' },
     reviewerScope: projectId !== null && noteableId !== null && mr.web_url === base && nativeId(latest.project_id) === projectId
       && nativeId(latest.id) === noteableId && nativeId(latest.iid) === page.number && latest.web_url === base ? { subject, projectId, noteableId } : null,
     comments: parsed.comments,
