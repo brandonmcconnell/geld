@@ -93,7 +93,7 @@ it('refuses partial results, mismatched immutable revisions, oversized records a
 
 it('validates persisted records instead of trusting old or corrupt shapes', async () => {
   const key = providerDiffKey(page());
-  const valid = { schema: 1, key, storedAt: Date.now(), revision: result().revision, files: result().files };
+  const valid = { schema: 3, key, storedAt: Date.now(), revision: result().revision, files: result().files };
   const invalid: readonly unknown[] = [
     null, [], { ...valid, schema: 0 }, { ...valid, key: 'github:acme:widgets:1:sha' }, { ...valid, storedAt: Date.now() + 120_000 },
     { ...valid, revision: '' }, { ...valid, files: [{ path: '', additions: 1, deletions: 0 }] },
@@ -241,25 +241,24 @@ function withSourceFacts(): ProviderDiffResult {
   return { ...result(), sourceFacts };
 }
 
-it('round trips only same-snapshot schema2 facts and never persists source bodies', async () => {
+it('round trips only same-snapshot schema3 facts and never persists source bodies', async () => {
   const store = memory();const first = cache(store.backend);const acquired = withSourceFacts();
   first.set(page(), acquired);await vi.advanceTimersByTimeAsync(0);
-  expect([...store.values.values()][0]).toMatchObject({ schema: 2, sourceFacts: acquired.sourceFacts });
+  expect([...store.values.values()][0]).toMatchObject({ schema: 3, sourceFacts: acquired.sourceFacts });
   expect(JSON.stringify([...store.values.values()])).not.toContain('private source');
   const reloaded = cache(store.backend);await reloaded.load(page());
   expect(reloaded.get(page())?.result.sourceFacts).toEqual(acquired.sourceFacts);
   expect(reloaded.get(page())?.result.patches).toBeUndefined();
 });
 
-it('keeps legacy schema1 exact-head counts but ignores even an injected source proof', async () => {
+it.each([1, 2])('rejects legacy schema%s snapshots that discarded removed imports', async (schema) => {
   const store = memory();const key = providerDiffKey(page());
-  store.values.set(providerCacheSlot(key), { schema: 1, key, storedAt: Date.now(), revision: result().revision, files: result().files, sourceFacts: withSourceFacts().sourceFacts });
+  store.values.set(providerCacheSlot(key), { schema, key, storedAt: Date.now(), revision: result().revision, files: result().files, sourceFacts: withSourceFacts().sourceFacts });
   const value = cache(store.backend);await value.load(page());
-  expect(value.get(page(), true)?.result.files).toEqual(result().files);
-  expect(value.get(page(), true)?.result.sourceFacts).toBeUndefined();
+  expect(value.get(page(), true)).toBeNull();
 });
 
-it('does not attach mismatched or malformed schema2 facts to otherwise valid counts', async () => {
+it('does not attach mismatched or malformed schema3 facts to otherwise valid counts', async () => {
   const acquired = withSourceFacts();const facts = acquired.sourceFacts;
   if (facts === undefined) throw new Error('Missing facts');
   for (const sourceFacts of [
@@ -268,19 +267,19 @@ it('does not attach mismatched or malformed schema2 facts to otherwise valid cou
     { ...facts, newPaths: [{ path: 'missing.test.ts', newPath: 'missing.test.ts' }] },
   ]) {
     const store = memory();const key = providerDiffKey(page());
-    store.values.set(providerCacheSlot(key), { schema: 2, key, storedAt: Date.now(), revision: acquired.revision, files: acquired.files, sourceFacts });
+    store.values.set(providerCacheSlot(key), { schema: 3, key, storedAt: Date.now(), revision: acquired.revision, files: acquired.files, sourceFacts });
     const value = cache(store.backend);await value.load(page());
     expect(value.get(page(), true)?.result.files).toEqual(acquired.files);
     expect(value.get(page(), true)?.result.sourceFacts).toBeUndefined();
   }
 });
 
-it('drops old facts when a watched counts-only legacy snapshot replaces the record', async () => {
+it('drops old facts when a watched counts-only snapshot replaces the record', async () => {
   const store = memory();const value = cache(store.backend);value.set(page(), withSourceFacts());await vi.advanceTimersByTimeAsync(0);
   expect(value.get(page())?.result.sourceFacts).toBeDefined();
   const key = providerDiffKey(page());
   await vi.advanceTimersByTimeAsync(1);
-  await store.backend.write(providerCacheSlot(key), { schema: 1, key, storedAt: Date.now(), revision: result().revision, files: result().files });
+  await store.backend.write(providerCacheSlot(key), { schema: 3, key, storedAt: Date.now(), revision: result().revision, files: result().files });
   expect(value.get(page())?.result.sourceFacts).toBeUndefined();
   expect(value.get(page())?.result.files).toEqual(result().files);
 });
@@ -295,4 +294,22 @@ it('preserves count cache coverage when optional source facts exceed the existin
   expect(value.get(page(), true)?.result.files).toHaveLength(500);
   expect(value.get(page(), true)?.result.sourceFacts).toBeUndefined();
   expect(JSON.stringify([...store.values.values()])).not.toContain('sourceFacts');
+});
+
+
+it('round trips removed import links without retaining diff source text', async () => {
+  const store = memory();const first = cache(store.backend);
+  const original = result();
+  const files = original.files.map(file => ({ ...file, removedImports: ['./old', '../shared'] }));
+  first.set(page(), { ...original, files });await vi.advanceTimersByTimeAsync(0);
+  const reloaded = cache(store.backend);await reloaded.load(page());
+  expect(reloaded.get(page(), true)?.result.files).toEqual(files);
+  expect(JSON.stringify([...store.values.values()])).not.toContain('private source');
+});
+
+it.each([null, './old', [42], [''], ['x'.repeat(4097)], ['a\u0000b'], ['./old', './old'], Array.from({ length: 2001 }, (_, n) => `./${n}`)])('rejects malformed or unbounded removed import metadata: %j', async removedImports => {
+  const store = memory();const key = providerDiffKey(page());
+  store.values.set(providerCacheSlot(key), { schema: 3, key, storedAt: Date.now(), revision: result().revision, files: result().files.map(file => ({ ...file, removedImports })) });
+  const reloaded = cache(store.backend);await reloaded.load(page());
+  expect(reloaded.get(page(), true)).toBeNull();
 });

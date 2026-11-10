@@ -3508,3 +3508,12 @@ Source-renderer state is keyed by review identity and native comment identity ra
 An opened thread moving into a previously untouched resolved group opens that group, but an explicitly folded group stays folded.
 Push-round choices follow a shared native event when another event joins the same boundary.
 Provider aggregate and group counts use shared native-thread totals, including older published items that combined several threads.
+
+Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
+Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
+
+Malformed GitLab approval or reviewer rows are isolated individually and mark reviews partial without discarding valid standings, discussion evidence or native required/remaining counts.
+An all-malformed source supplies no known empty reviewer list.
+
+Bitbucket hidden-people matching and exact-rule removal use the same canonical `bitbucket.org/uuid/<uuid>` identity as PR lists, normalized from the native account UUID.
+Keep display logins separate, leave malformed account identities visible, and never remove a wildcard during a per-person unhide.
