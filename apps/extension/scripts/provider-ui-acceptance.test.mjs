@@ -138,6 +138,11 @@ test('both category controls must be visible, discoverable and bound to actual p
   categories();document.body.insertAdjacentHTML('beforeend', '<div id="tests"></div>');
   assert.throws(() => assertDiscoverableProviderCategories(providerUiProbe('gitlab')), /actual category panel/);
 });
+test('reads the category label apart from the count rendered straight after it', () => {
+  document.body.innerHTML = '<aside><button class="geld-provider-category-header" aria-controls="essential" aria-expanded="true"><span class="geld-provider-category-label">Essential</span><span>2</span></button><div id="essential"></div><button class="geld-provider-category-header" aria-controls="tests" aria-expanded="false"><span class="geld-provider-category-label">Tests</span><span>1</span></button><div id="tests"></div></aside>';
+  assert.deepEqual(providerUiProbe('gitlab').categories.map(entry => entry.kind), ['essential', 'tests']);
+  assertDiscoverableProviderCategories(providerUiProbe('gitlab'));
+});
 test('a hidden native sidebar or duplicate visible copy cannot masquerade as the category entry point', () => {
   categories();document.querySelector('aside').hidden = true;
   assert.throws(() => assertDiscoverableProviderCategories(providerUiProbe('gitlab')), /visible/);
@@ -153,6 +158,14 @@ function dashboard() {
   document.body.style.cssText = 'font-family:Arial;font-size:14px;color:rgb(23,23,23);background-color:rgb(255,255,255)';
   document.body.innerHTML = '<div class="issuable-discussion"><article id="note_1" data-testid="noteable-note-container" data-geld-provider-native-find="folded" hidden="until-found"><div class="timeline-content" style="background-color:rgb(255,255,255)">Native comment text</div></article></div><section class="geld-provider-review" data-provider="gitlab"><article data-geld-source="note_1">Digest copy</article><header class="geld-provider-review__header">Geld<button class="geld-provider-review__copy" aria-label="Copy digest"></button></header><button data-geld-original-conversation>Show original conversation</button><section id="section-reviewers" data-geld-review-key="reviewers"><button id="reviewer-toggle" data-geld-review-toggle aria-controls="reviewers" aria-expanded="false">Reviews</button><div id="reviewers" class="geld-provider-review__section-content" aria-labelledby="reviewer-toggle" hidden></div></section><section id="section-checks" data-geld-review-key="checks"><button id="checks-toggle" data-geld-review-toggle aria-controls="checks" aria-expanded="true">CI checks</button><div id="checks" class="geld-provider-review__section-content" aria-labelledby="checks-toggle"></div></section></section>';
 }
+test('a digest with a disclosure per thread and comment stays within its evidence bound', () => {
+  dashboard();
+  const checks = document.querySelector('#checks');
+  for (let index = 0; index < 60; index++) checks.insertAdjacentHTML('beforeend', `<section id="section-thread-${index}" data-geld-review-key="thread-${index}"><button id="thread-toggle-${index}" data-geld-review-toggle aria-controls="thread-${index}" aria-expanded="false">Thread</button><div id="thread-${index}" class="geld-provider-review__section-content" aria-labelledby="thread-toggle-${index}" hidden></div></section>`);
+  const value = providerDashboardProbe('bind');
+  assert.equal(value.truncated, false);
+  assert.equal(value.sectionBindings.length, 62);
+});
 test('dashboard proof includes actual native suppression and exact original-node custody across restore', () => {
   dashboard();assertProviderDashboard(providerDashboardProbe('bind'));
   const native = document.querySelector('#note_1');native.removeAttribute('hidden');
