@@ -3057,6 +3057,16 @@ Treating the direct native stream as an unknown wrapper forced inline fallback: 
 The independent two-cycle whitespace test gives each validated trusted input a separate mutation budget rather than accumulating unrelated earlier-cycle records.
 The two-input maximum, current-frame and actor checks, and the per-phase 4,096-record refusal remain in force, with the rejected phase recorded on overflow.
 
+The literal installed `gitlab-shell` acceptance is independent of existing GitLab cases and is excluded from default, regression and all selections.
+It uses one pinned public Step Runner MR253 visit, with master initially off, and permits at most one trusted original file-tree reveal when native streaming has not mounted the target nested `.gitlab-ci.yml`.
+The harness must bind the genuine complete new1–15 prefix and full native revision tuple before testing local run scripts on new7 and new9, with no raw-file, root-include, stylesheet-oracle or injected source fallback.
+Mounted old classic scripts, unresolved expression and quoted scripts, final jobs without a following boundary, and renderer line terminators must retain zero owned ranges.
+The acceptance reports bounded observed negative line numbers and does not claim absent old-side or final-job rows were exercised.
+Qualify both native link media and effective stylesheet media through loaded readable CSSOM, compare actual Custom Highlight colors with native Rouge-role colors, and preserve original Text nodes, line anchors, native typography, Viewed state and foreign highlights.
+Only a real mouse drag supplies selection evidence, and unsupported copy remains explicitly unverified.
+Keep the complete original raw settings vector, change only the master flag, remove owned highlighting and test selection, close the native page, then restore exact original storage presence and value.
+Missing native source, original controls or usable native palettes is unavailable rather than a substitute source pass, and failure reporting omits unknown fields, raw bootstrap, console, exception and URL details.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
