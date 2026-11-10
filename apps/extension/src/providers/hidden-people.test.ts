@@ -35,7 +35,7 @@ describe('provider hidden people projection', () => {
     expect(projectProviderPeople(input, [], [], ['bitbucket:alice'], new Set()).people).toEqual([]);
     const result = projectProviderPeople(input, [], [], ['gitlab:ALICE'], new Set(['a']));
     expect(result.input.threads).toEqual(input.threads);
-    expect(result.people).toEqual([{ id: 'a', login: 'alice', shown: true, exactRules: ['gitlab:ALICE'] }]);
+    expect(result.people).toEqual([{ id: 'a', login: 'alice', ruleIdentity: 'alice', shown: true, exactRules: ['gitlab:ALICE'] }]);
     expect(result.hiddenAnchors.size).toBe(0);
   });
 
@@ -43,4 +43,29 @@ describe('provider hidden people projection', () => {
     const result = projectProviderPeople(input, [], [], ['a*'], new Set());
     expect(result.people[0]?.exactRules).toEqual([]);
   });
+});
+
+
+it('uses the same canonical Bitbucket UUID rule for comments, reviewers, bots and activity', () => {
+  const uuid = '7177c565-3bb4-44d3-b17b-e791dfb8fed8';
+  const identity = `bitbucket.org/uuid/${uuid}`;
+  const author = { id: `{${uuid.toUpperCase()}}`, login: 'display-nickname' };
+  const item = { ...hidden, author };
+  const source: ProviderReviewInput = {
+    subject: { ...subject, provider: 'bitbucket', origin: 'https://bitbucket.org' },
+    threads: [{ id: 'thread', anchor: item.anchor, url: item.url, comments: [item], resolved: false, outdated: false }],
+    reviewers: [{ author, state: 'approved' }], bots: [{ id: 'bot', authorId: author.id, login: author.login }],
+    checks: [{ name: 'Review', sha: subject.headSha, status: 'completed', conclusion: 'success', authorId: author.id }],
+  };
+  const event = { id: 'event', author, url: item.url, body: 'Approved', createdAt: item.createdAt };
+  for (const rule of [identity.toUpperCase(), `bitbucket:${identity}`, 'bitbucket.org/uuid/7177*']) {
+    const result = projectProviderPeople(source, [item], [event], [rule], new Set());
+    expect(result.input.threads).toEqual([]);expect(result.comments).toEqual([]);expect(result.events).toEqual([]);
+    expect(result.input.reviewers).toEqual([]);expect(result.input.bots).toEqual([]);expect(result.input.checks).toEqual([]);
+    expect(result.people).toEqual([{ id: author.id, login: author.login, ruleIdentity: identity, shown: false, exactRules: rule.includes('*') ? [] : [rule] }]);
+    const peek = projectProviderPeople(source, [item], [event], [rule], new Set([author.id]));
+    expect(peek.input.threads).toEqual(source.threads);expect(peek.comments).toEqual([item]);expect(peek.events).toEqual([event]);
+  }
+  expect(projectProviderPeople(source, [item], [event], ['display-nickname'], new Set()).people).toEqual([]);
+  expect(projectProviderPeople({ ...source, threads: [], reviewers: [{ author: { id: 'invalid', login: identity }, state: 'approved' }], bots: [] }, [], [], [identity], new Set()).people).toEqual([]);
 });
