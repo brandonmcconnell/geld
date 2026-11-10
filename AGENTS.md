@@ -2939,6 +2939,13 @@ Module-only capture retains the asset SHA and one bounded parser-verified regist
 The six-MiB response check is applied after Puppeteer buffers decoded bytes and is not a streaming allocation limit.
 A captured registration-shaped source slice does not establish loader binding, runtime getter authority or native preference state.
 
+
+- **Owned Bitbucket shell ranges use the actual provider Bash role reference**: the retained standalone Syntax-On sample shows orange strings and blue-bolder variables and builtin read, while every native/Geld comparison in that master-off characterization remains unmeasured.
+  Only owned embedded-shell string, variable and built_in highlight colors use those native accent variables, retaining their previous native code-token variables as fallbacks and keeping title separate from builtin.
+  The installed shell and standalone declared-model oracles select the same primary host variable or absent-property fallback, rejecting present empty or invalid colors instead of treating them as absent.
+  Native ADS variables and YAML token spans are never reassigned, and comment, grammar, plain and initial-On eligibility remain unchanged.
+  Selected-light source/style characterization does not establish enabled embedded-shell palette equivalence, native dark, comment-variable availability or complete classifier equivalence.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
