@@ -3529,3 +3529,12 @@ Offline helper extraction stops at the next top-level function declaration so ne
 GitLab and Bitbucket install the shared content-script error capture after retiring an earlier injected copy and dispose it with their provider runtime.
 Only extension-owned errors enter that capture, and the background's existing reporting preference governs remote submission.
 Shared Related links settings describe issues and pull or merge requests without promising GitHub-only sidebar placement or a stack on providers that do not expose one.
+
+Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
+Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
+
+Malformed GitLab approval or reviewer rows are isolated individually and mark reviews partial without discarding valid standings, discussion evidence or native required/remaining counts.
+An all-malformed source supplies no known empty reviewer list.
+
+Bitbucket hidden-people matching and exact-rule removal use the same canonical `bitbucket.org/uuid/<uuid>` identity as PR lists, normalized from the native account UUID.
+Keep display logins separate, leave malformed account identities visible, and never remove a wildcard during a per-person unhide.
