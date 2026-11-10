@@ -57,6 +57,21 @@ it('reports unreadable sources instead of claiming an empty dependency graph is 
   expect(document.querySelectorAll('[data-geld-flow-path]')).toHaveLength(2);
 });
 
+it('dismisses Escape before provider shortcuts can prevent native dialog cancellation', () => {
+  const host = fixture(async () => ({ lines: [], bytes: 0 }));
+  host.querySelector('button')?.click();
+  const shortcut = vi.fn((event: KeyboardEvent) => event.preventDefault());
+  document.addEventListener('keydown', shortcut);
+  try {
+    const key = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.querySelector('.geld-provider-flow__tools button')?.dispatchEvent(key);
+    expect(key.defaultPrevented).toBe(true);
+    expect(shortcut).not.toHaveBeenCalled();
+    expect(document.querySelector('dialog')).toBeNull();
+    expect(document.activeElement).toBe(host.querySelector('button'));
+  } finally { document.removeEventListener('keydown', shortcut); }
+});
+
 it('does not let a late source read reopen or update a closed dialog', async () => {
   let complete: (value: ProviderWholeSourceBody) => void = () => {};
   const read = vi.fn(() => new Promise<ProviderWholeSourceBody>(resolve => { complete = resolve; }));

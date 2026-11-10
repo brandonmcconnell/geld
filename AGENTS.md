@@ -3550,6 +3550,10 @@ Only those verified rows participate in local Hidden people folding and visit pe
 Reviewer assignments, approval controls and the provider's assigned-reviewer total remain native and unchanged.
 Display names or initials alone are never enough, so Bitbucket widgets without durable identities remain untouched.
 
+GitLab can prevent native dialog cancellation through page shortcuts, so provider Flow handles Escape inside its own dialog, stops propagation and restores the current trigger without relying only on the browser cancel event.
+Installed fragment acceptance measures GitLab's native discussion container when it wraps the source note;
+the child keeps its own permalink and may have no hidden attribute while its parent is correctly folded.
+
 Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
 Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
 

@@ -85,6 +85,11 @@ export class ProviderFileFlow {
     this.status = element('p', '', 'geld-provider-flow__status');this.status.setAttribute('role', 'status');dialog.append(this.status);
     this.content = element('div', '', 'geld-provider-flow__content');dialog.append(this.content);
     dialog.addEventListener('cancel', (event) => { event.preventDefault();this.close(); });
+    // Provider-wide shortcuts can cancel the browser's default dialog dismissal.
+    dialog.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || this.dialog !== dialog) return;
+      event.preventDefault();event.stopPropagation();this.close();
+    }, { capture: true });
     dialog.addEventListener('click', (event) => { if (event.target === dialog) this.close(); });
     dialog.addEventListener('close', () => { if (this.dialog === dialog) this.close(); });
     this.dialog = dialog;document.body.append(dialog);dialog.showModal();close.focus();this.render();void this.read();
