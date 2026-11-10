@@ -179,7 +179,7 @@
           "owner": "acme",
           "repo": "platform"
         },
-        "private": false,
+        "private": true,
         "permission": "write",
         "url": "https://github.com/acme/platform"
       },

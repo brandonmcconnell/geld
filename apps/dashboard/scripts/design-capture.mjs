@@ -141,6 +141,9 @@ let browser;
       await shot(page, 'sidebar-collapsed', 'Collapsed workspace navigation', group);
       await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click();
     }
+    await page.locator('.star-button').first().click();
+    await shot(page, 'queue-starred', 'Selected and unselected Sharp icons', group);
+    await page.locator('.star-button[aria-pressed=true]').first().click();
     if (group === 'desktop') {
       await page.locator('.pull-row:visible input[type=checkbox]').first().check();
       await shot(page, 'queue-selection', 'Selected review and indeterminate checkbox', group);
@@ -416,6 +419,7 @@ let browser;
     ['billing', '/settings/billing', {}],
     ['provider-dialog', '/settings/providers', {}],
     ['queue-selection', '/', {}],
+    ['queue-starred', '/', {}],
     ['inbox-popover', '/', {}],
     ['not-found', '/not-a-dashboard-page', {}],
   ]) {
@@ -423,6 +427,7 @@ let browser;
     await go(dark.page, url);
     if (name === 'provider-dialog')
       await dark.page.getByRole('button', { name: 'Add a provider', exact: true }).click();
+    if (name === 'queue-starred') await dark.page.locator('.star-button').first().click();
     if (name === 'queue-selection') await dark.page.locator('.pull-row:visible input[type=checkbox]').first().check();
     if (name === 'inbox-popover') {
       await dark.page.getByRole('button', { name: 'Open inbox', exact: true }).click();
