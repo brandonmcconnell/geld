@@ -2803,6 +2803,12 @@ The standalone first-Enter diagnostic keeps only the latest128 focus, trusted-in
 This read-only trace records neither stacks, text, HTML, URLs, input values nor arbitrary IDs or classes, and neither restores focus nor assigns a cause from mutation delivery order.
 The first-Enter trace emits numeric old/new line coordinates and side only for an unambiguous direct native line-number anchor in the current exact source row, retaining opaque row/cell identities instead of hrefs, DOM IDs or code text.
 Standalone startup and later count assertions retain their phase and actual runtime/header count projection before asserting, so an early contradiction remains diagnosable without weakening startup requirements or inventing a readiness wait.
+A native context reaction can focus a newly inserted line-number anchor while the original owned Show remains connected;
+fresh266 observed OLD99 on a physical row also carrying NEW99, without identifying its native caller.
+An optional provider-specific recognizer may return only a row newly inserted after its exact original gap activation, bounded by the original physical source neighbors, and shared focus custody separately requires that row's new-side coordinate and text to match the current immutable body and requested missing fold extent.
+One trusted Show can reclaim its same current owned control at most once, only if it held focus immediately before activation and its source generation, lease, URL, root and open fold remain current;
+unrelated focus or subsequent trusted keyboard/pointer input cancels custody, and operation completion, abort or the existing deadline removes the listener.
+An OLD-side anchor supplies no old-source authority, BODY or preexisting links never qualify, and API-only or other provider surfaces gain no generic focus exception.
 A missing native Viewed control is preserved absence and supplies no proof about checkbox state or Viewed-toggle behavior.
 The installed whole-context phase requalifies the complete observed immutable response against its retained fixture digest and actual current native head, records unavailable authority explicitly, and never turns a retained D03 snapshot into proof about an unseen target.
 
