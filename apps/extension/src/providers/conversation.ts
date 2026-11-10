@@ -311,6 +311,7 @@ export class ProviderConversation {
           if (!current()) return false;
           return action.activate({ ...context, current });
         } })) ?? [] }),
+        ...(snapshot.renderEvent === undefined ? {} : { renderEvent: snapshot.renderEvent }),
         ...(snapshot.renderComment === undefined ? {} : { renderComment: snapshot.renderComment }),
         ...(snapshot.commentSignature === undefined ? {} : { commentSignature: snapshot.commentSignature }),
         ...(snapshot.authorPresentation === undefined ? {} : { authorPresentation: snapshot.authorPresentation }),
@@ -448,7 +449,11 @@ export class ProviderConversation {
     this.viewControls = providerDigestViewChoice(this.adapter.id, settings, async view => {
       const from = document.activeElement;
       if (from !== null && this.viewControls?.contains(from)) this.viewFocus = { key: this.key, view, from };
-      try { await choose(view); } catch (error) { this.viewFocus = null;throw error; }
+      if (view === 'digest') {
+        this.originalsExpanded = false;this.originalsShown.clear();
+        for (const entry of this.nativeEntries) this.nativeFind?.allowCompact(entry.key);
+      }
+      try { await choose(view);if (view === 'digest') { this.syncCompact();this.changed(); } } catch (error) { this.viewFocus = null;throw error; }
     }, { menu: settings.prOverview, aboveDescription: settings.digestAboveDescription, ...(this.services.chooseDigestPosition === undefined ? {} : { choosePosition: this.services.chooseDigestPosition }) });
     this.viewSignature = signature;
     if (settings.prOverview) host.prepend(this.viewControls);

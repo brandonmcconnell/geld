@@ -4,8 +4,8 @@
   display: inline-grid;
   place-items: center;
   vertical-align: middle;
-  margin-inline-end: var(--geld-provider-space-2);
-  width: var(--geld-provider-space-6);
+  margin-inline-end: 4px;
+  width: 24px;
   height: var(--geld-provider-space-6);
   border: 0;
   border-radius: var(--geld-provider-radius);
@@ -18,3 +18,22 @@
 .geld-provider-description-section[aria-expanded="false"] svg { transform: rotate(-90deg); }
 .geld-provider-description-section:hover { background: var(--geld-provider-button-hover-bg); color: var(--geld-provider-text); }
 .geld-provider-description-section:focus-visible { outline: var(--geld-provider-focus-outline); outline-offset: var(--geld-provider-focus-offset); box-shadow: var(--geld-provider-focus-ring); }
+
+[data-geld-provider-description-heading] { cursor: pointer; }
+[data-geld-provider-description-depth] {
+  position: relative;
+  margin-inline-start: calc(var(--geld-provider-description-depth) * 28px) !important;
+}
+[data-geld-provider-description-depth]::before {
+  content: '';
+  position: absolute;
+  inset-block-start: 0;
+  inset-block-end: calc(-1 * var(--geld-provider-description-gap, 0px) - 1px);
+  inset-inline-start: calc(var(--geld-provider-description-depth) * -28px - var(--geld-provider-description-edge, 0px));
+  inline-size: calc((var(--geld-provider-description-depth) + 1) * 28px);
+  background-image: var(--geld-provider-description-rails, none);
+  background-position: var(--geld-provider-description-positions);
+  background-size: var(--geld-provider-description-sizes);
+  background-repeat: no-repeat;
+  pointer-events: none;
+}

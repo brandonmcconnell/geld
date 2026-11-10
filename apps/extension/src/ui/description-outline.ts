@@ -51,3 +51,45 @@ export function hiddenBlocks(outline: readonly OutlineHeading[], isOpen: (headin
   }
   return hidden;
 }
+
+/**
+ * One vertical rail beside a block: for the open section at nesting `level`, passing on to the next block
+ * (`through`), stopping at this block's last line (`end`), or, on an open heading itself, starting at its
+ * chevron (`own`).
+ */
+export interface Rail {
+  readonly level: number;
+  readonly kind: 'through' | 'end' | 'own';
+}
+
+export interface BlockRails {
+  /** Open sections the block sits in, which is how far it is indented. */
+  readonly depth: number;
+  readonly rails: readonly Rail[];
+}
+
+/**
+ * The indentation and rails of every visible block: each open section draws a line from its heading's chevron
+ * down to the end of its last visible block, so nested sections read as a tree.
+ */
+export function railsOf(blockCount: number, outline: readonly OutlineHeading[], hidden: ReadonlySet<number>, isOpen: (heading: OutlineHeading) => boolean): Map<number, BlockRails> {
+  const lastVisible = new Map<number, number>();
+  for (const heading of outline) {
+    for (let index = heading.end - 1; index > heading.index; index--) {
+      if (!hidden.has(index)) {
+        lastVisible.set(heading.index, index);
+        break;
+      }
+    }
+  }
+  const result = new Map<number, BlockRails>();
+  for (let index = 0; index < blockCount; index++) {
+    if (hidden.has(index)) continue;
+    const enclosing = outline.filter((heading) => heading.index < index && index < heading.end);
+    const rails: Rail[] = enclosing.map((heading, level) => ({ level, kind: lastVisible.get(heading.index) === index ? 'end' : 'through' }));
+    const own = outline.find((heading) => heading.index === index);
+    if (own !== undefined && isOpen(own) && lastVisible.has(own.index)) rails.push({ level: enclosing.length, kind: 'own' });
+    if (enclosing.length > 0 || rails.length > 0) result.set(index, { depth: enclosing.length, rails });
+  }
+  return result;
+}

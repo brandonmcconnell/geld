@@ -3643,3 +3643,19 @@ The larger player preserves position, mute, volume and speed, resumes only an al
 Disposal stops the owned media request, and a changed source closes its dialog.
 Digest refreshes preserve focus on the first summary of a closed details menu, since its trigger remains visible even when the menu body is hidden.
 An outer closed details body still hides nested summaries, and hidden menu items still lose focus.
+
+
+### Expanded provider digest conversations
+
+Provider description headings share GitHub's outline and rail calculation, and clicks on their text or native details summaries lift the description cap immediately.
+Links, form controls and selected text inside headings retain their own behavior, and cleanup removes owned rails without rewriting native blocks.
+A provider digest creates a local stacking context so its View menu scrolls below native sticky navigation, and the description-position command shares the other view choices' rounded hover treatment.
+GitLab's MR metadata supplies assigned reviewers when the detailed reviewer endpoint is unavailable, but assignees and suggested reviewers are not review requests.
+GitLab approval payloads can omit automation flags present on the same account's discussion payload, so reconcile only matching account IDs and usernames rather than classifying by a bot-like name.
+Automated conversation rows do not grant a registered bot identity, summary parser or trigger permission.
+Human reviews and automated feedback own nested thread and comment disclosures, and comments use recorded pushes for rounds when those boundaries exist.
+Nested author conversation bodies survive reviewer and CI-only refreshes so selected text and native media or table bindings remain intact.
+GitLab merge blockers come from its qualified merge widget separately from pipeline checks, and system-note activity uses the same author-bound inert renderer as normal comments.
+An explicit Digest selection folds represented originals revealed through source links or native find, while ordinary refreshes preserve those reveals and active native editors.
+The gitlab-expanded-digest installed-browser slice opens triage-ops MR4544 and verifies expanded bot content, merge blockers, formatted emoji, timeline restore/refold, description headings and menu isolation.
+GitLab scoped label halves depend on inline foreground/background colors and a bounded inset border, so the inert native renderer preserves only those scalar color values while dropping layout and arbitrary custom properties.
