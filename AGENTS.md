@@ -3558,6 +3558,11 @@ Provider preview parsers need an actual preview or inspector URL, a recognized f
 Review advice containing shell pipes and deployment words is not a linkless Cloudflare deployment;
 keep that comment in its native finding instead of duplicating it under Previews.
 
+The provider image viewer also handles Escape inside its dialog before native page shortcuts can suppress browser cancellation, restoring the original image link on close.
+
+A settled public MR can verify preserved round boundaries and source identities without containing unresolved work;
+report the Needs attention interaction as unverified in that case, never fabricate open items to satisfy browser acceptance.
+
 Provider diff cache schema 3 validates and retains bounded removed-import specifiers for Flow.
 Reject schema 1 and 2 snapshots because they silently discarded this metadata, so the normal diff source fetch restores the missing links.
 
