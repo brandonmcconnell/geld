@@ -560,3 +560,23 @@ test('owned Chrome native accessibility is enabled and checked before any permis
   assert.match(harness, /env: nativeAccessibility \? nativeAccessibilityEnvironment\(process\.env\)/);
   assert.match(harness, /nativeAccessibilityProbe.status, 'ready'/);
 });
+
+
+test('walkthrough rendering consumes completed footage without navigating provider pages', () => {
+  assert.deepEqual(select({ body: marker('walkthrough-render'), from: marker('gitlab-walkthrough') }), { focus: 'walkthrough-render', run: 'true', failures: [] });
+  const renderer = workflow.slice(workflow.indexOf('  render-provider-walkthroughs:'), workflow.indexOf('  select-public-verification:'));
+  assert.match(renderer, /focus == 'walkthrough-render'/);
+  assert.match(renderer, /render-walkthrough\.py/);
+  assert.doesNotMatch(renderer, /test:browser|google-chrome|browser-e2e\.mjs/);
+  const installed = workflow.slice(workflow.indexOf('  installed-extension:'), workflow.indexOf('  bitbucket-static-source:'));
+  assert.match(installed, /focus != 'walkthrough-render'/);
+});
+
+
+test('Files-only recording preserves the carried hourly budget before any browser operation', () => {
+  assert.deepEqual(select({ body: marker('bitbucket-walkthrough-files'), from: marker('walkthrough-render') }), { focus: 'bitbucket-walkthrough-files', run: 'true', failures: [] });
+  assert.match(workflow, /Wait for the carried Bitbucket recording budget/);
+  assert.match(workflow, /target = max\(values, default=0\) \+ 3605/);
+  assert.ok(workflow.indexOf('Wait for the carried Bitbucket recording budget') < workflow.indexOf('Locate the runner'));
+  assert.match(harness, /filesOnly: focus === 'bitbucket-walkthrough-files'/);
+});
