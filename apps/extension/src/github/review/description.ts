@@ -712,14 +712,14 @@ function dressCarrier(block: HTMLElement, style: CSSStyleDeclaration | null): vo
   const carrier = existing ?? createElement('div', { class: CARRIER_CLASS, 'aria-hidden': 'true', [OWN_UI_ATTRIBUTE]: '' });
   if (existing === null) block.before(carrier);
   for (const name of RAIL_PROPERTIES) setProperty(carrier, name, block.style.getPropertyValue(name) || null);
-  setProperty(carrier, '--geld-desc-after', style.getPropertyValue('--geld-desc-after').trim() || '0px');
+  setProperty(carrier, '--geld-desc-after', style.getPropertyValue('--geld-desc-after').trim() || null);
   setProperty(carrier, 'order', style.order === '0' ? null : style.order);
   setFlag(carrier, ATTR_CARRIER_AGENT, block.hasAttribute(ATTR_AGENT) ? '' : null);
 }
 
 /**
- * Where each carrier's rails start and how far they run: from its block's padding edge through its padding box, as the
- * block's own `::before` would have. Read in the resize observer, never on the apply path; reads first, then writes.
+ * Where each carrier's rails start and how far they run: from its block's padding edge through its padding box and the
+ * gap below it, as the block's own `::before` would have. Read in the resize observer, never on the apply path; reads first, then writes.
  */
 function measureCarriers(body: HTMLElement): void {
   const spans = [...body.querySelectorAll<HTMLElement>(`:scope > [${ATTR_SCROLLER}]`)].flatMap((block) => {
@@ -728,11 +728,13 @@ function measureCarriers(body: HTMLElement): void {
     const style = getComputedStyle(block);
     const box = block.getBoundingClientRect();
     const top = box.top + pixels(style.borderTopWidth) - carrier.getBoundingClientRect().top;
-    return [{ carrier, top, height: box.height - pixels(style.borderTopWidth) - pixels(style.borderBottomWidth) }];
+    const after = style.getPropertyValue('--geld-desc-after').trim() || null;
+    return [{ carrier, top, height: box.height - pixels(style.borderTopWidth) - pixels(style.borderBottomWidth), after }];
   });
-  for (const { carrier, top, height } of spans) {
+  for (const { carrier, top, height, after } of spans) {
     setProperty(carrier, '--geld-desc-carry-top', `${top}px`);
     setProperty(carrier, '--geld-desc-carry-height', `${Math.max(0, height)}px`);
+    setProperty(carrier, '--geld-desc-after', after);
   }
 }
 
@@ -891,9 +893,11 @@ function applyTo(body: HTMLElement): void {
   const lastShown = trailed ? blocks.findLastIndex((_, index) => !hidden.has(index)) : -1;
   for (const block of all) setFlag(block, ATTR_LAST, block === blocks[lastShown] ? '' : null);
   const rails = railsOf(blocks.length, outline, hidden, (heading) => openNow.get(heading.index) ?? true);
+  // `dressRails` reads styles the stylesheet keys on this flag (a block's overflow, its gap), so it stands first.
+  setFlag(body, ATTR_ON, '');
   blocks.forEach((block, index) => {
     if (block instanceof HTMLElement) dressRails(block, rails.get(index) ?? null);
-  });  setFlag(body, ATTR_ON, '');
+  });
   // Folded or not, the description is cut while taller than the cap: a long run of text before a heading near the end
   // folds nothing. Opening a section lifts the cut, so it never hides what the reader opened.
   const cut = state.capped;
