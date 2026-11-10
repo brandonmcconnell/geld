@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
 
+export const GITLAB_LOCAL_REVIEW = Object.freeze({
+  url: 'https://gitlab.com/ark-bitcoin/bark/-/merge_requests/2117',
+  anchor: 'note_3412014628', authorId: '9249395',
+  provenance: 'Retained public installed run41388609871: open human source by ErikDeSmedt; availability must be rechecked live.',
+});
+
 /** Resolve the hint belonging to the actual native count group, never a different header. */
 export function providerHeaderHintTarget(groupSelector, kind = 'anchor') {
   const visible = node => {
@@ -32,7 +38,7 @@ export function providerHeaderHintTarget(groupSelector, kind = 'anchor') {
 }
 
 /** Select a real actionable human item before any local-review interaction. */
-export function gitLabLocalReviewedCandidate() {
+export function gitLabLocalReviewedCandidate(requiredSource = null) {
   const buttons = [...document.querySelectorAll('.geld-provider-review [data-geld-local-reviewed]')];
   const counts = { total: Math.min(buttons.length, 1000), truncated: buttons.length > 1000, human: 0, disabled: 0, pressed: 0,
     states: { open: 0, 'needs-reply': 0, addressed: 0, resolved: 0, outdated: 0, 'done-manual': 0, other: 0 } };
@@ -45,13 +51,14 @@ export function gitLabLocalReviewedCandidate() {
     const pressed = button.getAttribute('aria-pressed') !== 'false';
     if (disabled) counts.disabled++;
     if (pressed) counts.pressed++;
-    const source = [...item?.querySelectorAll('[data-geld-source]') ?? []].find((entry) => {
+    const sources = [...item?.querySelectorAll('[data-geld-source]') ?? []].filter((entry) => {
       const byline = entry.querySelector(':scope > .geld-provider-review__byline');
       const native = document.getElementById(entry.getAttribute('data-geld-source'));
       return byline !== null && ![...byline.children].some((node) => node.textContent.trim() === 'Automated account')
         && native !== null && native.querySelector('.note-header a.author-name-link[data-user-id]') !== null;
     });
-    if (source !== undefined) counts.human++;
+    if (sources.length > 0) counts.human++;
+    const source = requiredSource === null ? sources[0] : sources.find(entry => entry.getAttribute('data-geld-source') === requiredSource.anchor && document.getElementById(requiredSource.anchor)?.querySelector('.note-header a.author-name-link[data-user-id]')?.getAttribute('data-user-id') === requiredSource.authorId);
     const id = button.getAttribute('data-geld-local-reviewed');
     if (candidate === null && id && !disabled && !pressed && ['open', 'needs-reply', 'addressed'].includes(state) && source !== undefined) {
       candidate = { id, humanAnchor: source.getAttribute('data-geld-source'), pressed: button.getAttribute('aria-pressed'), disabled: button.disabled };
@@ -213,7 +220,7 @@ export function providerDashboardProbe(mode = 'read') {
       const bodySelector = provider === 'gitlab' ? entry.matches('li.js-timeline-entry.system-note') ? '[data-testid="system-note-content"]' : '.note-body .note-text' : '[data-testid="comment-content"] .ak-renderer-document';
       const bodies = [...entry.querySelectorAll(bodySelector)].filter(node => node.closest(selector) === entry && node.closest('[data-geld-ui]') === null);
       if (bodies.length !== 1) return null;
-      result.push(bodies[0]);
+      result.push({ owner: entry, body: bodies[0] });
     }
     return result;
   };
@@ -221,23 +228,35 @@ export function providerDashboardProbe(mode = 'read') {
     const roots = [...document.querySelectorAll('[data-geld-provider-native-find="folded"]')].filter((node) => !panel.contains(node));
     if (roots.length > 0) globalThis[key] = { panel, url: location.href, roots: roots.map((node) => {
       const known = payloads(node);
-      return { node, parent: node.parentElement, id: node.id, qualified: known !== null, payloads: (known ?? [node]).map(body => ({ node: body, parent: body.parentElement, text: body.textContent })) };
+      return { node, parent: node.parentElement, id: node.id, qualified: known !== null, payloads: (known ?? [{ owner: node, body: node }]).map(({ owner, body }) => ({ owner, parent: owner.parentElement, id: owner.id, text: body.textContent, html: known === null ? null : body.innerHTML })) };
     }) };
   }
   const state = globalThis[key];
   const native = state?.roots ?? [];
   const sections = [...panel?.querySelectorAll('[data-geld-review-key]') ?? []];
   const bound = state?.panel === panel && state?.url === location.href;
-  const custody = { identityMismatches: 0, parentMismatches: 0, idMismatches: 0, bodyMismatches: 0, unqualifiedPayloads: 0 };
+  const custody = { identityMismatches: 0, parentMismatches: 0, idMismatches: 0, bodyMismatches: 0, payloadOrderMismatches: 0, unqualifiedPayloads: 0 };
   for (const entry of native) {
     if (!entry.node.isConnected || entry.node.ownerDocument !== document || entry.id !== '' && document.getElementById(entry.id) !== entry.node) custody.identityMismatches++;
     if (entry.node.parentElement !== entry.parent) custody.parentMismatches++;
     if (entry.node.id !== entry.id) custody.idMismatches++;
     if (!entry.qualified) custody.unqualifiedPayloads++;
-    const current = entry.qualified ? payloads(entry.node) : [entry.node];
-    if (current === null || current.length !== entry.payloads.length || entry.payloads.some((body, index) => current[index] !== body.node || !body.node.isConnected || body.node.parentElement !== body.parent || body.node.textContent !== body.text)) custody.bodyMismatches++;
+    const current = entry.qualified ? payloads(entry.node) : [{ owner: entry.node, body: entry.node }];
+    if (current === null || current.length !== entry.payloads.length) custody.bodyMismatches++;
+    for (const [index, saved] of entry.payloads.entries()) {
+      const found = current?.[index];
+      if (saved.owner !== entry.node) {
+        if (!saved.owner.isConnected || saved.owner.ownerDocument !== document || saved.id !== '' && document.getElementById(saved.id) !== saved.owner) custody.identityMismatches++;
+        if (saved.owner.parentElement !== saved.parent) custody.parentMismatches++;
+        if (saved.owner.id !== saved.id) custody.idMismatches++;
+      }
+      if (found?.owner !== saved.owner) custody.payloadOrderMismatches++;
+      // Native hydration can replace equivalent inner wrappers. The original note/event
+      // identity and its exact semantic content remain the authority, not that wrapper.
+      if (found === undefined || found.body.textContent !== saved.text || saved.html !== null && found.body.innerHTML !== saved.html) custody.bodyMismatches++;
+    }
   }
-  const sameOriginals = bound && custody.identityMismatches === 0 && custody.parentMismatches === 0 && custody.idMismatches === 0 && custody.bodyMismatches === 0;
+  const sameOriginals = bound && custody.identityMismatches === 0 && custody.parentMismatches === 0 && custody.idMismatches === 0 && custody.bodyMismatches === 0 && custody.payloadOrderMismatches === 0;
   const sectionBindings = sections.map((section) => {
     const control = section.querySelector(':scope > button[data-geld-review-toggle]');
     const target = document.getElementById(control?.getAttribute('aria-controls') ?? '');

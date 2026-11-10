@@ -101,17 +101,20 @@ describe('parseUnifiedDiff', () => {
 
   it('keeps both sides of mixed-quoted renames for hunk source paths', () => {
     const cases = [
-      { header: String.raw`diff --git "a/src/caf\303\251.ts" "b/src/\346\265\213\350\257\225.ts"`, oldPath: 'src/café.ts', path: 'src/测试.ts' },
-      { header: String.raw`diff --git a/src/old.ts "b/src/caf\303\251.ts"`, oldPath: 'src/old.ts', path: 'src/café.ts' },
-      { header: String.raw`diff --git "a/src/caf\303\251.ts" b/src/new.ts`, oldPath: 'src/café.ts', path: 'src/new.ts' },
-      { header: String.raw`diff --git "a/old\tquote\"\\.ts" "b/new\tquote\"\\.ts"`, oldPath: 'old\tquote"\\.ts', path: 'new\tquote"\\.ts' },
-      { header: 'diff --git a/old name.ts b/new name.ts', oldPath: 'old name.ts', path: 'new name.ts' },
+      { header: String.raw`diff --git "a/src/caf\303\251.ts" "b/src/\346\265\213\350\257\225.ts"`, oldPath: 'src/café.ts', path: 'src/测试.ts', from: String.raw`"src/caf\303\251.ts"`, to: String.raw`"src/\346\265\213\350\257\225.ts"` },
+      { header: String.raw`diff --git a/src/old.ts "b/src/caf\303\251.ts"`, oldPath: 'src/old.ts', path: 'src/café.ts', from: 'src/old.ts', to: String.raw`"src/caf\303\251.ts"` },
+      { header: String.raw`diff --git "a/src/caf\303\251.ts" b/src/new.ts`, oldPath: 'src/café.ts', path: 'src/new.ts', from: String.raw`"src/caf\303\251.ts"`, to: 'src/new.ts' },
+      { header: String.raw`diff --git "a/old\tquote\"\\.ts" "b/new\tquote\"\\.ts"`, oldPath: 'old\tquote"\\.ts', path: 'new\tquote"\\.ts', from: String.raw`"old\tquote\"\\.ts"`, to: String.raw`"new\tquote\"\\.ts"` },
+      { header: 'diff --git a/old name.ts b/new name.ts', oldPath: 'old name.ts', path: 'new name.ts', from: 'old name.ts', to: 'new name.ts' },
     ];
-    for (const { header, oldPath, path } of cases) {
+    for (const { header, oldPath, path, from, to } of cases) {
       expect(pathFromGitHeader(header, 'old')).toBe(oldPath);
       expect(pathFromGitHeader(header, 'new')).toBe(path);
       expect(pathFromGitHeader(header)).toBe(path);
-      const files = parseUnifiedDiffHunks(`${header}\nsimilarity index 80%\nrename from ${oldPath}\nrename to ${path}\n@@ -1 +1 @@\n-before\n+after\n`);
+      const patch = `${header}\nsimilarity index 80%\nrename from ${from}\nrename to ${to}\n@@ -1 +1 @@\n-before\n+after\n`;
+      expect(parseUnifiedDiff(patch)[0]).toMatchObject({ path, status: 'renamed', additions: 1, deletions: 1 });
+      expect(parseUnifiedDiff(`${header}\nsimilarity index 100%\nrename from ${from}\nrename to ${to}\n`)[0]).toMatchObject({ path, status: 'renamed', additions: 0, deletions: 0, kinds: ['renames'] });
+      const files = parseUnifiedDiffHunks(patch);
       expect(files[0]).toMatchObject({ oldPath, path, status: 'renamed', additions: 1, deletions: 1 });
       expect(files[0]?.hunks[0]?.lines).toEqual([
         { kind: 'removed', text: 'before', oldLine: 1, newLine: null },

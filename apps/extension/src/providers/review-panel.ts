@@ -66,6 +66,7 @@ export interface ProviderReviewPanelOptions {
   readonly version?: number;
   readonly actionsForSource?: (comment: ProviderReviewComment) => readonly ProviderReviewSourceAction[];
   readonly renderComment?: (comment: ProviderReviewComment, host: HTMLElement, context?: ProviderCommentRenderContext) => boolean;
+  readonly commentSignature?: (comment: ProviderReviewComment) => string | null;
   readonly authorPresentation?: (comment: ProviderReviewComment) => ProviderReviewAuthorPresentation | null;
   readonly onActionComplete?: () => void;
   readonly comments?: readonly ProviderReviewComment[];
@@ -196,6 +197,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   let destroyed = false;
   let items: readonly ReviewItem[] = [];
   let nativeItems: ReadonlyMap<string, ReviewItem> = new Map();
+  const copyFocusTargets = new WeakMap<HTMLElement, { readonly subject: string; readonly route: string; readonly item: string; readonly kind: 'markdown' | 'fix'; readonly source: string }>();
   const authorPresentations = new Map<string, ProviderReviewAuthorPresentation>();
   let bots: readonly BotVerdictRecord[] = [];
   let identities: ReviewerIdentityControl[] = [];
@@ -213,6 +215,21 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   let commentFocusFrame: number | null = null;
   let mountCallbacks: Array<() => void> = [];
   let disposeCallbacks: Array<() => void> = [];
+  let refreshCallbacks: Array<() => void> = [];
+  let refreshListening = false;
+
+  function refreshComments(): void {
+    if (destroyed || !panel.isConnected) return;
+    for (const callback of refreshCallbacks) callback();
+  }
+
+  function onCommentRefresh(callback: () => void): void {
+    refreshCallbacks.push(callback);
+    if (refreshListening) return;
+    refreshListening = true;
+    doc.defaultView?.addEventListener('resize', refreshComments);
+    doc.defaultView?.visualViewport?.addEventListener('resize', refreshComments);
+  }
 
   function clearRenderStates(): void {
     for (const memo of renderStates.values()) memo.state.clear();
@@ -225,6 +242,12 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     commentFocusFrame = null;
     for (const callback of disposeCallbacks.splice(0)) callback();
     mountCallbacks = [];
+    refreshCallbacks = [];
+    if (refreshListening) {
+      doc.defaultView?.removeEventListener('resize', refreshComments);
+      doc.defaultView?.visualViewport?.removeEventListener('resize', refreshComments);
+      refreshListening = false;
+    }
     sourceOccurrences.clear();activeRenderSources.clear();activeSourceKeys.clear();
   }
 
@@ -313,6 +336,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     message.setAttribute('role', 'status');message.setAttribute('aria-live', 'polite');
     const subject = JSON.stringify(input.subject);
     const route = new URL(doc.URL);route.hash = '';
+    const nativeItem = nativeItems.get(itemId);
+    if (nativeItem !== undefined) copyFocusTargets.set(button, { subject, route: route.href, item: itemId, kind, source: JSON.stringify(nativeItem) });
     const current = (): boolean => {
       const active = new URL(doc.URL);active.hash = '';
       return !destroyed && button.isConnected && subject === JSON.stringify(input.subject) && route.href === active.href;
@@ -419,6 +444,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       current: () => !destroyed && generation === renderGeneration && body.isConnected && panel.contains(body),
       onMount: (callback) => mountCallbacks.push(callback),
       onDispose: (callback) => disposeCallbacks.push(callback),
+      onRefresh: onCommentRefresh,
     };
     if (options.renderComment?.(comment, body, context) === true) {
       body.style.whiteSpace = 'normal';
@@ -1102,6 +1128,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   function render(): void {
     if (destroyed) return;
     const focused = doc.activeElement;
+    const copyFocus = focused instanceof HTMLElement && panel.contains(focused) && !focused.matches(':disabled') ? copyFocusTargets.get(focused) : undefined;
     const commentControlId = focused instanceof HTMLElement && panel.contains(focused) && focused.hasAttribute('data-geld-comment-control') ? focused.id : null;
     const requestFocus = focused instanceof HTMLElement && panel.contains(focused) && focused.closest('[data-geld-bot-request]') !== null ? focused : null;
     const dashboardFocus = focused instanceof HTMLElement && panel.contains(focused)
@@ -1137,8 +1164,13 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const publicationSignature = publication === undefined ? null : [publication.status, publication.candidate?.comment, publication.candidate?.generatedAt, publication.issues, [...publication.matchedItemIds], options.publication?.save !== undefined];
     for (const request of options.botRequests ?? []) botRequests.get(request.key)?.update(request);
     const requestSignature = options.botRequests?.map((request) => [request.key, request.current(), request.comment.available, request.comment.reason]);
-    const signature = JSON.stringify([input, options.reviewerControls?.available, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size, requestSignature]);
+    const commentSignatures = options.commentSignature === undefined ? null : [...input.threads.flatMap((thread) => thread.comments), ...(options.comments ?? [])].map((comment) => {
+      if (sourceLink({ anchor: comment.anchor, kind: 'comment', author: comment.author.login, url: comment.url }, input.subject) === null) return null;
+      try { return [comment.anchor, options.commentSignature?.(comment)]; } catch { return [comment.anchor, null]; }
+    });
+    const signature = JSON.stringify([input, options.reviewerControls?.available, options.comments, options.events, options.references, options.complete, options.unavailable, options.approvalsRequired, options.approvalsLeft, options.requirements, options.updating, options.version, options.suggestedFixes, options.reviewGrouping, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, nativeTimes.size, requestSignature, commentSignatures]);
     if (signature === lastSignature) {
+      refreshComments();
       for (const time of panel.querySelectorAll<HTMLTimeElement>('time[datetime]')) {
         const native = nativeTimes.get(Date.parse(time.dateTime));
         if (native !== undefined && time.textContent !== native) time.textContent = native;
@@ -1303,6 +1335,16 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       }
     }
     panel.replaceChildren(...children);
+    if (copyFocus !== undefined && copyFocus.subject === nextRenderScope && (doc.activeElement === doc.body || doc.activeElement === focused)) {
+      const route = new URL(doc.URL);route.hash = '';
+      const candidates = [...panel.querySelectorAll<HTMLButtonElement>('[data-geld-item-copy]')].filter((button) => {
+        const target = copyFocusTargets.get(button);
+        return target !== undefined && target.subject === copyFocus.subject && target.route === copyFocus.route && target.route === route.href
+          && target.item === copyFocus.item && target.kind === copyFocus.kind && target.source === copyFocus.source;
+      });
+      const target = candidates.length === 1 ? candidates[0] : undefined;
+      if (target !== undefined && !target.disabled && target.closest('[hidden], [inert], [aria-hidden="true"], details:not([open]), [data-geld-review-open="false"]') === null) target.focus({ preventScroll: true });
+    }
     for (const request of options.botRequests ?? []) botRequests.get(request.key)?.update(request);
     for (const [key, control] of botRequests) {
       if (!panel.contains(control.element)) { control.destroy();botRequests.delete(key); }

@@ -1,3 +1,4 @@
+import { writeLocalReview } from '../../lib/local-review-write';
 /**
  * In-browser AI for a pull request whose digest the Action did not write with
  * AI: run when the reader asks (the AI control on the digest), never on its
@@ -47,7 +48,7 @@ import {
 import type { Carried } from '@geld/review';
 import { browser } from 'wxt/browser';
 import type { AiRunRecord, JevDecision } from '../../lib/local-state';
-import { AI_RUNS_CAP, aiGatewayItem, aiKeyItem, aiRunsItem, jevDecisionsItem, jevKeyItem, jevSourceItem } from '../../lib/local-state';
+import { aiGatewayItem, aiKeyItem, aiRunsItem, jevDecisionsItem, jevKeyItem, jevSourceItem } from '../../lib/local-state';
 import type { AiCompleteRequest, AiEvaluateRequest } from '../../lib/messages';
 import { isAiCompleteResponse, isAiEvaluateResponse } from '../../lib/messages';
 
@@ -128,15 +129,7 @@ function adopt(record: AiRunRecord): void {
 async function store(record: AiRunRecord | null): Promise<void> {
   if (runKey === null) return;
   const key = runKey;
-  const runs = { ...(await aiRunsItem.getValue()) };
-  if (record === null) delete runs[key];
-  else runs[key] = record;
-  const keys = Object.keys(runs);
-  if (keys.length > AI_RUNS_CAP) {
-    const oldest = keys.sort((a, b) => Date.parse(runs[a]?.ranAt ?? '') - Date.parse(runs[b]?.ranAt ?? '')).slice(0, keys.length - AI_RUNS_CAP);
-    for (const stale of oldest) delete runs[stale];
-  }
-  await aiRunsItem.setValue(runs);
+  await writeLocalReview({ kind: 'ai', key, record }, async () => { if (runKey !== key) throw new Error('Review source changed.'); });
 }
 
 /** Forget this device's run for the pull request (the repository's Action now writes the digest). */

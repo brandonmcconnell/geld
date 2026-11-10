@@ -2323,6 +2323,12 @@ Retained public MR253 source supplies the positive lexical fixture, but offline 
 
 The cloud content scripts live in `entrypoints/gitlab.content/` and `entrypoints/bitbucket.content/`, with provider adapters in `src/gitlab/` and `src/bitbucket/` behind `src/providers/` interfaces.
 The first pass targets gitlab.com and Bitbucket Cloud, with self-hosted variants requiring separate adapter verification and host permissions.
+GitLab and Bitbucket cloud access is optional, including their content-script registration, so upgrading a GitHub-only installation does not introduce required site access.
+The popup and options expose explicit Enable GitLab and Enable Bitbucket controls;
+a granted origin registers only that provider's isolated script and the supported Bitbucket MAIN helper through the background.
+Firefox MV2 requests the optional scripting capability with that enable action and uses its supported Firefox 128 MAIN registration, without adding a required update permission.
+A failed MAIN registration rolls back the provider registration and cannot produce an enabled acknowledgement.
+Revoking either required Bitbucket origin removes its registration, and initial installed-browser acceptance must use the real extension enable control before visiting the provider.
 Repository identity includes the provider, origin and full repository path, so nested GitLab groups and equally named repositories on different hosts remain separate.
 One synchronized Geld settings object follows the user across providers, with the same core matcher and category definitions.
 Provider-specific surfaces translate settings and sources into shared review and diff models rather than importing GitHub's DOM adapters or Primer styles.
@@ -2507,6 +2513,8 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   Preserve provider-selected light, dark and accessibility colors rather than adding a GitHub palette, external font load or OS-theme override.
   GitLab's live comment body uses GitLab Sans at 14px/21px and native author headers use 14px/20px, while native medium buttons use 14px/16px, weight 400 and an 8px radius.
   Native body and author typography use `--font-family-sans-serif`, while `--gl-font-family-regular` can repeat GitLab Sans in its computed stack.
+  Bitbucket's native comment bodies can mount or edit independently of the fetched review snapshot, so the digest's render signature includes the verified original body rather than waiting for another API refresh.
+  Existing Bitbucket comment typography bindings refresh independently of the panel's data signature and on viewport resize, preserving the rendered body and releasing refresh listeners with its lifetime.
   GitLab's rendered Markdown table headers can put their visible labels inside generated `markdown-table-<id>-col_<index>-sort` buttons, as the public Greptile summary note3381334808 does.
   Preserve only the inert label of that verified sortable column-header shape, including its native table ownership and column index, while dropping the control, IDs, action attributes and icons.
   Its marked inert span keeps only the observed `gl-font-bold gl-text-inherit` typography classes, and body comparison samples the actual native button's label span rather than assuming the enclosing TH has the same font weight.
@@ -2552,10 +2560,13 @@ That displayed-outline phase retains an unknown source head explicitly and does 
   Provider item clipboard exports keep that personal reviewed flag separate from the canonical source status and any explicitly labeled AI wording or assessment.
   Copy as Markdown retains every validated native source permalink and actual account spelling, while Copy suggested fix writes exactly the displayed eligible fix text under the unchanged `fixVisible` setting.
   A queued clipboard action requires the same connected control, review subject and document route before launch, allowing a source-fragment change but refusing a debounced SPA navigation race.
+  Digest refreshes restore keyboard focus to the same enabled item-copy format only while its review, source concern, document route and visible panel remain unchanged.
   Already-issued clipboard writes cannot be revoked, so a stale completion never patches a replacement review or shows a success on another visit.
   Native provider button tokens and accessible pending, failure and retry feedback apply to both actions.
   The existing GitLab bot acceptance requires genuine pointer and keyboard clipboard readback from already fetched source facts with temporary browser permissions, preserving original bodies and restoring permission overrides without another source GET, provider mutation or AI call.
-  Fresh queued reads preserve unrelated review records within a runtime, without claiming cross-tab compare-and-swap.
+  Device-local review marks and AI runs now send entry-level mutations through one background-owned queue, so separate provider tabs cannot replace one another's records.
+  The worker asks the initiating content runtime to revalidate its live source before the queued read and again immediately before persistence, with a bounded negative result for closed, navigated or unresponsive tabs.
+  GitHub AI uses the same authority because its records share the provider AI map, including explicit per-review clearing and the existing forty-run cap.
   Reviewed on this device never resolves the native thread, changes bot findings or CI standing, edits source text or triggers AI.
   AI wording is excluded from local mark fingerprints so an explicit triage rewrite cannot invalidate unchanged original evidence.
 - **Native source context and comment bodies have different owners.**
@@ -3326,6 +3337,24 @@ The continuity case corroborates public tab-state totals with the read-only comp
 A changed cache identity, untrusted input, full document navigation, missing native file or exhausted budget leaves the combined case incomplete while preserving its earlier digest checkpoint.
 The independent `bitbucket-diff` and `bitbucket-comment` focuses remain available to verify the unfinished half in a later eligible window.
 
+GitLab CI summary jobs may run on a temporary merged-results commit, so the MR's exact `head_pipeline.id` associates those checks with the source head while `sha` retains the actual pipeline commit and `reviewHeadSha` records the association.
+Provider CI summaries count waiting manual jobs separately from running jobs so an idle deployment does not make completed CI look active.
+
+GitLab may add the already displayed `diff_id` while opening an unmounted file from an unversioned MR URL, so a reveal retains the exact navigator-verified destination before the native click and canonicalises effective selection order for its review identity.
+A pending reveal still rejects other query, file, hash or review changes and checks the same verified destination again before alignment.
+Installed GitLab capture can replace an equivalent inner comment/system-note wrapper while retaining the original source note and exact payload.
+The UI custody probe pins the native source roots, note/event nodes, their parents and IDs, payload count/order, and exact semantic text plus HTML;
+it permits equivalent inner wrapper hydration only.
+Actual body changes, source replacement, source reparenting, changed identity or reordered payloads still fail with fixed mismatch counters.
+
+The GitLab UI corpus MR266334 currently exposes only resolved local-review items, so new UI acceptance does not claim local mark/reload/Undo coverage.
+The dedicated `gitlab-local-reviewed` focus uses the previously observed open human note3412014628 by user9249395 on public MR2117 and must renew that exact source identity and actionability before marking.
+Legacy `gitlab-review`, regression and all-case runs retain local-review coverage separately, and MR266334 round history remains guarded by its native selected Rapid Diff head.
+The ancillary native-fragment check remains with MR266334 legacy round history rather than becoming an undocumented requirement of the independent local-review persistence fixture.
+
+The `provider-access` installed-browser focus grants optional sites through genuine options-page pointer clicks and verifies worker-registered GitLab, Bitbucket and Bitbucket MAIN scripts before opening any public provider page.
+This focus blocks external DNS, skips all public cases and uploads only `geld-provider-access`, so its options-only receipt cannot replace the canonical provider cooldown artifact.
+
 Provider configuration cache clearing invalidates old generations, aborts pending lookups and drains queued writes before removing storage.
 Late responses and writes from a retired generation cannot restore cleared settings.
 
@@ -3334,6 +3363,12 @@ The trusted summary runner keeps this endpoint-specific limit through pagination
 
 Provider header ownership checks run in document mutation callbacks and must not read computed styles or layout.
 Native count visibility is refreshed during rendering and resize observation, while needsRepair checks only the owned hint attachment.
+
+A retired or unrelated content client must return no response for an unknown local review validation token.
+Replying false wins the extension message race against the owning client and rejects otherwise valid saves after reinjection.
+
+GitLab created, pending, preparing, scheduled and waiting_for_resource jobs remain queued in trusted CI input.
+Published CI totals count both queued and manual jobs as waiting, and only native running jobs as in progress.
 
 Provider configuration caching is best-effort when local storage fails, but aborted or cleared generations still reject before applying fetched rules.
 **The Overview tab can be rendered from a signed-out session**: its route code is in the page's public bundles and every `page_data/*` endpoint it reads (`conversation_comments`, `threads`, `timeline`, `description`, `tab_counts`) answers signed out.

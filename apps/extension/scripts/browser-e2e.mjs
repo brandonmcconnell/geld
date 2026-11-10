@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { enableOptionalProviders, optionalProvidersForCases, verifyOptionalProviderRegistration } from './provider-access-acceptance.mjs';
 import { BITBUCKET_UI_PR, BITBUCKET_UI_PATH, bitbucketUiSourceCache, verifyBitbucketUiContinuity } from './bitbucket-ui-continuity.mjs';
 /** Live installed-extension smoke. Run only where unpacked extensions are permitted by policy. */
 import assert from 'node:assert/strict';
@@ -9,7 +10,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
-import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, providerHeaderHintTarget, openProviderReviewAncestors, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
+import { assertCompactProviderPopover, assertDiscoverableProviderCategories, assertVisibleProviderCounts, gitLabLocalReviewedCandidate, GITLAB_LOCAL_REVIEW, providerHeaderHintTarget, openProviderReviewAncestors, providerUiProbe, verifyGitLabCategoryFallback, verifyProviderDashboardUi } from './provider-ui-acceptance.mjs';
 import { commentBodyPresentationProbe, compareCommentBodyPresentation } from './comment-body-branding.mjs';
 import { BITBUCKET_LOCAL_REVIEW, localReviewStorageScope, observeLocalReview, verifyBitbucketLocalReview } from './bitbucket-local-reviewed.mjs';
 import { bitbucketListRowSnapshot, countHoverVisibilityProbe } from './native-list-row.mjs';
@@ -39,7 +40,7 @@ import { observeStandaloneWhole, standaloneWholeURL, verifyStandaloneWhole } fro
 import { observeGitLabComparisons } from './gitlab-comparison-observer.mjs';
 import { CODERABBIT_FIXTURE, observeCodeRabbitFixture, verifyCodeRabbitCommands } from './gitlab-coderabbit-acceptance.mjs';
 import { verifyGitLabTableHeights } from './gitlab-table-height-acceptance.mjs';
-import { verifyGitLabRoundAttention } from './round-attention-acceptance.mjs';
+import { gitLabRoundSnapshot, verifyGitLabRoundAttention } from './round-attention-acceptance.mjs';
 import { SHARED_SETTINGS_NATIVE_ORACLES, assertPatternOnlySettings, restoreCategoryPatterns, settingsRequestEvidence, sharedSettingsSourceIdentity, sharedSettingsSampleValid } from './three-provider-settings.mjs';
 import { observeInitialOnSource } from './bitbucket-initial-on-source.mjs';
 import { assertInitialNativeOnTraffic, initialNativeOnPreflight, initialNativeOnSettings, verifyInitialNativeOn } from './bitbucket-initial-native-on.mjs';
@@ -56,7 +57,8 @@ const SETTINGS_KEY = 'settings'; // @geld/core SETTINGS_STORAGE_KEY = sync:setti
 const WAIT_MS = 90_000;
 const BITBUCKET_ANONYMOUS_COOLDOWN_MS = 62 * 60 * 1000; // Documented rolling-hour quota, plus a conservative two-minute margin.
 const FOCUSED_CASES = {
-  regression: ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'github-regression', 'bitbucket-diff'],
+  'provider-access': [],
+  regression: ['gitlab-mixed', 'gitlab-all-tests', 'gitlab-overview-digest', 'gitlab-local-reviewed', 'github-regression', 'bitbucket-diff'],
   'bitbucket-diff': ['bitbucket-diff'],
   'bitbucket-ui': ['bitbucket-ui-continuity'],
   'gitlab-ui': ['gitlab-mixed', 'gitlab-overview-digest'],
@@ -84,7 +86,8 @@ const FOCUSED_CASES = {
   'bitbucket-whole-context': ['bitbucket-whole-context'],
   'bitbucket-pr-whole-context': ['bitbucket-pr-whole-context'],
   'gitlab-standalone-whole': ['gitlab-standalone-whole-commit', 'gitlab-standalone-whole-compare'],
-  'gitlab-review': ['gitlab-overview-digest'],
+  'gitlab-review': ['gitlab-overview-digest', 'gitlab-local-reviewed'],
+  'gitlab-local-reviewed': ['gitlab-local-reviewed'],
   'gitlab-bot': ['gitlab-bot-digest'],
   'gitlab-coderabbit': ['gitlab-coderabbit-digest'],
   'gitlab-binary': ['gitlab-binary-counts'],
@@ -136,7 +139,7 @@ const BB_PR_LIST = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-r
 const BB_COMMENT_PR = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22';
 const BB_COMMIT = 'https://bitbucket.org/atlassian/bitbucket-upload-file/commits/9777bca47119';
 const report = {
-  schema: 1, startedAt: new Date().toISOString(), mode: 'actual installed unpacked extension on live anonymous public pages',
+  schema: 1, startedAt: new Date().toISOString(), mode: focus === 'provider-access' ? 'actual installed options and worker registration only' : 'actual installed unpacked extension on live anonymous public pages',
   parity: 'incomplete', executablePath, extensionPath, artifacts,
   auth: { freshTemporaryBrowserProfile: true, credentialsProvided: false, authenticatedProviderWrites: false },
   limitations: ['Bitbucket routing and native surface discovery do not establish feature parity.', 'No authenticated review, Viewed, merge or AI-gateway operation is exercised.', 'Computed style probes describe the tested viewport/theme only. Discovery cases report observations or explicit unavailability, never a feature pass.'],
@@ -334,11 +337,16 @@ async function poll(read, accepts, label, ms = WAIT_MS) {
 async function pollStable(read, accepts, label, ms = WAIT_MS, signature = () => null) {
   let since = null; let previous; let samples = 0;
   const result = await poll(async () => {
-    const value = await read(); const key = signature(value); const valid = accepts(value);
-    if (!valid || key !== previous) { since = null; samples = 0; }
-    previous = key;
-    if (valid) { since ??= Date.now(); samples += 1; }
-    return { value, valid, samples, stableMs: since === null ? 0 : Date.now() - since };
+    try {
+      const value = await read(); const key = signature(value); const valid = accepts(value);
+      if (!valid || key !== previous) { since = null; samples = 0; }
+      previous = key;
+      if (valid) { since ??= Date.now(); samples += 1; }
+      return { value, valid, samples, stableMs: since === null ? 0 : Date.now() - since };
+    } catch (error) {
+      since = null;previous = undefined;samples = 0;
+      throw error;
+    }
   }, (sample) => sample.valid && sample.samples >= 2 && sample.stableMs >= 200, label, ms);
   return { ...result.value, stability: { samples: result.samples, stableMs: result.stableMs, minimumMs: 200 } };
 }
@@ -957,13 +965,21 @@ async function crossSettingsDom(page, provider) {
   return page.evaluate((site) => {
     const numeric = (node, absentIsZero = false) => { if (node === null) return absentIsZero ? 0 : null; const value = node.textContent?.replace(/[,\s]/g, '').match(/\d+/)?.[0]; return value === undefined ? null : Number(value); };
     const native = (node) => node.closest('[data-geld-ui]') === null;
+    const visible = (node) => {
+      if (!node) return false;
+      for (let current = node; current; current = current.parentElement) {
+        const style = getComputedStyle(current);
+        if (current.hidden || style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse') return false;
+      }
+      return true;
+    };
     let headers; let files; let headerIdentity; let groups;
     if (site === 'gitlab') {
       const statsGroups = [...document.querySelectorAll('.diff-stats.inline-parallel-buttons .diff-stats-contents')].filter(native);
       headers = statsGroups.map((root) => ({ files: numeric(root.querySelector(':scope > .diff-stats-group > span')), additions: numeric(root.querySelector('[data-testid="js-file-addition-line"]'), true), deletions: numeric(root.querySelector('[data-testid="js-file-deletion-line"]'), true) }));
       files = [...document.querySelectorAll('diff-file[data-file-data], .diff-file[data-file-data]')].filter(native).map((root) => {
         let data = null; try { data = JSON.parse(root.getAttribute('data-file-data') ?? 'null'); } catch { /* Incomplete native metadata fails below. */ }
-        return { path: data?.new_path ?? data?.old_path ?? null, id: root.id, anchor: null, head: data?.diff_refs?.head_sha ?? null, hidden: root.getAttribute('data-geld-provider-hidden') };
+        return { path: data?.new_path ?? data?.old_path ?? null, id: root.id, anchor: null, head: data?.diff_refs?.head_sha ?? null, hidden: root.getAttribute('data-geld-provider-hidden'), visible: visible(root) };
       });
       const tab = document.querySelector('[data-testid="diffs-tab"]');
       headerIdentity = { id: tab?.id ?? null, testid: tab?.getAttribute('data-testid') ?? null, href: tab?.querySelector('a[href]')?.getAttribute('href') ?? null };
@@ -980,7 +996,7 @@ async function crossSettingsDom(page, provider) {
         // The legacy adapter orders/classifies the native copilot wrapper, preserving the inner file ID.
         // Installed run41347605877 has all 18 wrappers marked hidden and their inner .file markers absent.
         const owner = root?.closest('copilot-diff-entry') ?? root;
-        return { path: header.getAttribute('data-path'), id: root?.id ?? null, anchor: header.getAttribute('data-anchor'), head: null, ownerTag: owner?.tagName ?? null, ownerPath: owner?.getAttribute('data-file-path') ?? root?.getAttribute('data-tagsearch-path') ?? null, hidden: owner?.getAttribute('data-geld') ?? null };
+        return { path: header.getAttribute('data-path'), id: root?.id ?? null, anchor: header.getAttribute('data-anchor'), head: null, ownerTag: owner?.tagName ?? null, ownerPath: owner?.getAttribute('data-file-path') ?? root?.getAttribute('data-tagsearch-path') ?? null, hidden: owner?.getAttribute('data-geld') ?? null, visible: visible(owner) };
       });
       headerIdentity = { id: stats?.id ?? null, counterId: counter?.id ?? null, href: counter?.closest('a[href]')?.getAttribute('href') ?? null, repository: document.querySelector('meta[name="octolytics-dimension-repository_nwo"]')?.getAttribute('content') ?? null };
       groups = [...document.querySelectorAll('#files[data-geld-container="legacy"]')].map((root) => {
@@ -2401,11 +2417,11 @@ function assertReviewedStorage(value, itemId, reviewKey, headSha) {
   return selected;
 }
 
-async function localReviewedFlag(page, recordFragment) {
+async function localReviewedFlag(page, requiredSource = null) {
   let lastSelection;
   let selected;
   try {
-    selected = await poll(async () => { lastSelection = await page.evaluate(gitLabLocalReviewedCandidate);return lastSelection; }, (value) => value.candidate !== null, 'An enabled, unpressed actionable human local-review item must become available');
+    selected = await poll(async () => { lastSelection = await page.evaluate(gitLabLocalReviewedCandidate, requiredSource);return lastSelection; }, (value) => value.candidate !== null, 'An enabled, unpressed actionable human local-review item must become available');
   } catch (error) {
     if (lastSelection === undefined) throw error;
     throw new Error(`No enabled, unpressed actionable human local-review item: ${JSON.stringify(lastSelection.counts)}`);
@@ -2474,7 +2490,6 @@ async function localReviewedFlag(page, recordFragment) {
     const stored = await localReviewedStorage();
     assert.ok(assertReviewedStorage(stored, itemId, reviewKey, original.headSha) !== null, 'Actual chrome.storage.local did not persist the current mark');
     const markedArtifacts = await capture(page, 'gitlab-local-reviewed-marked');
-    const nativeFragment = await nativeFragmentEvidence(page, initial.humanAnchor, () => observe().then(unchanged), recordFragment);
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 60_000 });
     const reloaded = await poll(observe, (value) => value !== null && value.pressed === 'true' && !value.disabled && value.group === 'done', 'Actual page reload rehydrates the exact item/head mark through the installed storage service');
     unchanged(reloaded);
@@ -2484,7 +2499,7 @@ async function localReviewedFlag(page, recordFragment) {
     unchanged(undone);
     const afterStorage = await poll(localReviewedStorage, (value) => assertReviewedStorage(value, itemId, reviewKey, original.headSha) === null, 'Actual local storage removes the undone flag');
     assert.deepEqual(mutations, [], 'Local reviewed flag attempted a native provider mutation');
-    return { itemId, reviewKey, sourceHead: original.headSha, openedSummaries, original, marked, stored, markedArtifacts, nativeFragment, reloaded, reopenedSummaries, undone, afterStorage, providerMutations: mutations, undoneArtifacts: await capture(page, 'gitlab-local-reviewed-undone'), storageScope: 'Actual chrome.storage.local metadata and SHA256 fingerprints only, absent from chrome.storage.sync' };
+    return { itemId, reviewKey, sourceHead: original.headSha, openedSummaries, original, marked, stored, markedArtifacts, reloaded, reopenedSummaries, undone, afterStorage, providerMutations: mutations, undoneArtifacts: await capture(page, 'gitlab-local-reviewed-undone'), storageScope: 'Actual chrome.storage.local metadata and SHA256 fingerprints only, absent from chrome.storage.sync' };
   } finally { page.off('request', request); }
 }
 
@@ -2849,7 +2864,7 @@ async function bitbucketParentCommitHover(page, oracle) {
     observed = await poll(() => oracle.snapshot(native.links[0].sha), (value) => value.status === 'ready', 'Already-issued metadata and complete diffstat for the hovered native parent', 3000);
     keyboard = await installedHover(page, selector, 'keyboard', 'bitbucket-parent-commit-keyboard', undefined, { verifyUnobscured: true });
   } catch (error) {
-    if (page.isClosed() || currentCaseAbort?.signal.aborted || (cooldowns.get('bitbucket') ?? 0) > Date.now()) throw error;
+    if (observed?.status === 'ready' || page.isClosed() || currentCaseAbort?.signal.aborted || (cooldowns.get('bitbucket') ?? 0) > Date.now()) throw error;
     return { status: 'unverified', reason: errorText(error), native: native ?? initial, preparation, pointer, oracle: oracle.snapshot(initial.links[0].sha), remaining };
   }
   assert.deepEqual(commitHoverTotal(pointer.rows), observed.totals, 'Parent hover does not describe its own observed immutable diffstat');
@@ -3080,7 +3095,7 @@ try {
   const manifest = JSON.parse(manifestText);
   try { report.gitHead = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: extensionRoot, encoding: 'utf8' }).trim(); } catch { report.gitHead = null; }
   report.manifest = { sha256: createHash('sha256').update(manifestText).digest('hex'), version: manifest.version, manifestVersion: manifest.manifest_version };
-  browser = await puppeteer.launch({ executablePath, headless: true, enableExtensions: true, pipe: true, args: ['--enable-unsafe-extension-debugging', '--no-sandbox'] });
+  browser = await puppeteer.launch({ executablePath, headless: true, enableExtensions: true, pipe: true, args: ['--enable-unsafe-extension-debugging', '--no-sandbox', ...(focus === 'provider-access' ? ['--host-resolver-rules=MAP * ~NOTFOUND'] : [])] });
   report.browserVersion = await browser.version();
   report.browserUserAgent = await browser.userAgent();
   extensionId = await browser.installExtension(extensionPath);
@@ -3095,6 +3110,14 @@ try {
   assert.equal(installed.storageAvailable, true);
   console.log(`INSTALLED: ${extensionId}, ${report.browserVersion}, service worker ${worker.url()}`);
   report.installation = { extensionId, serviceWorker: worker.url(), optionsUrl: options.url(), verifiedActualChromeStorage: true, installedManifestVersion: installed.manifest.version };
+  if (focus === 'provider-access') {
+    const runtime = await worker.worker();
+    assert.ok(runtime !== null, 'The installed extension worker is required for registration evidence');
+    report.providerAccessVerification = await verifyOptionalProviderRegistration(options, runtime, { poll });
+    console.log(`PROVIDER_ACCESS: ${JSON.stringify(report.providerAccessVerification)}`);
+  } else {
+  const selected = focus === 'all' ? Object.values(FOCUSED_CASES).flat() : FOCUSED_CASES[focus] ?? [];
+  report.providerAccess = await enableOptionalProviders(options, optionalProvidersForCases(selected), { poll });
   await prepareInstalledBrowserSettings();
 
   await runBitbucketWhitespaceCase();
@@ -3240,11 +3263,20 @@ try {
     assertVisibleProviderCounts(item.headerUi, item.state.visible);
     item.dashboardUi = {};
     await verifyProviderDashboardUi(page, item.dashboardUi, { poll, capture: (name) => capture(page, `gitlab-${name}`) });
+    if (focus === 'gitlab-ui') return { verified: 'MR266334 visible adjusted counts, compact hover, native category navigation and dashboard/original-conversation UI. Local-review persistence and round history are separate cases.' };
     item.authorPresentation = await authorThemeEvidence(page, 'gitlab', 'note_4118584957');
     assertAuthorThemeEvidence(item.authorPresentation);
-    item.localReviewed = await localReviewedFlag(page, (evidence) => { item.nativeFragment = evidence; });
-    await verifyGitLabRoundAttention(page, item, { readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY), patchSettings, poll, openReviewAncestors, capture, headSha: item.localReviewed.sourceHead, diffPageUrl: item.state.diffPageUrl, extensionId });
+    const native = await poll(() => page.evaluate(gitLabRoundSnapshot), value => /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value?.selected?.headSha ?? ''), 'Current native Rapid Diff head for legacy round history');
+    item.nativeFragment = await nativeFragmentEvidence(page, 'note_4118584957', async () => {
+      const current = await page.evaluate(gitLabRoundSnapshot);assert.equal(current?.selected?.headSha, native.selected.headSha, 'Native head changed during legacy fragment verification');
+    }, evidence => { item.nativeFragment = evidence; });
+    await verifyGitLabRoundAttention(page, item, { readSettings: () => options.evaluate(async (key) => (await chrome.storage.sync.get(key))[key], SETTINGS_KEY), patchSettings, poll, openReviewAncestors, capture, headSha: native.selected.headSha, diffPageUrl: item.state.diffPageUrl, extensionId });
     return {};
+  });
+  await runCase('gitlab-local-reviewed', GITLAB_LOCAL_REVIEW.url, async (page, item) => {
+    item.fixture = GITLAB_LOCAL_REVIEW;
+    item.localReviewed = await localReviewedFlag(page, GITLAB_LOCAL_REVIEW);
+    return { verified: 'Live actionable retained human source: local mark, exact native source/head, real reload, Undo, and zero provider mutations.' };
   });
   await runCase('gitlab-bot-digest', GL_BOT, verifyGitLabBot);
   await runCase('gitlab-coderabbit-digest', CODERABBIT_FIXTURE.url, async (page, item) => verifyCodeRabbitCommands(page, item, {
@@ -3642,6 +3674,7 @@ try {
       return { status: 'discovery', reason: 'Actual native commit link discovered from a public PR/list response. Captures commit header, files and counts without claiming commit adapter parity.' };
     }, true);
   } else await unavailableDiscovery('bitbucket-native-commit-discovery', 'No native/public-response commit URL was observed. No commit URL or SHA was invented.');
+  }
 } catch (error) {
   report.infrastructureErrors.push(errorText(error));
   console.error(`INSTALLED EXTENSION INFRASTRUCTURE FAILURE: ${errorText(error)}`);

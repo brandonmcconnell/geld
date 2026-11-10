@@ -1,3 +1,4 @@
+import { withoutRequiredProviderOrigins } from './src/lib/provider-access-spec';
 import { readdirSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { defineConfig } from 'wxt';
@@ -72,7 +73,7 @@ export default defineConfig({
       // Chrome shows this instead of the raw number; other browsers ignore it.
       ...(browser === 'chrome' || browser === 'edge' ? { version_name: buildNumber === '' ? (nightly ? `${baseVersion} (nightly)` : baseVersion) : `${baseVersion} (${channel} ${buildNumber})` } : {}),
       description:
-        'Hide test files from GitHub diffs. Review what matters; the tests wait in a tidy section at the bottom.',
+        'Hide review noise on GitHub, GitLab and Bitbucket. Review what matters with shared categories and settings.',
       homepage_url: 'https://github.com/brandonmcconnell/geld',
       // Black mark on a white tile. Deliberately no 48/96: chrome://extensions
       // requests the smallest icon >= 48 and shows it in a 48 CSS px box, so an
@@ -98,7 +99,6 @@ export default defineConfig({
         'https://github.com/*',
         'https://patch-diff.githubusercontent.com/*',
         'https://api.github.com/*',
-        'https://gitlab.com/*', 'https://bitbucket.org/*', 'https://api.bitbucket.org/*',
         // Nightly: github.com redirects a release asset's download to these hosts.
         ...(updater ? ['https://release-assets.githubusercontent.com/*', 'https://objects.githubusercontent.com/*'] : []),
       ],
@@ -106,7 +106,7 @@ export default defineConfig({
       // Loopback http is for a model served on this computer (mirrors LOOPBACK_HOSTS in src/lib/ai-gateway.ts).
       ...(mv === 3
         ? { optional_host_permissions: ['https://*/*', 'http://localhost/*', 'http://127.0.0.1/*'] }
-        : { optional_permissions: ['https://*/*', 'http://localhost/*', 'http://127.0.0.1/*'] }),
+        : { optional_permissions: ['https://*/*', 'http://localhost/*', 'http://127.0.0.1/*', 'scripting'] }),
       commands: {
         'toggle-hidden': {
           suggested_key: { default: 'Alt+Shift+T' },
@@ -143,6 +143,8 @@ export default defineConfig({
       }
     },
     'build:manifestGenerated': (wxt, manifest) => {
+      if (manifest.host_permissions) manifest.host_permissions = withoutRequiredProviderOrigins(manifest.host_permissions);
+      if (manifest.permissions) manifest.permissions = withoutRequiredProviderOrigins(manifest.permissions);
       // Chrome and Edge cannot tell a light toolbar from a dark one, so they get the framed mark, which reads on both.
       if ((wxt.config.browser === 'chrome' || wxt.config.browser === 'edge') && manifest.action !== undefined) {
         manifest.action.default_icon = Object.fromEntries(ACTION_ICON_SIZES.map((size) => [String(size), actionIconPath('framed', size)]));

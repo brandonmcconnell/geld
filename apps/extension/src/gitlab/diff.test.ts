@@ -43,6 +43,18 @@ it('keeps current MR head and selected diff metadata out of other MR and reposit
   expect(current?.diffPageUrl).toContain('diff_id=2158495265');
 });
 
+it('keeps the same review identity when native navigation pins an already displayed version', () => {
+  rapid();
+  const base = window.location.href;
+  window.location.href = `${base}?w=1&only_context_commits=true`;
+  const before = describeGitLabPage(new URL(window.location.href), document);
+  window.location.href = `${base}?diff_id=2158495265&w=1&only_context_commits=true&file_path=src%2Flazy.rb`;
+  const after = describeGitLabPage(new URL(window.location.href), document);
+  expect(before?.version).toBe(after?.version);
+  expect(before?.headSha).toBe(HEAD);
+  expect(after?.headSha).toBe(HEAD);
+});
+
 it('uses native revision metadata only for compatible target selection', () => {
   rapid();
   const base = 'https://gitlab.com/gitlab-org/gitlab/-/merge_requests/266882/diffs';

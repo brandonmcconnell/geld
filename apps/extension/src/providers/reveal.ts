@@ -17,6 +17,7 @@ interface PendingReveal {
   readonly clicked: Set<HTMLAnchorElement>;
   readonly expanded: Map<HTMLElement, number>;
   readonly prepared: Set<HTMLElement>;
+  navigationPage: string | null;
   navigated: boolean;
   attempts: number;
 }
@@ -68,7 +69,7 @@ export class ProviderReveal {
     if (this.stopped || path === '') return;
     this.clear();
     const url = new URL(this.doc.location.href);
-    this.pending = { path, visit: this.visit(), page: pageUrl(url, true), filePath: url.searchParams.get('file_path'), hashes: new Set([hashOf(url)]), expires: Date.now() + MAX_WAIT_MS, attempts: 0, clicked: new Set(), expanded: new Map(), prepared: new Set(), navigated: false };
+    this.pending = { path, visit: this.visit(), page: pageUrl(url, true), filePath: url.searchParams.get('file_path'), hashes: new Set([hashOf(url)]), expires: Date.now() + MAX_WAIT_MS, attempts: 0, clicked: new Set(), expanded: new Map(), prepared: new Set(), navigationPage: null, navigated: false };
     this.listen();
     this.refresh();
   }
@@ -107,7 +108,7 @@ export class ProviderReveal {
         link.click();
       } else if (!pending.navigated && (link === null || link === undefined) && view?.navigateToPath !== undefined) {
         pending.hashes.add('');
-        pending.navigated = view.navigateToPath(pending.path);
+        pending.navigated = view.navigateToPath(pending.path, (url) => { pending.navigationPage = pageUrl(url); });
       }
     }
     this.schedule(pending);
@@ -131,9 +132,14 @@ export class ProviderReveal {
 
   private validPending(pending: PendingReveal): boolean {
     const url = new URL(this.doc.location.href);
+    return pending.visit === this.visit() && this.samePendingPage(pending, url) && pending.hashes.has(hashOf(url));
+  }
+
+  private samePendingPage(pending: PendingReveal, url: URL): boolean {
+    if (pageUrl(url) === pending.navigationPage) return true;
     const file = url.searchParams.get('file_path');
-    return pending.visit === this.visit() && pageUrl(url, true) === pending.page
-      && url.searchParams.getAll('file_path').length <= 1 && (file === pending.filePath || file === pending.path) && pending.hashes.has(hashOf(url));
+    return pageUrl(url, true) === pending.page && url.searchParams.getAll('file_path').length <= 1
+      && (file === pending.filePath || file === pending.path);
   }
 
   private validAlignment(alignment: Alignment): boolean {
@@ -152,7 +158,7 @@ export class ProviderReveal {
       url.hash = encodeURIComponent(entry.anchor);
       try { window.history.replaceState(window.history.state, '', url.href); } catch { /* A provider navigation may have retired this document. */ }
     }
-    if (pending.visit !== this.visit() || pageUrl(new URL(this.doc.location.href), true) !== pending.page) return;
+    if (pending.visit !== this.visit() || !this.samePendingPage(pending, new URL(this.doc.location.href))) return;
     const now = Date.now();
     const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.alignment = {

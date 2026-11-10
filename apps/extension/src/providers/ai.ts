@@ -1,3 +1,4 @@
+import { writeLocalReview } from '../lib/local-review-write';
 import type { GeldSettings } from '@geld/core';
 import type { AddressedEvidence, GeldPrMeta, JevRequest, ProviderReviewComment, ProviderReviewInput, RawComment, ReviewItem, ReviewSummary, ThreadInput } from '@geld/review';
 import {
@@ -29,7 +30,7 @@ export interface ProviderAiDependencies {
   readonly readKey: () => Promise<string>;
   readonly permission: (baseUrl: string) => Promise<string | null>;
   readonly readRuns: () => Promise<Readonly<Record<string, AiRunRecord>>>;
-  readonly writeRuns: (runs: Readonly<Record<string, AiRunRecord>>) => Promise<void>;
+  readonly saveRun: (key: string, record: AiRunRecord, current: () => boolean) => Promise<void>;
   readonly send: (message: AiCompleteRequest | AiEvaluateRequest) => Promise<unknown>;
   readonly jevRoute: (settings: GeldSettings, key: string) => Promise<JevRoute | null>;
   readonly now: () => string;
@@ -49,7 +50,7 @@ const defaults: ProviderAiDependencies = {
   readKey: async () => (await import('../lib/local-state')).aiKeyItem.getValue(),
   permission: hasGatewayPermission,
   readRuns: async () => (await import('../lib/local-state')).aiRunsItem.getValue(),
-  writeRuns: async (runs) => (await import('../lib/local-state')).aiRunsItem.setValue(runs),
+  saveRun: (key, record, current) => writeLocalReview({ kind: 'ai', key, record }, async () => { if (!current()) throw new Error('Review source changed.'); }),
   send: (message) => browser.runtime.sendMessage(message),
   now: () => new Date().toISOString(),
   jevRoute: async (settings, key) => {
@@ -111,7 +112,6 @@ interface Context {
   readonly summaryKey: string;
 }
 
-let storeQueue: Promise<void> = Promise.resolve();
 
 /** Loads and overlays device-local results; only an explicit run calls the gateway. */
 export class ProviderAiTriage {
@@ -312,18 +312,7 @@ export class ProviderAiTriage {
   }
 
   private async persist(key: string, record: AiRunRecord, current: () => boolean): Promise<void> {
-    const write = storeQueue.catch(() => undefined).then(async () => {
-      if (!current()) return;
-      const runs = { ...(await this.dependencies.readRuns()), [key]: record };
-      if (!current()) return;
-      const { AI_RUNS_CAP } = await import('../lib/local-state');
-      if (!current()) return;
-      const oldest = Object.keys(runs).sort((a, b) => Date.parse(runs[a]?.ranAt ?? '') - Date.parse(runs[b]?.ranAt ?? '')).slice(0, Math.max(0, Object.keys(runs).length - AI_RUNS_CAP));
-      for (const stale of oldest) delete runs[stale];
-      await this.dependencies.writeRuns(runs);
-    });
-    storeQueue = write;
-    return write;
+    if (current()) await this.dependencies.saveRun(key, record, current);
   }
 
   private publish(): void {
