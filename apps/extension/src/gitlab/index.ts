@@ -1,3 +1,4 @@
+import type { ProviderCommentRenderContext } from '../providers/comment-render';
 import { isProviderReviewPage } from '../providers/types';
 import type { ProviderAdapter } from '../providers/types';
 import { gitLabHeaderTargets, readGitLabDiff } from './diff';
@@ -46,7 +47,16 @@ export const gitlabAdapter: ProviderAdapter = {
       get input() { return syncGitLabNativeReviewState(snapshot.input, doc); },
       get reviewerControls() { return readGitLabReviewerControls(doc, snapshot.reviewerScope, { ...actionVisit, url: doc.URL.split('#')[0] ?? doc.URL }, snapshot.complete); },
       get actions() { return readGitLabActions(doc, snapshot.capabilities, { ...actionVisit, url: doc.URL.split('#')[0] ?? doc.URL, headSha: snapshot.input.subject.headSha, reviewUrl: page.url }); },
-      renderComment: (comment: ProviderReviewComment, host: HTMLElement) => renderGitLabComment(comment, host, doc, snapshot.renderedNotes.get(comment.id)),
+      renderComment: (comment: ProviderReviewComment, host: HTMLElement, context?: ProviderCommentRenderContext) => renderGitLabComment(comment, host, doc, snapshot.renderedNotes.get(comment.id), context === undefined ? undefined : {
+        ...context,
+        current: () => {
+          if (!context.current()) return false;
+          const current = describeGitLabPage(new URL(doc.URL), doc);
+          return current !== null && isProviderReviewPage(current) && current.kind === page.kind && current.number === page.number
+            && current.repository.origin === snapshot.input.subject.origin && current.repository.path === snapshot.input.subject.repository
+            && current.headSha === snapshot.input.subject.headSha && current.version === page.version;
+        },
+      }),
       authorPresentation,
       sourceActions: (comment: ProviderReviewComment) => {
         const permissions = permissionsForNote.get(comment.id);

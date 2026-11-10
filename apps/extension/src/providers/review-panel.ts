@@ -1,3 +1,4 @@
+import type { ProviderCommentRenderContext } from './comment-render';
 import { botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, newestProviderBotSummary, parseInlineMarkdown, previewDocFromMarkdown, previewHostById, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, renderProviderItemMarkdown, sourceLink } from '@geld/review';
 import type { BotVerdictRecord, ProviderPublicationRead, ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, RawCheckRun, ReviewItem, ReviewItemStatus, ReviewerState } from '@geld/review';
 import type { RepositoryIdentity } from '@geld/core';
@@ -60,7 +61,7 @@ export interface ProviderReviewPanelOptions {
   readonly updating?: boolean;
   readonly version?: number;
   readonly actionsForSource?: (comment: ProviderReviewComment) => readonly ProviderReviewSourceAction[];
-  readonly renderComment?: (comment: ProviderReviewComment, host: HTMLElement) => boolean;
+  readonly renderComment?: (comment: ProviderReviewComment, host: HTMLElement, context?: ProviderCommentRenderContext) => boolean;
   readonly authorPresentation?: (comment: ProviderReviewComment) => ProviderReviewAuthorPresentation | null;
   readonly onActionComplete?: () => void;
   readonly comments?: readonly ProviderReviewComment[];
@@ -195,6 +196,31 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   const botRequests = new Map<string, ProviderBotRequestControl>();
   const nativeTimes = new Map<number, string>();
   let lastSignature = '';
+  let renderGeneration = 0;
+  let renderScope = '';
+  const renderStates = new Map<string, { readonly signature: string; readonly state: Map<string, boolean> }>();
+  const activeRenderSources = new Set<string>();
+  const sourceSlots = new Map<string, number>();
+  const sourceOccurrences = new Map<string, number>();
+  const activeSourceKeys = new Set<string>();
+  let nextSourceSlot = 0;
+  let commentFocusFrame: number | null = null;
+  let mountCallbacks: Array<() => void> = [];
+  let disposeCallbacks: Array<() => void> = [];
+
+  function clearRenderStates(): void {
+    for (const memo of renderStates.values()) memo.state.clear();
+    renderStates.clear();
+  }
+
+  function disposeComments(): void {
+    renderGeneration += 1;
+    if (commentFocusFrame !== null) doc.defaultView?.cancelAnimationFrame(commentFocusFrame);
+    commentFocusFrame = null;
+    for (const callback of disposeCallbacks.splice(0)) callback();
+    mountCallbacks = [];
+    sourceOccurrences.clear();activeRenderSources.clear();activeSourceKeys.clear();
+  }
 
   function node<K extends keyof HTMLElementTagNameMap>(tag: K, text = '', className = ''): HTMLElementTagNameMap[K] {
     const value = doc.createElement(tag);
@@ -353,7 +379,25 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const body = node('div', comment.body, 'geld-provider-review__body');
     body.style.whiteSpace = 'pre-wrap';
     body.style.overflowWrap = 'anywhere';
-    if (options.renderComment?.(comment, body) === true) {
+    const sourceKey = JSON.stringify([comment.anchor, comment.id]);
+    if (!sourceSlots.has(sourceKey)) sourceSlots.set(sourceKey, nextSourceSlot++);
+    activeSourceKeys.add(sourceKey);
+    const occurrence = sourceOccurrences.get(sourceKey) ?? 0;
+    sourceOccurrences.set(sourceKey, occurrence + 1);
+    const namespace = `${panelId}-source-${sourceSlots.get(sourceKey)}-${occurrence}`;
+    const sourceSignature = JSON.stringify(comment);
+    let memo = renderStates.get(namespace);
+    if (memo?.signature !== sourceSignature) { memo?.state.clear();memo = { signature: sourceSignature, state: new Map() };renderStates.set(namespace, memo); }
+    activeRenderSources.add(namespace);
+    const generation = renderGeneration;
+    const context: ProviderCommentRenderContext = {
+      idNamespace: namespace,
+      state: memo.state,
+      current: () => !destroyed && generation === renderGeneration && body.isConnected && panel.contains(body),
+      onMount: (callback) => mountCallbacks.push(callback),
+      onDispose: (callback) => disposeCallbacks.push(callback),
+    };
+    if (options.renderComment?.(comment, body, context) === true) {
       body.style.whiteSpace = 'normal';
       [...body.querySelectorAll<HTMLDetailsElement>('details')].forEach((details, index) => {
         const key = `${comment.anchor}:${index}`;
@@ -974,6 +1018,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   function render(): void {
     if (destroyed) return;
     const focused = doc.activeElement;
+    const commentControlId = focused instanceof HTMLElement && panel.contains(focused) && focused.hasAttribute('data-geld-comment-control') ? focused.id : null;
     const requestFocus = focused instanceof HTMLElement && panel.contains(focused) && focused.closest('[data-geld-bot-request]') !== null ? focused : null;
     const focusedCheck = focused?.matches('a[href]') === true && panel.contains(focused) ? focused.closest<HTMLElement>('[data-geld-check-key]') : null;
     const checkFocus = focusedCheck === null ? null : { key: focusedCheck.dataset.geldCheckKey, href: focused?.getAttribute('href') };
@@ -1010,6 +1055,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       return;
     }
     lastSignature = signature;
+    disposeComments();
+    const nextRenderScope = JSON.stringify(input.subject);
+    if (renderScope !== nextRenderScope) { renderScope = nextRenderScope;clearRenderStates();sourceSlots.clear(); }
     for (const details of panel.querySelectorAll<HTMLDetailsElement>('details[data-geld-body-disclosure]')) {
       const key = details.dataset.geldBodyDisclosure;
       if (key !== undefined) sourceDetails.set(key, details.open);
@@ -1158,6 +1206,18 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       if (control !== null && control !== undefined && control.closest('[hidden], [inert], [aria-hidden="true"], details:not([open])') === null) control.focus({ preventScroll: true });
     }
     referenceScope = nextReferenceScope;
+    for (const key of sourceSlots.keys()) if (!activeSourceKeys.has(key)) sourceSlots.delete(key);
+    for (const [key, memo] of renderStates) if (!activeRenderSources.has(key)) { memo.state.clear();renderStates.delete(key); }
+    for (const callback of mountCallbacks.splice(0)) callback();
+    if (commentControlId !== null && doc.defaultView !== null) {
+      const generation = renderGeneration;
+      commentFocusFrame = doc.defaultView.requestAnimationFrame(() => {
+        commentFocusFrame = null;
+        const control = doc.getElementById(commentControlId);
+        if (!destroyed && generation === renderGeneration && control instanceof HTMLElement && panel.contains(control) && !control.matches(':disabled')
+          && control.closest('[hidden], [inert], [aria-hidden="true"], details:not([open])') === null) control.focus({ preventScroll: true });
+      });
+    }
     if (reviewedFocus !== null) {
       const button = [...panel.querySelectorAll<HTMLButtonElement>('[data-geld-local-reviewed]')].find((candidate) => candidate.dataset.geldLocalReviewed === reviewedFocus);
       if (button !== undefined) {
@@ -1189,6 +1249,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     },
     destroy() {
       destroyed = true;
+      disposeComments();clearRenderStates();sourceSlots.clear();
       for (const control of identities) control.destroy();
       for (const control of botRequests.values()) control.destroy();
       botRequests.clear();

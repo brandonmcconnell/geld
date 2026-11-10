@@ -1,3 +1,4 @@
+import type { ProviderCommentRenderContext } from './comment-render';
 import type { FileStats, RepositoryIdentity } from '@geld/core';
 import type { ProviderReviewComment, ProviderReviewInput, ProviderSourceCoverage } from '@geld/review';
 import type { ProviderReviewAuthorPresentation, ProviderReviewPanelEvent, ProviderReviewRequirement, ProviderReviewSourceAction } from './review-panel';
@@ -152,7 +153,7 @@ export interface ProviderReviewSnapshot {
   readonly botRequests?: (input: ProviderReviewInput, comments: readonly ProviderReviewComment[], current: () => boolean) => readonly ProviderBotRequest[];
   readonly sourceCoverage?: ProviderSourceCoverage;
   readonly sourceActions?: (comment: ProviderReviewComment) => readonly ProviderReviewSourceAction[];
-  readonly renderComment?: (comment: ProviderReviewComment, host: HTMLElement) => boolean;
+  readonly renderComment?: (comment: ProviderReviewComment, host: HTMLElement, context?: ProviderCommentRenderContext) => boolean;
   readonly authorPresentation?: (comment: ProviderReviewComment) => ProviderReviewAuthorPresentation | null;
   readonly input: ProviderReviewInput;
   readonly comments: readonly ProviderReviewComment[];
