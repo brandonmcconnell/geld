@@ -128,13 +128,25 @@ it('moves owned presentation between a closed native sidebar and the fallback wi
   expect(document.querySelectorAll('.geld-provider-category-header')).toHaveLength(2);
 });
 
-it('shows Essential on a review containing only uncategorized files', () => {
+it('leaves the native tree alone when nothing is hidden, as GitHub does', () => {
   const { tree, host, view } = fixture();
+  const nativeChildren = [...host.children];
   const files = FILES.slice(0, 1);
   const counts = breakdownFromFiles(files, createMatcher(DEFAULT_SETTINGS, null, BUNDLED_CATALOG));
   tree.update(view, counts.hidden, counts.all, files, { revealPath: vi.fn(), setExpanded: vi.fn() });
-  expect(headers(host).map((button) => button.getAttribute('aria-label'))).toEqual(['Essential (1 file)']);
-  expect(host.querySelector('.geld-provider-essential-content')?.hasAttribute('hidden')).toBe(false);
+  expect(headers(host)).toHaveLength(0);
+  expect(document.querySelector('[data-geld-provider-category-placement="fallback"]')).toBeNull();
+  expect([...host.children]).toEqual(nativeChildren);
+});
+
+it('takes its headings away once the last hidden file is no longer hidden', () => {
+  const { tree, host, view } = fixture();
+  tree.update(view, hidden, all, FILES, { revealPath: vi.fn(), setExpanded: vi.fn() });
+  expect(headers(host).length).toBeGreaterThan(1);
+  const files = FILES.slice(0, 1);
+  const counts = breakdownFromFiles(files, createMatcher(DEFAULT_SETTINGS, null, BUNDLED_CATALOG));
+  tree.update(view, counts.hidden, counts.all, files, { revealPath: vi.fn(), setExpanded: vi.fn() });
+  expect(headers(host)).toHaveLength(0);
 });
 
 it('retains native row visuals when the sidebar unmounts without retaining its action authority', () => {

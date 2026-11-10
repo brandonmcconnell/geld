@@ -2583,6 +2583,7 @@ That displayed-outline phase retains an unknown source head explicitly and does 
 - **Native file trees can recycle rows independently of diff mounting.**
   GitLab's file tree uses absolute virtualizer offsets, so hiding individual rows would leave gaps even though category counts were correct.
   The category accordion hides only the verified native file-list root and projects the complete validated file inventory into compact Essential and category panels using copies of available native row visuals.
+  With nothing hidden there is no accordion at all and the native tree stays as the host drew it, as on GitHub: a lone Essential heading over every file said nothing (triage-ops!4544, one CI file, Nov 2026).
   Native rows, search controls, file comments and source controls stay in their original framework ownership, with IDs in visual copies remapped and original actions relayed to connected native controls.
   Native status or comment-mark updates can rebuild owned accordion rows, so retain focus only for the same subject, provider, active category and exact file, folder or original enabled native-action identity.
   A trailing comment action never falls back to the file link, and changed subjects, categories, unrelated focus or missing, replaced or disabled actions cancel focus restoration.

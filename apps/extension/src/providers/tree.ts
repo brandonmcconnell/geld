@@ -94,7 +94,8 @@ export class ProviderCategoryTree {
     if (this.provider !== nativeProvider || this.subjectKey !== subjectKey) this.clear();
     this.reconcile(files, hidden);
     if ((files.length === 0 && hidden.categories.length === 0) || !view.container.isConnected) { this.clear(); return; }
-    if (view.treeHost?.querySelector<HTMLInputElement>('input[type="search"]')?.value.trim()) {
+    // With nothing hidden the native tree stays as the host drew it, as GitHub's does: a lone Essential heading says nothing.
+    if (hidden.categories.length === 0 || view.treeHost?.querySelector<HTMLInputElement>('input[type="search"]')?.value.trim()) {
       if (sameSubject && nativeProvider !== null) this.releaseProjection();
       else this.clear();
       this.removeFallback();
