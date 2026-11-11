@@ -127,6 +127,7 @@ function renderChoices(): void {
       input.addEventListener('change', () => {
         choice[key] = input.checked;
         renderPreview();
+        renderSend();
       });
       const words = el('span', 'feedback__choice-words', [el('span', 'feedback__choice-label', [CHOICE_LABELS[key]]), el('span', 'feedback__choice-value', [value])]);
       const note = noteFor(key);
@@ -302,7 +303,8 @@ async function reopen(opening: FeedbackOpenMessage): Promise<void> {
   if (tab?.windowId !== undefined) await browser.windows.update(tab.windowId, { focused: true });
   if (!sent.hidden) startOver();
   if (sending) return;
-  if (opening.tabId !== undefined) openingTab = opening.tabId;
+  // Opened from no GitHub tab (the options page, a non-GitHub page): the page it was opened from before says nothing now.
+  openingTab = opening.tabId ?? null;
   if (opening.diagnostics === true) choice.diagnostics = true;
   // The page may be another one now, perhaps a private repository's: its address and the consent are asked for afresh.
   choice.page = false;

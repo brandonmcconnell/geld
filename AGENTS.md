@@ -1165,7 +1165,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Send looks disabled until the draft can go (`aria-disabled`), but takes the click and says what is missing in a tooltip above it (`blocker`: title, details, sign-in, consent, length).
   A required checkbox names the account and the repository, and the draft is kept in `local:feedbackDraft` until it is sent, saved on every edit, so closing the tab or signing in loses nothing.
   There is one feedback tab: a Feedback link first asks an open feedback page to come forward (`geld:feedback-open`, answered `true`, carrying the link's tab and diagnostics), and opens a new tab only when nothing answers.
-  Coming forward clears the consent and sets the page address to the new page's default, since the page may now be a private repository's.
+  Coming forward clears the consent and sets the page address to the new page's default, since the page may now be a private repository's, and an opening that names no GitHub tab (the options page) drops the page from before.
   Sending clears the draft only when the stored one is still the draft that was sent, and the title, details and kind are read-only while the request is out.
   The background opens the issue on `brandonmcconnell/geld` with the reader's own Geld App user token (`submitFeedback` in `account-service.ts`, `POST /repos/…/issues` through `withToken`), so it is the reader's issue, marked by GitHub as made with the App, and no bot account posts on anyone's behalf.
   That needs the reader signed in with GitHub (the same device flow as settings sync, which signing in also turns on) and the Geld App installed on Geld's own repository, which user tokens can only write to where the App is installed;
