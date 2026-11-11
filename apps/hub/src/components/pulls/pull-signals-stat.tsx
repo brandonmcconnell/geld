@@ -1,4 +1,4 @@
-import type { ChangeTotals } from "@geld/core";
+import type { ChangeTotals } from "@geld/core/format";
 import {
   Tooltip,
   TooltipContent,

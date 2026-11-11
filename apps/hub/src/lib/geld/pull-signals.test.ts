@@ -1,4 +1,5 @@
-import { createMatcher, DEFAULT_SETTINGS } from "@geld/core";
+import { createMatcher } from "@geld/core/matcher";
+import { DEFAULT_SETTINGS } from "@geld/core/settings";
 import { describe, expect, it } from "vitest";
 import { hiddenLabel, pullSignalsFrom, type SignalFile } from "./pull-signals";
 

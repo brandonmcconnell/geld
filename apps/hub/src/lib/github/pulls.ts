@@ -1,6 +1,5 @@
-import { createMatcher, DEFAULT_SETTINGS } from "@geld/core";
 import { createServerFn } from "@tanstack/react-start";
-import { type PullSignals, pullSignalsFrom } from "../geld/pull-signals";
+import type { PullSignals } from "../geld/pull-signals";
 import { RequestError } from "octokit";
 import type {
 	GitHubActor,
@@ -2041,9 +2040,12 @@ export const getPullSignals = createServerFn({ method: "GET" })
 			if (cursor === null) break;
 		}
 
-		return pullSignalsFrom(
+		const { defaultPullSignals } = await import(
+			"../geld/pull-signals.server"
+		);
+		return defaultPullSignals(
 			files,
-			createMatcher(DEFAULT_SETTINGS, `${data.owner}/${data.repo}`),
+			`${data.owner}/${data.repo}`,
 			cursor !== null,
 		);
 	});

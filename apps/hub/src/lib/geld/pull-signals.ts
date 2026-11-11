@@ -1,11 +1,11 @@
+import type { ChangeKindId } from "@geld/core/change-kinds";
 import {
   addTotals,
-  type ChangeKindId,
   type ChangeTotals,
   EMPTY_TOTALS,
-  type PathMatcher,
   pluralize,
-} from "@geld/core";
+} from "@geld/core/format";
+import type { PathMatcher } from "@geld/core/matcher";
 
 export type SignalFile = {
   filename: string;
