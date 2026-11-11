@@ -6,8 +6,10 @@ import { applyTopCardHint } from '../../src/github/review/top-card';
 import { applyReviewGroupHint, withdrawReviewGroupHint } from '../../src/github/quick-review';
 import { applyTabCountsHint, withdrawTabCountsHint } from '../../src/github/tab-counts';
 import { applyDescriptionFoldHint, releaseDescription, stopEarlyDescriptionFold } from '../../src/github/review/description';
+import type { GeldSettings } from '@geld/core';
 import type { TabState, TabStateMessage } from '../../src/lib/messages';
-import { isGetTabStateMessage, isPerfReportMessage, isRevealFileMessage, isToggleHiddenMessage } from '../../src/lib/messages';
+import { isGetTabStateMessage, isPerfReportMessage, isRevealFileMessage, isSetTabDisabledMessage, isToggleHiddenMessage } from '../../src/lib/messages';
+import { isTabDisabled, setTabDisabled, withTabOverride } from '../../src/lib/tab-override';
 import type { PerfSnapshot } from '../../src/lib/perf';
 import { mark, snapshot as perfSnapshot } from '../../src/lib/perf';
 import { loadCatalog, watchCatalog } from '../../src/lib/catalog';
@@ -35,17 +37,22 @@ export default defineContentScript({
     // any older copy still running in the page must step aside first.
     const TAKEOVER = 'geld:takeover';
     mark('script-start');
+    let tabDisabled = isTabDisabled();
     // Before any await: GitHub can paint the Overview's top card before the settings arrive.
-    applyTopCardHint();
-    applyReviewGroupHint();
-    applyTabCountsHint();
-    applyDescriptionFoldHint();
+    if (!tabDisabled) {
+      applyTopCardHint();
+      applyReviewGroupHint();
+      applyTabCountsHint();
+      applyDescriptionFoldHint();
+    }
     const stopErrorCapture = installErrorCapture('content');
     document.dispatchEvent(new CustomEvent(TAKEOVER));
     // Listen before the first await: a copy injected while this one still loads its settings
     // would otherwise be missed, and two copies would then fight over the page.
     let retired = false;
     let controller: GeldController | null = null;
+    let latestSettings: GeldSettings | null = null;
+    const tabState = (): TabState => ({ ...(controller?.getTabState() ?? IDLE_STATE), tabDisabled });
     // Retiring before the controller ran is recorded in the trail only, never the console: a takeover has a newer
     // copy running and an invalidated context has the extension reloading, and Chrome lists every warning as an error.
     const retireEarly = (why: string): void => {
@@ -92,7 +99,7 @@ export default defineContentScript({
           setTimeout(() => quietly(() => sendResponse(perfSnapshot())), RETIRED_ANSWER_MS);
           return true;
         }
-        if (!(isGetTabStateMessage(message) || isToggleHiddenMessage(message) || isRevealFileMessage(message))) return undefined;
+        if (!(isGetTabStateMessage(message) || isToggleHiddenMessage(message) || isRevealFileMessage(message) || isSetTabDisabledMessage(message))) return undefined;
         setTimeout(() => quietly(() => sendResponse(IDLE_STATE)), RETIRED_ANSWER_MS);
         return true;
       }
@@ -104,28 +111,37 @@ export default defineContentScript({
       }
       if (isToggleHiddenMessage(message)) {
         controller?.toggleHidden();
-        sendResponse(controller?.getTabState() ?? IDLE_STATE);
+        sendResponse(tabState());
         return undefined;
       }
       if (isRevealFileMessage(message)) {
         controller?.revealPath(message.path);
-        sendResponse(controller?.getTabState() ?? IDLE_STATE);
+        sendResponse(tabState());
+        return undefined;
+      }
+      if (isSetTabDisabledMessage(message)) {
+        tabDisabled = message.disabled;
+        setTabDisabled(tabDisabled);
+        if (latestSettings !== null) controller?.updateSettings(withTabOverride(latestSettings, tabDisabled));
+        sendResponse(tabState());
         return undefined;
       }
       if (isGetTabStateMessage(message)) {
-        sendResponse(controller?.getTabState() ?? IDLE_STATE);
+        sendResponse(tabState());
         return undefined;
       }
       return undefined;
     };
     browser.runtime.onMessage.addListener(onMessage);
 
-    const [settings, whitespaceOptOuts] = await Promise.all([settingsItem.getValue(), whitespaceOptOutsItem.getValue()]);
+    const [stored, whitespaceOptOuts] = await Promise.all([settingsItem.getValue(), whitespaceOptOutsItem.getValue()]);
     mark('settings');
     if (retired) return;
+    latestSettings = stored;
+    const settings = withTabOverride(stored, tabDisabled);
     // A diff page opened without GitHub's "hide whitespace" parameter goes to its `?w=1` form now, while the
     // document is still streaming, so the page is never seen without it (the controller handles later navigations).
-    if (settings.hideWhitespace && window.top === window && redirectEarly(new URL(window.location.href), whitespaceOptOuts)) {
+    if (!tabDisabled && settings.hideWhitespace && window.top === window && redirectEarly(new URL(window.location.href), whitespaceOptOuts)) {
       mark('redirect-early');
       return;
     }
@@ -163,8 +179,9 @@ export default defineContentScript({
     stopEarlyDescriptionFold();
 
     const unwatchSettings = settingsItem.watch((settings) => {
+      latestSettings = settings;
       showBadge = settings.showBadge;
-      started.updateSettings(settings);
+      started.updateSettings(withTabOverride(settings, tabDisabled));
     });
     // The background fetched a newer pattern catalog: apply it without a reload.
     const unwatchCatalog = watchCatalog((catalog) => started.updateCatalog(catalog));

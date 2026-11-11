@@ -67,6 +67,7 @@ import { mountAccountWidget } from '../../src/ui/account-widget';
 import { polyfillCornerShape } from '../../src/ui/corner-shape';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
 import { installErrorCapture } from '../../src/lib/error-capture';
+import { mountTabSwitches } from './tab-switches';
 
 installErrorCapture('options');
 
@@ -219,6 +220,7 @@ async function main(): Promise<void> {
   }
 
   renderToggleSection('general', 'general-rows');
+  mountTabSwitches(requireElement('tab-rows', HTMLDivElement), requireElement('tab-rows-empty', HTMLParagraphElement), () => allHosts(settings));
   applySchemaCopy('hide');
   renderToggleSection('tests', 'tests-rows');
   renderToggleSection('large-diffs', 'large-diffs-rows');

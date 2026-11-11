@@ -583,6 +583,7 @@ async function main(): Promise<void> {
   async function refreshContext(): Promise<void> {
     if (tab === null) return;
     const state = await requestTabState(tab.id);
+    const tabOff = state?.tabDisabled === true;
     repo = state?.repo ?? repo;
     contextRepo.textContent = repo === null ? tab.url.hostname : tab.url.hostname === 'github.com' ? repo : `${tab.url.hostname}/${repo}`;
     // Marks the subtitle as live context (kept when signed in) rather than the generic tagline (hidden once signed in).
@@ -591,11 +592,13 @@ async function main(): Promise<void> {
     const rules = compileRepoRules(settings.repoRules);
     const decision = repo === null ? { allowed: true, rule: null } : decideRepo(rules, repo);
 
-    const showStats = settings.enabled && decision.allowed && state !== null && state.hasDiff && state.visible !== null && state.all !== null;
+    const showStats = settings.enabled && !tabOff && decision.allowed && state !== null && state.hasDiff && state.visible !== null && state.all !== null;
 
     // One line says it all when there are numbers; prose only when there are none.
     if (!settings.enabled) {
       summary.textContent = 'Geld is turned off.';
+    } else if (tabOff) {
+      summary.textContent = 'Geld is off in this tab.';
     } else if (!decision.allowed) {
       summary.textContent = `Off in ${repo ?? 'this repository'} because of the rule "${decision.rule?.raw ?? ''}".`;
     } else if (state === null || !state.hasDiff) {
@@ -625,7 +628,7 @@ async function main(): Promise<void> {
     }
 
     actions.hidden = repo === null || !settings.enabled;
-    renderRepoConfig(settings.enabled && decision.allowed ? (state?.repoConfig ?? null) : null);
+    renderRepoConfig(settings.enabled && !tabOff && decision.allowed ? (state?.repoConfig ?? null) : null);
     if (repo !== null) {
       const org = orgOf(repo);
       const orgDecision = decideRepo(rules, ownerProbe(org));

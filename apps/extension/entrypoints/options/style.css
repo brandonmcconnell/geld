@@ -60,6 +60,18 @@ body {
   margin-top: 2px;
 }
 
+.options__tab-text {
+  min-width: 0;
+}
+
+.options__tab-title,
+.options__tab-url {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .options__divider {
   margin: 0;
   border: 0;
