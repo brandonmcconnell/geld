@@ -8,6 +8,7 @@ const paths = {
   settings: '<path d="m9 3 1-2h4l1 2 2 1 2-.2 2 3.4-1.2 1.8V12l1.2 1.8-2 3.4-2-.2-2 1-1 2h-4l-1-2-2-1-2 .2-2-3.4L4.2 12V9L3 7.2l2-3.4L7 4Z" transform="translate(0 1)"/><circle cx="12" cy="12" r="3"/>',
   reviews: '<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M17 5a3 3 0 0 1 0 6M19 15a5 5 0 0 1 2 4v2"/>',
   check: '<circle cx="12" cy="12" r="9"/><path d="m7 12 3 3 7-7"/>',
+  changes: '<circle cx="12" cy="12" r="9"/><path d="m9 9 6 6m0-6-6 6"/>',
   comment: '<path d="M21 15a2 2 0 0 1-2 2H7l-5 4V5a2 2 0 0 1 2-2h15a2 2 0 0 1 2 2Z"/>',
   activity: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   report: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h7M7 16h4"/>',
