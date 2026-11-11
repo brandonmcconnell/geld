@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import { installErrorCapture } from '../../src/lib/error-capture';
-import { folderAccessMissing } from '../../src/nightly/folder-access';
+import { connectErrorShown, folderAccessMissing, folderHelp } from '../../src/nightly/folder-access';
 import { loadFolderHandle, saveFolderHandle } from '../../src/nightly/handle-store';
 import { isNightlyInstallResult } from '../../src/nightly/messages';
 import type { NightlyCheckMessage, NightlyInstallMessage, NightlyRollbackMessage } from '../../src/nightly/messages';
@@ -20,7 +20,7 @@ function byId<T extends HTMLElement>(id: string, type: new () => T): T {
 
 const panel = byId('panel', HTMLDivElement);
 const folderLine = byId('folder', HTMLParagraphElement);
-const folderHelp = byId('folder-help', HTMLParagraphElement);
+const folderHelpLine = byId('folder-help', HTMLParagraphElement);
 const folderError = byId('folder-error', HTMLParagraphElement);
 const connectButton = byId('connect', HTMLButtonElement);
 
@@ -67,19 +67,9 @@ async function act(kind: NightlyAction): Promise<string | null> {
 
 let installedIn: string | null = null;
 
-function folderHelpFor(folder: NightlyFolder | null): string {
-  if (folder === null) {
-    if (window.showDirectoryPicker === undefined) return folderAccessMissing('brave' in navigator);
-    return installedIn === null ? 'Pick the unzipped folder you loaded with Load unpacked.' : `The installer put Geld in ${installedIn}. Pick that folder.`;
-  }
-  return folder.downloads === true
-    ? 'This folder is in your download folder, so Geld can install builds on its own.'
-    : 'When Chrome asks to let Geld edit files, choose Allow on every visit. Installs then run on their own, even after Chrome restarts. With Allow this time, each install asks again.';
-}
-
 function renderFolder(folder: NightlyFolder | null): void {
   folderLine.textContent = folder === null ? 'No folder connected.' : folder.downloads === true ? `Downloads/${folder.name}` : folder.name;
-  folderHelp.textContent = folderHelpFor(folder);
+  folderHelpLine.textContent = folderHelp({ folder, installedIn, hasPicker: window.showDirectoryPicker !== undefined, isBrave: 'brave' in navigator });
   connectButton.textContent = folder === null ? 'Connect folder' : 'Connect another folder';
 }
 
@@ -89,7 +79,7 @@ connectButton.addEventListener('click', () => {
   void connectFolder()
     .catch((error: unknown) => {
       if (error instanceof DOMException && error.name === 'AbortError') return;
-      if (error instanceof Error && error.message === folderHelp.textContent) return;
+      if (error instanceof Error && !connectErrorShown(error.message, folderHelpLine.textContent ?? '')) return;
       folderError.textContent = error instanceof Error ? error.message : String(error);
       folderError.hidden = false;
     })
