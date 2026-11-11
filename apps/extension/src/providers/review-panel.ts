@@ -999,7 +999,11 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       }
       compact.append(node('span', botById(id)?.title ?? id), node('span', verdict === undefined ? 'No result' : verdict.score === undefined ? verdictLabel(verdict) : `${verdict.score}/5`, 'geld-provider-review__muted'));
       if (compact instanceof HTMLButtonElement) compact.setAttribute('aria-label', `Preview ${registered?.title ?? id} review: ${verdict?.score === undefined ? '' : `${verdict.score}/5, `}${verdict === undefined ? 'No result' : verdictLabel(verdict)}`);
-      if (health === 'good') compact.append(digestIcon('check', doc));
+      // GitHub's lights: a check when clear, an amber dot for findings, a red exclamation for severe ones,
+      // the warning triangle for a run the bot refused and a red cross only for a run that broke.
+      const light = health === 'good' ? 'check' : health === 'severe' ? 'severe' : health === 'bad' ? 'changes'
+        : health === 'warn' ? (verdict?.verdict === 'failed' ? 'skipped' : 'dot') : null;
+      if (light !== null) compact.append(digestIcon(light, doc));
       preview.append(compact);
       row.querySelector('[data-geld-review-toggle]')?.replaceChildren(digestIcon('reviews', doc), compact.querySelector('img')?.cloneNode(true) ?? node('span'), node('strong', registered?.title ?? id), node('span', verdict === undefined ? 'No result' : verdictLabel(verdict), 'geld-provider-review__entry-preview'));
       row.dataset.geldBotHealth = health;
