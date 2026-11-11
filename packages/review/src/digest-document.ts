@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { RawCheckRun } from './bots';
 import type { BotVerdictRecord, GeldPrMeta, PreviewRecord, ReviewItem, ReviewProvider } from './model';
 import { botVerdictSchema, previewRecordSchema, REVIEW_PROVIDERS, REVIEWER_STATES, reviewItemSchema } from './model';
-import type { ProviderReviewAuthor, ProviderReviewInput } from './provider-review';
+import type { ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput } from './provider-review';
 import { buildProviderReviewItems, providerReviewKey, providerReviewUrl } from './provider-review';
 
 /**
@@ -214,6 +214,7 @@ export interface ProviderDigestParts {
   readonly previews?: readonly PreviewRecord[];
   readonly bots?: readonly BotVerdictRecord[];
   readonly items?: readonly ReviewItem[];
+  readonly comments?: readonly ProviderReviewComment[];
 }
 
 export type DigestRuleState = (typeof RULE_STATES)[number];
@@ -235,7 +236,10 @@ const AREA_ALIASES: ReadonlyMap<string, { readonly area: DigestArea; readonly st
 export function digestFromProvider(parts: ProviderDigestParts): DigestDocument {
   const { input } = parts;
   providerReviewKey(input.subject);
-  const bots = new Set((input.bots ?? []).map((bot) => bot.authorId));
+  const bots = new Set([
+    ...(input.bots ?? []).map((bot) => bot.authorId),
+    ...[...(parts.comments ?? []), ...input.threads.flatMap((thread) => thread.comments)].filter((comment) => comment.author.automated === true).map((comment) => comment.author.id),
+  ]);
   const unavailable = parts.unavailable ?? [];
   const coverage = coverageFrom([
     ...unavailable.flatMap((entry) => {
@@ -246,9 +250,15 @@ export function digestFromProvider(parts: ProviderDigestParts): DigestDocument {
     ...(input.checksCoverage === undefined ? [] : [{ area: 'checks', state: input.checksCoverage }]),
     ...(parts.sourceCoverage === undefined ? [] : [{ area: 'comments', state: parts.sourceCoverage.comments }, { area: 'threads', state: parts.sourceCoverage.threads }]),
   ]);
+  // A review source that failed while another answered leaves the reviewers read: partial, not none.
+  if (input.reviewers === undefined) coverage.reviews = coverage.reviews?.state === 'unavailable' ? coverage.reviews : { state: 'unavailable', reason: coverage.reviews?.reason ?? 'The host did not list reviewers.' };
+  else if (coverage.reviews?.state === 'unavailable') coverage.reviews = { ...coverage.reviews, state: 'partial' };
   const reviewsUnavailable = coverage.reviews?.state === 'unavailable';
-  const required = parts.approvalsRequired ?? null;
-  const left = parts.approvalsLeft ?? null;
+  // Hosts report these loosely: a pair that does not add up is no requirement, not a broken document.
+  const whole = (value: number | null | undefined): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+  const valid = whole(parts.approvalsRequired) && whole(parts.approvalsLeft) && parts.approvalsRequired > 0 && parts.approvalsLeft <= parts.approvalsRequired;
+  const required = valid ? parts.approvalsRequired ?? null : null;
+  const left = valid ? parts.approvalsLeft ?? null : null;
   const rules = parts.requirements ?? null;
   return parse({
     v: 1,
@@ -256,7 +266,7 @@ export function digestFromProvider(parts: ProviderDigestParts): DigestDocument {
     reviewers: reviewsUnavailable ? [] : (input.reviewers ?? []).map((reviewer) => ({
       account: account(reviewer.author, bots),
       standing: reviewer.state,
-      request: reviewer.reviewRequest ?? 'unknown',
+      request: reviewer.reviewRequest ?? (reviewer.state === 'pending' ? 'pending' : 'unknown'),
       ...(reviewer.anchor === undefined ? {} : { anchor: reviewer.anchor }),
     })),
     requirement: required === null && left === null && rules === null ? null : { approvalsRequired: required, approvalsLeft: left, rules: rules === null ? null : rules.map((rule) => ({ ...rule })) },
