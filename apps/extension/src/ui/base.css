@@ -775,8 +775,7 @@ summary::-webkit-details-marker {
 
 .geld-account__prompt {
   padding: 12px 14px;
-  border: 1px solid var(--border);
-  background: color-mix(in oklch, var(--muted) 40%, transparent);
+  background: light-dark(oklch(0.96 0.06 85), oklch(0.3 0.06 75));
   font-size: 12.5px;
 }
 
