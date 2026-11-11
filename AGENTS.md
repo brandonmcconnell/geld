@@ -3678,6 +3678,7 @@ The provider digest's default grouping is by type with GitHub's rounds (`roundSe
 Rounds with an open thread stand under "N rounds to review", the newest open, the latest round with no threads at all is the current round, never a settled one, and is headed "Current round" when it is alone there, and the rest fold under "N settled rounds".
 Without a recorded push everything is one round.
 The Reviews and Review bots rows hold the people's and bots' standing only, so a status-row refresh never touches a conversation.
+A registered bot's latest summary is seated on its Review bots line, which opens to it, and not in its round (`seatedSummaries`), as on GitHub.
 GitLab merge blockers come from its qualified merge widget separately from pipeline checks, and system-note activity uses the same author-bound inert renderer as normal comments.
 An explicit Digest selection folds represented originals revealed through source links or native find, while ordinary refreshes preserve those reveals and active native editors.
 The gitlab-expanded-digest installed-browser slice opens triage-ops MR4544 and verifies expanded bot content, merge blockers, formatted emoji, timeline restore/refold, description headings and menu isolation.

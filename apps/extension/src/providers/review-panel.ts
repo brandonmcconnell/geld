@@ -927,6 +927,16 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     return 'Review result unknown';
   }
 
+  /** A bot's latest summary is seated on its Review bots line, not in its round, as on GitHub. */
+  function seatedSummaries(): ReadonlySet<string> {
+    const ids = new Set<string>();
+    for (const bot of input.bots ?? []) {
+      const summary = newestProviderBotSummary(input, options.comments ?? [], bot.id);
+      if (summary !== null) ids.add(summary.id);
+    }
+    return ids;
+  }
+
   function botsSection(): HTMLElement | null {
     const bound = [...new Set((input.bots ?? []).map((bot) => bot.id))];
     const automated = new Map(conversationComments().filter(comment => automatedAuthor(comment.author)).map(comment => [comment.author.id, comment.author]));
@@ -1003,6 +1013,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         }
       }
       if (providerBotSupport(input.subject.provider, id)?.formatVerified !== true) row.append(node('p', 'Summary parsing for this service has not been verified on this provider.', 'geld-provider-review__muted'));
+      if (summary !== null) {
+        const chat = sourceComment(summary);chat.dataset.geldBotSummary = id;row.append(chat);
+      }
       for (const request of options.botRequests ?? []) {
         if (request.botId !== id || !request.current()) continue;
         let control = botRequests.get(request.key);
@@ -1822,7 +1835,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const deployments = deploymentsSection();
     if (deployments !== null) children.push(deployments);
     const comments = new Map(input.threads.flatMap((thread) => thread.comments.map((comment) => [comment.anchor, comment] as const)));
-    const ordinary = (options.comments ?? []).filter((comment) => !comments.has(comment.anchor));
+    const seated = seatedSummaries();
+    const ordinary = (options.comments ?? []).filter((comment) => !comments.has(comment.anchor) && !seated.has(comment.id));
     if (items.length === 0) children.push(node('p', panel.dataset.state === 'partial' ? 'No review threads in the available data.' : 'No review threads.'));
     if (options.reviewGrouping === 'batch') children.push(...historySections(comments, ordinary));
     else children.push(...roundSections(comments, ordinary));

@@ -120,7 +120,7 @@ Decision needed: keep Merge checks as a provider row, or fold it into CI and the
 | Pill per bot with traffic light (`botHealth`) | match: `botsSection` chip lights a check, an amber dot, a red exclamation, the refusal triangle or a red cross | match: same | comments, checks | data |
 | Recognised without setup (registry, `/apps/` links) | partial: needs a bound account in settings (`providerReviewWithTrustedAccounts`) | partial: same, and `bots: []` from the fetch | user `bot`/`user_type` (GL) · none reliable (BB) | — |
 | Opened: one line per bot (`botLine`) | partial: a disclosure per bot with health, verdict, score, reason, "View review" | partial: same | — | — |
-| Line opens to latest summary as a one-bubble chat | partial: summary in a hover card (`summary-preview.ts`), not in the row | partial: same | sanitised copy | should be a slot (the note node) |
+| Line opens to latest summary as a one-bubble chat | match: the latest summary is seated on its line (`seatedSummaries`), not in its round, and still previews on hover | match: same | sanitised copy | should be a slot (the note node) |
 | Run's threads as chips (`threadHeadOf`) | partial: the bot's threads nested by status | partial: same | discussions / comments | — |
 | Rerun on the summary | partial: CodeRabbit and Greptile only, "Copy command" and "Open native comment", never posts (`gitlab/bot-request.ts`) | missing | — | — |
 | View (bot site badge) | missing | missing | comment body | — |

@@ -738,6 +738,9 @@ describe('provider conversation digest', () => {
     expect(row?.textContent).toContain('Findings resolved');
     expect(row?.textContent).toContain(author.login);
     expect(row?.querySelector('a')?.href).toBe(finding.url);
+    expect(row?.querySelector('[data-geld-bot-summary="coderabbit"]')?.getAttribute('data-geld-source')).toBe(summary.anchor);
+    expect(panel.element.querySelectorAll(`[data-geld-source="${summary.anchor}"]`)).toHaveLength(1);
+    expect(panel.element.querySelector(`[data-geld-round-group] [data-geld-source="${summary.anchor}"]`)).toBeNull();
     panel.update({ ...native, complete: false }, { comments: [summary] });
     expect(panel.element.dataset.state).toBe('partial');
     expect(panel.element.querySelector('[data-geld-review-bot="coderabbit"]')?.textContent).toContain('count unavailable');
