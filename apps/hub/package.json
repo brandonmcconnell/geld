@@ -29,6 +29,7 @@
 		"@geld/github": "workspace:*",
 		"@geld/hub-ui": "workspace:*",
 		"@geld/providers": "workspace:*",
+		"@geld/review": "workspace:*",
 		"@noble/ciphers": "2.1.1",
 		"@noble/hashes": "2.0.1",
 		"@number-flow/react": "0.6.0",

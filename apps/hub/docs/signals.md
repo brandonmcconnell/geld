@@ -14,3 +14,15 @@ A pull request row first shows GitHub's totals. Once the row nears the viewport 
 - The stat is not shown on narrow screens, as GitHub's totals are not.
 
 Nothing is stored on the server. The answer is kept in the browser's query cache for ten minutes, keyed by the pull request and when it last changed.
+
+## The Digest, on a pull request
+
+The pull request page shows a Digest between the description and the activity (`PullDigestSection`, `src/lib/geld/digest.ts`): how many review threads are resolved, one pill per review bot with what it said, one line per open thread, and the resolved ones behind a toggle. A line leads to the files view.
+
+It is built in the browser by `buildMeta` from `@geld/review`, the code the extension and the Action build theirs with, from what the page already loaded: comments, review comments, each thread's resolved state, reviews and check runs. `digestInputFrom` turns those into the shape the Action reads from GitHub's API. Nothing is requested for it beyond the page's own reads, and nothing is stored.
+
+- The section is absent when the pull request has no review threads and no review bot has spoken.
+- The page loads comments a page at a time, so on a long conversation the Digest covers the comments loaded so far.
+- A review's own words and the commit it reviewed are not loaded by the page, so a bot that reports only in a review body is read from its threads and its check alone.
+- Whether a thread is outdated is not known here, so an outdated thread counts as open until it is resolved.
+- There is no AI summary, previews row or reports row yet.

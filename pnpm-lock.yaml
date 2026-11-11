@@ -17,7 +17,7 @@ importers:
         version: link:packages/core
       sharp:
         specifier: 0.35.4
-        version: 0.35.4(@types/node@26.4.1)
+        version: 0.35.4(@types/node@22.19.17)
       tsx:
         specifier: ^4.23.13
         version: 4.23.13
@@ -82,7 +82,7 @@ importers:
         version: 1.8.0(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@better-auth/sso':
         specifier: 1.7.15
-        version: 1.7.15(c23a191dc32e0256cff40e88c3d48580)
+        version: 1.7.15(a1ca17ba135cdd8aaa004bdf38f39c2b)
       '@c15t/react':
         specifier: ^1.8.0
         version: 1.9.0(@cloudflare/workers-types@5.20261110.1)(@electric-sql/pglite@0.4.6)(@opentelemetry/api@1.9.0)(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.0))(@types/pg@8.23.1)(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(better-sqlite3@13.0.3)(immer@11.2.10)(mysql2@3.24.6(@types/node@26.4.1))(pg@8.23.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typeorm@0.3.31(better-sqlite3@13.0.3)(mysql2@3.24.6(@types/node@26.4.1))(pg@8.23.1))(use-sync-external-store@1.6.0(react@19.2.8))(ws@8.22.0)
@@ -259,6 +259,9 @@ importers:
       '@geld/providers':
         specifier: workspace:*
         version: link:../../packages/providers
+      '@geld/review':
+        specifier: workspace:*
+        version: link:../../packages/review
       '@noble/ciphers':
         specifier: 2.1.1
         version: 2.1.1
@@ -11389,14 +11392,14 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
 
-  '@better-auth/core@1.7.20(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.9.0)(better-call@1.4.4(zod@4.5.4))(jose@6.2.14)(kysely@0.28.19)(nanostores@1.5.5)':
+  '@better-auth/core@1.7.20(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.9.0)(better-call@1.4.4(zod@4.5.4))(jose@6.2.14)(kysely@0.29.8)(nanostores@1.5.5)':
     dependencies:
       '@better-auth/utils': 0.5.1
       '@better-fetch/fetch': 1.3.3
       '@standard-schema/spec': 1.1.0
       better-call: 1.4.4(zod@4.5.4)
       jose: 6.2.14
-      kysely: 0.28.19
+      kysely: 0.29.8
       nanostores: 1.5.5
       zod: 4.6.7
     optionalDependencies:
@@ -11407,7 +11410,7 @@ snapshots:
       '@better-auth/core': 1.7.15(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.9.0)(better-call@1.4.4(zod@4.5.4))(jose@6.2.14)(kysely@0.29.8)(nanostores@1.5.5)
       '@better-auth/utils': 0.5.1
     optionalDependencies:
-      drizzle-orm: 0.44.7(@cloudflare/workers-types@5.20261110.1)(@electric-sql/pglite@0.4.6)(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.28.19)(mysql2@3.24.6(@types/node@26.4.1))(pg@8.23.1)
+      drizzle-orm: 0.44.7(@cloudflare/workers-types@5.20261110.1)(@electric-sql/pglite@0.4.6)(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.29.8)(mysql2@3.24.6(@types/node@26.4.1))(pg@8.23.1)
 
   '@better-auth/drizzle-adapter@1.7.15(@better-auth/core@1.7.15(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.9.1)(better-call@1.4.4(zod@4.6.7))(jose@6.2.14)(kysely@0.29.8)(nanostores@1.5.5))(@better-auth/utils@0.5.1)(drizzle-orm@0.45.2(@cloudflare/workers-types@5.20261109.1)(@electric-sql/pglite@0.4.6)(@opentelemetry/api@1.9.1)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.29.8)(mysql2@3.24.6(@types/node@22.19.17))(pg@8.23.1))':
     dependencies:
@@ -11489,9 +11492,9 @@ snapshots:
       '@better-auth/core': 1.7.18(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.9.1)(better-call@1.4.5(zod@4.6.7))(jose@6.2.14)(kysely@0.29.8)(nanostores@1.5.5)
       '@better-auth/utils': 0.5.1
 
-  '@better-auth/sso@1.7.15(c23a191dc32e0256cff40e88c3d48580)':
+  '@better-auth/sso@1.7.15(a1ca17ba135cdd8aaa004bdf38f39c2b)':
     dependencies:
-      '@better-auth/core': 1.7.20(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.9.0)(better-call@1.4.4(zod@4.5.4))(jose@6.2.14)(kysely@0.28.19)(nanostores@1.5.5)
+      '@better-auth/core': 1.7.20(@better-auth/utils@0.5.1)(@better-fetch/fetch@1.3.3)(@opentelemetry/api@1.9.0)(better-call@1.4.4(zod@4.5.4))(jose@6.2.14)(kysely@0.29.8)(nanostores@1.5.5)
       '@better-auth/utils': 0.5.1
       '@better-fetch/fetch': 1.3.3
       '@xmldom/xmldom': 0.9.12
@@ -11581,7 +11584,7 @@ snapshots:
       '@orpc/zod': 1.13.13(@opentelemetry/api@1.9.0)(@orpc/contract@1.13.13(@opentelemetry/api@1.9.0))(@orpc/server@1.13.13(@opentelemetry/api@1.9.0)(ws@8.22.0))(ws@8.22.0)(zod@4.6.7)
       base-x: 5.0.1
       defu: 6.1.7
-      drizzle-orm: 0.44.7(@cloudflare/workers-types@5.20261110.1)(@electric-sql/pglite@0.4.6)(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.28.19)(mysql2@3.24.6(@types/node@26.4.1))(pg@8.23.1)
+      drizzle-orm: 0.44.7(@cloudflare/workers-types@5.20261110.1)(@electric-sql/pglite@0.4.6)(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.29.8)(mysql2@3.24.6(@types/node@26.4.1))(pg@8.23.1)
       fumadb: 0.1.2(drizzle-orm@0.44.7(@cloudflare/workers-types@5.20261110.1)(@electric-sql/pglite@0.4.6)(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.28.19)(mysql2@3.24.6(@types/node@26.4.1))(pg@8.23.1))(typeorm@0.3.31(better-sqlite3@13.0.3)(mysql2@3.24.6(@types/node@26.4.1))(pg@8.23.1))
       kysely: 0.28.19
       neverthrow: 8.2.0
@@ -16344,7 +16347,7 @@ snapshots:
     optionalDependencies:
       '@tanstack/react-start': 1.169.5(esbuild@0.28.2)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vite@8.3.7(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
       drizzle-kit: 0.31.11
-      drizzle-orm: 0.44.7(@cloudflare/workers-types@5.20261110.1)(@electric-sql/pglite@0.4.6)(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.28.19)(mysql2@3.24.6(@types/node@26.4.1))(pg@8.23.1)
+      drizzle-orm: 0.44.7(@cloudflare/workers-types@5.20261110.1)(@electric-sql/pglite@0.4.6)(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.29.8)(mysql2@3.24.6(@types/node@26.4.1))(pg@8.23.1)
       mysql2: 3.24.6(@types/node@26.4.1)
       next: 16.3.4(@opentelemetry/api@1.9.0)(@playwright/test@1.65.0)(@types/node@26.4.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       pg: 8.23.1
@@ -17026,14 +17029,14 @@ snapshots:
       esbuild: 0.25.12
       tsx: 4.23.13
 
-  drizzle-orm@0.44.7(@cloudflare/workers-types@5.20261110.1)(@electric-sql/pglite@0.4.6)(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.28.19)(mysql2@3.24.6(@types/node@26.4.1))(pg@8.23.1):
+  drizzle-orm@0.44.7(@cloudflare/workers-types@5.20261110.1)(@electric-sql/pglite@0.4.6)(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.29.8)(mysql2@3.24.6(@types/node@26.4.1))(pg@8.23.1):
     optionalDependencies:
       '@cloudflare/workers-types': 5.20261110.1
       '@electric-sql/pglite': 0.4.6
       '@opentelemetry/api': 1.9.0
       '@types/pg': 8.23.1
       better-sqlite3: 13.0.3
-      kysely: 0.28.19
+      kysely: 0.29.8
       mysql2: 3.24.6(@types/node@26.4.1)
       pg: 8.23.1
 
@@ -17863,7 +17866,7 @@ snapshots:
       semver: 7.8.5
       zod: 4.6.7
     optionalDependencies:
-      drizzle-orm: 0.44.7(@cloudflare/workers-types@5.20261110.1)(@electric-sql/pglite@0.4.6)(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.28.19)(mysql2@3.24.6(@types/node@26.4.1))(pg@8.23.1)
+      drizzle-orm: 0.44.7(@cloudflare/workers-types@5.20261110.1)(@electric-sql/pglite@0.4.6)(@opentelemetry/api@1.9.0)(@types/pg@8.23.1)(better-sqlite3@13.0.3)(kysely@0.29.8)(mysql2@3.24.6(@types/node@26.4.1))(pg@8.23.1)
       typeorm: 0.3.31(better-sqlite3@13.0.3)(mysql2@3.24.6(@types/node@26.4.1))(pg@8.23.1)
 
   function-bind@1.1.2: {}
@@ -20364,7 +20367,6 @@ snapshots:
       '@img/sharp-win32-ia32': 0.35.4
       '@img/sharp-win32-x64': 0.35.4
       '@types/node': 22.19.17
-    optional: true
 
   sharp@0.35.4(@types/node@26.4.1):
     dependencies:
@@ -20398,6 +20400,7 @@ snapshots:
       '@img/sharp-win32-ia32': 0.35.4
       '@img/sharp-win32-x64': 0.35.4
       '@types/node': 26.4.1
+    optional: true
 
   sharp@0.35.5(@types/node@22.19.17):
     dependencies:
