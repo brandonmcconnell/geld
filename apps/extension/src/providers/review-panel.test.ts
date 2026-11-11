@@ -846,7 +846,7 @@ describe('provider conversation digest', () => {
     if (item !== null && item !== undefined) item.open = true;
     panel.update(original, { ...options, reviewGrouping: 'type' });
     expect(panel.element.querySelector('[data-geld-review-attention]')).toBeNull();
-    expect(panel.element.querySelector('[data-geld-round-group="review"] [data-geld-review-round="push-1"] [data-geld-item]')).not.toBeNull();
+    expect(panel.element.querySelector('[data-geld-round-group="review"] [data-geld-type-round="push-1"] [data-geld-item]')).not.toBeNull();
     expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-item]')?.open).toBe(true);
     panel.update(original, { ...options, comments: [] });
     expect(panel.element.querySelector('[data-geld-review-round="push-2"]')?.textContent).toContain('No conversation recorded after this push.');
@@ -1440,14 +1440,14 @@ it('groups threads and comments by type into rounds to review, a current round a
   const review = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-round-group="review"]');
   expect(review?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('1 round to review');
   expect(review?.open).toBe(true);
-  const rounds = [...(review?.querySelectorAll<HTMLElement>('[data-geld-review-round]') ?? [])];
-  expect(rounds.map(round => round.dataset.geldReviewRound)).toEqual(['push-2', 'push-1']);
+  const rounds = [...(review?.querySelectorAll<HTMLElement>('[data-geld-type-round]') ?? [])];
+  expect(rounds.map(round => round.dataset.geldTypeRound)).toEqual(['push-2', 'push-1']);
   expect(rounds[0]?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('Round 3 · 1 comment');
   expect(rounds[1]?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('Round 2 · 0/1 resolved');
   const settled = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-round-group="settled"]');
   expect(settled?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('1 settled round');
   expect(settled?.open).toBe(false);
-  expect(settled?.querySelector('[data-geld-review-round="before"] [data-geld-review-toggle]')?.textContent).toBe('Round 1 · 1/1 resolved');
+  expect(settled?.querySelector('[data-geld-type-round="before"] [data-geld-review-toggle]')?.textContent).toBe('Round 1 · 1/1 resolved');
   expect(panel.element.querySelector('[data-geld-review-key="comments"]')).toBeNull();
 });
 

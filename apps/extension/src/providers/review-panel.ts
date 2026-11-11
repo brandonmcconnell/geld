@@ -1338,14 +1338,14 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const threads = threadCounts(round.items);
       const label = [`Round ${String(shown.indexOf(round) + 1).padStart(width, '0')}`, ...(threads.total === 0 ? [] : [`${threads.total - threads.open}/${threads.total} resolved`]), ...(round.comments.length === 0 ? [] : [countLabel(round.comments.length, 'comment')])].join(' · ');
       const section = disclosure(`round:${round.key}`, label, open);
-      section.dataset.geldReviewRound = round.key;
+      section.dataset.geldTypeRound = round.key;
       fill(section, round);
       return section;
     };
     const sections: HTMLElement[] = [];
     if (toReview.length === 0 && current !== null) {
       const group = disclosure('rounds:review', 'Current round', true);
-      group.dataset.geldRoundGroup = 'current';group.dataset.geldReviewRound = current.key;
+      group.dataset.geldRoundGroup = 'current';group.dataset.geldTypeRound = current.key;
       fill(group, current);
       sections.push(group);
     } else if (toReview.length > 0) {
