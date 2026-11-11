@@ -30,7 +30,7 @@ import type { Deployment, DeploymentEntry } from './deployments';
 import { deploymentEntries, deploymentOf, deploymentsOfPreview, environmentLabel, pinnedToBuild, previewLinks } from './deployments';
 import { threadFragmentOf } from './thread-fragment';
 import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, loadMoreStalled, loadMoreStanding, sourceAnchorFromHash } from './deeplink';
-import { commitTimes, isRewritten } from './commit-dates';
+import { commitDate, commitTimes, isRewritten } from './commit-dates';
 import { editedAt, editsVersion, editTimesOf, refreshEditTimes, resetEditTimes, revisionAsOf, revisionTimesOf } from './edit-times';
 import type { SameRunCandidate } from './revisions';
 import { RUN_SETTLE_MS, threadHeadOf } from './thread-head';
@@ -72,7 +72,7 @@ import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
 import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots, triggerFor } from './panel-model';
-import { outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
+import { commitShaOf, outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
 import { timelineMentionsFor } from './timeline-mentions';
 import type { MentionLine } from './quick-view';
 import { botCommentControls, chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf, parkChats, releaseParkedChats } from './chat';
@@ -1030,12 +1030,57 @@ function incomingReadMentions(): readonly MentionLine[] {
   }));
 }
 
+/** An activity row's moment as last read, so a row whose nodes are on loan, or on their way home, keeps it. */
+const foldMomentByKey = new Map<string, string>();
+
+function clockOf(node: Element): string | null {
+  const datetime = findIn(node, 'relative-time, time-ago, time')?.getAttribute('datetime') ?? '';
+  return datetime === '' || Number.isNaN(Date.parse(datetime)) ? null : datetime;
+}
+
+function earliestMoment(moments: readonly (string | null | undefined)[]): string | null {
+  let best: { readonly at: string; readonly time: number } | null = null;
+  for (const at of moments) {
+    const time = at === null || at === undefined ? Number.NaN : Date.parse(at);
+    if (at === null || at === undefined || Number.isNaN(time)) continue;
+    if (best === null || time < best.time) best = { at, time };
+  }
+  return best?.at ?? null;
+}
+
+/**
+ * When an activity row's content began, for its time and its place among the other activity rows: the headline's
+ * state change, the first commit or push (a commit row carries no clock, so its date comes from the Commits tab),
+ * the first mention, or the first node's clock.
+ */
+function foldMoment(group: FoldGroup, headlineNode: HTMLElement | null): string | null {
+  if (headlineNode !== null) return clockOf(headlineNode);
+  if (group.key === 'commits') {
+    return earliestMoment(
+      group.nodes.flatMap((node) => {
+        const shas = [...node.querySelectorAll('a[href]')].map(commitShaOf).filter((sha): sha is string => sha !== null);
+        return shas.length === 0 ? [clockOf(node)] : shas.map((sha) => commitDate(sha, reapplySoon));
+      }),
+    );
+  }
+  if (group.key === 'mentions') {
+    const described = descriptionMentions().length > 0 ? descriptionCard() : null;
+    return earliestMoment([...group.nodes.map(clockOf), ...conversationMentions().map((line) => line.at), ...incomingReadMentions().map((line) => line.at), described === null ? null : clockOf(described)]);
+  }
+  const first = group.nodes[0];
+  return first === undefined ? null : clockOf(first);
+}
+
 function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
   return groups.filter((group) => group.silent !== true).map((group) => {
     const firstAnchor = firstAnchorIn(group.nodes[0] ?? null);
     // A row headlined by its state change keeps that change's time, not the first event's.
     const headlineNode = group.headline === undefined ? null : (group.nodes.find((node) => node.id === group.headline?.anchor) ?? null);
+    const read = group.section === 'activity' ? foldMoment(group, headlineNode) : null;
+    if (read !== null) foldMomentByKey.set(group.key, read);
+    const at = group.section === 'activity' ? (read ?? foldMomentByKey.get(group.key)) : undefined;
     return {
+      ...(at === undefined ? {} : { at }),
       key: group.key,
       label: group.label,
       section: group.section ?? 'comments',
@@ -3341,6 +3386,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     releaseHold();
     timeByAnchor.clear();
     datetimeByAnchor.clear();
+    foldMomentByKey.clear();
     visit.lastReviews = null;
     visit.checksExpanded = false;
     visit.autoLoads = 0;
