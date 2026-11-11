@@ -28,12 +28,14 @@ import type {
 	PullPageData,
 	PullReviewComment,
 	PullSummary,
+	ReviewThreadInfo,
 } from "#/lib/github.types";
 import { findPullSummaryInLists } from "#/lib/github-query-updates";
 import { useHasMounted } from "#/lib/use-has-mounted";
 import { usePageTitle } from "#/lib/use-page-title";
 import { useRegisterTab } from "#/lib/use-register-tab";
 import { PullBodySection } from "./pull-body-section";
+import { PullDigestSection } from "./pull-digest-section";
 import { PullDetailActivitySection } from "./pull-detail-activity";
 import {
 	getPrStateConfig,
@@ -192,6 +194,7 @@ export function PullDetailContent({
 								page={page}
 								reviewComments={reviewCommentsQuery.data}
 								threadInfoByCommentId={threadInfoByCommentId}
+								threadStatuses={threadStatusesQuery.data}
 								isFetching={pageQuery.isFetching}
 							/>
 						) : (
@@ -281,6 +284,7 @@ export function PullDetailBody({
 	page,
 	reviewComments,
 	threadInfoByCommentId,
+	threadStatuses,
 	isFetching,
 }: {
 	owner: string;
@@ -296,6 +300,7 @@ export function PullDetailBody({
 		number,
 		{ threadId: string; isResolved: boolean }
 	>;
+	threadStatuses?: readonly ReviewThreadInfo[];
 	isFetching: boolean;
 }) {
 	return (
@@ -308,6 +313,17 @@ export function PullDetailBody({
 				isAuthor={viewerLogin === pr.author?.login}
 				scope={scope}
 				viewerLogin={viewerLogin}
+			/>
+
+			<PullDigestSection
+				pr={pr}
+				owner={owner}
+				repo={repo}
+				pullNumber={pullNumber}
+				scope={scope}
+				comments={page.comments}
+				reviewComments={reviewComments}
+				threads={threadStatuses}
 			/>
 
 			{pr.isMerged || pr.state === "closed" ? (

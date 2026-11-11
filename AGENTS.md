@@ -2338,7 +2338,9 @@ A provider that does not answer is left out and named (`unreachableProviders`), 
 Bitbucket lists across workspaces only by author, so its review requests are not in the lists yet.
 **A GitHub row in the lists shows the lines left to review** (`apps/hub/docs/signals.md`, `src/lib/geld/pull-signals.ts`, `getPullSignals`, `PullSignalsStat`): the pull request's files, paths and counts only, classified with `@geld/core`'s matcher under Geld's default categories, read once the row nears the viewport and stored nowhere on the server.
 The reader's settings and a repository's `.github/geld.yml` are not read there yet.
-Not done yet: GitHub's screens still read through the app's own GitHub client, another provider's pull request cannot be opened in the hub, and the hub knows nothing of Geld's teams or Digest.
+**The pull request page carries a Digest** (`PullDigestSection`, `src/lib/geld/digest.ts`): threads resolved, each review bot's verdict and one line per thread, built in the browser by `@geld/review`'s `buildMeta` from what the page already loaded (`digestInputFrom`), so it asks for nothing more and stores nothing.
+The browser imports `@geld/core` and `@geld/review` by module (`@geld/review/build`), never their index, which would bring the settings parser and the AI client into the bundle.
+Not done yet: GitHub's screens still read through the app's own GitHub client, another provider's pull request cannot be opened in the hub, and the hub knows nothing of Geld's teams.
 Each of those arrives as its own change.
 
 ## Diff syntax highlighting
