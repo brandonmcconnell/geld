@@ -27,6 +27,10 @@ import type { ReviewerIdentityChoice, ReviewerIdentityControl } from './reviewer
 import { renderProviderBotRequest } from './bot-request';
 import type { ProviderBotRequest, ProviderBotRequestControl } from './bot-request';
 
+const SAME_RUN_BEFORE_MS = 2 * 60_000;
+const RUN_SETTLE_MS = 5 * 60_000;
+const EVENT_GLYPHS = { push: 'push', commit: 'commit', state: 'activity', task: 'check', activity: 'activity' } as const;
+
 export interface ProviderReviewPanelEvent {
   readonly id: string;
   readonly url: string;
@@ -454,6 +458,13 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     return section;
   }
 
+  function viewLink(url: string, anchor: string): HTMLAnchorElement {
+    const value = link('View', url, anchor);
+    value.setAttribute('aria-label', 'View original');
+    value.dataset.geldView = '';
+    return value;
+  }
+
   function link(label: string, url: string, anchor = '', external = false): HTMLAnchorElement {
     const value = node('a', label);
     value.href = url;
@@ -588,7 +599,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       }
     }
     const url = sourceLink({ anchor: comment.anchor, kind: 'comment', author: comment.author.login, url: comment.url }, input.subject);
-    if (url !== null) byline.append(link('View original', url, comment.anchor));
+    if (url !== null) byline.append(viewLink(url, comment.anchor));
     const body = node('div', comment.body, 'geld-provider-review__body');
     body.style.whiteSpace = 'pre-wrap';
     body.style.overflowWrap = 'anywhere';
@@ -714,6 +725,58 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const image = node('img');image.src = url;image.alt = '';image.referrerPolicy = 'no-referrer';mark.append(image);
     } else mark.textContent = author.login.charAt(0).toUpperCase();
     return mark;
+  }
+
+  // GitHub's thread chat: every message shows, no row of its own.
+  function chatMessage(comment: ProviderReviewComment): HTMLElement {
+    const message = sourceComment(comment);
+    message.dataset.geldChatMessage = '';
+    return message;
+  }
+
+  // The bot's top-level summary from the same run heads its thread, as GitHub's threadHeadOf does (2 min before to 5 min after).
+  function threadHead(item: ReviewItem, comments: ReadonlyMap<string, ProviderReviewComment>): ProviderReviewComment | null {
+    const first = item.sources.map((source) => comments.get(source.anchor)).find((comment) => comment !== undefined);
+    if (first === undefined || !automatedAuthor(first.author)) return null;
+    const at = Date.parse(first.createdAt);
+    if (!Number.isFinite(at)) return null;
+    let best: ProviderReviewComment | null = null;let gap = Infinity;
+    for (const candidate of options.comments ?? []) {
+      if (candidate.author.id !== first.author.id || candidate.anchor === first.anchor) continue;
+      for (const when of [candidate.createdAt, candidate.updatedAt]) {
+        const written = when === undefined ? NaN : Date.parse(when);
+        const offset = written - at;
+        if (!Number.isFinite(offset) || offset < -SAME_RUN_BEFORE_MS || offset > RUN_SETTLE_MS) continue;
+        if (Math.abs(offset) < gap) { gap = Math.abs(offset);best = candidate; }
+      }
+    }
+    return best;
+  }
+
+  function pinnedSource(item: ReviewItem, head: ProviderReviewComment): HTMLElement {
+    const strip = node('div', '', 'geld-provider-review__pin');
+    strip.dataset.geldPin = head.anchor;
+    const button = node('button', '', 'geld-provider-review__pin-toggle');
+    button.type = 'button';
+    const key = `pin:${item.id}`;
+    const open = expanded.get(key) === true;
+    button.setAttribute('aria-expanded', String(open));
+    const preview = head.body.replace(/<[^>]*>/g, ' ').replace(/[#>*_`|-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+    button.append(digestIcon('pin', doc), authorAvatar(head.author), node('strong', `${head.author.login}'s summary`), node('span', preview, 'geld-provider-review__pin-preview'));
+    const time = timestamp(head.createdAt);if (time !== null) button.append(time);
+    const body = sourceComment(head);
+    // A copy: the summary's own home is the bot's line, so its source marks stay there.
+    body.dataset.geldPinSource = head.anchor;
+    delete body.dataset.geldSource;delete body.dataset.geldSourceId;delete body.dataset.geldSourceUrl;
+    body.hidden = !open;
+    button.addEventListener('click', () => {
+      const next = body.hidden;
+      body.hidden = !next;
+      button.setAttribute('aria-expanded', String(next));
+      expanded.set(key, next);
+    });
+    strip.append(button, body);
+    return strip;
   }
 
   function commentRow(comment: ProviderReviewComment): HTMLElement {
@@ -1155,13 +1218,15 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       fix.append(heading, node('pre', value));
       details.append(fix);
     }
+    const head = threadHead(item, comments);
+    if (head !== null) details.append(pinnedSource(item, head));
     for (const source of item.sources) {
       const original = comments.get(source.anchor);
-      if (original !== undefined) details.append(commentRow(original));
+      if (original !== undefined) details.append(chatMessage(original));
       else {
         const missing = node('p', 'Original comment unavailable.');
         const url = sourceLink(source, input.subject);
-        if (url !== null) missing.append(doc.createTextNode(' '), link('View original', url, source.anchor));
+        if (url !== null) missing.append(doc.createTextNode(' '), viewLink(url, source.anchor));
         details.append(missing);
       }
     }
@@ -1232,14 +1297,14 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   function eventRow(event: ProviderReviewPanelEvent): HTMLElement {
     const row = node('div', '', 'geld-provider-review__event');
     row.dataset.geldEvent = event.id;
-    row.append(authorAvatar(event.author), node('strong', event.author.login));
+    row.append(digestIcon(EVENT_GLYPHS[event.kind ?? 'activity'], doc), authorAvatar(event.author), node('strong', event.author.login));
     const body = node('div', '', 'geld-provider-review__body');
     if (options.renderEvent?.(event, body) !== true) inline(body, event.body);
     row.append(body);
-    const time = timestamp(event.createdAt);
-    if (time !== null) row.append(time);
+    row.append(timestamp(event.createdAt) ?? node('span', '', 'geld-provider-review__event-slot'));
     const url = safeUrl(event.url, input.subject.origin);
-    if (url !== null) row.append(link('View original', url, new URL(url).hash.slice(1)));
+    if (url === null) row.append(node('span', '', 'geld-provider-review__event-slot'));
+    else row.append(viewLink(url, new URL(url).hash.slice(1)));
     return row;
   }
 

@@ -249,7 +249,7 @@ svg.geld-provider-digest-icon[data-geld-outline] > [fill="currentColor"] { fill:
 .geld-provider-review [data-geld-level='row'][data-tone] > .geld-provider-review__section-toggle:hover,
 .geld-provider-review [data-geld-level='row'][data-tone][data-geld-review-open='true'] > .geld-provider-review__section-toggle { background: var(--geld-provider-button-hover-bg); }
 /* An event is one line, as GitHub's compact events are: picture, actor, the fewest words, then the time at the end. */
-.geld-provider-review .geld-provider-review__event { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; align-items: center; column-gap: var(--geld-provider-space-3); min-block-size: 36px; padding-block: var(--geld-provider-space-2); border-bottom: 0; border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); }
+.geld-provider-review .geld-provider-review__event { display: grid; grid-template-columns: 16px auto auto minmax(0, 1fr) auto auto; align-items: center; column-gap: var(--geld-provider-space-3); min-block-size: 36px; padding-block: var(--geld-provider-space-2); border-bottom: 0; border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); }
 .geld-provider-review .geld-provider-review__event:first-child { border-top: 0; }
 .geld-provider-review .geld-provider-review__event > .geld-provider-review__body { min-inline-size: 0; max-block-size: calc(var(--geld-provider-line-height, 1.5) * 1em); overflow: hidden; color: var(--geld-provider-text-subtle); white-space: nowrap; text-overflow: ellipsis; }
 .geld-provider-review .geld-provider-review__event > .geld-provider-review__body * { display: inline; margin: 0; padding: 0; }
@@ -257,3 +257,13 @@ svg.geld-provider-digest-icon[data-geld-outline] > [fill="currentColor"] { fill:
 .geld-provider-review .geld-provider-review__event > time { color: var(--geld-provider-text-subtle); font: var(--geld-provider-font-small); white-space: nowrap; }
 .geld-provider-review .geld-provider-review__event > a { font: var(--geld-provider-font-small); white-space: nowrap; }
 .geld-provider-review .geld-provider-review__event > .geld-provider-review__body { padding: 0; border: 0; line-height: 20px; max-block-size: 20px; }
+
+.geld-provider-review .geld-provider-review__event > svg { inline-size: 16px; block-size: 16px; color: var(--geld-provider-text-subtle); }
+.geld-provider-review .geld-provider-review__event > .geld-provider-review__event-slot { display: block; }
+
+.geld-provider-review .geld-provider-review__pin { margin-inline: var(--geld-provider-space-5); margin-block: var(--geld-provider-space-2); border: var(--geld-provider-border-width) solid var(--geld-provider-border); border-radius: var(--geld-provider-radius); background: var(--geld-provider-bg-subtle); }
+.geld-provider-review .geld-provider-review__pin-toggle { display: flex; align-items: center; gap: var(--geld-provider-space-2); inline-size: 100%; min-block-size: 32px; padding: 0 var(--geld-provider-space-3); border: 0; background: none; color: inherit; font: var(--geld-provider-font-small); text-align: start; cursor: pointer; }
+.geld-provider-review .geld-provider-review__pin-toggle > svg { inline-size: 16px; block-size: 16px; flex: none; color: var(--geld-provider-text-subtle); }
+.geld-provider-review .geld-provider-review__pin-preview { flex: 1; min-inline-size: 0; overflow: hidden; color: var(--geld-provider-text-subtle); white-space: nowrap; text-overflow: ellipsis; }
+.geld-provider-review .geld-provider-review__pin-toggle > time { flex: none; color: var(--geld-provider-text-subtle); }
+.geld-provider-review .geld-provider-review__pin > .geld-provider-review__source { margin: 0; border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); }

@@ -19,7 +19,7 @@ export function commentBodyPresentationProbe(provider, anchor) {
   const source = sources[0];
   if (!original.matches(provider === 'gitlab' ? '[data-testid="noteable-note-container"]' : '[data-testid="comment"]')) return unavailable('native source container identity differs');
   const byline = source.querySelector(':scope > .geld-provider-review__byline');
-  const permalink = [...byline?.querySelectorAll('a[href]') ?? []].find((node) => node.textContent.trim() === 'View original');
+  const permalink = [...byline?.querySelectorAll('a[href]') ?? []].find((node) => ['View', 'View original'].includes(node.textContent.trim()));
   try {
     const url = new URL(permalink?.href ?? '');
     const current = new URL(document.URL);

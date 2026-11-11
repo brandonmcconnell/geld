@@ -2240,7 +2240,7 @@ async function gitLabBotBodyEvidence(page, item) {
   page.on('request', request);
   try {
     progress.openedSummaries = await openReviewAncestors(page, selector);
-    const handle = await page.evaluateHandle((selector) => [...document.querySelectorAll(`${selector} > .geld-provider-review__byline > a[href]`)].find((link) => link.textContent.trim() === 'View original') ?? null, selector);
+    const handle = await page.evaluateHandle((selector) => [...document.querySelectorAll(`${selector} > .geld-provider-review__byline > a[href]`)].find((link) => link.textContent.trim() === 'View' || link.textContent.trim() === 'View original') ?? null, selector);
     const original = handle.asElement();assert.ok(original !== null, 'Mounted native bot summary must retain its original-source control');
     try {
       assert.equal(await original.evaluate((link) => link.href), `${GL_BOT}#${anchor}`);

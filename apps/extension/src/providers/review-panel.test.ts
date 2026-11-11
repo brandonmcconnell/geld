@@ -747,6 +747,49 @@ describe('provider conversation digest', () => {
     expect(panel.element.querySelector('[data-geld-review-bot="coderabbit"]')?.textContent).not.toContain('No findings');
   });
 
+  it('opens a thread as a chat headed by the bot summary from the same run', () => {
+    const author = { id: 'bot-1', login: 'greptile-bot', automated: true };
+    const first = { ...comment('1', 'Null check missing.'), author, createdAt: '2026-11-01T12:00:00Z' };
+    const reply = { ...comment('2', 'Fixed in the latest push.'), createdAt: '2026-11-01T12:30:00Z' };
+    const summary = { ...comment('9', 'Confidence Score: 4/5'), author, createdAt: '2026-11-01T12:01:00Z' };
+    const stale = { ...comment('8', 'An older run'), author, createdAt: '2026-10-30T12:00:00Z' };
+    const panel = renderProviderReviewPanel(host(), input([thread('a', { comments: [first, reply] })]), { comments: [stale, summary] });
+    const item = panel.element.querySelector('[data-geld-item]');
+    expect(item?.querySelectorAll('[data-geld-chat-message]')).toHaveLength(2);
+    expect(item?.querySelector('[data-geld-comment-row]')).toBeNull();
+    const pin = item?.querySelector<HTMLElement>('[data-geld-pin]');
+    expect(pin?.dataset.geldPin).toBe(summary.anchor);
+    const toggle = pin?.querySelector<HTMLButtonElement>('button');
+    expect(toggle?.textContent).toContain("greptile-bot's summary");
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    toggle?.click();
+    expect(pin?.querySelector<HTMLElement>(`[data-geld-pin-source="${summary.anchor}"]`)?.hidden).toBe(false);
+    expect(panel.element.querySelectorAll(`[data-geld-source="${summary.anchor}"]`).length).toBeLessThanOrEqual(1);
+    panel.destroy();
+  });
+
+  it('pins nothing on a person\'s thread or a bot thread with no summary in its run', () => {
+    const author = { id: 'bot-1', login: 'greptile-bot', automated: true };
+    const person = renderProviderReviewPanel(host(), input([thread('a', { comments: [comment('1')] })]), { comments: [comment('9')] });
+    expect(person.element.querySelector('[data-geld-pin]')).toBeNull();
+    const far = { ...comment('9', 'Summary'), author, createdAt: '2026-11-01T13:00:00Z' };
+    const bot = renderProviderReviewPanel(host(), input([thread('a', { comments: [{ ...comment('1'), author, createdAt: '2026-11-01T12:00:00Z' }] })]), { comments: [far] });
+    expect(bot.element.querySelector('[data-geld-pin]')).toBeNull();
+  });
+
+  it('gives every event row a glyph and a View link slot so its columns line up', () => {
+    const events = [
+      { id: 'e1', url: 'https://gitlab.com/group/project/-/merge_requests/1#note_5', author: { id: '1', login: 'alice' }, body: 'added 2 commits', createdAt: '2026-11-01T12:00:00Z', kind: 'push' as const },
+      { id: 'e2', url: 'javascript:alert(1)', author: { id: '1', login: 'alice' }, body: 'changed the title', createdAt: '2026-11-01T12:05:00Z', kind: 'activity' as const },
+    ];
+    const panel = renderProviderReviewPanel(host(), input(), { events });
+    const rows = [...panel.element.querySelectorAll<HTMLElement>('[data-geld-event]')];
+    expect(rows).toHaveLength(2);
+    for (const row of rows) { expect(row.firstElementChild?.tagName.toLowerCase()).toBe('svg');expect(row.children).toHaveLength(6); }
+    expect(rows[0]?.querySelector('a[data-geld-view]')?.textContent).toBe('View');
+    expect(rows[1]?.querySelector('a')).toBeNull();
+  });
+
   it('uses the native avatar of a bound bot account for its compact summary', () => {
     const author = { id: 'trusted-bot', login: 'project-reviewer', automated: true };
     const source = { ...comment('1'), author };
@@ -1026,7 +1069,7 @@ describe('provider conversation digest', () => {
     expect(roles.map((role) => role.textContent)).toEqual(['Author', 'Developer']);
     expect(roles.every((role) => role.classList.contains('badge-neutral') && role.style.color === '' && role.style.backgroundColor === '')).toBe(true);
     expect(panel.element.querySelector('time')?.dateTime).toBe(source.createdAt.replace('Z', '.000Z'));
-    [...panel.element.querySelectorAll<HTMLAnchorElement>('[data-geld-source="note_1"] a')].find((anchor) => anchor.textContent === 'View original')?.click();
+    [...panel.element.querySelectorAll<HTMLAnchorElement>('[data-geld-source="note_1"] a')].find((anchor) => anchor.textContent === 'View')?.click();
     expect(opened).toHaveBeenCalledWith(source.url, source.anchor, expect.any(MouseEvent));
     [...panel.element.querySelectorAll<HTMLButtonElement>('[data-geld-source="note_1"] button')].find((button) => button.textContent === 'Native reply')?.click();
     await vi.waitFor(() => expect(activate).toHaveBeenCalledTimes(1));

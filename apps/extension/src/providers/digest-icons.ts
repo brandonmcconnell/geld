@@ -19,6 +19,7 @@ const paths = {
   commit: '<circle cx="12" cy="12" r="3"/><path d="M3 12h6m6 0h6"/>',
   circle: '<circle cx="12" cy="12" r="9"/>',
   push: '<path d="M12 3v12m-5-7 5-5 5 5M5 21h14"/>',
+  pin: '<path d="M12 17v5M9 3h6l-1 6 4 4H6l4-4Z"/>',
   link: '<path d="m10 13 4-4m-6 7-1 1a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m0 12a4 4 0 0 0 6 0l5-5a4 4 0 0 0-6-6l-1 1"/>',
 } as const;
 

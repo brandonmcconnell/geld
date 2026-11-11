@@ -3680,6 +3680,10 @@ Without a recorded push everything is one round.
 The Reviews and Review bots rows hold the people's and bots' standing only, so a status-row refresh never touches a conversation.
 A registered bot's latest summary is seated on its Review bots line, which opens to it, and not in its round (`seatedSummaries`), as on GitHub.
 Its rows are an accordion like GitHub's: opening a thread, comment or bot row closes the row open before it (`ACCORDION_ROW`), while groups and rounds fold on their own.
+An opened thread reads as GitHub's chat: every message shows (`chatMessage`), none folds behind a row of its own.
+A bot's thread is headed by a pinned strip for its top-level summary from the same run (`threadHead`: the same account, posted or edited from 2 minutes before the thread to 5 minutes after it, the nearest), which unfolds a copy of the summary (`data-geld-pin-source`, so its home stays the bot's line).
+A person's thread and a bot thread with no summary in that window pin nothing.
+Event rows lead with their kind's glyph and always keep a link cell, so pictures, times and "View" line up down the list.
 Every disclosure takes one of GitHub's levels (`assignLevels`, `data-geld-level`): a status row, a muted band ("1 round to review · 5 open threads", "Other activity"), a white row under a band, and small-caps labels with a glyph inside an open row ("2 unresolved threads"), which an accent rail holds to its row.
 A round row reads as GitHub's: a progress glyph, the posters' pictures, "Round N", the resolved meter, a comment count and the latest time, and a run of pushes with nothing posted between them is one round.
 A thread row is the state's glyph, the posters' pictures, the bold title, its muted path, people and comment count, a pill for a state other than open or resolved, and the time.
