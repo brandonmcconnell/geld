@@ -216,7 +216,7 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
       });
       promptHost.append(
         el('div', 'geld-account__prompt', [
-          el('p', 'geld-account__prompt-text', ["Replace your account's Geld settings with this device's?"]),
+          el('p', 'geld-account__prompt-text', ["Are you sure you want to replace your account's Geld settings with this device's? This cannot be undone."]),
           el('div', 'geld-account__prompt-actions', [
             button(['Overwrite'], 'geld-button--small geld-button--primary', () => {
               confirmingOverwrite = false;
