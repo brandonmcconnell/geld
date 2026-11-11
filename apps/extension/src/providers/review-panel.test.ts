@@ -1460,3 +1460,13 @@ it('heads a latest round with no threads "Current round" when nothing is left to
   expect(current?.textContent).toContain('No conversation since this push.');
   expect(panel.element.querySelector('[data-geld-round-group="settled"] [data-geld-review-toggle]')?.textContent).toBe('1 settled round');
 });
+
+it('keeps at most one row open, as the GitHub digest does, leaving groups alone', () => {
+  const panel = renderProviderReviewPanel(host(), input([thread('a'), thread('b')]));
+  const rows = [...panel.element.querySelectorAll<HTMLElement & { open: boolean }>('[data-geld-item]')];
+  expect(rows).toHaveLength(2);
+  const toggle = (row: HTMLElement | undefined): void => row?.querySelector<HTMLButtonElement>(':scope > [data-geld-review-toggle]')?.click();
+  toggle(rows[0]);expect(rows[0]?.open).toBe(true);
+  toggle(rows[1]);expect(rows[1]?.open).toBe(true);expect(rows[0]?.open).toBe(false);
+  expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-round-group="review"]')?.open).toBe(true);
+});

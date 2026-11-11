@@ -158,7 +158,7 @@ Decision needed: keep Merge checks as a provider row, or fold it into CI and the
 | Grouping menu in the Geld row | match: `toolbarMenu` | match | — | — |
 | Thread opens to a chat of the host's own nodes with its reply box | missing: sanitised copy, proxy actions (`gitlab/thread-actions.ts`) | missing: same (`bitbucket/thread-actions.ts`) | discussions | **slot**: GitLab's `.discussion` node, Bitbucket's comment thread |
 | Pinned source strip and its revisions | missing | missing | GL notes have no edit history API; BB none | — |
-| One-open accordion, focus by key | partial: focus by key yes, accordion no | partial: same | — | — |
+| One-open accordion, focus by key | match: opening a row closes the open one (`ACCORDION_ROW`), groups fold on their own | match: same | — | — |
 | Rows never jump | partial: status-only updates keep position, a full render replaces children | partial: same | — | — |
 | Times line up down a list | unverified | unverified | — | — |
 

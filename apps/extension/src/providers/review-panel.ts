@@ -183,6 +183,7 @@ const GROUPS: readonly { readonly id: string; readonly label: string; readonly s
   { id: 'done', label: 'Reviewed on this device', statuses: ['done-manual'], open: false },
 ];
 
+const ACCORDION_ROW = /^(?:item|comment|bot|automated):/;
 const DEPLOYMENT_STATE: Readonly<Record<ProviderDeployment['state'], string>> = { active: 'Deployed', deploying: 'Deploying', failed: 'Failed', waiting: 'Waiting', unknown: 'Unknown' };
 const REQUIREMENT_STATE: Readonly<Record<ProviderReviewRequirement['state'], string>> = { passed: 'Passed', failed: 'Failed', pending: 'Pending', unknown: 'Unknown' };
 
@@ -425,7 +426,15 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       get: () => section.dataset.geldReviewOpen === 'true',
       set: (open: boolean) => setOpen(open, true),
     });
-    toggle.addEventListener('click', () => { section.open = !section.open; });
+    toggle.addEventListener('click', () => {
+      section.open = !section.open;
+      // GitHub's rows are an accordion: opening one closes the row open before it, whatever its group.
+      if (!section.open || !ACCORDION_ROW.test(key)) return;
+      for (const other of panel.querySelectorAll<ReviewDisclosure>('[data-geld-review-key]')) {
+        const otherKey = other.dataset.geldReviewKey ?? '';
+        if (other !== section && other.open && ACCORDION_ROW.test(otherKey) && !other.contains(section) && !section.contains(other)) other.open = false;
+      }
+    });
     section.append(toggle);
     setOpen(expanded.get(key) ?? initiallyOpen);
     return section;

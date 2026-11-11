@@ -3679,6 +3679,7 @@ Rounds with an open thread stand under "N rounds to review", the newest open, th
 Without a recorded push everything is one round.
 The Reviews and Review bots rows hold the people's and bots' standing only, so a status-row refresh never touches a conversation.
 A registered bot's latest summary is seated on its Review bots line, which opens to it, and not in its round (`seatedSummaries`), as on GitHub.
+Its rows are an accordion like GitHub's: opening a thread, comment or bot row closes the row open before it (`ACCORDION_ROW`), while groups and rounds fold on their own.
 GitLab merge blockers come from its qualified merge widget separately from pipeline checks, and system-note activity uses the same author-bound inert renderer as normal comments.
 An explicit Digest selection folds represented originals revealed through source links or native find, while ordinary refreshes preserve those reveals and active native editors.
 The gitlab-expanded-digest installed-browser slice opens triage-ops MR4544 and verifies expanded bot content, merge blockers, formatted emoji, timeline restore/refold, description headings and menu isolation.
