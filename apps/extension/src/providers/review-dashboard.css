@@ -286,7 +286,7 @@ svg.geld-provider-digest-icon[data-geld-outline] > [fill="currentColor"] { fill:
  * An opened thread sits at the row's word column (GitHub's slot: 8px 16px 8px 42px), in one box: the pinned source,
  * then the messages, everyone else's on the left and the reader's own on the right, the picture in a 32px gutter and
  * the name and time above the bubble once per author's run. The bubble holds the message alone. */
-.geld-provider-review { --geld-chat-avatar: 24px; --geld-chat-gutter: 32px; --geld-chat-radius: 12px; --geld-chat-tight: 4px; --geld-chat-indent: 42px; }
+.geld-provider-review { --geld-chat-avatar: 32px; --geld-chat-gutter: 40px; --geld-chat-radius: 12px; --geld-chat-tight: 4px; --geld-chat-indent: 42px; }
 .geld-provider-review .geld-provider-review__item[data-geld-level='row'] > .geld-provider-review__section-content { padding: var(--geld-provider-space-3) var(--geld-provider-space-5) var(--geld-provider-space-3) var(--geld-chat-indent); }
 .geld-provider-review .geld-provider-review__chat {
   border: var(--geld-provider-border-width) solid var(--geld-provider-border); border-radius: var(--geld-provider-radius);
@@ -308,12 +308,12 @@ svg.geld-provider-digest-icon[data-geld-outline] > [fill="currentColor"] { fill:
 }
 .geld-provider-review .geld-provider-review__chat [data-geld-mine] > .geld-provider-review__byline { flex-direction: row-reverse; }
 .geld-provider-review .geld-provider-review__chat [data-geld-chat-message] > .geld-provider-review__byline > :is(.geld-provider-review__avatar-slot, .geld-provider-review__byline-avatar) {
-  position: absolute; inset-block-start: 0; inset-inline-start: 0; inline-size: var(--geld-chat-avatar) !important; block-size: var(--geld-chat-avatar) !important;
+  position: absolute; inset-block-start: 0; inset-inline-start: 0;
 }
+/* The host's own picture keeps its native size (the slot carries it); a stand-in initial takes the same 32px. */
+.geld-provider-review .geld-provider-review__chat [data-geld-chat-message] > .geld-provider-review__byline > .geld-provider-review__byline-avatar { inline-size: var(--geld-chat-avatar); block-size: var(--geld-chat-avatar); }
 .geld-provider-review .geld-provider-review__chat [data-geld-mine] > .geld-provider-review__byline > :is(.geld-provider-review__avatar-slot, .geld-provider-review__byline-avatar) { inset-inline: auto 0; }
-.geld-provider-review .geld-provider-review__chat [data-geld-chat-message] > .geld-provider-review__byline > .geld-provider-review__avatar-slot > img { inline-size: 100% !important; block-size: 100% !important; }
-/* GitHub's chat names a person once: the handle, the role labels and the automated note stay on the host's own card. */
-.geld-provider-review .geld-provider-review__chat [data-geld-chat-message] > .geld-provider-review__byline > :is(.geld-provider-review__muted, [data-geld-author-badge]) { display: none; }
+/* The handle and role labels stay as the host draws them: the author line is the host's identity, only placed as GitHub's chat places it. */
 .geld-provider-review .geld-provider-review__chat [data-geld-chat-message]:is([data-geld-run='mid'], [data-geld-run='last']) > .geld-provider-review__byline { display: none; }
 .geld-provider-review .geld-provider-review__chat [data-geld-chat-message] > .geld-provider-review__body {
   box-sizing: border-box; max-inline-size: 100%; min-inline-size: 0; margin: 0; padding: 6px 12px;

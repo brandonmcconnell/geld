@@ -3682,7 +3682,7 @@ A registered bot's latest summary is seated on its Review bots line, which opens
 Its rows are an accordion like GitHub's: opening a thread, comment or bot row closes the row open before it (`ACCORDION_ROW`), while groups and rounds fold on their own.
 An opened thread reads as GitHub's chat: every message shows (`chatMessage`), none folds behind a row of its own.
 It sits at the row's word column (42px, GitHub's thread slot) in one box: the pinned strip, then the messages, others' on the left and the reader's own on the right (`viewerId`, from the adapter's `viewerAuthorId`: GitLab's `data-current-user-data`, Bitbucket's bootstrap `uuid`).
-The picture stands in a 32px gutter and the name and time above the bubble, once per author's run (`markRuns`), and the bubble holds the message alone.
+The host's picture keeps its native size in a 40px gutter and the author line (name, handle, role labels, time) stands above the bubble once per author's run (`markRuns`), so the identity stays the host's and the bubble holds the message alone.
 A byline's time is the edit's, with a clock whose title says when it was first posted (`data-geld-edited`), as GitHub's.
 GitLab's edit is `last_edited_at` when it sends one: resolving a thread moves `updated_at`, which read every resolved message as edited.
 A comment's own actions, "Show in timeline" and "Copy link" are behind its ⋯ on the bubble's empty side, and a thread row's ⋯ beside its chevron holds Copy as Markdown, Copy suggested fix, Mark reviewed on this device, Show in timeline and Copy link (`rowMenu`), rather than buttons above the thread.
