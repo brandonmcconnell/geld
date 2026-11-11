@@ -163,8 +163,9 @@ function noteOf(value: unknown, subject: ProviderReviewSubject): ProviderReviewC
     author: authorOf(value.author),
     body: value.note,
     createdAt: time(value.created_at),
-    // Resolving a thread moves `updated_at`; `last_edited_at` moves only when the words change, so it is the edit when GitLab sends it.
-    ...('last_edited_at' in value ? (value.last_edited_at === null || value.last_edited_at === undefined ? {} : { updatedAt: time(value.last_edited_at) })
+    // Resolving a thread moves `updated_at`; `last_edited_at` moves only when the words change. The web serializer (it sends
+    // `note_html`) leaves the key out of a note never edited, while the REST one never sends it, so only there is `updated_at` the edit.
+    ...('last_edited_at' in value || 'note_html' in value ? (typeof value.last_edited_at === 'string' ? { updatedAt: time(value.last_edited_at) } : {})
       : value.updated_at === undefined || value.updated_at === null ? {} : { updatedAt: time(value.updated_at) }),
   };
 }

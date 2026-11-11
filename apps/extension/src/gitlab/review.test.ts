@@ -70,12 +70,15 @@ describe('GitLab discussion normalization', () => {
   });
 
   it('reads an edit from last_edited_at, since resolving a thread moves updated_at too', () => {
-    const resolvedOnly = note(11, 'Body', { last_edited_at: null });
-    const edited = note(12, 'Body', { last_edited_at: '2026-10-30T10:00:00.000Z' });
-    const parsed = parseGitLabDiscussions([discussion('a'.repeat(40), [resolvedOnly, edited])], subject);
+    // The web serializer leaves last_edited_at out of a note never edited (whitebox-aero/whitebox!272, Nov 2026).
+    const resolvedOnly = note(11, 'Body', { note_html: '<p>Body</p>' });
+    const edited = note(12, 'Body', { note_html: '<p>Body</p>', last_edited_at: '2026-10-30T10:00:00.000Z' });
+    const rest = note(13, 'Body');
+    const parsed = parseGitLabDiscussions([discussion('a'.repeat(40), [resolvedOnly, edited, rest])], subject);
     const comments = parsed.threads.flatMap((thread) => thread.comments);
     expect(comments[0]?.updatedAt).toBeUndefined();
     expect(comments[1]?.updatedAt).toBe('2026-10-30T10:00:00.000Z');
+    expect(comments[2]?.updatedAt).toBe('2026-10-29T23:34:44.155Z');
   });
 
   it('uses the native diff position and URL while keeping outdated separate from resolved', () => {
