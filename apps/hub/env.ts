@@ -40,6 +40,8 @@ export default defineEnv({
 	GITLAB_CLIENT_SECRET: string().optional(),
 	BITBUCKET_CLIENT_ID: string().optional(),
 	BITBUCKET_CLIENT_SECRET: string().optional(),
+	TOKEN_ENCRYPTION_KEY: string().optional(),
+	AI_ALLOWED_HOSTS: string().optional(),
 	// Demo mode only: base URL of apps/hub-emulator.
 	GITHUB_EMULATOR_URL: url().optional(),
 });

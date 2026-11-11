@@ -111,6 +111,38 @@ describe("the account tables the hub shares with the dashboard", () => {
 	});
 });
 
+describe("the AI providers table the hub shares with the dashboard", () => {
+	async function describeTable(client: PGlite) {
+		const columns = await client.query(
+			`SELECT column_name, data_type, is_nullable, column_default
+			 FROM information_schema.columns
+			 WHERE table_schema = 'public' AND table_name = 'ai_providers'
+			 ORDER BY column_name`,
+		);
+		const indexes = await client.query(
+			`SELECT indexname, indexdef FROM pg_indexes
+			 WHERE schemaname = 'public' AND tablename = 'ai_providers'
+			 ORDER BY indexname`,
+		);
+		// `relay_channel` points at a table only the dashboard has.
+		const foreignKeys = await client.query(
+			`SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+			 WHERE contype = 'f' AND conrelid = 'ai_providers'::regclass
+			   AND pg_get_constraintdef(oid) NOT LIKE '%relay_channels%'
+			 ORDER BY 1`,
+		);
+		return {
+			columns: columns.rows,
+			indexes: indexes.rows,
+			foreignKeys: foreignKeys.rows,
+		};
+	}
+
+	it("is declared by the hub as the dashboard's migrations make it", async () => {
+		expect(await describeTable(alone)).toEqual(await describeTable(shared));
+	});
+});
+
 describe("a session the dashboard made", () => {
 	it("is the hub's session too", async () => {
 		database.current = drizzle(shared, { schema });

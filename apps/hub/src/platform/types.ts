@@ -24,6 +24,10 @@ export type AppConfig = {
 	GITLAB_CLIENT_SECRET?: string;
 	BITBUCKET_CLIENT_ID?: string;
 	BITBUCKET_CLIENT_SECRET?: string;
+	/** Seals AI provider keys, the dashboard's key so either app reads the other's rows. */
+	TOKEN_ENCRYPTION_KEY?: string;
+	/** Extra hosts an AI provider may be at, comma separated. */
+	AI_ALLOWED_HOSTS?: string;
 	/** Local demo mode only. */
 	GITHUB_EMULATOR_URL?: string;
 	files: FileStoreConfig | null;

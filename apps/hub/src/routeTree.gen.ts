@@ -25,6 +25,7 @@ import { Route as ApiChangesRouteImport } from './routes/api/changes'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ProtectedOwnerIndexRouteImport } from './routes/_protected/$owner/index'
 import { Route as ProtectedSettingsIndexRouteImport } from './routes/_protected/settings/index'
+import { Route as ProtectedSettingsAiRouteImport } from './routes/_protected/settings/ai'
 import { Route as ProtectedSettingsConnectionsRouteImport } from './routes/_protected/settings/connections'
 import { Route as ProtectedSettingsShortcutsRouteImport } from './routes/_protected/settings/shortcuts'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -145,6 +146,11 @@ const ProtectedOwnerIndexRoute = ProtectedOwnerIndexRouteImport.update({
 const ProtectedSettingsIndexRoute = ProtectedSettingsIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => ProtectedSettingsRoute,
+} as any)
+const ProtectedSettingsAiRoute = ProtectedSettingsAiRouteImport.update({
+  id: '/ai',
+  path: '/ai',
   getParentRoute: () => ProtectedSettingsRoute,
 } as any)
 const ProtectedSettingsConnectionsRoute =
@@ -406,6 +412,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof ProtectedSettingsRouteWithChildren
   '/api/changes': typeof ApiChangesRoute
   '/api/health': typeof ApiHealthRoute
+  '/settings/ai': typeof ProtectedSettingsAiRoute
   '/settings/connections': typeof ProtectedSettingsConnectionsRoute
   '/settings/shortcuts': typeof ProtectedSettingsShortcutsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -464,6 +471,7 @@ export interface FileRoutesByTo {
   '/api/changes': typeof ApiChangesRoute
   '/api/health': typeof ApiHealthRoute
   '/': typeof ProtectedIndexRoute
+  '/settings/ai': typeof ProtectedSettingsAiRoute
   '/settings/connections': typeof ProtectedSettingsConnectionsRoute
   '/settings/shortcuts': typeof ProtectedSettingsShortcutsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -523,6 +531,7 @@ export interface FileRoutesById {
   '/api/changes': typeof ApiChangesRoute
   '/api/health': typeof ApiHealthRoute
   '/_protected/': typeof ProtectedIndexRoute
+  '/_protected/settings/ai': typeof ProtectedSettingsAiRoute
   '/_protected/settings/connections': typeof ProtectedSettingsConnectionsRoute
   '/_protected/settings/shortcuts': typeof ProtectedSettingsShortcutsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -584,6 +593,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/changes'
     | '/api/health'
+    | '/settings/ai'
     | '/settings/connections'
     | '/settings/shortcuts'
     | '/api/auth/$'
@@ -642,6 +652,7 @@ export interface FileRouteTypes {
     | '/api/changes'
     | '/api/health'
     | '/'
+    | '/settings/ai'
     | '/settings/connections'
     | '/settings/shortcuts'
     | '/api/auth/$'
@@ -700,6 +711,7 @@ export interface FileRouteTypes {
     | '/api/changes'
     | '/api/health'
     | '/_protected/'
+    | '/_protected/settings/ai'
     | '/_protected/settings/connections'
     | '/_protected/settings/shortcuts'
     | '/api/auth/$'
@@ -873,6 +885,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/settings/'
       preLoaderRoute: typeof ProtectedSettingsIndexRouteImport
+      parentRoute: typeof ProtectedSettingsRoute
+    }
+    '/_protected/settings/ai': {
+      id: '/_protected/settings/ai'
+      path: '/ai'
+      fullPath: '/settings/ai'
+      preLoaderRoute: typeof ProtectedSettingsAiRouteImport
       parentRoute: typeof ProtectedSettingsRoute
     }
     '/_protected/settings/connections': {
@@ -1173,12 +1192,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface ProtectedSettingsRouteChildren {
+  ProtectedSettingsAiRoute: typeof ProtectedSettingsAiRoute
   ProtectedSettingsConnectionsRoute: typeof ProtectedSettingsConnectionsRoute
   ProtectedSettingsShortcutsRoute: typeof ProtectedSettingsShortcutsRoute
   ProtectedSettingsIndexRoute: typeof ProtectedSettingsIndexRoute
 }
 
 const ProtectedSettingsRouteChildren: ProtectedSettingsRouteChildren = {
+  ProtectedSettingsAiRoute: ProtectedSettingsAiRoute,
   ProtectedSettingsConnectionsRoute: ProtectedSettingsConnectionsRoute,
   ProtectedSettingsShortcutsRoute: ProtectedSettingsShortcutsRoute,
   ProtectedSettingsIndexRoute: ProtectedSettingsIndexRoute,

@@ -2349,6 +2349,12 @@ Commits, people's comments, reviews and state changes always show.
 Such a file is never removed or moved: the diff is a stream shown in its order.
 **The files sidebar has a Guide beside its tree** (`reviewGuide`, `nextInGuide`, `src/lib/geld/review-guide.ts`, `ReviewGuideList` in `review-page.tsx`): the files in the order to read them, in steps (shapes and contracts, the change with its largest file first, docs, then each category Geld sets aside, to skim), each step counting its viewed files, with a Next button for the first file not yet ticked as viewed.
 The order comes from paths and counts alone, with no AI and nothing fetched.
+**AI providers are the reader's own keys, in the dashboard's table** (`apps/hub/src/lib/ai`, Settings, AI providers): `ai_providers` is shared like the account tables (`0001_ai_providers.sql` is a no-op where the dashboard made it, and `shared-accounts.test.ts` compares the two declarations), and a key is sealed with `TOKEN_ENCRYPTION_KEY` exactly as `apps/dashboard/lib/crypto.ts` seals it (`credentials.server.ts`), so either app opens what the other saved.
+Change the format, `allowedAiUrl` or the table only with the dashboard's.
+A key never leaves the server: the browser gets `hasKey`, and an edit that sends no key keeps the saved one.
+An address must be https at a listed provider or a host in `AI_ALLOWED_HOSTS`, the dashboard's rule, since the key is sent there.
+The hub edits API-key providers only, and lists the dashboard's built-in provider and sign-in connections without changing them.
+Nothing calls a provider from the hub yet.
 Not done yet: GitHub's screens still read through the app's own GitHub client, another provider's pull request cannot be opened in the hub, and the hub knows nothing of Geld's teams.
 Each of those arrives as its own change.
 

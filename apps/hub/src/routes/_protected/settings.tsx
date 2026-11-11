@@ -15,6 +15,7 @@ import { buildSeo, formatPageTitle, PRIVATE_ROUTE_HEADERS } from "#/lib/seo";
 const settingsNav = [
 	{ to: "/settings", label: "General" },
 	{ to: "/settings/connections", label: "Connections" },
+	{ to: "/settings/ai", label: "AI providers" },
 	{ to: "/settings/shortcuts", label: "Shortcuts" },
 ] as const;
 

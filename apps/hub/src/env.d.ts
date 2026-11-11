@@ -34,6 +34,8 @@ declare namespace Cloudflare {
 		GITLAB_CLIENT_SECRET?: string;
 		BITBUCKET_CLIENT_ID?: string;
 		BITBUCKET_CLIENT_SECRET?: string;
+		TOKEN_ENCRYPTION_KEY?: string;
+		AI_ALLOWED_HOSTS?: string;
 		BETTER_AUTH_SECRET: string;
 		BETTER_AUTH_URL: string;
 		/** Local demo mode only: base URL of `apps/hub-emulator` (e.g. http://localhost:4200). */

@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
 	bigint,
 	boolean,
@@ -9,6 +10,7 @@ import {
 	text,
 	timestamp,
 	unique,
+	uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 const at = (name: string) => timestamp(name, { withTimezone: true });
@@ -113,6 +115,34 @@ export const userForbiddenOrg = pgTable(
 		createdAt: at("created_at").notNull(),
 	},
 	(table) => [primaryKey({ columns: [table.userId, table.org] })],
+);
+
+/**
+ * The reader's AI providers. The dashboard's table (`0002_dashboard.sql`,
+ * `0003_review.sql`, `0011_companion.sql`), declared here for a database the
+ * hub has to itself: keys are sealed as the dashboard seals them, and
+ * `relay_channel` is the dashboard's alone.
+ */
+export const aiProvider = pgTable(
+	"ai_providers",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		provider: text("provider").notNull(),
+		label: text("label").notNull(),
+		baseUrl: text("base_url"),
+		encryptedKey: text("encrypted_key"),
+		enabled: boolean("enabled").notNull().default(false),
+		settings: jsonb("settings").notNull().default({}),
+		relayChannel: text("relay_channel"),
+	},
+	(table) => [
+		uniqueIndex("ai_providers_geld")
+			.on(table.userId)
+			.where(sql`${table.provider} = 'geld'`),
+	],
 );
 
 /**
