@@ -349,7 +349,6 @@ body {
 
 .feedback__placeholder {
   color: var(--destructive);
-  font-style: italic;
   font-weight: 400;
 }
 

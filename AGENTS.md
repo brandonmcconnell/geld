@@ -1161,7 +1161,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   It is rendered on the device (`src/ui/issue-markdown.ts`: `marked` with GitHub-flavoured Markdown and line breaks, then DOMPurify), never by GitHub's Markdown API, so the draft goes nowhere before it is sent.
   For the same reason the preview fetches nothing the draft names: an image is shown as its words and address, and the tags and attributes that load something (`srcset`, `style` with its `url()`, `poster`, `background`, `<picture>`, `<video>`, `<svg>`) are removed.
   happy-dom cannot run DOMPurify faithfully (it keeps event handlers and `<script>`), so the sanitizer is checked in Chrome, not in the unit tests.
-  An empty title or empty details show as red italic placeholders in the preview, never in the issue.
+  An empty title or empty details show as red placeholders in the preview, never in the issue.
   Send looks disabled until the draft can go (`aria-disabled`), but takes the click and says what is missing in a tooltip above it (`blocker`: title, details, sign-in, consent, length).
   A required checkbox names the account and the repository, and the draft is kept in `local:feedbackDraft` until it is sent, saved on every edit, so closing the tab or signing in loses nothing.
   There is one feedback tab: a Feedback link first asks an open feedback page to come forward (`geld:feedback-open`, answered `true`, carrying the link's tab and diagnostics), and opens a new tab only when nothing answers.
