@@ -2,8 +2,8 @@ import { providerPreviews, providerPreviewDestination } from './previews';
 import { renderProviderAgentNote } from './agent-notes';
 import type { ProviderAgentNote } from './agent-notes';
 import type { ProviderCommentRenderContext } from './comment-render';
-import { botAppAvatar, botHealth, botById, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, newestProviderBotSummary, parseInlineMarkdown, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, renderProviderItemMarkdown, sourceLink, threadCounts } from '@geld/review';
-import type { BotVerdictRecord, ProviderPublicationRead, ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, RawCheckRun, ReviewItem, ReviewItemStatus, ReviewerState } from '@geld/review';
+import { botAppAvatar, botHealth, botById, digestFromProvider, reviewsSummary, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, newestProviderBotSummary, parseInlineMarkdown, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, renderProviderItemMarkdown, sourceLink, threadCounts } from '@geld/review';
+import type { ReviewsSummary, BotVerdictRecord, ProviderPublicationRead, ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, RawCheckRun, ReviewItem, ReviewItemStatus, ReviewerState } from '@geld/review';
 import type { RepositoryIdentity } from '@geld/core';
 import type { ProviderAiState } from './ai';
 import { captureProviderSourceSelection } from './source-selection';
@@ -633,26 +633,18 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     return article;
   }
 
-  function reviewStandingSummary(): { readonly coverage: 'complete' | 'partial' | 'unavailable'; readonly label: string } {
-    const reviewers = input.reviewers?.filter(reviewer => !automatedAuthor(reviewer.author));
-    const approvals = reviewers?.filter((reviewer) => reviewer.state === 'approved').length ?? 0;
-    const changes = reviewers?.filter((reviewer) => reviewer.state === 'changes_requested').length ?? 0;
-    const pending = reviewers?.filter(reviewerRequested).length ?? 0;
-    const required = options.approvalsRequired;
-    const left = options.approvalsLeft;
-    const requiredTally = typeof required === 'number' && typeof left === 'number' && Number.isSafeInteger(required) && Number.isSafeInteger(left) && required > 0 && left >= 0 && left <= required
-      ? `${required - left}/${required} required approvals`
-      : null;
-    const coverage = reviewers === undefined ? requiredTally === null ? 'unavailable' : 'partial'
-      : options.unavailable?.some((source) => source.area === 'reviews') === true ? 'partial' : 'complete';
-    if (coverage === 'unavailable') return { coverage, label: 'Reviews · Unavailable' };
-    const observed = coverage === 'partial' ? 'observed ' : '';
-    const tallies = [
-      requiredTally ?? (coverage === 'complete' || approvals > 0 ? countLabel(approvals, `${observed}approval`) : null),
-      changes === 0 ? null : countLabel(changes, `${observed}change request`),
-      pending === 0 ? null : countLabel(pending, `${observed}pending review`),
-    ].filter((value) => value !== null);
-    return { coverage, label: ['Reviews', ...(coverage === 'partial' ? ['Partial'] : []), ...tallies].join(' · ') };
+  function reviewStandingSummary(): ReviewsSummary {
+    try {
+      return reviewsSummary(digestFromProvider({
+        input,
+        comments: options.comments ?? [],
+        approvalsRequired: options.approvalsRequired ?? null,
+        approvalsLeft: options.approvalsLeft ?? null,
+        unavailable: options.unavailable ?? [],
+      }));
+    } catch {
+      return { coverage: 'unavailable', label: 'Reviews · Unavailable' };
+    }
   }
 
   function conversationComments(): readonly ProviderReviewComment[] { return [...input.threads.flatMap(thread => thread.comments), ...(options.comments ?? [])]; }

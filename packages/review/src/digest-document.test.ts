@@ -40,12 +40,15 @@ describe('digest document', () => {
   });
 
   it('marks an area it could not read and lists nothing from it, so no row reads as none', () => {
-    const document = digestFromProvider({ input: input(), unavailable: [{ area: 'reviews', reason: 'HTTP 401' }], sourceCoverage: { comments: 'complete', threads: 'partial' } });
+    const { reviewers: _read, ...unread } = input();
+    const document = digestFromProvider({ input: unread, unavailable: [{ area: 'reviews', reason: 'HTTP 401' }], sourceCoverage: { comments: 'complete', threads: 'partial' } });
     expect(document.reviewers).toEqual([]);
     expect(coverageOf(document, 'reviews')).toEqual({ state: 'unavailable', reason: 'HTTP 401' });
     expect(knownEmpty(document, 'reviews', 0)).toBe(false);
     expect(coverageOf(document, 'threads').state).toBe('partial');
     expect(knownEmpty(document, 'checks', 0)).toBe(true);
+    const half = digestFromProvider({ input: input(), unavailable: [{ area: 'reviews', reason: 'The reviewer endpoint returned 403.' }] });
+    expect([coverageOf(half, 'reviews').state, half.reviewers.length]).toEqual(['partial', 2]);
   });
 
   it('keeps the worse coverage when an area is reported twice', () => {
@@ -54,11 +57,11 @@ describe('digest document', () => {
     expect(document.checks).toEqual([]);
   });
 
-  it('refuses an area name it does not know and counts that do not add up', () => {
+  it('refuses an area name it does not know and drops counts that do not add up', () => {
     expect(() => digestFromProvider({ input: input(), unavailable: [{ area: 'approvals', reason: 'x' }] })).toThrow(/Unknown digest area/);
     const labelled = digestFromProvider({ input: input(), unavailable: [{ area: 'thread state', reason: 'a' }, { area: 'CI checks', reason: 'b' }, { area: 'approval requirements', reason: 'c' }] });
     expect([coverageOf(labelled, 'threads').state, coverageOf(labelled, 'checks').state, labelled.requirement]).toEqual(['partial', 'unavailable', null]);
-    expect(() => digestFromProvider({ input: input(), approvalsRequired: 1, approvalsLeft: 2 })).toThrow(/Approvals left/);
+    expect(digestFromProvider({ input: input(), approvalsRequired: 1, approvalsLeft: 2 }).requirement).toBeNull();
     expect(() => digestFromProvider({ input: input({ reviewers: [{ author: { id: '1', login: 'alice' }, state: 'approved' }, { author: { id: '1', login: 'alice' }, state: 'commented' }] }) })).toThrow(/listed twice/);
   });
 
