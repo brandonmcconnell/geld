@@ -80,6 +80,14 @@ import { PullStackMergeSection } from "#/components/pulls/stack/pull-stack-secti
 import { useIsSkeletonSample } from "#/components/shared/skeleton-sample";
 import { formatRelativeTime } from "#/lib/format-relative-time";
 import {
+	type FoldCounts,
+	type FoldReason,
+	foldLabel,
+	foldReasonOf as timelineFoldReason,
+	foldTimeline,
+} from "#/lib/geld/timeline-fold";
+import { useCompactTimeline } from "#/lib/geld/use-compact-timeline";
+import {
 	approveWorkflowRuns,
 	deleteBranch,
 	dismissPullReview,
@@ -169,6 +177,7 @@ export function PullDetailActivitySection({
 	>;
 }) {
 	const isSample = useIsSkeletonSample();
+	const [compact, setCompact] = useCompactTimeline();
 	return (
 		<div className="flex flex-col">
 			<DetailActivityHeader
@@ -177,6 +186,17 @@ export function PullDetailActivitySection({
 					comments && commits
 						? comments.length + commits.length + (events?.length ?? 0)
 						: undefined
+				}
+				action={
+					<button
+						type="button"
+						aria-pressed={compact}
+						data-testid="timeline-compact"
+						onClick={() => setCompact(!compact)}
+						className="rounded-md border-[0.5px] border-border bg-surface-1 px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-ghost-hover hover:text-foreground"
+					>
+						{compact ? "Show everything" : "Show less"}
+					</button>
 				}
 			/>
 
@@ -220,6 +240,7 @@ export function PullDetailActivitySection({
 				events={events ?? []}
 				reviewComments={reviewComments ?? []}
 				pr={pr}
+				compact={compact}
 				commentPagination={commentPagination}
 				eventPagination={eventPagination}
 				pageQueryKey={pageQueryKey}
@@ -1696,7 +1717,36 @@ type TimelineItem =
 			date: string;
 			data: GroupedIssueStateToggleEvent;
 	  }
-	| { type: "merged"; date: string; data: PullDetail };
+	| { type: "merged"; date: string; data: PullDetail }
+	| {
+			type: "fold";
+			date: string;
+			data: { key: string; counts: FoldCounts };
+	  };
+
+function timelineItemKey(item: TimelineItem): string {
+	if (item.type === "comment") return `comment-${item.data.id}`;
+	if (item.type === "event") return `event-${item.data.id}`;
+	return `${item.type}-${item.date}`;
+}
+
+function timelineItemFoldReason(item: TimelineItem): FoldReason | null {
+	if (item.type === "comment") {
+		return timelineFoldReason({
+			kind: "comment",
+			login: item.data.author?.login ?? null,
+			actorType: item.data.author?.type ?? null,
+			body: item.data.body,
+		});
+	}
+	if (item.type === "event") {
+		return timelineFoldReason({ kind: "event", event: item.data.event });
+	}
+	if (item.type === "label_group" || item.type === "review_request_group") {
+		return "event";
+	}
+	return null;
+}
 
 const WINDOW_THRESHOLD = 25;
 const EDGE_SIZE = 10;
@@ -1899,6 +1949,7 @@ function ActivityTimeline({
 	events,
 	reviewComments,
 	pr,
+	compact,
 	commentPagination,
 	eventPagination,
 	pageQueryKey,
@@ -1914,6 +1965,7 @@ function ActivityTimeline({
 	events: TimelineEvent[];
 	reviewComments: PullReviewComment[];
 	pr: PullDetail;
+	compact: boolean;
 	commentPagination?: CommentPagination;
 	eventPagination?: EventPagination;
 	pageQueryKey: readonly unknown[];
@@ -1952,7 +2004,11 @@ function ActivityTimeline({
 		replyIds: issueCommentReplyIds,
 	} = useMemo(() => buildCommentThreads(comments), [comments]);
 
-	const allItems = groupTimelineEvents(
+	const [openedFolds, setOpenedFolds] = useState<ReadonlySet<string>>(
+		() => new Set(),
+	);
+
+	const everyItem = groupTimelineEvents(
 		[
 			...comments
 				.filter((c) => !issueCommentReplyIds.has(c.id))
@@ -1978,6 +2034,23 @@ function ActivityTimeline({
 				: []),
 		].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
 	) as TimelineItem[];
+
+	const allItems: TimelineItem[] = compact
+		? foldTimeline(
+				everyItem,
+				timelineItemFoldReason,
+				timelineItemKey,
+				openedFolds,
+			).map((entry) =>
+				entry.type === "item"
+					? entry.item
+					: {
+							type: "fold",
+							date: entry.items[0].date,
+							data: { key: entry.key, counts: entry.counts },
+						},
+			)
+		: everyItem;
 
 	const {
 		visibleItems,
@@ -2022,6 +2095,18 @@ function ActivityTimeline({
 				const isLastInEventRun = isEventLike && !nextIsEventLike;
 
 				const row = (() => {
+					if (item.type === "fold") {
+						const { key, counts } = item.data;
+						return (
+							<TimelineFoldRow
+								key={`fold-${key}`}
+								label={foldLabel(counts)}
+								onOpen={() =>
+									setOpenedFolds((current) => new Set(current).add(key))
+								}
+							/>
+						);
+					}
 					if (item.type === "comment") {
 						const comment = item.data;
 						const commentReplies = issueCommentReplies.get(comment.id);
@@ -2284,6 +2369,29 @@ function ActivityTimeline({
 					</>
 				);
 			})}
+		</div>
+	);
+}
+
+function TimelineFoldRow({
+	label,
+	onOpen,
+}: {
+	label: string;
+	onOpen: () => void;
+}) {
+	return (
+		<div className="flex items-center gap-3 py-2" data-testid="timeline-fold">
+			<div className="h-px flex-1 bg-border" />
+			<button
+				type="button"
+				onClick={onOpen}
+				className="flex shrink-0 items-center gap-1.5 rounded-md border-[0.5px] border-dashed border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-ghost-hover hover:text-foreground"
+			>
+				<ChevronDownIcon size={12} strokeWidth={2} />
+				{label}
+			</button>
+			<div className="h-px flex-1 bg-border" />
 		</div>
 	);
 }

@@ -170,8 +170,17 @@ function userModel(user: GitHubUser | undefined | null): UserModel | null {
 	return user ? { __typename: "User", user } : null;
 }
 
-function actorById(ctx: GraphQLContext, userId: number | null | undefined) {
-	return userId ? userModel(ctx.gh.users.get(userId)) : null;
+type BotModel = { __typename: "Bot"; user: GitHubUser };
+
+function actorById(
+	ctx: GraphQLContext,
+	userId: number | null | undefined,
+): UserModel | BotModel | null {
+	const user = userId ? ctx.gh.users.get(userId) : null;
+	if (!user) return null;
+	return user.type === "Bot"
+		? { __typename: "Bot", user }
+		: { __typename: "User", user };
 }
 
 function ownerModel(
@@ -773,10 +782,13 @@ function toggleReaction(ctx: GraphQLContext, args: Args, add: boolean) {
 }
 
 const actorFields = {
-	avatarUrl: (model: UserModel, _args: Args, ctx: GraphQLContext) =>
-		avatarUrl(ctx, model.user.login),
-	url: (model: UserModel) => webUrl(model.user.login),
-	login: (model: UserModel) => model.user.login,
+	avatarUrl: (
+		model: UserModel | BotModel,
+		_args: Args,
+		ctx: GraphQLContext,
+	) => avatarUrl(ctx, model.user.login),
+	url: (model: UserModel | BotModel) => webUrl(model.user.login),
+	login: (model: UserModel | BotModel) => model.user.login,
 };
 
 const reactableFields = {
@@ -1083,6 +1095,11 @@ export const resolvers: Record<string, Record<string, unknown>> = {
 			if (existing) ctx.extras.minimized.delete(existing.id);
 			return { unminimizedComment: model };
 		},
+	},
+
+	Bot: {
+		...actorFields,
+		id: (model: BotModel) => model.user.node_id,
 	},
 
 	User: {

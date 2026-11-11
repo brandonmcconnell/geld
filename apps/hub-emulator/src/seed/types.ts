@@ -229,6 +229,8 @@ export type PersonSpec = {
 	twitter?: string;
 	followers?: number;
 	following?: number;
+	/** An app's account: its comments read as a bot's. */
+	bot?: boolean;
 };
 
 export type NotificationSpec = {
