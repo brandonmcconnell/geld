@@ -7,7 +7,7 @@ export async function verifyExpandedGitLabDigest(page, item, { poll, patchSettin
   await patchSettings({ enabled: true, prOverview: true, compactTimeline: 'compact', digestAboveDescription: false, aiEnabled: false, repoConfigs: 'never' });
   await page.goto(EXPANDED_DIGEST_MR, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await poll(() => page.$('[data-geld-automated-reviewer="21826781"]'), Boolean, 'GitLab Duo nested review', 60000);
-  await poll(() => page.$('[data-geld-review-key="requirements"]'), Boolean, 'Native merge requirements in digest', 30000);
+  await poll(() => page.$('[data-geld-merge-checks]'), Boolean, 'Native merge requirements in digest', 30000);
   await page.$$eval('.geld-provider-review [data-geld-review-toggle]', buttons => {
     for (const button of buttons) if (button.getAttribute('aria-expanded') === 'false') button.click();
   });
@@ -18,7 +18,7 @@ export async function verifyExpandedGitLabDigest(page, item, { poll, patchSettin
     return {
       humanReviews: panel.querySelector('[data-geld-review-key="reviewers"]')?.textContent,
       duo: panel.querySelector('[data-geld-automated-reviewer="21826781"]')?.textContent,
-      checks: panel.querySelector('[data-geld-review-key="requirements"]')?.textContent,
+      checks: panel.querySelector('[data-geld-merge-checks]')?.textContent,
       nativeChecks: [...document.querySelectorAll('#widget-state [data-testid="merge-checks-full"] [data-testid="merge-check"]')].map(row => row.querySelector('.gl-w-full.gl-min-w-0')?.textContent.trim()).filter(Boolean),
       commentRows: panel.querySelectorAll('[data-geld-comment-row]').length,
       body: panel.querySelector('[data-geld-source="note_4200027701"] .geld-provider-review__body')?.textContent,

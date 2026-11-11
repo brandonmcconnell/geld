@@ -325,7 +325,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   function syncStatusRows(changed: ReadonlySet<string>): void {
     const restoreAnchor = readingAnchor();
     statusOnly = true;
-    const rows: readonly [string, () => HTMLElement | null][] = [['reviewers', reviewStandings], ['bots', botsSection], ['requirements', requirementsSection], ['reports', reportsSection], ['checks', checksSection]];
+    const rows: readonly [string, () => HTMLElement | null][] = [['reviewers', reviewStandings], ['bots', botsSection], ['reports', reportsSection], ['checks', checksSection]];
     for (const [key, renderRow] of rows) {
       if (!changed.has(key)) continue;
       const next = renderRow();
@@ -335,7 +335,6 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       if (previous?.outerHTML === next.outerHTML) continue;
       if (previous !== null) previous.replaceWith(next);
       else if (key === 'bots') panel.querySelector(':scope > [data-geld-review-key="reviewers"]')?.after(next);
-      else if (key === 'requirements') panel.querySelector(':scope > [data-geld-review-key="reviewers"]')?.after(next);
       else if (key === 'reports') panel.querySelector(':scope > [data-geld-review-key="checks"]')?.before(next);
     }
     statusOnly = false;
@@ -843,12 +842,15 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     }
     const tally = [...counts].map(([state, count]) => `${count} ${state.toLowerCase()}`).join(' · ');
     const summaryText = coverage === 'unavailable' ? 'Unavailable' : coverage === 'partial' ? `Partial${tally === '' ? '' : ` · ${tally}`}` : current.length === 0 ? 'None on this commit' : tally;
-    const section = disclosure('checks', 'CI checks', false);
+    const merge = mergeChecksPart();
+    const ciText = merge === null ? summaryText : `CI ${summaryText.charAt(0).toLowerCase()}${summaryText.slice(1)}`;
+    const section = disclosure('checks', 'Checks', false);
     section.dataset.geldChecksCoverage = coverage;
     const summary = section.querySelector('[data-geld-review-toggle]');
-    summary?.setAttribute('aria-label', `CI checks · ${summaryText}`);
+    summary?.setAttribute('aria-label', `Checks · ${[merge?.textContent, merge === null || current.length > 0 || coverage !== 'complete' ? ciText : null].filter(value => typeof value === 'string' && value !== '').join(' · ')}`);
     if (summary !== null && coverage !== 'unavailable' && current.length > 0) {
       const preview = node('span', coverage === 'partial' ? 'Partial · ' : '', 'geld-provider-review__row-preview');
+      if (merge !== null) preview.prepend(merge, doc.createTextNode(' · '));
       summary.append(preview);
       let first = true;
       for (const [label, count] of counts) {
@@ -862,9 +864,23 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         part.append(doc.createTextNode(`${count} ${label.toLowerCase()}`));
         preview.append(part);
       }
-    } else summary?.append(node('span', summaryText, 'geld-provider-review__row-preview'));
-    if (coverage !== 'complete') section.append(node('p', coverage === 'unavailable' ? 'CI checks could not be read.' : 'Some CI checks could not be read.'));
-    else if (checks?.length === 0) section.append(node('p', 'No CI checks reported.'));
+    } else if (summary !== null) {
+      const preview = node('span', '', 'geld-provider-review__row-preview');
+      if (merge !== null) preview.append(merge);
+      if (merge === null || coverage !== 'complete' || current.length > 0) {
+        if (merge !== null) preview.append(doc.createTextNode(' · '));
+        preview.append(doc.createTextNode(ciText));
+      }
+      summary.append(preview);
+    }
+    const mergeList = mergeChecksList();
+    if (mergeList !== null) section.append(mergeList);
+    const ci = node('div', '', 'geld-provider-review__check-group');
+    ci.dataset.geldCiChecks = '';
+    if (mergeList !== null) ci.append(node('p', 'CI', 'geld-provider-review__check-heading'));
+    section.append(ci);
+    if (coverage !== 'complete') ci.append(node('p', coverage === 'unavailable' ? 'CI checks could not be read.' : 'Some CI checks could not be read.'));
+    else if (checks?.length === 0) ci.append(node('p', 'No CI checks reported.'));
     const list = node('ul', '', 'geld-provider-review__checks');
     for (const check of checks ?? []) {
       const presentation = providerCheckPresentation(check, input.subject.provider);
@@ -884,28 +900,28 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       if (check.description !== undefined && check.description !== '') row.append(node('span', check.description, 'geld-provider-review__muted'));
       list.append(row);
     }
-    section.append(list);
+    ci.append(list);
     return section;
   }
 
-  function requirementsSection(): HTMLElement | null {
+  // Merge checks gate the merge, so the row leads with them and its preview names the worst one.
+  function mergeChecksPart(): HTMLElement | null {
+    const requirements = options.requirements;
+    if (requirements === undefined || requirements === null || requirements.length === 0) return null;
+    const passed = requirements.filter(requirement => requirement.state === 'passed').length;
+    const worst = (['failed', 'pending', 'unknown'] as const).find(state => requirements.some(requirement => requirement.state === state)) ?? 'passed';
+    const part = node('span', `${passed}/${requirements.length} merge checks`, 'geld-provider-review__check-part');
+    part.dataset.geldCheckState = worst;
+    return part;
+  }
+
+  function mergeChecksList(): HTMLElement | null {
     const requirements = options.requirements;
     if (requirements === undefined || requirements === null) return null;
-    const section = disclosure('requirements', 'Merge checks', false);
-    const summary = section.querySelector('[data-geld-review-toggle]');
-    const preview = node('span', '', 'geld-provider-review__row-preview');
-    for (const state of ['failed', 'pending', 'unknown', 'passed'] as const) {
-      const count = requirements.filter(requirement => requirement.state === state).length;
-      if (count === 0) continue;
-      if (preview.childNodes.length > 0) preview.append(doc.createTextNode(' · '));
-      const part = node('span', `${count} ${REQUIREMENT_STATE[state].toLowerCase()}`, 'geld-provider-review__check-part');
-      part.dataset.geldCheckState = state;
-      preview.append(part);
-    }
-    if (requirements.length === 0) preview.textContent = 'None supplied';
-    summary?.setAttribute('aria-label', `Merge requirements · ${preview.textContent}`);
-    summary?.append(preview);
-    if (requirements.length === 0) section.append(node('p', 'No merge requirement details were supplied.'));
+    const group = node('div', '', 'geld-provider-review__check-group');
+    group.dataset.geldMergeChecks = '';
+    group.append(node('p', 'Merge checks', 'geld-provider-review__check-heading'));
+    if (requirements.length === 0) { group.append(node('p', 'No merge requirement details were supplied.'));return group; }
     const list = node('ul', '', 'geld-provider-review__checks');
     for (const requirement of requirements) {
       const row = node('li', '', 'geld-provider-review__check');
@@ -915,8 +931,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       row.append(node('span', requirement.label), status);
       list.append(row);
     }
-    section.append(list);
-    return section;
+    group.append(list);
+    return group;
   }
 
   function verdictLabel(bot: BotVerdictRecord): string {
@@ -1532,9 +1548,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const statusSignatures = new Map([
       ['bots', JSON.stringify(input.reviewers)],
       ['reviewers', JSON.stringify([input.reviewers, options.reviewerControls?.available, options.approvalsRequired, options.approvalsLeft])],
-      ['requirements', JSON.stringify(options.requirements ?? null)],
       ['reports', JSON.stringify(input.checks ?? null)],
-      ['checks', JSON.stringify([input.checks, input.checksCoverage])],
+      ['checks', JSON.stringify([input.checks, input.checksCoverage, options.requirements ?? null])],
     ]);
     const changedStatus = new Set([...statusSignatures].filter(([key, value]) => lastStatusSignatures.get(key) !== value).map(([key]) => key));
     lastStatusSignatures = statusSignatures;
@@ -1703,8 +1718,6 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       brand.append(unavailable);
     }
     children.push(reviewStandings());
-    const requirements = requirementsSection();
-    if (requirements !== null) children.push(requirements);
     const botSection = botsSection();
     if (botSection !== null) children.push(botSection);
     if (options.agentNotes !== undefined && options.agentNotes.length > 0) {

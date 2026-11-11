@@ -578,7 +578,7 @@ describe('provider conversation digest', () => {
     expect(panel.element.textContent).toContain('1/2 required approvals · 1 change request');
     expect(panel.element.textContent).toContain('Review requested');
     const checks = panel.element.querySelector('[data-geld-review-key="checks"]');
-    expect(checks?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('CI checks · 1 passed · 1 running · 1 unknown');
+    expect(checks?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('Checks · 1 passed · 1 running · 1 unknown');
     expect(checks?.textContent).toContain('Earlier commit · Failed');
     expect(checks?.querySelector('a')?.rel).toBe('noopener noreferrer');
   });
@@ -592,7 +592,7 @@ describe('provider conversation digest', () => {
       { key: 'job:4', name: 'All checks passed', sha: subject.headSha, status: 'completed', conclusion: 'success', nativeStatus: 'unsupported' },
     ] }, { copyText: (text) => { copied = text; } });
     const checks = panel.element.querySelector('[data-geld-review-key="checks"]');
-    expect(checks?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('CI checks · Partial · 1 pending · 1 running · 1 manual · 1 unknown');
+    expect(checks?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('Checks · Partial · 1 pending · 1 running · 1 manual · 1 unknown');
     expect(checks?.querySelector('[data-state="manual"]')?.textContent).toContain('ManualAllowed to fail');
     expect(checks?.querySelector('[data-state="manual"] svg')).toBeNull();
     expect(checks?.querySelector('[data-state="passed"]')).toBeNull();
@@ -619,7 +619,7 @@ describe('provider conversation digest', () => {
       { key: 'job:1', name: 'Tests', sha: subject.headSha, status: 'completed', conclusion: 'success' },
     ] });
     const checks = panel.element.querySelector('[data-geld-review-key="checks"]');
-    expect(checks?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('CI checks · Partial · 1 passed');
+    expect(checks?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('Checks · Partial · 1 passed');
     expect(checks?.textContent).toContain('Some CI checks could not be read.');
     expect(checks?.getAttribute('data-state')).toBeNull();
   });
@@ -1098,14 +1098,15 @@ describe('provider conversation digest', () => {
         { id: 'classicMergeCheckItem-minimum_default_reviewer_approvals', label: '1+ approval from default reviewers', state: 'passed' },
       ],
     });
-    const section = panel.element.querySelector('[data-geld-review-key="requirements"]');
-    expect(section?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('Merge requirements · 2 passed');
-    expect(section?.querySelector('.geld-provider-review__row-preview')?.textContent).toBe('2 passed');
+    const section = panel.element.querySelector('[data-geld-review-key="checks"]');
+    expect(section?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('Checks · 2/2 merge checks · CI unavailable');
+    expect(section?.querySelector('.geld-provider-review__row-preview')?.textContent).toBe('2/2 merge checks · CI unavailable');
+    expect(panel.element.querySelector('[data-geld-review-key="requirements"]')).toBeNull();
     expect(section?.querySelectorAll('[data-geld-native-requirement]')).toHaveLength(2);
     expect(section?.textContent).toContain('1+ approval from default reviewers');
     expect(panel.element.querySelector('[data-geld-review-key="reviewers"] .geld-provider-review__reviewer-summary')?.textContent).toBe('Reviews · 1 approval');
     expect(panel.element.textContent).not.toContain('/2 required approvals');
-    expect(panel.element.querySelector('[data-geld-review-key="checks"] [data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('CI checks · Unavailable');
+    expect(section?.querySelector('[data-geld-ci-checks]')?.textContent).toContain('CI checks could not be read.');
     expect(panel.element.textContent).not.toContain('Authentication is required.');
     expect(panel.element.textContent).not.toContain('The API did not supply approval requirements.');
     expect(panel.element.dataset.state).toBe('partial');
@@ -1117,16 +1118,16 @@ describe('provider conversation digest', () => {
     const label = '<img src=x onerror=alert(1)> Native rule';
     const options = { requirements: [{ id: 'native-rule', label, state: 'passed' }], copyText: (text: string) => { copied = text; } } satisfies Parameters<typeof renderProviderReviewPanel>[2];
     const panel = renderProviderReviewPanel(host(), input(), options);
-    const section = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-key="requirements"]');
+    const section = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-key="checks"]');
     if (section !== null) section.open = true;
     panel.update(input(), { ...options, requirements: [{ id: 'native-rule', label, state: 'unknown' }] });
-    expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-key="requirements"]')?.open).toBe(true);
+    expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-key="checks"]')?.open).toBe(true);
     expect(panel.element.querySelector('[data-geld-native-requirement="native-rule"]')?.textContent).toContain(`${label}Unknown`);
     expect(panel.element.querySelector('img,[onerror]')).toBeNull();
     panel.element.querySelector<HTMLButtonElement>('.geld-provider-review__copy')?.click();
     await vi.waitFor(() => expect(copied).toContain(`Merge requirement: ${label}: Unknown`));
     panel.update(input(), { requirements: null });
-    expect(panel.element.querySelector('[data-geld-review-key="requirements"]')).toBeNull();
+    expect(panel.element.querySelector('[data-geld-merge-checks]')).toBeNull();
   });
 });
 

@@ -3607,7 +3607,8 @@ Rendering joins completed scene receipts from the same public pull request and r
 GitLab and Bitbucket use Geld's compact digest structure with the provider's own font, surface, border and interaction tokens.
 The toolbar contains a conditional resolved-thread meter, Flow, grouping, View, copy and settings controls rather than a separate metric dashboard.
 Reviewer summaries stay inline with the Reviews row while conversation details remain inside its disclosure, and an unknown pending-request state is not presented as a review verdict.
-Merge checks use a short row label and inline native-state totals, keeping long rule names inside the disclosure instead of wrapping the label into several lines.
+GitLab and Bitbucket show one Checks row: its preview leads with the merge checks ("3/4 merge checks", in the worst rule's state) and then the CI tally, and it opens to Merge checks above CI.
+Long rule names stay inside the row, never in its label.
 The inline combined view uses the Geld and provider marks with a plus sign and an accessible full label, while its View menu option also spells out Digest and Timeline.
 View changes restore focus to the selected native timeline option when the digest is off and to its View control when it returns.
 Restore this focus after the frame's placement and native click handlers have settled, while checking that the reader has not focused a different control.
