@@ -45,7 +45,22 @@ GitLab and Bitbucket are offered only when this server has their OAuth app (`GIT
 
 `providerClientFor(userId, provider)` in `src/lib/providers/connections.server.ts` gives the shared client from `@geld/providers` for a connection. Its token comes through Better Auth, which decrypts it and refreshes an expired one. The page asks each connected provider for its first page of repositories to say whether the connection still works.
 
-GitHub's own screens still read through the app's GitHub client. GitLab and Bitbucket pull requests are not in the lists yet.
+GitHub's own screens still read through the app's GitHub client.
+
+## Other providers in the lists
+
+The reader's pull request lists (`getMyPulls`) add GitLab merge requests and Bitbucket pull requests to GitHub's, newest first (`src/lib/providers/my-pulls.ts`).
+
+| Provider | Review requested | Assigned | Authored |
+| --- | --- | --- | --- |
+| GitLab | `reviewer_username` | `scope=assigned_to_me` | `scope=created_by_me` |
+| Bitbucket | Not yet | Not yet | `pullrequests/{user}` |
+
+Bitbucket lists across workspaces only by author, so its review requests need a query per workspace and are not here yet.
+
+A row from another provider opens on that provider in a new tab and takes no part in bulk actions: the hub's own pull request view reads GitHub only. Its `provider` field is what tells it apart, and a GitHub row has none.
+
+A provider that does not answer within 8 seconds is left out and named in a warning, and the lists show without it. Nothing read from a provider is stored on the server.
 
 ## Not here yet
 

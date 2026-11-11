@@ -254,7 +254,14 @@ export const getMyPulls = createServerFn({ method: "GET" }).handler(
 			}),
 			getInstallationAccessIndex(context),
 		]);
-		return filterMyPullsResult(result, accessIndex);
+		const { withConnectedProviderPulls } = await import(
+			"../providers/my-pulls.server"
+		);
+		// After the installation filter, which knows GitHub repositories only.
+		return withConnectedProviderPulls(
+			context.session.user.id,
+			filterMyPullsResult(result, accessIndex),
+		);
 	},
 );
 

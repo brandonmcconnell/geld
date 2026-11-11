@@ -2332,7 +2332,11 @@ Sign-in is the dashboard's `github-oauth` identity and the GitHub App authorizat
 **A provider connection is an identity on the Geld account** (`apps/hub/src/lib/providers`): GitHub, GitLab and Bitbucket under the dashboard's ids, so a connection made in either app is one connection.
 `providerClientFor` gives the `@geld/providers` client for one, its token read through Better Auth so it is decrypted and refreshed as the dashboard would.
 GitLab and Bitbucket are offered only where the server has their OAuth app, and GitLab is never asked for `openid`: the hub does not encrypt id tokens as the dashboard does.
-Not done yet: GitLab and Bitbucket pull requests are in no list, GitHub's screens still read through the app's own GitHub client, and the hub knows nothing of Geld's teams, Digest or categories.
+**The reader's pull request lists hold all three providers** (`apps/hub/src/lib/providers/my-pulls.ts`, merged in `getMyPulls` after the installation filter, which knows GitHub repositories only).
+A row with a `provider` is GitLab's or Bitbucket's: it opens on that provider and takes no part in bulk actions, since the hub's pull request view reads GitHub only.
+A provider that does not answer is left out and named (`unreachableProviders`), never an error.
+Bitbucket lists across workspaces only by author, so its review requests are not in the lists yet.
+Not done yet: GitHub's screens still read through the app's own GitHub client, another provider's pull request cannot be opened in the hub, and the hub knows nothing of Geld's teams, Digest or categories.
 Each of those arrives as its own change.
 
 ## Diff syntax highlighting
