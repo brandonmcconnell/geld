@@ -17,6 +17,7 @@ import { Route as SetupRouteImport } from './routes/setup'
 import { Route as ProtectedIndexRouteImport } from './routes/_protected/index'
 import { Route as ProtectedInboxRouteImport } from './routes/_protected/inbox'
 import { Route as ProtectedIssuesRouteImport } from './routes/_protected/issues'
+import { Route as ProtectedProviderPullRouteImport } from './routes/_protected/provider-pull'
 import { Route as ProtectedPullsRouteImport } from './routes/_protected/pulls'
 import { Route as ProtectedReposRouteImport } from './routes/_protected/repos'
 import { Route as ProtectedReviewsRouteImport } from './routes/_protected/reviews'
@@ -107,6 +108,11 @@ const ProtectedInboxRoute = ProtectedInboxRouteImport.update({
 const ProtectedIssuesRoute = ProtectedIssuesRouteImport.update({
   id: '/issues',
   path: '/issues',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedProviderPullRoute = ProtectedProviderPullRouteImport.update({
+  id: '/provider-pull',
+  path: '/provider-pull',
   getParentRoute: () => ProtectedRoute,
 } as any)
 const ProtectedPullsRoute = ProtectedPullsRouteImport.update({
@@ -412,6 +418,7 @@ export interface FileRoutesByFullPath {
   '/setup': typeof SetupRoute
   '/inbox': typeof ProtectedInboxRoute
   '/issues': typeof ProtectedIssuesRoute
+  '/provider-pull': typeof ProtectedProviderPullRoute
   '/pulls': typeof ProtectedPullsRoute
   '/repos': typeof ProtectedReposRoute
   '/reviews': typeof ProtectedReviewsRoute
@@ -472,6 +479,7 @@ export interface FileRoutesByTo {
   '/setup': typeof SetupRoute
   '/inbox': typeof ProtectedInboxRoute
   '/issues': typeof ProtectedIssuesRoute
+  '/provider-pull': typeof ProtectedProviderPullRoute
   '/pulls': typeof ProtectedPullsRoute
   '/repos': typeof ProtectedReposRoute
   '/reviews': typeof ProtectedReviewsRoute
@@ -532,6 +540,7 @@ export interface FileRoutesById {
   '/setup': typeof SetupRoute
   '/_protected/inbox': typeof ProtectedInboxRoute
   '/_protected/issues': typeof ProtectedIssuesRoute
+  '/_protected/provider-pull': typeof ProtectedProviderPullRoute
   '/_protected/pulls': typeof ProtectedPullsRoute
   '/_protected/repos': typeof ProtectedReposRoute
   '/_protected/reviews': typeof ProtectedReviewsRoute
@@ -596,6 +605,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/inbox'
     | '/issues'
+    | '/provider-pull'
     | '/pulls'
     | '/repos'
     | '/reviews'
@@ -656,6 +666,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/inbox'
     | '/issues'
+    | '/provider-pull'
     | '/pulls'
     | '/repos'
     | '/reviews'
@@ -715,6 +726,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/_protected/inbox'
     | '/_protected/issues'
+    | '/_protected/provider-pull'
     | '/_protected/pulls'
     | '/_protected/repos'
     | '/_protected/reviews'
@@ -841,6 +853,13 @@ declare module '@tanstack/react-router' {
       path: '/issues'
       fullPath: '/issues'
       preLoaderRoute: typeof ProtectedIssuesRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/provider-pull': {
+      id: '/_protected/provider-pull'
+      path: '/provider-pull'
+      fullPath: '/provider-pull'
+      preLoaderRoute: typeof ProtectedProviderPullRouteImport
       parentRoute: typeof ProtectedRoute
     }
     '/_protected/pulls': {
@@ -1279,6 +1298,7 @@ const ProtectedOrgsOrgSettingsRouteWithChildren =
 interface ProtectedRouteChildren {
   ProtectedInboxRoute: typeof ProtectedInboxRoute
   ProtectedIssuesRoute: typeof ProtectedIssuesRoute
+  ProtectedProviderPullRoute: typeof ProtectedProviderPullRoute
   ProtectedPullsRoute: typeof ProtectedPullsRoute
   ProtectedReposRoute: typeof ProtectedReposRoute
   ProtectedReviewsRoute: typeof ProtectedReviewsRoute
@@ -1316,6 +1336,7 @@ interface ProtectedRouteChildren {
 const ProtectedRouteChildren: ProtectedRouteChildren = {
   ProtectedInboxRoute: ProtectedInboxRoute,
   ProtectedIssuesRoute: ProtectedIssuesRoute,
+  ProtectedProviderPullRoute: ProtectedProviderPullRoute,
   ProtectedPullsRoute: ProtectedPullsRoute,
   ProtectedReposRoute: ProtectedReposRoute,
   ProtectedReviewsRoute: ProtectedReviewsRoute,

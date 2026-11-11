@@ -1,4 +1,4 @@
-import { ExternalLinkIcon, GitBranchIcon, GitLabLogo } from "@geld/hub-icons";
+import { GitBranchIcon, GitLabLogo } from "@geld/hub-icons";
 import { cn } from "@geld/hub-ui/lib/utils";
 import { Link, useRouter } from "@tanstack/react-router";
 import { memo } from "react";
@@ -90,10 +90,9 @@ export const PullRequestRow = memo(function PullRequestRow({
         {pr.provider ? (
           <span
             className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
-            title={`Opens on ${PROVIDER_ROW_NAMES[pr.provider]}`}
+            title={`From ${PROVIDER_ROW_NAMES[pr.provider]}`}
           >
             <ProviderMark provider={pr.provider} />
-            <ExternalLinkIcon size={11} strokeWidth={2} />
           </span>
         ) : null}
       </div>
@@ -104,19 +103,23 @@ export const PullRequestRow = memo(function PullRequestRow({
     </>
   );
 
-  // The hub's own pull request view reads GitHub only, so another
-  // provider's row opens there, and takes no part in bulk actions.
+  // Another provider's row opens in the hub's page for it, and takes no
+  // part in bulk actions, which are GitHub's.
   if (pr.provider) {
     return (
-      <a
-        href={pr.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label={`${rowAccessibleName(pr)}, opens on ${PROVIDER_ROW_NAMES[pr.provider]}`}
+      <Link
+        to="/provider-pull"
+        search={{
+          provider: pr.provider,
+          repository: pr.repository.fullName,
+          number: pr.number,
+        }}
+        preload={false}
+        aria-label={`${rowAccessibleName(pr)}, from ${PROVIDER_ROW_NAMES[pr.provider]}`}
         className={cn(listRowClassName, listRowHoverClassName)}
       >
         {content}
-      </a>
+      </Link>
     );
   }
 

@@ -2333,7 +2333,11 @@ Sign-in is the dashboard's `github-oauth` identity and the GitHub App authorizat
 `providerClientFor` gives the `@geld/providers` client for one, its token read through Better Auth so it is decrypted and refreshed as the dashboard would.
 GitLab and Bitbucket are offered only where the server has their OAuth app, and GitLab is never asked for `openid`: the hub does not encrypt id tokens as the dashboard does.
 **The reader's pull request lists hold all three providers** (`apps/hub/src/lib/providers/my-pulls.ts`, merged in `getMyPulls` after the installation filter, which knows GitHub repositories only).
-A row with a `provider` is GitLab's or Bitbucket's: it opens on that provider and takes no part in bulk actions, since the hub's pull request view reads GitHub only.
+A row with a `provider` is GitLab's or Bitbucket's: it opens the hub's page for it and takes no part in bulk actions, which are GitHub's.
+**A GitLab or Bitbucket pull request opens in the hub, to read** (`/provider-pull`, `readProviderPull`, `apps/hub/src/lib/providers/provider-pull.ts`): its title, state and description, its files split into what to review and what the reader's categories set aside, and its review threads, each by its first comment.
+It is read through the `@geld/providers` client for the reader's connection, the diff parsed for paths and counts and dropped (one over `MAX_DIFF_CHARS` is not parsed and its files are not listed), and nothing is stored.
+The repository is carried as its whole path, since a GitLab group may be several deep.
+Commenting, reviewing, the diff itself, the Digest and the Assistant are not there yet: the page links to the provider for those.
 A provider that does not answer is left out and named (`unreachableProviders`), never an error.
 Bitbucket lists across workspaces only by author, so its review requests are not in the lists yet.
 **A GitHub row in the lists shows the lines left to review** (`apps/hub/docs/signals.md`, `src/lib/geld/pull-signals.ts`, `getPullSignals`, `PullSignalsStat`): the pull request's files, paths and counts only, classified with `@geld/core`'s matcher under Geld's default categories, read once the row nears the viewport and stored nowhere on the server.
@@ -2362,7 +2366,7 @@ The provider and the policy are checked before the pull request is read, redirec
 **Settings lists the reader's teams and changes none** (`listTeams`, `src/lib/teams`): name, role, plan, members against seats and repositories, read from the dashboard's `teams`, `team_members`, `team_repos` and `subscriptions`.
 Those tables are not declared in the hub's schema and the hub never creates or writes them: it asks Postgres whether they exist, and a database of the hub's own says it has no teams.
 Only counts are shown, never members' names, and a team being deleted is left out.
-Not done yet: GitHub's screens still read through the app's own GitHub client, another provider's pull request cannot be opened in the hub, and teams, their members, access and billing are still changed only in the dashboard.
+Not done yet: GitHub's screens still read through the app's own GitHub client, another provider's pull request can be read in the hub but not reviewed there, and teams, their members, access and billing are still changed only in the dashboard.
 Each of those arrives as its own change.
 
 ## Diff syntax highlighting
