@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { joinCommitSubjects, renderQuickView } from './quick-view';
 import { restoreAll } from './teleport';
+
+vi.mock('./commit-dates', () => ({ commitDate: (sha: string) => (sha.startsWith('b') ? '2026-11-07T21:50:48Z' : '2026-11-07T21:37:49Z') }));
 
 /**
  * A commit row as GitHub renders it in a pull request's timeline when the
@@ -79,5 +81,32 @@ describe('compactEvents', () => {
     restoreAll();
     expect(document.querySelector('#event-1 .TimelineItem-body')?.textContent).toContain('closed this');
     expect(document.querySelector('#event-1 [data-geld-event-hidden]')).toBeNull();
+  });
+});
+
+/** An Overview Comments section listed newest first, holding one run of two commits (brandonmcconnell/geld#466, Nov 2026). */
+function overviewCommits(): HTMLElement {
+  const commitRow = (sha: string, title: string): string =>
+    `<div data-testid="timeline-commit-row"><a href="/o/r/pull/1/changes/${sha.repeat(40)}" class="Title__x">${title}</a><div class="Actions__x"><a href="/o/r/pull/1/changes/${sha.repeat(40)}">${sha.repeat(7)}</a></div></div>`;
+  const home = document.createElement('section');
+  home.innerHTML = `<h2 id="overview-comments">Comments</h2><button><svg class="octicon octicon-sort-desc"></svg></button><div data-testid="timeline-item" data-item-type="commits"><div data-testid="timeline-commit-group">${commitRow('b', 'newer')}${commitRow('a', 'older')}</div></div>`;
+  document.body.append(home);
+  const entry = home.querySelector<HTMLElement>('[data-testid="timeline-item"]');
+  if (entry === null) throw new Error('fixture');
+  return entry;
+}
+
+describe('Overview commit runs', () => {
+  it('reads a newest-first run oldest first, and times each row at the end of its SHA', () => {
+    const slot = document.createElement('div');
+    document.body.append(slot);
+    renderQuickView(slot, [overviewCommits()]);
+    const group = slot.querySelector('[data-testid="timeline-commit-group"]');
+    expect(group?.hasAttribute('data-geld-oldest-first')).toBe(true);
+    const times = [...slot.querySelectorAll('[data-testid="timeline-commit-row"] > [class*="Actions"] > .geld-review__commit-time relative-time')].map((time) => time.getAttribute('datetime'));
+    expect(times).toEqual(['2026-11-07T21:50:48Z', '2026-11-07T21:37:49Z']);
+    restoreAll();
+    expect(document.querySelector('[data-geld-oldest-first]')).toBeNull();
+    expect(document.querySelector('.geld-review__commit-time')).toBeNull();
   });
 });

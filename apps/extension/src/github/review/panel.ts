@@ -112,6 +112,8 @@ export interface FoldRow {
   readonly time: string;
   /** The id whose clock `time` was read from (the headline event's, else the first node's), so the cell can follow the clock's ticks. */
   readonly timeAnchor: string | null;
+  /** The moment the row's time stands for (ISO), when known: shown as a live relative time, and the activity rows' order. */
+  readonly at?: string;
   /** The timeline events' state change (fold.ts `EventHeadline`): the row reads "merged into main" with who did it. */
   readonly headline?: EventHeadline;
   /** A state change paired with its comment (fold.ts `Closure`): the row reads "X closed this" with the comment's first line. */
@@ -903,6 +905,18 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers, n
   return row;
 }
 
+/** Rows oldest first by the moment each shows, as the rounds read; a row with no known moment keeps its place after them. */
+export function inTimeOrder(folds: readonly FoldRow[]): readonly FoldRow[] {
+  const moment = (fold: FoldRow): number => {
+    const at = fold.at === undefined ? Number.NaN : Date.parse(fold.at);
+    return Number.isNaN(at) ? Number.POSITIVE_INFINITY : at;
+  };
+  return folds
+    .map((fold, index) => ({ fold, index, at: moment(fold) }))
+    .sort((a, b) => (a.at === b.at ? a.index - b.index : a.at - b.at))
+    .map((entry) => entry.fold);
+}
+
 function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): HTMLElement {
   const key = foldKey(fold.key);
   const open = model.openKey === key;
@@ -930,7 +944,8 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
   const toggle = (): void => handlers.onToggle(key);
   mainClickToggles(main, toggle);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
-  if (fold.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time`, ...(fold.timeAnchor === null ? {} : { [ATTR_TIME_FOR]: fold.timeAnchor }) }, [fold.time]));
+  if (fold.at !== undefined) right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [relativeTimeElement(fold.at, `${PANEL_CLASS}__time-text`)]));
+  else if (fold.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time`, ...(fold.timeAnchor === null ? {} : { [ATTR_TIME_FOR]: fold.timeAnchor }) }, [fold.time]));
   if (fold.firstAnchor !== null) {
     const anchor = fold.firstAnchor;
     // A single comment (a closure's is one: the event beside it has no menu) wears GitHub's own ⋯ (Copy link,
@@ -3156,7 +3171,7 @@ function signatureOf(model: PanelModel): string {
     bots: model.meta.bots.map((bot) => `${bot.id}:${bot.verdict}:${bot.count ?? ''}:${bot.score ?? ''}:${bot.severity ?? ''}:${bot.reviewedSha}:${bot.sourceId ?? ''}`),
     botRequests: [...model.botRequests].map(([id, state]) => `${id}:${state.kind === 'starting' ? 'starting' : state.reason}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
-    folds: model.folds.map((fold) => `${fold.key}:${fold.label}:${(fold.refs ?? []).join(' ')}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}:${fold.closure?.preview ?? ''}:${fold.headline === undefined ? '' : `${fold.headline.kind}${fold.headline.actor}${fold.headline.target ?? ''}${fold.headline.avatarSrc ?? ''}`}`),
+    folds: model.folds.map((fold) => `${fold.key}:${fold.label}:${(fold.refs ?? []).join(' ')}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}:${fold.at ?? ''}:${fold.closure?.preview ?? ''}:${fold.headline === undefined ? '' : `${fold.headline.kind}${fold.headline.actor}${fold.headline.target ?? ''}${fold.headline.avatarSrc ?? ''}`}`),
     batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.commits.length}/${batch.commitCount}/${batch.forcePushes}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}${entry.url ?? ''}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
     grouping: model.grouping,
     view: model.view,
@@ -3489,7 +3504,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   if (!model.fullTimeline && model.grouping !== 'batch') {
     // Comments that need nothing from the reader (bot run summaries, review requests), then the timeline's activity.
     const other = model.folds.filter((fold) => fold.section === 'comments');
-    const activity = model.folds.filter((fold) => fold.section === 'activity');
+    const activity = inTimeOrder(model.folds.filter((fold) => fold.section === 'activity'));
     const appendFolds = (folds: readonly FoldRow[], slots: boolean): void => {
       for (const fold of folds) {
         rows.append(foldRowEl(fold, model, handlers));

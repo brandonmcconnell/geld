@@ -11,7 +11,8 @@ import type { RefDetails, RefState } from './refs';
 import { ICON_CHECK, ICON_COMMENT_DISCUSSION, ICON_GIT_COMPARE, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_ISSUE_CLOSED, ICON_ISSUE_OPENED, ICON_LINK, ICON_SKIP, ICON_X } from '../ui/icons';
 import { openMinimized } from './chat';
 import { commitDate } from './commit-dates';
-import { compareHome, onRestore, teleportInto } from './teleport';
+import { overviewNewestFirst } from './overview-page';
+import { compareHome, homeOf, onRestore, teleportInto } from './teleport';
 import { referenceLinksIn } from './references';
 import { relativeTimeElement } from './time';
 
@@ -33,6 +34,7 @@ export function renderQuickView(slot: HTMLElement, nodes: readonly HTMLElement[]
   compactForcePushes(list);
   compactEvents(list, context.headSha ?? null);
   joinCommitSubjects(list);
+  orderCommitGroups(list);
   timeCommitRows(list, onChange);
 }
 
@@ -273,19 +275,50 @@ const TIME_CLASS = 'geld-review__commit-time';
  * goes home.
  */
 export function timeCommitRows(list: HTMLElement, onChange: () => void): void {
-  for (const row of list.querySelectorAll<HTMLElement>('.TimelineItem, .js-commits-list-item')) {
+  for (const row of list.querySelectorAll<HTMLElement>(`.TimelineItem, .js-commits-list-item, ${OVERVIEW_COMMIT_ROW}`)) {
     if (row.querySelector(`.${TIME_CLASS}`) !== null || row.querySelector('.geld-review__push') !== null) continue;
-    const link = row.querySelector<HTMLAnchorElement>('a[href*="/commits/"]');
-    const sha = /\/commits\/([0-9a-f]{7,40})(?:[/?#]|$)/i.exec(link?.getAttribute('href') ?? '')?.[1];
-    if (link === null || sha === undefined) continue;
+    const overview = row.matches(OVERVIEW_COMMIT_ROW);
+    const link = row.querySelector<HTMLAnchorElement>(overview ? 'a[href*="/changes/"]' : 'a[href*="/commits/"]');
+    const sha = link === null ? null : commitShaOf(link);
+    if (link === null || sha === null) continue;
     const date = commitDate(sha, onChange);
     if (date === null) continue;
-    // The row's one line: GitHub's flex row holding avatar, message, badge and SHA (its wrapper on the React page).
-    const line = link.closest<HTMLElement>('.d-flex.flex-md-row, .d-flex.flex-row, [class*="commit-row"], .TimelineItem-body') ?? row;
+    // The row's one line: GitHub's flex row holding avatar, message, badge and SHA (its wrapper on the React page). The
+    // Overview's row is a grid of fixed columns, so the time joins the SHA's own flex box at its end.
+    const line = overview ? (row.querySelector<HTMLElement>(':scope > [class*="Actions"]') ?? row) : (link.closest<HTMLElement>('.d-flex.flex-md-row, .d-flex.flex-row, [class*="commit-row"], .TimelineItem-body') ?? row);
     const time = relativeTimeElement(date, TIME_CLASS);
     line.append(time);
     onRestore(() => time.remove());
   }
+}
+
+const OVERVIEW_COMMIT_ROW = '[data-testid="timeline-commit-row"]';
+
+/** The commit a row's link names: the conversation's `/pull/N/commits/<sha>`, the Overview's `/pull/N/changes/<sha>`. */
+export function commitShaOf(link: Element): string | null {
+  return /\/pull\/\d+\/(?:commits|changes)\/([0-9a-f]{7,40})(?:[/?#]|$)/i.exec(link.getAttribute('href') ?? '')?.[1] ?? null;
+}
+
+const ATTR_OLDEST_FIRST = 'data-geld-oldest-first';
+
+/**
+ * The Overview lists its Comments section newest first by default, and a run of commits inside one entry with it,
+ * while the digest reads everything oldest first (entries are put in timeline order by `compareHome`). React's rows
+ * cannot be moved, so a newest-first group is turned over by the stylesheet (`column-reverse`), its "N additional
+ * commits" summary and the rows that replace it alike.
+ */
+function orderCommitGroups(list: HTMLElement): void {
+  for (const group of list.querySelectorAll<HTMLElement>('[data-testid="timeline-commit-group"]')) {
+    if (group.hasAttribute(ATTR_OLDEST_FIRST) || !listedNewestFirst(group)) continue;
+    group.setAttribute(ATTR_OLDEST_FIRST, '');
+    onRestore(() => group.removeAttribute(ATTR_OLDEST_FIRST));
+  }
+}
+
+function listedNewestFirst(node: Element): boolean {
+  const home = homeOf(node);
+  const section = (home instanceof Element ? home : home.parentElement)?.closest('section') ?? null;
+  return section !== null && overviewNewestFirst(section);
 }
 
 /**

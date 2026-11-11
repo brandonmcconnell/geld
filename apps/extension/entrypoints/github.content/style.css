@@ -8107,6 +8107,12 @@ a.geld-review__rerun:hover {
   margin-left: 0;
 }
 
+/* An Overview commit group listed newest first (quick-view.ts: orderCommitGroups), read oldest first like the rest. */
+.geld-review__qv [data-testid='timeline-commit-group'][data-geld-oldest-first] {
+  display: flex;
+  flex-direction: column-reverse;
+}
+
 /* ---- an open row wears its comment's header --------------------------------- */
 
 .geld-review__head-slot {
