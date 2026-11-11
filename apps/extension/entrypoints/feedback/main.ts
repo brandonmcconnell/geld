@@ -18,6 +18,7 @@ import { polyfillCornerShape } from '../../src/ui/corner-shape';
 import { describeBrowser, whereWords } from '../../src/ui/feedback-link';
 import { requireElement } from '../../src/ui/switch';
 import { renderIssueMarkdown } from '../../src/ui/issue-markdown';
+import { providerLabel } from '../../src/lib/obfuscate-repos';
 
 installErrorCapture('options');
 polyfillCornerShape();
@@ -51,7 +52,7 @@ let account: GitHubAccount | null = null;
 let sending = false;
 let showMarkdown = false;
 let previewFrame: number | null = null;
-const EMPTY_CONTEXT: FeedbackContext = { environment: null, where: null, page: null, diagnostics: null };
+const EMPTY_CONTEXT: FeedbackContext = { environment: null, where: null, page: null, diagnostics: null, provider: null };
 let context: FeedbackContext = EMPTY_CONTEXT;
 let visibility: RepoVisibility = 'unknown';
 let loadingContext = true;
@@ -106,8 +107,8 @@ function noteFor(key: ContextKey): string | null {
   if (key === 'page') return PAGE_NOTES[visibility];
   if (key === 'diagnostics')
     return namedPage(context.page, true) === null
-      ? 'Diff fetches and timings for this session. Organizations, repositories and their pull requests show as [obfuscated]. No page content or tokens.'
-      : 'Diff fetches and timings for this session. Organizations, repositories and their pull requests show as [obfuscated] unless the page address is included, which names this page\'s repository. No page content or tokens.';
+      ? 'Diff fetches and timings for this session, with organizations, repositories and pull requests shown as [org], [repo] and [pr]. No page content or tokens.'
+      : 'Diff fetches and timings for this session, with organizations, repositories and pull requests shown as [org], [repo] and [pr]. Including the page address names this page\'s repository. No page content or tokens.';
   return null;
 }
 
@@ -372,6 +373,7 @@ async function gatherContext(): Promise<FeedbackContext & { readonly visibility:
     where: page === null ? null : whereWords(page),
     // The path alone: a public repository's search can still hold private words in its query.
     page: page === null ? null : `${page.origin}${page.pathname}`,
+    provider: page === null ? null : providerLabel(page),
     diagnostics: [formatDiagnostics(events, manifest.version), ...perf].join('\n\n'),
   };
 }

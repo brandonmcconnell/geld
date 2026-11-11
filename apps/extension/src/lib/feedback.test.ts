@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { ContextChoice, FeedbackContext } from './feedback';
-import { anonymizeDiagnostics, feedbackIssue, ISSUE_BODY_LIMIT, parseCreatedIssue, parseDraft, refusalMessage } from './feedback';
+import { feedbackIssue, ISSUE_BODY_LIMIT, parseCreatedIssue, parseDraft, refusalMessage } from './feedback';
 
 const CONTEXT: FeedbackContext = {
   environment: '0.1.3.812 · Chrome 148 on macOS',
   where: 'pull request conversation',
   page: 'https://github.com/wxt-dev/wxt/pull/2544',
-  diagnostics: 'Geld 0.1.3 · 2 events\nfetch wxt-dev/wxt#2544 ok 120ms\nfetch wxt-dev/wxt#2545 ok 98ms',
+  diagnostics: 'Geld 0.1.3 · 2 events\nfetch github.com/wxt-dev/wxt#2544 ok 120ms\nfetch github.com/wxt-dev/wxt#2545 ok 98ms',
+  provider: 'GitHub (github.com)',
 };
 const ALL: ContextChoice = { environment: true, where: true, page: true, diagnostics: true };
 const NONE: ContextChoice = { environment: false, where: false, page: false, diagnostics: false };
@@ -23,23 +24,24 @@ describe('feedbackIssue', () => {
     expect(bare).not.toContain('Chrome');
     expect(bare).not.toContain('wxt-dev');
     expect(bare).not.toContain('Diagnostics');
+    expect(bare).toContain('- **Git provider:** GitHub (github.com)');
     const full = feedbackIssue({ kind: 'idea', title: 't', text: 'Please add this.' }, CONTEXT, ALL).body;
     expect(full).toContain('- **Geld:** 0.1.3.812 · Chrome 148 on macOS');
     expect(full).toContain('- **Page type:** pull request conversation');
     expect(full).toContain('- **Page address:** <https://github.com/wxt-dev/wxt/pull/2544>');
     expect(full).toContain('<details><summary>Diagnostics</summary>');
-    expect(full).toContain('fetch wxt-dev/wxt#2545 ok 98ms');
+    expect(full).toContain('fetch github.com/wxt-dev/wxt#2545 ok 98ms');
   });
 
   it('obfuscates the diagnostics when the page address stays out', () => {
     const body = feedbackIssue({ kind: 'bug', title: 't', text: 'x' }, CONTEXT, { ...ALL, page: false }).body;
     expect(body).toContain('<details><summary>Diagnostics</summary>');
-    expect(body).toContain('fetch [obfuscated]/[obfuscated]#[obfuscated] ok 120ms');
-    expect(body).not.toContain('wxt');
+    expect(body).toContain('fetch github.com/[org]/[repo]#[pr] ok 120ms');
+    expect(body.split('<details>')[1]).not.toContain('wxt');
   });
 
   it('leaves out empty details, so the preview can stand in for them', () => {
-    expect(feedbackIssue({ kind: 'bug', title: '', text: '  ' }, CONTEXT, NONE).body).toBe('<sub>Sent from the feedback form in the Geld extension.</sub>');
+    expect(feedbackIssue({ kind: 'bug', title: '', text: '  ' }, { ...CONTEXT, provider: null }, NONE).body).toBe('<sub>Sent from the feedback form in the Geld extension.</sub>');
   });
 
   it('skips context this device has none of', () => {
@@ -95,69 +97,5 @@ describe('GitHub answers', () => {
     expect(refusalMessage(410, null, false)).toMatch(/turned off/);
     expect(refusalMessage(422, { message: 'Validation Failed' }, false)).toBe('GitHub did not accept the issue: Validation Failed');
     expect(refusalMessage(500, null, false)).toMatch(/answered 500/);
-  });
-});
-
-describe('anonymizeDiagnostics', () => {
-  const REPORT = [
-    'Geld 0.1.3 diagnostics — 4 events (this browser session)',
-    '17:01:02.003 fetch acme/secret#12 rate-limited status=429 from=github.com',
-    '17:01:03.004 fetch acme/secret@0a1b2c3 ok 80ms from=ghe.acme.internal',
-    '17:01:04.005 inject acme/secret#12/files present on=activated',
-    '17:01:05.006 fetch wxt-dev/wxt#2544 ok 120ms from=patch-diff.githubusercontent.com',
-    'acme/other (pulls): up 3s',
-    'seen at https://github.com/acme/secret/pull/12 and https://ghe.acme.internal/acme/other/discussions/4',
-    '  pass: 1 runs (45.2/min, 1 in the last minute), mean 32.7ms',
-  ].join('\n');
-
-  it('obfuscates every organization, repository, number and Enterprise host', () => {
-    const out = anonymizeDiagnostics(REPORT, null);
-    expect(out).not.toMatch(/acme|secret|wxt|ghe\./);
-    expect(out).toContain('fetch [obfuscated]/[obfuscated]#[obfuscated] rate-limited status=429 from=github.com');
-    expect(out).toContain('fetch [obfuscated]/[obfuscated]@[obfuscated] ok 80ms from=[obfuscated]');
-    expect(out).toContain('inject [obfuscated]/[obfuscated]#[obfuscated]/files present');
-    expect(out).toContain('from=patch-diff.githubusercontent.com');
-    expect(out).toContain('[obfuscated]/[obfuscated] (pulls): up 3s');
-    expect(out).toContain('seen at https://github.com/[obfuscated]/[obfuscated]/pull/[obfuscated] and https://[obfuscated]/[obfuscated]/[obfuscated]/discussions/[obfuscated]');
-    expect(out).toContain('(45.2/min, 1 in the last minute)');
-  });
-
-  it('names only the page whose address goes into the issue', () => {
-    const out = anonymizeDiagnostics(REPORT, { repo: 'wxt-dev/wxt', host: 'github.com' });
-    expect(out).toContain('fetch wxt-dev/wxt#2544 ok 120ms');
-    expect(out).toContain('fetch [obfuscated]/[obfuscated]#[obfuscated] rate-limited');
-    expect(out).not.toContain('acme');
-  });
-
-  it('keeps the page\'s own repository and Enterprise host, in references and addresses alike', () => {
-    expect(
-      anonymizeDiagnostics('fetch ghe.acme.internal/acme/secret#1 ok from=ghe.acme.internal at https://ghe.acme.internal/acme/secret/pull/1', {
-        repo: 'acme/secret',
-        host: 'ghe.acme.internal',
-      }),
-    ).toBe('fetch ghe.acme.internal/acme/secret#1 ok from=ghe.acme.internal at https://ghe.acme.internal/acme/secret/pull/1');
-  });
-
-  it('obfuscates an address with a port, and a host with no dot or a trailing one', () => {
-    expect(anonymizeDiagnostics('see https://ghe.example.com:8443/acme/secret/pull/12 now', null)).toBe(
-      'see https://[obfuscated]/[obfuscated]/[obfuscated]/pull/[obfuscated] now',
-    );
-    expect(anonymizeDiagnostics('fetch ghe/acme/secret#77 ok\nfetch ghe./acme/secret@0a1b2c3 ok', null)).toBe(
-      'fetch [obfuscated]/[obfuscated]/[obfuscated]#[obfuscated] ok\nfetch [obfuscated]/[obfuscated]/[obfuscated]@[obfuscated] ok',
-    );
-    expect(anonymizeDiagnostics('https://ghe.example.com:8443/acme/secret/pull/12', { repo: 'acme/secret', host: 'ghe.example.com' })).toBe(
-      'https://ghe.example.com:8443/acme/secret/pull/12',
-    );
-    expect(anonymizeDiagnostics('key:acme/secret#1', null)).toBe('key:[obfuscated]/[obfuscated]#[obfuscated]');
-  });
-
-  it('never names the same owner/repo on another host', () => {
-    const report = 'fetch acme/widgets#3 ok\ninject ghe.example.com/acme/widgets#77 present\nghe.example.com/acme/widgets@0a1b2c3 (hidden): up 1s';
-    expect(anonymizeDiagnostics(report, { repo: 'acme/widgets', host: 'github.com' })).toBe(
-      'fetch acme/widgets#3 ok\ninject [obfuscated]/[obfuscated]/[obfuscated]#[obfuscated] present\n[obfuscated]/[obfuscated]/[obfuscated]@[obfuscated] (hidden): up 1s',
-    );
-    expect(anonymizeDiagnostics(report, { repo: 'acme/widgets', host: 'ghe.example.com' })).toBe(
-      'fetch [obfuscated]/[obfuscated]#[obfuscated] ok\ninject ghe.example.com/acme/widgets#77 present\nghe.example.com/acme/widgets@0a1b2c3 (hidden): up 1s',
-    );
   });
 });

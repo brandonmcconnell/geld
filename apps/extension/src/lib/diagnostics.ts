@@ -4,7 +4,7 @@ import { storage } from 'wxt/utils/storage';
  * A short log of what happened to diff fetches, for "Copy diagnostics" on the
  * options page. Kept in session storage (gone when the browser closes) and
  * written by the background worker only. Nothing sensitive: the subject is
- * `owner/repo#N` or `owner/repo@sha` — what the page itself shows — never a
+ * `host/owner/repo#N` or `host/owner/repo@sha` — what the page itself shows — never a
  * URL with a query, a cookie, or any of the diff's text.
  */
 export interface DiagnosticEvent {
@@ -55,8 +55,8 @@ export async function readDiagnostics(): Promise<readonly DiagnosticEvent[]> {
 }
 
 /**
- * What a tab is called in the log: `owner/repo#N` (with `/files` or
- * `/changes` when on that tab), `owner/repo@sha7`, `owner/repo (pulls)` for
+ * What a tab is called in the log: `host/owner/repo#N` (with `/files` or
+ * `/changes` when on that tab), `host/owner/repo@sha7`, `host/owner/repo (pulls)` for
  * a repository's list and compare pages, and `other page` for anything else.
  * Never a path as such: a profile, an organisation or a search URL names
  * people, and the log may name repositories and nothing more.
@@ -80,15 +80,16 @@ export function tabSubject(url: string): string {
 }
 
 /**
- * `ghe.example.com/` before a repository on any host but github.com: the same
- * `owner/repo` on two hosts is two repositories, and the feedback form names
- * only the one on the page's own host (`anonymizeDiagnostics`).
+ * The host before every repository (`github.com/owner/repo#N`): it says which
+ * Git provider, and the same `owner/repo` on two hosts is two repositories, of
+ * which the feedback form names only the one on the page's own host
+ * (`obfuscateRepos`).
  */
 function hostPrefix(url: URL): string {
-  return url.hostname === 'github.com' ? '' : `${url.hostname}/`;
+  return `${url.hostname}/`;
 }
 
-/** `owner/repo#N` for a pull request diff, `owner/repo@sha7` for a commit's; null for anything else. */
+/** `host/owner/repo#N` for a pull request diff, `host/owner/repo@sha7` for a commit's; null for anything else. */
 export function diagnosticSubject(diffUrl: string): string | null {
   let url: URL;
   try {

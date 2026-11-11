@@ -1,4 +1,6 @@
 import { repoFromPathname } from '@geld/core';
+import type { NamedPage } from './obfuscate-repos';
+import { obfuscateRepos } from './obfuscate-repos';
 
 /** The repository feedback is opened on, as a public issue from the reader's own account. */
 export const FEEDBACK_REPO = 'brandonmcconnell/geld';
@@ -40,9 +42,12 @@ export interface FeedbackContext {
   readonly page: string | null;
   /** The Copy diagnostics report. */
   readonly diagnostics: string | null;
+  /** The page's Git provider and host ("GitHub (github.com)"), always included: it is no box to tick. */
+  readonly provider: string | null;
 }
 
-export type ContextKey = keyof FeedbackContext;
+/** What the reader chooses to attach; the provider is not among them. */
+export type ContextKey = 'environment' | 'where' | 'page' | 'diagnostics';
 
 export type ContextChoice = Readonly<Record<ContextKey, boolean>>;
 
@@ -75,73 +80,6 @@ function fenceFor(text: string): string {
 function diagnosticsBlock(report: string): string {
   const fence = fenceFor(report);
   return `<details><summary>Diagnostics</summary>\n\n${fence}text\n${report}\n${fence}\n\n</details>`;
-}
-
-/** What a report may still name: the page's own repository and host, when its address goes into the issue too. */
-export interface NamedPage {
-  readonly repo: string;
-  readonly host: string;
-}
-
-export const OBFUSCATED = '[obfuscated]';
-
-/** `owner/repo`, then `#N` or `@sha`, standing on their own (a rate like `45.2/min` is no repository). */
-const REPO_REFERENCE = /(?<![\w./-])([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)(?:(#)\d+|(@)[0-9a-f]{7,40})?(?![\w-])/g;
-/** A repository's page on a host: `https://host/owner/repo`, then `/pull/N`, `/issues/N`, `/discussions/N` and the like. */
-const REPO_URL = /\bhttps?:\/\/([^\s/?#]+)\/([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)(?:\/(pull|pulls|issues|discussions|commit|commits|compare|tree|blob|actions|releases)(?:\/([^\s/?#]+))?)?/g;
-/**
- * A reference the log prefixes with its host, for any host but github.com (`tabSubject`): `ghe.example.com/owner/repo#N`.
- * Any host token counts (`ghe`, `ghe.`), since three segments before the reference can only be a host and a repository.
- */
-const HOSTED_REFERENCE = /(?<![\w./:-])([A-Za-z0-9][A-Za-z0-9.-]*)\/([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)(?:(#)\d+|(@)[0-9a-f]{7,40})?(?![\w-])/g;
-/** All three in one pass, earliest first: an address or reference is read once, so nothing inside one left whole is read again. */
-const REFERENCE = new RegExp(`${REPO_URL.source}|${HOSTED_REFERENCE.source}|${REPO_REFERENCE.source}`, 'g');
-const HOST_FIELD = /\bfrom=([^\s]+)/g;
-
-function isGitHubHost(host: string): boolean {
-  return /(^|\.)github\.com$|(^|\.)githubusercontent\.com$/i.test(host);
-}
-
-/**
- * The diagnostics report with every organization, repository, pull request,
- * issue, discussion, commit and Enterprise host it names shown as
- * `[obfuscated]`: `[obfuscated]/[obfuscated]#[obfuscated]`, and
- * `https://github.com/[obfuscated]/[obfuscated]/pull/[obfuscated]` for an
- * address. The report covers every open GitHub tab, so even with the page's
- * address in the issue only that page's own repository on its own host keeps
- * its name: the same `owner/repo` on another host is another repository.
- */
-export function anonymizeDiagnostics(report: string, named: NamedPage | null): string {
-  const kept = named?.repo.toLowerCase() ?? null;
-  const keptHost = named?.host.toLowerCase() ?? null;
-  // An address's authority may carry a port (`ghe.example.com:8443`), which the page's own hostname never does.
-  const sameHost = (host: string): boolean => host.toLowerCase().replace(/:\d+$/, '') === keptHost;
-  const hostShown = (host: string): string => (isGitHubHost(host) || sameHost(host) ? host : OBFUSCATED);
-  const tail = (pull: string | undefined, sha: string | undefined): string => (pull !== undefined ? `#${OBFUSCATED}` : sha !== undefined ? `@${OBFUSCATED}` : '');
-  const isKept = (owner: string, repo: string): boolean => `${owner}/${repo}`.toLowerCase() === kept;
-  return report
-    .replace(REFERENCE, (whole: string, ...groups: unknown[]) => {
-      const part = (index: number): string | undefined => {
-        const value = groups[index];
-        return typeof value === 'string' ? value : undefined;
-      };
-      const [urlHost, urlOwner, urlRepo, kind, item] = [part(0), part(1), part(2), part(3), part(4)];
-      if (urlHost !== undefined && urlOwner !== undefined && urlRepo !== undefined) {
-        if (isKept(urlOwner, urlRepo) && sameHost(urlHost)) return whole;
-        const path = kind === undefined ? '' : `/${kind}${item === undefined ? '' : `/${OBFUSCATED}`}`;
-        return `${whole.startsWith('http://') ? 'http' : 'https'}://${hostShown(urlHost)}/${OBFUSCATED}/${OBFUSCATED}${path}`;
-      }
-      const [host, hostedOwner, hostedRepo] = [part(5), part(6), part(7)];
-      if (host !== undefined && hostedOwner !== undefined && hostedRepo !== undefined) {
-        if (isKept(hostedOwner, hostedRepo) && sameHost(host)) return whole;
-        return `${hostShown(host)}/${OBFUSCATED}/${OBFUSCATED}${tail(part(8), part(9))}`;
-      }
-      const [owner, repo] = [part(10), part(11)];
-      // A reference with no host is github.com's: the page's repository keeps its name only when the page is on github.com too.
-      if (owner !== undefined && repo !== undefined && isKept(owner, repo) && keptHost === 'github.com') return whole;
-      return `${OBFUSCATED}/${OBFUSCATED}${tail(part(12), part(13))}`;
-    })
-    .replace(HOST_FIELD, (_whole: string, host: string) => `from=${hostShown(host)}`);
 }
 
 /** The page whose address goes into the issue, as the report may name it; `null` when no address does. */
@@ -189,6 +127,7 @@ export function feedbackIssue(draft: FeedbackDraft, context: FeedbackContext, ch
   const title = `[${prefix}] ${inline(draft.title)}`.slice(0, TITLE_LIMIT);
   const facts: string[] = [];
   if (choice.environment && context.environment !== null) facts.push(`- **Geld:** ${inline(context.environment)}`);
+  if (context.provider !== null) facts.push(`- **Git provider:** ${inline(context.provider)}`);
   if (choice.where && context.where !== null) facts.push(`- **Page type:** ${inline(context.where)}`);
   if (choice.page && context.page !== null) facts.push(`- **Page address:** <${inline(context.page)}>`);
   const footer = '<sub>Sent from the feedback form in the Geld extension.</sub>';
@@ -197,7 +136,7 @@ export function feedbackIssue(draft: FeedbackDraft, context: FeedbackContext, ch
   const fixed = [...parts, footer].join('\n\n');
   if (choice.diagnostics && context.diagnostics !== null) {
     const named = namedPage(context.page, choice.page);
-    const report = anonymizeDiagnostics(context.diagnostics, named);
+    const report = obfuscateRepos(context.diagnostics, named);
     const room = ISSUE_BODY_LIMIT - fixed.length - 4;
     const whole = diagnosticsBlock(report);
     const block = whole.length <= room ? whole : room > 200 ? diagnosticsBlock(trimReport(report, room)) : null;
