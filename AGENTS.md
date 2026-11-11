@@ -2342,6 +2342,9 @@ The server builds each matcher from them, and the browser gets them once per ses
 The hub only reads them, and a repository's `.github/geld.yml` is not read there yet.
 **The pull request page carries a Digest** (`PullDigestSection`, `src/lib/geld/digest.ts`): threads resolved, each review bot's verdict and one line per thread, built in the browser by `@geld/review`'s `buildMeta` from what the page already loaded (`digestInputFrom`), so it asks for nothing more and stores nothing.
 The browser imports `@geld/core` and `@geld/review` by module (`@geld/review/build`), never their index, which would bring the settings parser and the AI client into the bundle.
+**The pull request's Activity folds what a reviewer can skip** (`foldTimeline`, `src/lib/geld/timeline-fold.ts`, in `pull-detail-activity.tsx`): bot comments, requests for a bot review (`isTriggerComment`) and bookkeeping events (labels, assignees, review requests, renames, references) gather, run by run, behind one dashed row that names them ("2 bot comments, 1 review request") and opens in place.
+"Show everything" lays the whole timeline out, and the choice is kept in the browser (`useCompactTimeline`).
+Commits, people's comments, reviews and state changes always show.
 **In the files view a file in one of Geld's categories starts collapsed and names its category** (`fileCategory`, `src/lib/geld/file-category.ts`, read in `diff-code-view.tsx` and `DiffFileHeader`), and the sidebar's foot says what is left to review (`LeftToReview`).
 Such a file is never removed or moved: the diff is a stream shown in its order.
 Not done yet: GitHub's screens still read through the app's own GitHub client, another provider's pull request cannot be opened in the hub, and the hub knows nothing of Geld's teams.

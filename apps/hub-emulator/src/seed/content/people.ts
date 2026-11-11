@@ -61,6 +61,13 @@ export const people: PersonSpec[] = [
 		followers: 34,
 		following: 12,
 	},
+	{
+		login: "harbor-previews",
+		name: "Harbor Previews",
+		email: "previews@harbor.example",
+		bio: "Posts a preview for every pull request.",
+		bot: true,
+	},
 ];
 
 export const org: WorkspaceSpec["org"] = {

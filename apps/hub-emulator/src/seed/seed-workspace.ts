@@ -180,6 +180,7 @@ function seedPeople(gh: GitHubStore, workspace: WorkspaceSpec, clock: Clock) {
 		gh.users.update(user.id, {
 			followers: person.followers ?? 0,
 			following: person.following ?? 0,
+			...(person.bot ? { type: "Bot" as const } : {}),
 		});
 		setTimestamps(
 			gh.users.get(user.id),

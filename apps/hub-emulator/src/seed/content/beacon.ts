@@ -801,6 +801,21 @@ export const beacon: RepoSpec = {
 			],
 			comments: [
 				{
+					author: "harbor-previews",
+					at: { d: 6, h: 8 },
+					body: "Preview ready for `feat/sse-headers`.\n\n| Project | Status |\n| --- | --- |\n| beacon-docs | Ready |",
+				},
+				{
+					author: "theo-martin",
+					at: { d: 6, h: 7 },
+					body: "bugbot run",
+				},
+				{
+					author: "harbor-previews",
+					at: { d: 5, h: 2 },
+					body: "Preview updated for `feat/sse-headers`.\n\n| Project | Status |\n| --- | --- |\n| beacon-docs | Ready |",
+				},
+				{
 					author: "theo-martin",
 					at: { d: 4, h: 7 },
 					body: "@nova could you take a look when you have a moment? We're blocked on this for the edge rollout.",

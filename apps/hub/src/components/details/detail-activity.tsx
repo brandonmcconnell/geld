@@ -21,7 +21,7 @@ import {
 import { toast } from "@geld/hub-ui/components/sonner";
 import { Spinner } from "@geld/hub-ui/components/spinner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useRef, useState } from "react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 import { useIsSkeletonSample } from "#/components/shared/skeleton-sample";
 import { useCommentMediaUpload } from "#/hooks/use-comment-media-upload";
 import {
@@ -55,20 +55,25 @@ export const eventThreadClassName =
 export function DetailActivityHeader({
 	title,
 	count,
+	action,
 }: {
 	title: string;
 	count?: number;
+	action?: ReactNode;
 }) {
 	return (
 		<div className="flex items-center justify-between gap-2 border-t-[0.5px] border-header-rule pt-6 pb-4">
 			<h2 className="text-[15px] leading-[1.5] font-semibold text-foreground">
 				{title}
 			</h2>
-			{count != null && (
-				<span className="text-[13px] tabular-nums text-muted-foreground">
-					{count}
-				</span>
-			)}
+			<div className="flex items-center gap-3">
+				{action}
+				{count != null && (
+					<span className="text-[13px] tabular-nums text-muted-foreground">
+						{count}
+					</span>
+				)}
+			</div>
 		</div>
 	);
 }
