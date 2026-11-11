@@ -1,8 +1,8 @@
 import { browser } from 'wxt/browser';
 import { allCategories } from '@geld/core';
 import { formatCount, pluralize } from '@geld/core';
-import type { EnsureContentMessage, GetTabStateMessage, RevealFileMessage, TabState } from '../../src/lib/messages';
-import { isEnsureContentResponse, isTabState, REVEAL_HASH_PREFIX } from '../../src/lib/messages';
+import type { EnsureContentMessage, GetTabStateMessage, TabState } from '../../src/lib/messages';
+import { isEnsureContentResponse, isTabState } from '../../src/lib/messages';
 import { fitMiddleTruncated } from '../../src/ui/middle-truncate';
 import { compileRepoRules, decideRepo, ownerProbe, repoFromPathname, withRepoRule } from '@geld/core';
 import { allHosts, isAutoViewedForAll, isCategoryEnabled, isCategoryInPicker, plainText, sectionsFor, withAutoViewedForAll } from '@geld/core';
@@ -341,81 +341,13 @@ async function main(): Promise<void> {
   requireElement('popup-body', HTMLDivElement).addEventListener('scroll', hideTip, { passive: true });
 
   /* Tab context */
+  const contextHead = requireElement('context-head', HTMLParagraphElement);
   const contextRepo = requireElement('context-repo', HTMLSpanElement);
   const summary = requireElement('context-summary', HTMLParagraphElement);
-  const stats = requireElement('context-stats', HTMLElement);
+  const stats = requireElement('context-stats', HTMLSpanElement);
   const statHidden = requireElement('context-hidden', HTMLSpanElement);
   const statAdd = requireElement('context-add', HTMLSpanElement);
   const statDel = requireElement('context-del', HTMLSpanElement);
-  const files = requireElement('context-files', HTMLDetailsElement);
-  const fileList = requireElement('context-file-list', HTMLUListElement);
-  // With nothing hidden the row is informational only; do not let it toggle.
-  stats.addEventListener('click', (event) => {
-    if (stats.hasAttribute('data-empty')) event.preventDefault();
-  });
-  // Rows only have a width once the list is open.
-  files.addEventListener('toggle', () => {
-    if (files.open) requestAnimationFrame(fitFileRows);
-  });
-  function fitFileRows(): void {
-    for (const element of fileList.querySelectorAll<HTMLElement>('.popup__file-path')) fitMiddleTruncated(element);
-  }
-
-  function iconButton(icon: 'copy' | 'goto', label: string, onClick: () => void): HTMLButtonElement {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'geld-button geld-button--icon';
-    button.title = label;
-    button.setAttribute('aria-label', label);
-    const glyph = document.createElement('span');
-    glyph.className = `geld-button__icon geld-button__icon--${icon}`;
-    glyph.setAttribute('aria-hidden', 'true');
-    button.append(glyph);
-    button.addEventListener('click', (event) => {
-      event.preventDefault();
-      onClick();
-    });
-    return button;
-  }
-
-  /** Open the file in the tab: in place when the diffs are on this page, else via the PR's files tab. */
-  async function goToFile(path: string, state: TabState): Promise<void> {
-    if (tab === null) return;
-    if (state.onDiffPage) {
-      const message: RevealFileMessage = { type: 'geld:reveal', path };
-      await browser.tabs.sendMessage(tab.id, message).catch(() => undefined);
-    } else if (state.diffPageUrl !== null) {
-      await browser.tabs.update(tab.id, { url: `${state.diffPageUrl}${REVEAL_HASH_PREFIX}${encodeURIComponent(path)}` });
-    } else {
-      return;
-    }
-    window.close();
-  }
-
-  function fileRow(path: string, category: string, state: TabState): HTMLLIElement {
-    const item = document.createElement('li');
-    item.className = 'popup__file';
-    const text = document.createElement('span');
-    text.className = 'popup__file-path';
-    text.dataset.full = path;
-    text.textContent = path;
-    text.setAttribute('aria-label', `${path} (${category})`);
-    const actions = document.createElement('span');
-    actions.className = 'popup__file-actions';
-    const copy = iconButton('copy', 'Copy path', () => {
-      void navigator.clipboard?.writeText(path).then(() => {
-        copy.dataset.done = '';
-        copy.title = 'Copied';
-        setTimeout(() => {
-          delete copy.dataset.done;
-          copy.title = 'Copy path';
-        }, 1200);
-      });
-    });
-    actions.append(copy, iconButton('goto', 'Go to file', () => void goToFile(path, state)));
-    item.append(text, actions);
-    return item;
-  }
   const actions = requireElement('context-actions', HTMLDivElement);
   const toggleRepo = requireElement('toggle-repo', HTMLButtonElement);
   const toggleOrg = requireElement('toggle-org', HTMLButtonElement);
@@ -584,9 +516,11 @@ async function main(): Promise<void> {
     if (tab === null) return;
     const state = await requestTabState(tab.id);
     repo = state?.repo ?? repo;
-    contextRepo.textContent = repo === null ? tab.url.hostname : tab.url.hostname === 'github.com' ? repo : `${tab.url.hostname}/${repo}`;
-    // Marks the subtitle as live context (kept when signed in) rather than the generic tagline (hidden once signed in).
-    contextRepo.dataset.context = 'repo';
+    contextHead.hidden = repo === null;
+    if (repo !== null) {
+      contextRepo.dataset.full = tab.url.hostname === 'github.com' ? repo : `${tab.url.hostname}/${repo}`;
+      contextRepo.textContent = contextRepo.dataset.full;
+    }
 
     const rules = compileRepoRules(settings.repoRules);
     const decision = repo === null ? { allowed: true, rule: null } : decideRepo(rules, repo);
@@ -597,7 +531,7 @@ async function main(): Promise<void> {
     if (!settings.enabled) {
       summary.textContent = 'Geld is turned off.';
     } else if (!decision.allowed) {
-      summary.textContent = `Off in ${repo ?? 'this repository'} because of the rule "${decision.rule?.raw ?? ''}".`;
+      summary.textContent = `Off here because of the rule "${decision.rule?.raw ?? ''}".`;
     } else if (state === null || !state.hasDiff) {
       summary.textContent = repo === null ? 'Open a GitHub repo to see what Geld is doing.' : 'No diff on this page.';
     } else if (!showStats) {
@@ -605,8 +539,7 @@ async function main(): Promise<void> {
     }
     summary.hidden = showStats;
 
-    files.hidden = !showStats;
-    const paths = state?.categories.flatMap((entry) => entry.paths.map((path) => ({ path, title: entry.title }))) ?? [];
+    stats.hidden = !showStats;
     if (showStats && state !== null && state.visible !== null && state.all !== null) {
       // One category describing every hidden file names it ("3 generated"); a mix says "N hidden" and the title lists the split.
       const only = state.categories.length === 1 ? state.categories[0] : undefined;
@@ -617,30 +550,22 @@ async function main(): Promise<void> {
       stats.title = `${state.categories.length > 1 ? `${parts.join(', ')}. ` : ''}Including hidden files: +${formatCount(state.all.additions)} \u2212${formatCount(
         state.all.deletions,
       )} in ${pluralize(state.all.files, 'file', 'files')}${state.expanded ? '. Currently shown on the page' : ''}`;
-      stats.toggleAttribute('data-empty', paths.length === 0);
-      if (paths.length === 0) files.open = false;
-      const current = state;
-      fileList.replaceChildren(...paths.map(({ path, title }) => fileRow(path, title, current)));
-      if (files.open) requestAnimationFrame(fitFileRows);
     }
+    if (repo !== null) requestAnimationFrame(() => fitMiddleTruncated(contextRepo));
 
     actions.hidden = repo === null || !settings.enabled;
     renderRepoConfig(settings.enabled && decision.allowed ? (state?.repoConfig ?? null) : null);
     if (repo !== null) {
       const org = orgOf(repo);
       const orgDecision = decideRepo(rules, ownerProbe(org));
-      renderRuleButton(toggleRepo, repo, decision.allowed, repo);
-      renderRuleButton(toggleOrg, `${org}/*`, orgDecision.allowed, org);
+      renderRuleButton(toggleRepo, 'repo', repo, decision.allowed, repo);
+      renderRuleButton(toggleOrg, 'org', `${org}/*`, orgDecision.allowed, org);
     }
   }
 
-  /** "✓ owner/repo" when Geld runs there, "✕ owner/repo" when a rule turns it off; click flips it. */
-  function renderRuleButton(button: HTMLButtonElement, label: string, on: boolean, target: string): void {
-    const icon = document.createElement('span');
-    icon.className = `geld-button__icon geld-button__icon--${on ? 'check' : 'x'}`;
-    icon.setAttribute('aria-hidden', 'true');
-    button.replaceChildren(icon, document.createTextNode(label));
-    button.setAttribute('aria-pressed', String(on));
+  /** "Disable for this repo" while Geld runs there, "Enable for this repo" once a rule turns it off. */
+  function renderRuleButton(button: HTMLButtonElement, scope: 'repo' | 'org', label: string, on: boolean, target: string): void {
+    button.textContent = `${on ? 'Disable' : 'Enable'} for this ${scope}`;
     button.title = on ? `Geld is on for ${label}. Click to turn it off.` : `Geld is off for ${label}. Click to turn it on.`;
     button.dataset.target = target;
     button.dataset.allow = String(!on);

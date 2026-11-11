@@ -41,8 +41,8 @@ body {
   min-width: 70px;
 }
 
-/* Signed in, the generic tagline is redundant; the wordmark centres on the account control. Live repo context stays. */
-.popup__header:has(.geld-account__summary) .geld-brand__tagline:not([data-context]) {
+/* Signed in, the tagline is redundant; the wordmark centres on the account control. */
+.popup__header:has(.geld-account__summary) .geld-brand__tagline {
   display: none;
 }
 
@@ -95,38 +95,34 @@ body {
   background: color-mix(in oklch, var(--muted) 60%, transparent);
 }
 
-/* The stats row carries its own leading; with it showing, shave the top so the block reads centred. A lone
- * line ("Open a GitHub repo…", "No diff on this page.") keeps the section's even padding. */
-.popup__context:has(> .popup__files:not([hidden])) {
-  padding: 7px 16px 12px;
-}
-
 .popup__context-line {
   font-size: 13px;
 }
 
-.popup__stats {
+.popup__context-head:not([hidden]) + .popup__context-line:not([hidden]) {
+  margin-top: 4px;
+}
+
+/* The repo on the left, middle-truncated in JS so its name stays whole; the counts on the right. */
+.popup__context-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 10px;
   font-family: var(--font-mono);
   font-size: 12.5px;
-  cursor: pointer;
 }
 
-.popup__stats .geld-chevron {
-  width: 14px;
-  height: 14px;
-  margin-right: -4px;
+.popup__repo {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
-/* Nothing hidden: the row is plain text, not a disclosure. */
-.popup__stats[data-empty] {
-  cursor: default;
-}
-
-.popup__stats[data-empty] .geld-chevron {
-  display: none;
+.popup__stats {
+  display: flex;
+  flex: none;
+  gap: 10px;
 }
 
 .popup__stat--hidden {
@@ -141,60 +137,19 @@ body {
   color: var(--deletion);
 }
 
-.popup__files {
-  margin-top: 4px;
-}
-
-.popup__file-list {
-  max-height: 168px;
-  margin: 6px 0 0;
-  padding: 0 0 0 20px;
-  overflow: auto;
-  font-size: 11.5px;
-  list-style: none;
-}
-
-/* One file per row; the path is middle-truncated in JS, actions appear on hover. */
-.popup__file {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 24px;
-  margin-left: -4px;
-  padding-left: 4px;
-}
-
-.popup__file:hover,
-.popup__file:focus-within {
-  background: var(--accent);
-}
-
-.popup__file-path {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  color: var(--foreground);
-}
-
-.popup__file-actions {
-  display: flex;
-  flex-shrink: 0;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity 120ms ease;
-}
-
-.popup__file:hover .popup__file-actions,
-.popup__file:focus-within .popup__file-actions {
-  opacity: 1;
-}
-
+/* Both buttons share one line at every width; a label that cannot fit is clipped, never wrapped. */
 .popup__quick {
   display: flex;
-  flex-wrap: wrap;
   gap: 6px;
-  margin-top: 10px;
+  margin-top: 8px;
+}
+
+.popup__quick .geld-button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 8px;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 /* Repository config ----------------------------------------------------------- */
