@@ -1,7 +1,7 @@
 import { browser } from 'wxt/browser';
 import { allCategories } from '@geld/core';
 import { formatCount, pluralize } from '@geld/core';
-import type { EnsureContentMessage, GetTabStateMessage, RevealFileMessage, SetTabDisabledMessage, TabState } from '../../src/lib/messages';
+import type { EnsureContentMessage, GetTabStateMessage, RevealFileMessage, TabState } from '../../src/lib/messages';
 import { isEnsureContentResponse, isTabState, REVEAL_HASH_PREFIX } from '../../src/lib/messages';
 import { fitMiddleTruncated } from '../../src/ui/middle-truncate';
 import { compileRepoRules, decideRepo, ownerProbe, repoFromPathname, withRepoRule } from '@geld/core';
@@ -580,28 +580,10 @@ async function main(): Promise<void> {
   let repo: string | null = tab === null ? null : repoFromPathname(tab.url.pathname);
   wireFeedbackLink(requireElement('feedback-link', HTMLAnchorElement), tab === null ? {} : { tabId: tab.id });
 
-  const tabSwitch = switchRow({
-    id: 'tab-enabled',
-    label: 'Geld in this tab',
-    description: 'Turn Geld off or on in this tab only. Other tabs are not affected. The choice lasts until the tab is closed.',
-    checked: true,
-    onChange: async (value) => {
-      if (tab === null) return;
-      const message: SetTabDisabledMessage = { type: 'geld:set-tab-disabled', disabled: !value };
-      await browser.tabs.sendMessage(tab.id, message).catch(() => undefined);
-      setTimeout(() => void refreshContext(), 250);
-    },
-  });
-  tabSwitch.row.classList.add('popup__tab-switch');
-  tabSwitch.row.hidden = true;
-  requireElement('context', HTMLElement).insertBefore(tabSwitch.row, actions);
-
   async function refreshContext(): Promise<void> {
     if (tab === null) return;
     const state = await requestTabState(tab.id);
     const tabOff = state?.tabDisabled === true;
-    tabSwitch.row.hidden = !settings.enabled || state === null;
-    tabSwitch.set(!tabOff);
     repo = state?.repo ?? repo;
     contextRepo.textContent = repo === null ? tab.url.hostname : tab.url.hostname === 'github.com' ? repo : `${tab.url.hostname}/${repo}`;
     // Marks the subtitle as live context (kept when signed in) rather than the generic tagline (hidden once signed in).
