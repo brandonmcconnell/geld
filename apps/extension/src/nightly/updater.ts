@@ -487,7 +487,8 @@ export function startNightly(): void {
   nightlyPrefsItem.watch(() => void checkForUpdate());
   // Connecting happens on the nightly page, whose tab holds Chrome's grant, so Automatic can install right away.
   nightlyFolderItem.watch((next, previous) => {
-    if (next !== null && next.connectedAt !== previous?.connectedAt) void checkForUpdate();
+    // A reconnect answers both blockers (the picker grants access too), and Automatic's look records one again if it still holds.
+    if (next !== null && next.connectedAt !== previous?.connectedAt) void patchStatus({ blocked: null }).then(() => checkForUpdate());
   });
   // This worker has only just started, so no install of its own is under way: one marked is left from a worker Chrome stopped mid-install.
   void settleInterrupted().then(showBadge);

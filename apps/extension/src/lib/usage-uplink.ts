@@ -132,10 +132,11 @@ async function reconcileVersion(nightly: NightlyUsageSource | null): Promise<voi
   });
 }
 
-async function ping(): Promise<void> {
+async function ping(nightly: NightlyUsageSource | null): Promise<void> {
   const now = Date.now();
   const periods = usagePeriods(now);
   const settings = await settingsItem.getValue();
+  const blocked = nightly === null ? null : ((await nightly(currentVersion()).catch(() => null))?.blocked ?? null);
   await serially(async (state) => {
     if (state.day === periods.day) return { next: state, result: undefined };
     const firstOfWeek = state.week !== periods.week;
@@ -148,6 +149,7 @@ async function ping(): Promise<void> {
       firstOfMonth: state.month !== periods.month,
       ...(firstOfWeek ? { settings: usageSettingsOf(settings) } : {}),
       ...(Object.keys(counts).length > 0 ? { counts } : {}),
+      ...(blocked === null ? {} : { blocked }),
     };
     return { next: { ...enqueue(state, event), day: periods.day, week: periods.week, month: periods.month, counts: {} }, result: undefined };
   });
@@ -197,7 +199,7 @@ async function flush(nightly: NightlyUsageSource | null): Promise<void> {
     version: currentVersion(),
     channel: __GELD_CHANNEL__,
     browser: usageBrowser(),
-    ...(info === null ? {} : { selfUpdate: { mode: info.mode, ...(info.blocked === null ? {} : { blocked: info.blocked }) } }),
+    ...(info === null ? {} : { selfUpdate: { mode: info.mode } }),
     events: queue,
   };
   const outcome = await send(payload);
@@ -239,7 +241,7 @@ export function startUsageReports(nightly: NightlyUsageSource | null): void {
   });
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name !== ALARM) return;
-    void ping()
+    void ping(nightly)
       .then(() => flushSoon(nightly))
       .catch(() => undefined);
   });
@@ -249,7 +251,7 @@ export function startUsageReports(nightly: NightlyUsageSource | null): void {
     .catch(() => undefined);
   setTimeout(() => {
     void reconcileVersion(nightly)
-      .then(ping)
+      .then(() => ping(nightly))
       .then(() => flushSoon(nightly))
       .catch(() => undefined);
   }, RECONCILE_DELAY_MS);

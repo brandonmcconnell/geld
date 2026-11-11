@@ -30,8 +30,6 @@ export type UpdateBlock = 'folder' | 'permission';
 
 export interface NightlyUsage {
   readonly mode: UpdateMode;
-  /** Present only while a newer build is waiting on it. */
-  readonly blocked?: UpdateBlock;
 }
 
 /** Every event says which version was running when it was noted, so one queued across an update keeps its own (the payload's when absent). */
@@ -64,6 +62,8 @@ export interface ActiveEvent extends Noted {
   readonly settings?: UsageSettings;
   /** Feature uses since the install's previous ping. */
   readonly counts?: Readonly<Partial<Record<UsageCounter, number>>>;
+  /** A nightly build's: what held up a newer build when this ping was made, so a ping sent later keeps its own day's answer. */
+  readonly blocked?: UpdateBlock;
 }
 
 export type UsageEvent = InstalledEvent | UpdatedEvent | ActiveEvent;
@@ -88,9 +88,7 @@ const BLOCKS: readonly UpdateBlock[] = ['folder', 'permission'];
 function parseNightlyUsage(value: unknown): NightlyUsage | null {
   if (!isRecord(value)) return null;
   const mode = oneOf(MODES, value.mode);
-  if (mode === undefined) return null;
-  const blocked = oneOf(BLOCKS, value.blocked);
-  return { mode, ...(blocked === undefined ? {} : { blocked }) };
+  return mode === undefined ? null : { mode };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -116,6 +114,7 @@ function parseEvent(value: unknown): UsageEvent | null {
       if (typeof value.firstOfWeek !== 'boolean' || typeof value.firstOfMonth !== 'boolean') return null;
       const settings = value.firstOfWeek && value.settings !== undefined ? parseUsageSettings(value.settings) : null;
       const counts = value.counts === undefined ? null : parseUsageCounts(value.counts);
+      const blocked = oneOf(BLOCKS, value.blocked);
       return {
         name: 'extension_active',
         ...noted,
@@ -123,6 +122,7 @@ function parseEvent(value: unknown): UsageEvent | null {
         firstOfMonth: value.firstOfMonth,
         ...(settings === null ? {} : { settings }),
         ...(counts === null ? {} : { counts }),
+        ...(blocked === undefined ? {} : { blocked }),
       };
     }
     case 'extension_updated': {
@@ -219,7 +219,7 @@ export function usageCaptures(payload: UsagePayload, receivedAt: number): UsageC
       build,
       channel: payload.channel,
       browser: payload.browser,
-      ...(payload.selfUpdate === undefined ? {} : { nightly_mode: payload.selfUpdate.mode, nightly_blocked: payload.selfUpdate.blocked ?? 'none' }),
+      ...(payload.selfUpdate === undefined ? {} : { nightly_mode: payload.selfUpdate.mode }),
     };
     switch (event.name) {
       case 'extension_installed':
@@ -235,6 +235,7 @@ export function usageCaptures(payload: UsagePayload, receivedAt: number): UsageC
               first_of_month: event.firstOfMonth,
               ...(event.settings === undefined ? {} : usageSettingsProperties(event.settings)),
               ...usageCountProperties(event.counts ?? {}),
+              ...(payload.selfUpdate === undefined ? {} : { nightly_blocked: event.blocked ?? 'none' }),
             },
           },
         ];

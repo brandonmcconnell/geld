@@ -29,10 +29,10 @@ describe('parseUsagePayload', () => {
     expect(parseUsagePayload({ ...base, channel: 'nightly', selfUpdate: { mode: 'manual', folder: 'x' }, events: [{ name: 'extension_installed', at: 1 }] })?.selfUpdate).toEqual({ mode: 'manual' });
   });
 
-  it('keeps what holds up a nightly update, only by its fixed names', () => {
-    const selfUpdate = (blocked: unknown) => parseUsagePayload({ ...base, channel: 'nightly', selfUpdate: { mode: 'automatic', blocked }, events: [{ name: 'extension_installed', at: 1 }] })?.selfUpdate;
-    expect(selfUpdate('permission')).toEqual({ mode: 'automatic', blocked: 'permission' });
-    expect(selfUpdate('/Users/me/Geld Nightly')).toEqual({ mode: 'automatic' });
+  it('keeps what held up a nightly update on its daily ping, only by its fixed names', () => {
+    const active = (blocked: unknown) => parseUsagePayload({ ...base, channel: 'nightly', selfUpdate: { mode: 'automatic' }, events: [{ name: 'extension_active', at: 1, firstOfWeek: false, firstOfMonth: false, blocked }] })?.events[0];
+    expect(active('permission')).toMatchObject({ blocked: 'permission' });
+    expect(active('/Users/me/Geld Nightly')).not.toHaveProperty('blocked');
   });
 
   it('refuses what is not a payload', () => {
@@ -68,7 +68,6 @@ describe('usageCaptures', () => {
         channel: 'nightly',
         browser: 'chrome',
         nightly_mode: 'automatic',
-        nightly_blocked: 'none',
         from_version: '0.9.2.400',
         from_build: 400,
         build_delta: 12,
@@ -82,10 +81,18 @@ describe('usageCaptures', () => {
     expect(byHand?.properties.update_trigger).toBe('by_hand');
   });
 
-  it('flattens a held-up nightly update to nightly_blocked', () => {
-    const payload = parseUsagePayload({ ...base, channel: 'nightly', selfUpdate: { mode: 'automatic', blocked: 'folder' }, events: [{ name: 'extension_active', at: now, firstOfWeek: false, firstOfMonth: false }] });
+  it('flattens each ping’s own held-up update to nightly_blocked', () => {
+    const payload = parseUsagePayload({
+      ...base,
+      channel: 'nightly',
+      selfUpdate: { mode: 'automatic' },
+      events: [
+        { name: 'extension_active', at: now - 86_400_000, firstOfWeek: false, firstOfMonth: false, blocked: 'folder' },
+        { name: 'extension_active', at: now, firstOfWeek: false, firstOfMonth: false },
+      ],
+    });
     if (payload === null) throw new Error('payload refused');
-    expect(usageCaptures(payload, now)[0]?.properties).toMatchObject({ nightly_mode: 'automatic', nightly_blocked: 'folder' });
+    expect(usageCaptures(payload, now).map((capture) => capture.properties.nightly_blocked)).toEqual(['folder', 'none']);
     const { selfUpdate: _selfUpdate, ...stable } = payload;
     expect(usageCaptures({ ...stable, channel: 'stable' }, now)[0]?.properties).not.toHaveProperty('nightly_blocked');
   });

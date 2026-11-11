@@ -107,7 +107,8 @@ describe('usage statistics', () => {
     stored.set('local:usageState', { version, day: '2026-11-09', week: '2026-W46', month: '2026-11', queue: [] });
     await start(async () => ({ mode: 'automatic', install: null, blocked: 'permission' }));
     await vi.advanceTimersByTimeAsync(6_000);
-    expect(sent[0]?.selfUpdate).toEqual({ mode: 'automatic', blocked: 'permission' });
+    expect(sent[0]?.selfUpdate).toEqual({ mode: 'automatic' });
+    expect(sent[0]?.events).toEqual([expect.objectContaining({ name: 'extension_active', blocked: 'permission' })]);
   });
 
   it('counts a new week and month only on their first ping', async () => {
