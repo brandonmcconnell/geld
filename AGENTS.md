@@ -1152,15 +1152,19 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The popup's and options page's Feedback links and Report with diagnostics open the extension's own `feedback.html` in a tab, never the site or GitHub's issue form;
   a tab rather than the popup, which closes when it loses focus.
   The reader picks a kind (`FEEDBACK_KINDS`, the title's `[Bug]`/`[Idea]`/`[Question]`/`[Feedback]` prefix), writes a title and details, and ticks what to attach (`ContextChoice`): Geld's version and `version_name` with the browser, the kind of page (`whereWords`), the page's address, and the Copy diagnostics report.
-  Version and page kind start ticked, the address never does (the issue is public and the repository may be private), and diagnostics only when Report with diagnostics opened the form.
+  Version and page type start ticked, and diagnostics only when Report with diagnostics opened the form.
+  The page address is ticked by default only when its repository is public (`repoVisibility`: a cookieless `HEAD` for the repository's own page, a 404 or a sign-in redirect being private), and the note under it says which, since the issue itself is public.
+  A page with no repository, or an answer Geld cannot read, is treated as private.
   The page is the GitHub tab the popup was opened on (`?tab=<id>`, read with `tabs.get`, only on a GitHub host Geld runs on).
   The preview shows the exact title and body (`feedbackIssue`), rendered by default and as Markdown source behind "Show markdown".
   It is rendered on the device (`src/ui/issue-markdown.ts`: `marked` with GitHub-flavoured Markdown and line breaks, then DOMPurify), never by GitHub's Markdown API, so the draft goes nowhere before it is sent.
   For the same reason the preview fetches nothing the draft names: an image is shown as its words and address, and the tags and attributes that load something (`srcset`, `style` with its `url()`, `poster`, `background`, `<picture>`, `<video>`, `<svg>`) are removed.
   happy-dom cannot run DOMPurify faithfully (it keeps event handlers and `<script>`), so the sanitizer is checked in Chrome, not in the unit tests.
+  An empty title or empty details show as red italic placeholders in the preview, never in the issue.
+  Send looks disabled until the draft can go (`aria-disabled`), but takes the click and says what is missing in a tooltip above it (`blocker`: title, details, sign-in, consent, length).
   A required checkbox names the account and the repository, and the draft is kept in `local:feedbackDraft` until it is sent, saved on every edit, so closing the tab or signing in loses nothing.
   There is one feedback tab: a Feedback link first asks an open feedback page to come forward (`geld:feedback-open`, answered `true`, carrying the link's tab and diagnostics), and opens a new tab only when nothing answers.
-  Coming forward unticks the page address and the consent, since the page may now be a private repository's.
+  Coming forward clears the consent and sets the page address to the new page's default, since the page may now be a private repository's.
   Sending clears the draft only when the stored one is still the draft that was sent, and the title, details and kind are read-only while the request is out.
   The background opens the issue on `brandonmcconnell/geld` with the reader's own Geld App user token (`submitFeedback` in `account-service.ts`, `POST /repos/…/issues` through `withToken`), so it is the reader's issue, marked by GitHub as made with the App, and no bot account posts on anyone's behalf.
   That needs the reader signed in with GitHub (the same device flow as settings sync, which signing in also turns on) and the Geld App installed on Geld's own repository, which user tokens can only write to where the App is installed;

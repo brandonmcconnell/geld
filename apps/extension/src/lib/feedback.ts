@@ -108,10 +108,10 @@ export function feedbackIssue(draft: FeedbackDraft, context: FeedbackContext, ch
   const title = `[${prefix}] ${inline(draft.title)}`.slice(0, TITLE_LIMIT);
   const facts: string[] = [];
   if (choice.environment && context.environment !== null) facts.push(`- **Geld:** ${inline(context.environment)}`);
-  if (choice.where && context.where !== null) facts.push(`- **Where:** ${inline(context.where)}`);
-  if (choice.page && context.page !== null) facts.push(`- **Page:** <${inline(context.page)}>`);
+  if (choice.where && context.where !== null) facts.push(`- **Page type:** ${inline(context.where)}`);
+  if (choice.page && context.page !== null) facts.push(`- **Page address:** <${inline(context.page)}>`);
   const footer = '<sub>Sent from the feedback form in the Geld extension.</sub>';
-  const parts = [draft.text.trim()];
+  const parts = draft.text.trim() === '' ? [] : [draft.text.trim()];
   if (facts.length > 0) parts.push(facts.join('\n'));
   const fixed = [...parts, footer].join('\n\n');
   if (choice.diagnostics && context.diagnostics !== null) {
