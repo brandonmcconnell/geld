@@ -134,7 +134,7 @@ Decision needed: keep Merge checks as a provider row, or fold it into CI and the
 | --- | --- | --- | --- | --- |
 | Pills per reviewer by latest verdict, grouped approved, changes requested, commented, awaiting | match: one pill per person in that order, each verdict as its glyph, awaiting dashed with the amber dot (`reviewStandings`) | match: same | GL `/approvals`, `/reviewers`, MR `reviewers` · BB `participants` | data |
 | Required approvals fraction | partial: from `approvals_required`/`approvals_left`, no rules (§2.1) | missing: recorded as unavailable, merge checks read from the sidebar | GL `/approval_state` · BB branch restrictions (needs admin), sidebar DOM | — |
-| Index of reviews leading to their round | partial: threads and comments nested under each reviewer | partial: same | — | — |
+| Index of reviews leading to their round | missing: the Reviews row lists standings, the rounds hold the threads | missing: same | — | — |
 | ⋯ Request reviewers menu | partial: "Reviewer controls" focuses GitLab's sidebar widget | missing | native sidebar | slot (the sidebar widget) |
 | Dismiss review, Re-request | missing | n/a for Dismiss (Bitbucket has no dismissal), Re-request missing | GL: approvals reset / `requested_changes` | native controls |
 
@@ -153,7 +153,7 @@ Decision needed: keep Merge checks as a provider row, or fold it into CI and the
 
 | GitHub feature | GitLab | Bitbucket | Source | Slot |
 | --- | --- | --- | --- | --- |
-| By type: "N rounds to review", settled, current round | missing: threads by reviewer, comments split by push | missing: same | — | — |
+| By type: "N rounds to review", settled, current round | match: `roundSections`, rounds from push system notes | match: rounds from `/activity` updates | GL commit system notes · BB `/activity` updates | — |
 | By push: "Needs attention", "N pushes", newest first | partial: `historySections`, no "N pushes", extra "Before the first recorded push" groups | partial: same | GL commit system notes · BB `/activity` updates | — |
 | Grouping menu in the Geld row | match: `toolbarMenu` | match | — | — |
 | Thread opens to a chat of the host's own nodes with its reply box | missing: sanitised copy, proxy actions (`gitlab/thread-actions.ts`) | missing: same (`bitbucket/thread-actions.ts`) | discussions | **slot**: GitLab's `.discussion` node, Bitbucket's comment thread |

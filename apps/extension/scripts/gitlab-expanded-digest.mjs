@@ -6,7 +6,7 @@ export const EXPANDED_DIGEST_MR = 'https://gitlab.com/gitlab-org/quality/triage-
 export async function verifyExpandedGitLabDigest(page, item, { poll, patchSettings, artifacts }) {
   await patchSettings({ enabled: true, prOverview: true, compactTimeline: 'compact', digestAboveDescription: false, aiEnabled: false, repoConfigs: 'never' });
   await page.goto(EXPANDED_DIGEST_MR, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await poll(() => page.$('[data-geld-automated-reviewer="21826781"]'), Boolean, 'GitLab Duo nested review', 60000);
+  await poll(() => page.$('[data-geld-automated-reviewer="21826781"]'), Boolean, 'GitLab Duo review row', 60000);
   await poll(() => page.$('[data-geld-merge-checks]'), Boolean, 'Native merge requirements in digest', 30000);
   await page.$$eval('.geld-provider-review [data-geld-review-toggle]', buttons => {
     for (const button of buttons) if (button.getAttribute('aria-expanded') === 'false') button.click();
@@ -22,7 +22,8 @@ export async function verifyExpandedGitLabDigest(page, item, { poll, patchSettin
       nativeChecks: [...document.querySelectorAll('#widget-state [data-testid="merge-checks-full"] [data-testid="merge-check"]')].map(row => row.querySelector('.gl-w-full.gl-min-w-0')?.textContent.trim()).filter(Boolean),
       commentRows: panel.querySelectorAll('[data-geld-comment-row]').length,
       body: panel.querySelector('[data-geld-source="note_4200027701"] .geld-provider-review__body')?.textContent,
-      itemTitle: panel.querySelector('[data-geld-automated-reviewer="1786152"] .geld-provider-review__item-title')?.textContent,
+      itemTitle: [...panel.querySelectorAll('[data-geld-round-group] .geld-provider-review__item-title')].map(title => title.textContent).join('\n'),
+      rounds: [...panel.querySelectorAll('[data-geld-round-group] > [data-geld-review-toggle]')].map(toggle => toggle.textContent.trim()),
       represented: represented.map(note => ({ id: note.id, folded: !!note.closest('[data-geld-provider-native-find="folded"][hidden="until-found"]') })),
       activityGroups: [...panel.querySelectorAll('[data-geld-review-key^="activity:"]')].map(row => row.getAttribute('data-geld-review-key')),
       rawHtml: [...panel.querySelectorAll('.geld-provider-review__event .geld-provider-review__body')].some(body => /<\/?(?:a|p|span|div)\b/i.test(body.textContent)),
@@ -40,6 +41,7 @@ export async function verifyExpandedGitLabDigest(page, item, { poll, patchSettin
   assert.ok(expanded.commentRows >= 3, 'Each represented comment has a nested disclosure');
   assert.match(expanded.body ?? '', /👋/);
   assert.doesNotMatch(expanded.itemTitle ?? '', /:wave:/);
+  assert.ok(expanded.rounds.length > 0, 'Threads and comments are grouped into rounds');
   assert.ok(expanded.represented.length >= 3);
   assert.ok(expanded.represented.every(note => note.folded), 'Digest mode folds every represented native entry');
   assert.ok(expanded.activityGroups.length > 1, 'Native activity is separated by type');

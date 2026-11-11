@@ -332,11 +332,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     return () => { if (anchor.isConnected) scroller.scrollTop += anchor.getBoundingClientRect().top - top; };
   }
 
-  let statusOnly = false;
-
   function syncStatusRows(changed: ReadonlySet<string>): void {
     const restoreAnchor = readingAnchor();
-    statusOnly = true;
     const rows: readonly [string, () => HTMLElement | null][] = [['reviewers', reviewStandings], ['bots', botsSection], ['reports', reportsSection], ['checks', checksSection], ['deployments', deploymentsSection]];
     for (const [key, renderRow] of rows) {
       if (!changed.has(key)) continue;
@@ -350,7 +347,6 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       else if (key === 'reports') panel.querySelector(':scope > [data-geld-review-key="checks"]')?.before(next);
       else if (key === 'deployments') (panel.querySelector(':scope > [data-geld-review-key="previews"]') ?? panel.querySelector(':scope > [data-geld-review-key="checks"]'))?.after(next);
     }
-    statusOnly = false;
     syncUpdating();syncTimes();refreshComments();restoreAnchor?.();
   }
 
@@ -708,36 +704,6 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     row.append(source);return row;
   }
 
-  function commentRounds(comments: readonly ProviderReviewComment[], key: string): readonly HTMLElement[] {
-    const pushes = activityEvents().filter(event => event.kind === 'push' && Number.isFinite(Date.parse(event.createdAt))).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
-    if (pushes.length === 0) return comments.map(commentRow);
-    const groups = new Map<number, ProviderReviewComment[]>();
-    for (const comment of comments) {
-      const index = pushes.findLastIndex(push => Date.parse(push.createdAt) <= Date.parse(comment.createdAt));
-      const group = groups.get(index) ?? [];group.push(comment);groups.set(index, group);
-    }
-    return [...groups].sort(([a], [b]) => b - a).map(([index, entries]) => {
-      const push = pushes[index];
-      const round = disclosure(`${key}:round:${push?.id ?? 'before'}`, index < 0 ? 'Before the first recorded push' : `Push round ${index + 1}`, true);
-      for (const comment of entries) round.append(commentRow(comment));
-      return round;
-    });
-  }
-
-  function authorConversation(author: ProviderReviewAuthor): HTMLElement {
-    const key = `author:${author.id}`;
-    if (statusOnly) {
-      const existing = [...panel.querySelectorAll<HTMLElement>('[data-geld-author-conversation]')].find(node => node.dataset.geldAuthorConversation === key);
-      if (existing !== undefined) return existing;
-    }
-    const content = node('div');content.dataset.geldAuthorConversation = key;
-    if (options.reviewGrouping === 'batch') return content;
-    content.append(...threadGroups(items.filter(item => itemAuthor(item)?.id === author.id), key));
-    const ids = new Set(input.threads.flatMap(thread => thread.comments.map(comment => comment.id)));
-    content.append(...commentRounds((options.comments ?? []).filter(comment => comment.author.id === author.id && !ids.has(comment.id)), key));
-    return content;
-  }
-
   function reviewStandings(): HTMLElement {
     const reviewers = (input.reviewers ?? []).filter(reviewer => !automatedAuthor(reviewer.author));
     for (const item of items) {
@@ -842,7 +808,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       }
       const toggle = row.querySelector('[data-geld-review-toggle]');
       toggle?.replaceChildren(digestIcon(reviewer.state === 'approved' ? 'check' : 'reviews', doc), mark.cloneNode(true), node('strong', presentation?.displayName ?? reviewer.author.login), node('span', reviewerLabel(reviewer), 'geld-provider-review__entry-preview'));
-      row.prepend(chip);row.append(authorConversation(reviewer.author));list.append(row);
+      row.prepend(chip);list.append(row);
     }
     section.append(list);
     return section;
@@ -1045,10 +1011,6 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
           botRequests.set(request.key, control);
         } else { row.append(control.element);control.update(request); }
       }
-      for (const account of accounts) {
-        const author = comments.find(comment => comment.author.id === account.authorId)?.author;
-        if (author !== undefined) row.append(authorConversation(author));
-      }
       section.append(row);
     }
     const registeredIds = new Set((input.bots ?? []).map(bot => bot.authorId));
@@ -1065,8 +1027,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const row = disclosure(`automated:${author.id}`, '', false);
       row.dataset.geldAutomatedReviewer = author.id;row.classList.add('geld-provider-review__entry');
       row.querySelector('[data-geld-review-toggle]')?.replaceChildren(digestIcon('reviews', doc), authorAvatar(author), node('strong', label), node('span', standing, 'geld-provider-review__entry-preview'));
-      row.append(authorConversation(author));
-      if (row.children.length === 1) row.append(node('p', reviewer === undefined ? 'No conversation recorded.' : reviewerLabel(reviewer), 'geld-provider-review__muted'));
+      row.append(node('p', reviewer === undefined ? 'No conversation recorded.' : reviewerLabel(reviewer), 'geld-provider-review__muted'));
       section.append(row);
     }
     return section;
@@ -1326,6 +1287,66 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const section = disclosure('history:unknown', 'History with unavailable timestamps', false);
       for (const entry of unknown) section.append(entry.render());
       sections.push(section);
+    }
+    return sections;
+  }
+
+  function roundSections(comments: ReadonlyMap<string, ProviderReviewComment>, ordinary: readonly ProviderReviewComment[]): readonly HTMLElement[] {
+    const pushes = activityEvents().filter((event) => event.kind === 'push' && Number.isFinite(Date.parse(event.createdAt))).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id.localeCompare(b.id));
+    const boundaries: Array<{ readonly at: number; readonly ids: string[] }> = [];
+    for (const push of pushes) {
+      const at = Date.parse(push.createdAt);
+      const last = boundaries.at(-1);
+      if (last?.at === at) last.ids.push(push.id);
+      else boundaries.push({ at, ids: [push.id] });
+    }
+    interface Round { readonly key: string; readonly items: ReviewItem[]; readonly comments: ProviderReviewComment[] }
+    const rounds: Round[] = [{ key: 'before', items: [], comments: [] }, ...boundaries.map((boundary) => ({ key: boundary.ids.join(':'), items: [], comments: [] }))];
+    const roundAt = (at: number): Round => rounds[Number.isFinite(at) ? boundaries.filter((boundary) => boundary.at <= at).length : boundaries.length] ?? rounds[0]!;
+    for (const item of items) roundAt(Math.min(...item.sources.map((source) => Date.parse(comments.get(source.anchor)?.createdAt ?? '')).filter(Number.isFinite))).items.push(item);
+    for (const comment of ordinary) roundAt(Date.parse(comment.author.automated === true ? comment.updatedAt ?? comment.createdAt : comment.createdAt)).comments.push(comment);
+    const shown = rounds.filter((round, index) => index > 0 || round.items.length + round.comments.length > 0);
+    if (shown.every((round) => round.items.length + round.comments.length === 0)) return [];
+    const width = String(shown.length).length;
+    const latest = shown.at(-1);
+    const current = latest !== undefined && latest.items.length === 0 ? latest : null;
+    const toReview = shown.filter((round) => round.items.some((item) => isOpenStatus(item.status)));
+    const settled = shown.filter((round) => round !== current && !toReview.includes(round));
+    const fill = (section: HTMLElement, round: Round): void => {
+      section.append(...threadGroups(round.items, `round:${round.key}`));
+      if (round.comments.length > 0) {
+        const group = disclosure(`round:${round.key}:comments`, countLabel(round.comments.length, 'comment'), true);
+        for (const comment of round.comments) group.append(commentRow(comment));
+        section.append(group);
+      }
+      if (round.items.length + round.comments.length === 0) section.append(node('p', 'No conversation since this push.', 'geld-provider-review__muted'));
+    };
+    const render = (round: Round, open: boolean): HTMLElement => {
+      const threads = threadCounts(round.items);
+      const label = [`Round ${String(shown.indexOf(round) + 1).padStart(width, '0')}`, ...(threads.total === 0 ? [] : [`${threads.total - threads.open}/${threads.total} resolved`]), ...(round.comments.length === 0 ? [] : [countLabel(round.comments.length, 'comment')])].join(' · ');
+      const section = disclosure(`round:${round.key}`, label, open);
+      section.dataset.geldTypeRound = round.key;
+      fill(section, round);
+      return section;
+    };
+    const sections: HTMLElement[] = [];
+    if (toReview.length === 0 && current !== null) {
+      const group = disclosure('rounds:review', 'Current round', true);
+      group.dataset.geldRoundGroup = 'current';group.dataset.geldTypeRound = current.key;
+      fill(group, current);
+      sections.push(group);
+    } else if (toReview.length > 0) {
+      const open = current === null || toReview.includes(current) ? toReview : [...toReview, current];
+      const group = disclosure('rounds:review', `${countLabel(toReview.length, 'round')} to review`, true);
+      group.dataset.geldRoundGroup = 'review';
+      for (const round of [...open].reverse()) group.append(render(round, round === toReview.at(-1)));
+      sections.push(group);
+    }
+    if (settled.length > 0) {
+      const group = disclosure('rounds:settled', countLabel(settled.length, 'settled round'), false);
+      group.dataset.geldRoundGroup = 'settled';
+      for (const round of [...settled].reverse()) group.append(render(round, false));
+      sections.push(group);
     }
     return sections;
   }
@@ -1804,13 +1825,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const ordinary = (options.comments ?? []).filter((comment) => !comments.has(comment.anchor));
     if (items.length === 0) children.push(node('p', panel.dataset.state === 'partial' ? 'No review threads in the available data.' : 'No review threads.'));
     if (options.reviewGrouping === 'batch') children.push(...historySections(comments, ordinary));
-    const reviewedAuthors = new Set([...(input.reviewers ?? []).map(reviewer => reviewer.author.id), ...items.map(item => itemAuthor(item)?.id)]);
-    const humanComments = ordinary.filter(comment => !automatedAuthor(comment.author) && !reviewedAuthors.has(comment.author.id));
-    if (options.reviewGrouping !== 'batch' && humanComments.length > 0) {
-      const section = disclosure('comments', `Comments · ${humanComments.length}`, false);
-      section.append(...commentRounds(humanComments, 'comments'));
-      children.push(section);
-    }
+    else children.push(...roundSections(comments, ordinary));
     for (const direction of ['incoming', 'outgoing']) {
       const entries = references().filter((reference) => reference.direction === direction);
       if (entries.length === 0) continue;
