@@ -60,7 +60,10 @@
 
         <div class="feedback__actions">
           <span class="geld-status" id="status" role="status" aria-live="polite"></span>
-          <button class="geld-button geld-button--primary" id="send" type="submit">Send feedback</button>
+          <span class="feedback__send">
+            <span class="feedback__send-tip" id="send-tip" role="status" hidden></span>
+            <button class="geld-button geld-button--primary" id="send" type="submit" aria-describedby="send-tip">Send feedback</button>
+          </span>
         </div>
       </form>
 

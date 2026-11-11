@@ -15,7 +15,11 @@ body {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 0 0 12px;
+}
+
+/* The account prompt holds nothing most of the time and must not add a gap of its own. */
+#account-prompt:empty {
+  display: none;
 }
 
 .feedback__brand-text {
@@ -341,4 +345,48 @@ body {
   border: 1px dashed var(--border);
   color: var(--muted-foreground);
   font-size: 12.5px;
+}
+
+.feedback__placeholder {
+  color: var(--destructive);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.feedback__send {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Looks disabled but takes the click, so the click can say what is missing. */
+.feedback__send .geld-button[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.feedback__send-tip {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 1;
+  width: max-content;
+  max-width: 280px;
+  padding: 6px 10px;
+  background: var(--foreground);
+  color: var(--background);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.feedback__send-tip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  right: 16px;
+  border: 5px solid transparent;
+  border-top-color: var(--foreground);
+}
+
+.feedback__send-tip[hidden] {
+  display: none;
 }

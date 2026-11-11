@@ -10,6 +10,8 @@ import { draftIsEmpty, EMPTY_DRAFT, FEEDBACK_KINDS, FEEDBACK_REPO, feedbackIssue
 import type { FeedbackOpenMessage, FeedbackSubmitMessage } from '../../src/lib/messages';
 import { isFeedbackOpenMessage, isFeedbackSubmitResponse } from '../../src/lib/messages';
 import { collectTabPerf } from '../../src/lib/perf-report';
+import type { RepoVisibility } from '../../src/lib/repo-visibility';
+import { repoVisibility } from '../../src/lib/repo-visibility';
 import { settingsItem } from '../../src/lib/storage';
 import { mountAccountWidget } from '../../src/ui/account-widget';
 import { polyfillCornerShape } from '../../src/ui/corner-shape';
@@ -36,6 +38,7 @@ const consent = requireElement('consent', HTMLInputElement);
 const consentWords = requireElement('consent-words', HTMLSpanElement);
 const status = requireElement('status', HTMLSpanElement);
 const send = requireElement('send', HTMLButtonElement);
+const sendTip = requireElement('send-tip', HTMLSpanElement);
 const sent = requireElement('sent', HTMLElement);
 const sentLink = requireElement('sent-link', HTMLAnchorElement);
 const again = requireElement('again', HTMLButtonElement);
@@ -49,6 +52,7 @@ let sending = false;
 let showMarkdown = false;
 let previewFrame: number | null = null;
 let context: FeedbackContext = { environment: null, where: null, page: null, diagnostics: null };
+let visibility: RepoVisibility = 'unknown';
 const choice: Record<ContextKey, boolean> = { environment: true, where: true, page: false, diagnostics: query.get('diagnostics') === '1' };
 const tabParam = Number(query.get('tab') ?? NaN);
 let openingTab: number | null = Number.isInteger(tabParam) && tabParam >= 0 ? tabParam : null;
@@ -82,12 +86,24 @@ function renderKinds(): void {
   );
 }
 
-const CHOICE_COPY: Readonly<Record<ContextKey, { readonly label: string; readonly note?: string }>> = {
-  environment: { label: 'Geld and browser version' },
-  where: { label: 'The kind of page' },
-  page: { label: 'The page address', note: 'The issue is public. Leave this off for a private repository.' },
-  diagnostics: { label: 'Diagnostics', note: 'Diff fetches and timings for this session, naming pull requests by number. No page content or tokens.' },
+const CHOICE_LABELS: Readonly<Record<ContextKey, string>> = {
+  environment: 'Geld and browser version',
+  where: 'Page type',
+  page: 'Page address',
+  diagnostics: 'Diagnostics',
 };
+
+const PAGE_NOTES: Readonly<Record<RepoVisibility, string>> = {
+  public: 'This repository is public, so its address is included by default.',
+  private: 'This repository is private, so its address is left out by default.',
+  unknown: 'Geld could not tell whether this page is public, so its address is left out by default.',
+};
+
+function noteFor(key: ContextKey): string | null {
+  if (key === 'page') return PAGE_NOTES[visibility];
+  if (key === 'diagnostics') return 'Diff fetches and timings for this session, naming pull requests by number. No page content or tokens.';
+  return null;
+}
 
 function shown(key: ContextKey): string | null {
   const value = context[key];
@@ -110,9 +126,9 @@ function renderChoices(): void {
         choice[key] = input.checked;
         renderPreview();
       });
-      const copy = CHOICE_COPY[key];
-      const words = el('span', 'feedback__choice-words', [el('span', 'feedback__choice-label', [copy.label]), el('span', 'feedback__choice-value', [value])]);
-      if (copy.note !== undefined) words.append(el('span', 'geld-help', [copy.note]));
+      const words = el('span', 'feedback__choice-words', [el('span', 'feedback__choice-label', [CHOICE_LABELS[key]]), el('span', 'feedback__choice-value', [value])]);
+      const note = noteFor(key);
+      if (note !== null) words.append(el('span', 'geld-help', [note]));
       return [el('label', 'feedback__choice', [input, words])];
     }),
   );
@@ -127,21 +143,21 @@ function renderPreview(): void {
   // Coalesced to a frame: typing re-renders the whole body, diagnostics included.
   previewFrame = requestAnimationFrame(() => {
     previewFrame = null;
-    const issue = feedbackIssue(
-      { ...draft, title: draft.title.trim() === '' ? '(title)' : draft.title, text: draft.text.trim() === '' ? '(details)' : draft.text },
-      context,
-      currentChoice(),
-    );
-    previewTitle.textContent = issue.title;
+    const issue = feedbackIssue(draft, context, currentChoice());
+    const noTitle = draft.title.trim() === '';
+    const noText = draft.text.trim() === '';
+    previewTitle.replaceChildren(noTitle ? `${issue.title} ` : issue.title);
+    if (noTitle) previewTitle.append(el('span', 'feedback__placeholder', ['Title will appear here']));
     previewRendered.hidden = showMarkdown;
     previewBody.hidden = !showMarkdown;
     previewMode.textContent = showMarkdown ? 'Show preview' : 'Show markdown';
+    const missing = noText ? [el('span', 'feedback__placeholder', ['Details will appear here'])] : [];
     if (showMarkdown) {
-      previewBody.textContent = issue.body;
+      previewBody.replaceChildren(...missing, noText ? `\n\n${issue.body}` : issue.body);
       previewRendered.replaceChildren();
     } else {
-      previewRendered.replaceChildren(renderIssueMarkdown(issue.body));
-      previewBody.textContent = '';
+      previewRendered.replaceChildren(...missing.map((node) => el('p', '', [node])), renderIssueMarkdown(issue.body));
+      previewBody.replaceChildren();
     }
   });
 }
@@ -167,14 +183,46 @@ function renderAccount(): void {
   renderSend();
 }
 
+/** What still stands between the draft and sending it, in the order the reader meets it; `null` when nothing does. */
+function blocker(): string | null {
+  if (draft.title.trim() === '') return 'A title is required.';
+  if (draft.text.trim() === '') return 'Details are required.';
+  if (account === null) return 'Sign in with GitHub to send it.';
+  if (account.auth !== 'app') return 'Sign in with GitHub again to send it.';
+  if (!consent.checked) return 'Tick the box above to send it.';
+  const over = feedbackIssue(draft, context, currentChoice()).overBy;
+  if (over > 0) return `That is ${over.toLocaleString()} characters more than one GitHub issue can hold. Shorten the details to send it.`;
+  return null;
+}
+
+let tipTimer: ReturnType<typeof setTimeout> | null = null;
+
+function hideTip(): void {
+  if (tipTimer !== null) clearTimeout(tipTimer);
+  tipTimer = null;
+  sendTip.hidden = true;
+  sendTip.textContent = '';
+}
+
+function showTip(message: string): void {
+  sendTip.textContent = message;
+  sendTip.hidden = false;
+  if (tipTimer !== null) clearTimeout(tipTimer);
+  tipTimer = setTimeout(hideTip, 4000);
+}
+
+/** Looks disabled until the draft can go, but stays clickable so a click can say what is missing. */
 function renderSend(): void {
-  send.disabled = sending || account === null || account.auth !== 'app' || !consent.checked;
+  send.disabled = sending;
+  send.setAttribute('aria-disabled', String(sending || blocker() !== null));
   send.textContent = sending ? 'Sending…' : 'Send feedback';
+  if (!sendTip.hidden && blocker() === null) hideTip();
 }
 
 function update(patch: Partial<FeedbackDraft>): void {
   draft = { ...draft, ...patch };
   renderPreview();
+  renderSend();
   // Saved on every edit, not after a pause: a tab closed during the pause would lose its last words.
   void draftItem.setValue(draftIsEmpty(draft) ? null : draft);
 }
@@ -194,26 +242,13 @@ form.addEventListener('submit', (event) => {
 
 async function submit(): Promise<void> {
   if (sending) return;
-  if (draft.title.trim() === '') {
-    say('Add a title first.', 'error');
-    titleInput.focus();
+  const blocked = blocker();
+  if (blocked !== null) {
+    showTip(blocked);
     return;
   }
-  if (draft.text.trim() === '') {
-    say('Add some details first.', 'error');
-    textInput.focus();
-    return;
-  }
-  if (!consent.checked) {
-    say('Tick the box above to send it.', 'error');
-    return;
-  }
+  hideTip();
   const issue = feedbackIssue(draft, context, currentChoice());
-  if (issue.overBy > 0) {
-    say(`That is ${issue.overBy.toLocaleString()} characters more than one GitHub issue can hold. Shorten the details to send it.`, 'error');
-    textInput.focus();
-    return;
-  }
   const sentDraft = draft;
   sending = true;
   renderAccount();
@@ -270,9 +305,7 @@ async function reopen(opening: FeedbackOpenMessage): Promise<void> {
   choice.page = false;
   consent.checked = false;
   renderAccount();
-  context = await gatherContext();
-  renderChoices();
-  renderPreview();
+  await loadContext();
 }
 
 browser.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
@@ -302,6 +335,7 @@ async function gatherContext(): Promise<FeedbackContext> {
   const browserWords = describeBrowser(navigator.userAgent, navigator.platform);
   const environment = [`${manifest.version}${named}`, browserWords].filter((part) => part !== '').join(' · ');
   const [page, events, perf] = await Promise.all([pageOfTab(hosts), readDiagnostics(), collectTabPerf(hosts)]);
+  visibility = page === null ? 'unknown' : await repoVisibility(page);
   return {
     environment,
     where: page === null ? null : whereWords(page),
@@ -324,9 +358,16 @@ async function start(): Promise<void> {
     renderAccount();
   });
   (draft.title === '' ? titleInput : textInput).focus();
+  await loadContext();
+}
+
+/** The page's context, with its address ticked by default only when its repository is public. */
+async function loadContext(): Promise<void> {
   context = await gatherContext();
+  choice.page = visibility === 'public';
   renderChoices();
   renderPreview();
+  renderSend();
 }
 
 void start();
