@@ -3,7 +3,7 @@ import type { NightlyFolder } from './state';
 
 const picked: NightlyFolder = { name: 'Brave Personal', downloads: null, connectedAt: '2026-11-10T12:00:00Z' };
 const inDownloads: NightlyFolder = { name: 'Geld Nightly/Brave Personal', downloads: true, connectedAt: '2026-11-10T12:00:00Z' };
-const brave = { installedIn: '/Users/me/Geld Nightly/Brave Personal', hasPicker: false, isBrave: true };
+const brave = { installedIn: '/Users/me/Geld Nightly/Brave Personal', installedInDownloads: false, hasPicker: false, isBrave: true };
 
 describe('folderAccessMissing', () => {
   it('points Brave to its flag and every browser to the Downloads install', () => {
@@ -36,6 +36,12 @@ describe('folderHelp', () => {
 
   it('needs nothing more for a folder in Downloads, which updates without folder access', () => {
     expect(folderHelp({ ...brave, folder: inDownloads })).not.toContain(BRAVE_FOLDER_FLAG);
+  });
+
+  it('takes a fresh Downloads install, not yet checked by an update, for what it is', () => {
+    const fresh: NightlyFolder = { ...inDownloads, downloads: null };
+    expect(folderHelp({ ...brave, installedInDownloads: true, folder: fresh })).toBe(folderHelp({ ...brave, folder: inDownloads }));
+    expect(folderHelp({ ...brave, installedInDownloads: true, folder: fresh })).not.toContain('remove this copy');
   });
 
   it('names the installed folder where the picker works', () => {

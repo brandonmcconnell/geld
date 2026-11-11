@@ -66,10 +66,11 @@ async function act(kind: NightlyAction): Promise<string | null> {
 }
 
 let installedIn: string | null = null;
+let installedInDownloads = false;
 
 function renderFolder(folder: NightlyFolder | null): void {
   folderLine.textContent = folder === null ? 'No folder connected.' : folder.downloads === true ? `Downloads/${folder.name}` : folder.name;
-  folderHelpLine.textContent = folderHelp({ folder, installedIn, hasPicker: window.showDirectoryPicker !== undefined, isBrave: 'brave' in navigator });
+  folderHelpLine.textContent = folderHelp({ folder, installedIn, installedInDownloads, hasPicker: window.showDirectoryPicker !== undefined, isBrave: 'brave' in navigator });
   connectButton.textContent = folder === null ? 'Connect folder' : 'Connect another folder';
 }
 
@@ -92,5 +93,6 @@ mountNightlyPanel(panel, act);
 nightlyFolderItem.watch(renderFolder);
 void readInstallRecord().then(async (record) => {
   installedIn = record?.folder ?? null;
+  installedInDownloads = record !== null && record.downloadsName !== null;
   renderFolder(await nightlyFolderItem.getValue());
 });
