@@ -9,21 +9,28 @@ import { buildOf, buildProblem, claimLock, compareVersions, LATEST_RELEASE_PAGE,
 import type { NightlyBrowser, NightlyRelease, ZipEntry } from '@geld/core/nightly';
 import { BACKGROUND_CHECK_MINUTES, limitedUntil, navigationDue, needsDetails } from './schedule';
 import { startPauseWatch } from './pause';
-import { nightlyConflictItem, nightlyFolderItem, nightlyPrefsItem, nightlyProfileTokenItem, nightlyStatusItem, readNightlyStatus, nightlyTabCountsItem } from './state';
+import { nightlyCelebratedItem, nightlyConflictItem, nightlyFolderItem, nightlyPrefsItem, nightlyProfileTokenItem, nightlyStatusItem, readNightlyStatus, nightlyTabCountsItem } from './state';
 import type { NightlyFailure, NightlyInstall, NightlyStatus, NightlyWrite, UpdateMode } from './state';
 import { decode, sha256Hex, unzip } from './unzip';
 import { BUSY, folderLock, readInstallRecord, copyRunningBuild, downloadsReach, downloadsTarget, folderIsOurs, folderPermission, folderTarget, versionOnDisk } from './writers';
 import type { BuildTarget } from './writers';
+import { NO_BADGE, showIconBadge } from './icon-badge';
+import type { IconBadge } from './icon-badge';
 
 /** Background side of nightly builds: looks for a newer release, marks the toolbar icon, installs and rolls back. */
 
 const ALARM = 'geld:nightly-check';
-const BADGE_COLOR = '#1a7f37';
 const FAILED_COLOR = '#cf222e';
 /** Mirrors the hidden-file badge in background.ts, which hands a nightly build's tab badges to `showTabBadge`. */
 const COUNT_COLOR = '#59636e';
 /** The reply goes out before the reload, which closes every page that asked for it. */
 const RELOAD_DELAY_MS = 300;
+/** The download's part of the progress ring; writing the files into the folder is the rest. */
+const DOWNLOAD_SHARE = 0.7;
+/** How long the check stands on the icon once an update is in. */
+const DONE_MS = 3000;
+/** The reload after an install starts the next worker within a second or two: an install older than this was not just now. */
+const JUST_INSTALLED_MS = 30_000;
 
 type Failed = Extract<NightlyInstallResult, { ok: false }>;
 
@@ -57,22 +64,39 @@ function patchStatus(patch: Partial<NightlyStatus>): Promise<NightlyStatus> {
   return run;
 }
 
-type Mark = '' | '↑' | '!' | 'OFF';
+/** A new build, an update under way and one just done are drawn into the icon (`iconBadgeOf`), so the text badge keeps the tab's count. */
+type Mark = '' | '!' | 'OFF';
 let mark: Mark = '';
+/** The share of the update under way, null while none is. */
+let progress: number | null = null;
+let done = false;
 
 function markOf(status: NightlyStatus, paused: boolean): Mark {
-  return paused ? 'OFF' : status.failure?.broken === true || status.writing !== null ? '!' : isNewer(status) ? '↑' : '';
+  return paused ? 'OFF' : status.failure?.broken === true || status.writing !== null ? '!' : '';
+}
+
+function iconBadgeOf(status: NightlyStatus, paused: boolean): IconBadge {
+  if (paused) return NO_BADGE;
+  if (status.installing !== null) return { kind: 'progress', share: progress ?? 0 };
+  if (done) return { kind: 'done' };
+  if (markOf(status, paused) !== '') return NO_BADGE;
+  return isNewer(status) ? { kind: 'available' } : NO_BADGE;
+}
+
+function showProgress(share: number): void {
+  progress = share;
+  showIconBadge({ kind: 'progress', share });
 }
 
 /**
  * A tab's own badge (its hidden-file count) hides the global one, so on GitHub, where the reader is, the
- * mark rides on the count: "3↑". The count's colour stays unless there is a mark.
+ * mark rides on the count. The count's colour stays unless there is a mark.
  */
 async function paintTab(tabId: number, count: number): Promise<void> {
   const text = mark === 'OFF' ? mark : `${count > 0 ? count : ''}${mark}`;
   await browser.action.setBadgeText({ tabId, text }).catch(() => undefined);
   if (text === '') return;
-  await browser.action.setBadgeBackgroundColor({ tabId, color: mark === '' ? COUNT_COLOR : mark === '↑' ? BADGE_COLOR : FAILED_COLOR }).catch(() => undefined);
+  await browser.action.setBadgeBackgroundColor({ tabId, color: mark === '' ? COUNT_COLOR : FAILED_COLOR }).catch(() => undefined);
   await browser.action.setBadgeTextColor({ tabId, color: '#ffffff' }).catch(() => undefined);
 }
 
@@ -92,17 +116,24 @@ export function showTabBadge(tabId: number, count: number): void {
   patchTabCounts((counts) => (counts[String(tabId)] === count ? null : { ...counts, [String(tabId)]: count }));
 }
 
+function titleOf(status: NightlyStatus, ready: NightlyRelease | null): string {
+  if (mark === 'OFF') return 'Geld Nightly · paused while another Geld is on';
+  if (status.installing !== null) return `Geld Nightly · installing build ${buildOf(status.installing) ?? status.installing}`;
+  if (done) return 'Geld Nightly · updated';
+  if (mark === '!') return 'Geld Nightly · an update failed';
+  return ready === null ? 'Geld Nightly' : `Geld Nightly · build ${ready.build} is ready`;
+}
+
 async function showBadge(status: NightlyStatus): Promise<void> {
   const ready = isNewer(status) ? status.latest : null;
   const paused = (await nightlyConflictItem.getValue()) !== null;
   const next = markOf(status, paused);
   const changed = next !== mark;
   mark = next;
+  showIconBadge(iconBadgeOf(status, paused));
   await browser.action.setBadgeText({ text: mark }).catch(() => undefined);
-  if (mark !== '') await browser.action.setBadgeBackgroundColor({ color: mark === '↑' ? BADGE_COLOR : FAILED_COLOR }).catch(() => undefined);
-  const title =
-    mark === 'OFF' ? 'Geld Nightly · paused while another Geld is on' : mark === '!' ? 'Geld Nightly · an update failed' : ready === null ? 'Geld Nightly' : `Geld Nightly · build ${ready.build} is ready`;
-  await browser.action.setTitle({ title }).catch(() => undefined);
+  if (mark !== '') await browser.action.setBadgeBackgroundColor({ color: FAILED_COLOR }).catch(() => undefined);
+  await browser.action.setTitle({ title: titleOf(status, ready) }).catch(() => undefined);
   if (!changed) return;
   for (const [tabId, count] of Object.entries(await nightlyTabCountsItem.getValue())) void paintTab(Number(tabId), count);
 }
@@ -226,6 +257,7 @@ async function fail(reported: NightlyFailure): Promise<Failed> {
   const writing = (await readNightlyStatus()).writing;
   const { restored: _restored, ...unrestored } = reported;
   const failure: NightlyFailure = writing === null ? reported : { ...unrestored, stillOn: writing.whole, broken: true };
+  progress = null;
   await patchStatus({ installing: null, failure });
   await showBadge(await readNightlyStatus());
   const stage = failure.broken === true ? 'broken' : failure.restored === true ? 'restored' : 'before writing';
@@ -233,13 +265,35 @@ async function fail(reported: NightlyFailure): Promise<Failed> {
   return { ok: false, reason: failure.reason };
 }
 
+/** The release names the zip's size, so the download's share is known even when the redirect's answer has no length. */
+async function readBody(response: Response, size: number, onShare: (share: number) => void): Promise<Uint8Array> {
+  const total = size > 0 ? size : Number(response.headers.get('content-length'));
+  // `getReader` locks the body, after which `arrayBuffer` rejects: decide on the plain read first.
+  if (response.body === null || !(total > 0)) return new Uint8Array(await response.arrayBuffer());
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+    chunks.push(chunk.value);
+    received += chunk.value.length;
+    onShare(Math.min(1, received / total));
+  }
+  const bytes = new Uint8Array(received);
+  let at = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, at);
+    at += chunk.length;
+  }
+  return bytes;
+}
+
 /** The zip is opened only once its SHA-256 matches the one CI published beside it. */
-async function downloadBuild(release: NightlyRelease): Promise<ZipEntry[]> {
+async function downloadBuild(release: NightlyRelease, onShare: (share: number) => void): Promise<ZipEntry[]> {
   const [zip, sums] = await Promise.all([fetch(release.assetUrl, { cache: 'no-store' }), fetch(release.checksumUrl, { cache: 'no-store' })]);
   if (!zip.ok) throw new Error(`The download failed (${zip.status}).`);
   const expected = sums.ok ? parseChecksum(await sums.text(), release.assetName) : null;
   if (expected === null) throw new Error('The release has no checksum for this build.');
-  const bytes = new Uint8Array(await zip.arrayBuffer());
+  const bytes = await readBody(zip, release.size, onShare);
   if ((await sha256Hex(bytes)) !== expected) throw new Error('The download does not match its checksum.');
   const entries = await unzip(bytes);
   const problem = buildProblem(entries.map((entry) => entry.path), manifestTextOf(entries, decode), release.version);
@@ -253,20 +307,30 @@ async function downloadBuild(release: NightlyRelease): Promise<ZipEntry[]> {
  * `owned` names the files already in the folder that are Geld's. The write is recorded before it begins and
  * cleared only once the folder holds one whole build, so a worker stopped midway leaves the record behind.
  */
-async function replace(target: BuildTarget, next: readonly ZipEntry[], previous: BuildBackup, whole: string, owned: readonly string[], version: string): Promise<NightlyFailure | null> {
+async function replace(
+  target: BuildTarget,
+  next: readonly ZipEntry[],
+  previous: BuildBackup,
+  whole: string,
+  owned: readonly string[],
+  version: string,
+  onShare: (share: number) => void,
+): Promise<NightlyFailure | null> {
   const at = new Date().toISOString();
   const nextPaths = next.map((entry) => entry.path);
   const paths = [...new Set([...owned, ...nextPaths, ...previous.files.map((file) => file.path)])].sort();
   const writing: NightlyWrite = { version, whole, paths };
   await patchStatus({ writing });
   try {
-    await target.write(next, owned);
+    await target.write(next, owned, (written, total) => onShare(written / total));
     await patchStatus({ writing: null });
     return null;
   } catch (error) {
     const failure = { version, stillOn: previous.version, reason: message(error), at };
+    // The ring starts over for the undo, so it never stands still at the share the failed write reached.
+    showProgress(0);
     try {
-      await target.write(previous.files, [...new Set([...owned, ...nextPaths])]);
+      await target.write(previous.files, [...new Set([...owned, ...nextPaths])], (written, total) => showProgress(written / total));
       await patchStatus({ writing: null });
       return { ...failure, restored: true };
     } catch {
@@ -297,7 +361,11 @@ async function sharedInstall(from: string, to: string, trigger: UpdateMode): Pro
   return { ok: true, version: to };
 }
 
+/** The reload resets the icon, so the next worker draws the check again for its full time (`showJustInstalled`). */
 function reloadSoon(): void {
+  progress = null;
+  done = true;
+  showIconBadge({ kind: 'done' });
   setTimeout(() => browser.runtime.reload(), RELOAD_DELAY_MS);
 }
 
@@ -306,7 +374,10 @@ let running: Promise<NightlyInstallResult> | null = null;
 function once(run: () => Promise<NightlyInstallResult>): Promise<NightlyInstallResult> {
   running ??= run()
     .catch(async (error: unknown): Promise<NightlyInstallResult> => {
-      await patchStatus({ installing: null }).catch(() => undefined);
+      progress = null;
+      await patchStatus({ installing: null })
+        .then(showBadge)
+        .catch(() => undefined);
       reportError('background:nightly-update', error);
       return { ok: false, reason: message(error) };
     })
@@ -336,11 +407,12 @@ async function install(explicit: boolean): Promise<NightlyInstallResult> {
   if ((await versionOnDisk()) === latest.version) return sharedInstall(current, latest.version, trigger);
   const target = await installTarget();
   if ('ok' in target) return target;
-  await patchStatus({ installing: latest.version, failure: null });
+  progress = 0;
+  await showBadge(await patchStatus({ installing: latest.version, failure: null }));
   const failed = (reason: string): NightlyFailure => ({ version: latest.version, stillOn: current, reason, at: new Date().toISOString() });
   let entries: ZipEntry[];
   try {
-    entries = await downloadBuild(latest);
+    entries = await downloadBuild(latest, (share) => showProgress(share * DOWNLOAD_SHARE));
   } catch (error) {
     return fail(failed(message(error)));
   }
@@ -357,7 +429,7 @@ async function install(explicit: boolean): Promise<NightlyInstallResult> {
       return fail(failed(message(error)));
     }
     const owned = status.writing?.paths ?? previous.files.map((file) => file.path);
-    const failure = await replace(target, entries, previous, previous.version, owned, latest.version);
+    const failure = await replace(target, entries, previous, previous.version, owned, latest.version, (share) => showProgress(DOWNLOAD_SHARE + share * (1 - DOWNLOAD_SHARE)));
     if (failure !== null) return fail(failure);
     await patchStatus({
       installing: null,
@@ -379,12 +451,13 @@ async function restorePrevious(): Promise<NightlyInstallResult> {
   if ('ok' in target) return target;
   const current = installedVersion();
   const repairing = status.writing !== null;
-  await patchStatus({ installing: backup.version });
+  progress = 0;
+  await showBadge(await patchStatus({ installing: backup.version }));
   return underLock(target, { version: backup.version, stillOn: current, reason: BUSY, at: new Date().toISOString() }, async () => {
     // Repairing, the folder's own files are half written, so there is nothing whole to fall back on.
     const undo = repairing ? backup : await copyRunningBuild(current).catch(() => backup);
     const owned = status.writing?.paths ?? undo.files.map((file) => file.path);
-    const failure = await replace(target, backup.files, undo, backup.version, owned, backup.version);
+    const failure = await replace(target, backup.files, undo, backup.version, owned, backup.version, showProgress);
     if (failure !== null) return fail(failure);
     await patchStatus({
       installing: null,
@@ -407,6 +480,19 @@ async function settleInterrupted(): Promise<NightlyStatus> {
   const failure: NightlyFailure = { version: writing.version, stillOn: writing.whole, reason: `Geld stopped while it was writing build ${buildOf(writing.version) ?? writing.version}.`, at: new Date().toISOString(), broken: true };
   reportError('background:nightly-update', new Error(`Update to ${writing.version} failed (interrupted)`));
   return patchStatus({ installing: null, failure });
+}
+
+/** The first worker of a build Geld just wrote shows the check, once: session storage starts empty after the reload. */
+async function showJustInstalled(status: NightlyStatus): Promise<void> {
+  const install = status.lastInstall;
+  if (install === null || install.to !== installedVersion() || !(Date.now() - Date.parse(install.at) < JUST_INSTALLED_MS)) return;
+  if ((await nightlyCelebratedItem.getValue()) === install.at) return;
+  await nightlyCelebratedItem.setValue(install.at);
+  done = true;
+  setTimeout(() => {
+    done = false;
+    void readNightlyStatus().then(showBadge);
+  }, DONE_MS);
 }
 
 /**
@@ -478,7 +564,10 @@ export function startNightly(): void {
   browser.runtime.onInstalled.addListener(() => void checkForUpdate());
   nightlyPrefsItem.watch(() => void checkForUpdate());
   // This worker has only just started, so no install of its own is under way: one marked is left from a worker Chrome stopped mid-install.
-  void settleInterrupted().then(showBadge);
+  void settleInterrupted().then(async (status) => {
+    await showJustInstalled(status).catch(() => undefined);
+    await showBadge(status);
+  });
   void adoptInstallerFolder();
   void scheduleChecks();
   startPauseWatch();

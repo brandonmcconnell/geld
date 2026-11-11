@@ -48,7 +48,8 @@ export async function copyRunningBuild(version: string): Promise<BuildBackup> {
  */
 export interface BuildTarget {
   readonly method: InstallMethod;
-  write(entries: readonly ZipEntry[], current: readonly string[]): Promise<void>;
+  /** `progress` hears each file once it is written. */
+  write(entries: readonly ZipEntry[], current: readonly string[], progress?: (written: number, total: number) => void): Promise<void>;
   /** Writes the update lock (`LOCK_FILE`), or with null lets it go. */
   writeLock(text: string | null): Promise<void>;
 }
@@ -129,8 +130,12 @@ export async function folderIsOurs(handle: FileSystemDirectoryHandle): Promise<b
 export function folderTarget(handle: FileSystemDirectoryHandle): BuildTarget {
   return {
     method: 'folder',
-    async write(entries, current) {
-      for (const entry of writeOrder(entries, current)) await writeFile(handle, entry.path, entry.data);
+    async write(entries, current, progress) {
+      const ordered = writeOrder(entries, current);
+      for (const [at, entry] of ordered.entries()) {
+        await writeFile(handle, entry.path, entry.data);
+        progress?.(at + 1, ordered.length);
+      }
       for (const path of stalePaths(current, entries.map((entry) => entry.path))) {
         await removeFile(handle, path).catch(() => undefined);
       }
@@ -230,13 +235,14 @@ export async function downloadsReach(folder: string): Promise<boolean> {
 }
 
 /** Settles only once every download has: undoing a write while some of it still lands would race it file by file. */
-async function downloadAll(folder: string, entries: readonly ZipEntry[]): Promise<void> {
+async function downloadAll(folder: string, entries: readonly ZipEntry[], written: () => void = () => undefined): Promise<void> {
   const queue = [...entries];
   let failed = false;
   const worker = async (): Promise<void> => {
     for (let entry = queue.shift(); entry !== undefined && !failed; entry = queue.shift()) {
       try {
         await downloadFile(`${folder}/${entry.path}`, entry.data);
+        written();
       } catch (error) {
         failed = true;
         throw error;
@@ -252,12 +258,14 @@ async function downloadAll(folder: string, entries: readonly ZipEntry[]): Promis
 export function downloadsTarget(folder: string): BuildTarget {
   return {
     method: 'downloads',
-    write: (entries, current) =>
+    write: (entries, current, progress) =>
       quietDownloads(async () => {
         const ordered = writeOrder(entries, current);
         const manifest = ordered.filter((entry) => entry.path === 'manifest.json');
-        await downloadAll(folder, ordered.filter((entry) => entry.path !== 'manifest.json'));
-        await downloadAll(folder, manifest);
+        let count = 0;
+        const written = (): void => progress?.(++count, ordered.length);
+        await downloadAll(folder, ordered.filter((entry) => entry.path !== 'manifest.json'), written);
+        await downloadAll(folder, manifest, written);
       }),
     // The downloads API cannot delete a file it has forgotten, so letting go writes a lock nobody holds.
     writeLock: (text) => quietDownloads(async () => void (await downloadFile(`${folder}/${LOCK_FILE}`, new TextEncoder().encode(text ?? '{"token":"","at":0}')))),
