@@ -61,3 +61,15 @@ export const connectGitHub = createClientOnlyFn(async (returnTo: string) => {
 		errorCallbackURL: returnTo,
 	});
 });
+
+/** Adds a provider to the signed-in Geld account and comes back to `returnTo`. */
+export const connectProvider = createClientOnlyFn(
+	async (identity: string, returnTo: string) => {
+		const { authClient } = await import("./auth.client");
+		return authClient.linkSocial({
+			provider: identity,
+			callbackURL: returnTo,
+			errorCallbackURL: `${returnTo}?error=connect`,
+		});
+	},
+);

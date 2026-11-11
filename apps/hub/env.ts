@@ -34,6 +34,12 @@ export default defineEnv({
 	FILES_S3_ACCESS_KEY_ID: string().optional(),
 	FILES_S3_SECRET_ACCESS_KEY: string().optional(),
 	FILES_PUBLIC_BASE_URL: url().optional(),
+	// Optional providers a person can connect to their Geld account. Each
+	// needs both values, and the dashboard's when the two share a database.
+	GITLAB_CLIENT_ID: string().optional(),
+	GITLAB_CLIENT_SECRET: string().optional(),
+	BITBUCKET_CLIENT_ID: string().optional(),
+	BITBUCKET_CLIENT_SECRET: string().optional(),
 	// Demo mode only: base URL of apps/hub-emulator.
 	GITHUB_EMULATOR_URL: url().optional(),
 });

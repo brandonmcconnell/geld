@@ -24,7 +24,10 @@
 	"dependencies": {
 		"@awesome.me/kit-2e791c163e": "1.0.4",
 		"@geld/hub-icons": "workspace:*",
+		"@geld/domain": "workspace:*",
+		"@geld/github": "workspace:*",
 		"@geld/hub-ui": "workspace:*",
+		"@geld/providers": "workspace:*",
 		"@noble/ciphers": "2.1.1",
 		"@noble/hashes": "2.0.1",
 		"@number-flow/react": "0.6.0",
