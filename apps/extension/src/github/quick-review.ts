@@ -24,6 +24,7 @@ import { ATTR_INSTANT_MERGE, labelBehind, pillPlace, rememberStatusHint, removeS
 import { fetchReviewers, REVIEW_BY_HASH, REVIEWS_HASH, reviewLink, standingReviewers, tallyOf, tallyWords } from './review-tally';
 import { ICON_ALERT_FILL_12, ICON_CHECK, ICON_CHECK_SEND, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CODE_REVIEW, ICON_CODE_REVIEW_SEND, ICON_COMMENT, ICON_COMMENT_SEND, ICON_GIT_MERGE, ICON_GIT_MERGE_QUEUE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_SPINNER, ICON_TRASH, ICON_TRIANGLE_DOWN, ICON_X, ICON_X_SEND } from './ui/icons';
 import { pageFetch } from './page-fetch';
+import { isGhost, leaveGhost } from './ui/bar-motion';
 import { reportError } from '../lib/error-capture';
 import { isOverviewPage } from './review/overview-page';
 import { overviewMergeOf, removeOverviewMerge, syncOverviewMerge } from './overview-merge';
@@ -657,6 +658,9 @@ function place(state: Mounted): void {
   const sticky = stickyPlace(state);
   // Beside a node React has yet to hydrate, the group would make React throw the page's markup away (`react-hydration.ts`).
   if (!reactSettled(sticky?.near ?? state.anchor)) return;
+  // Leaving a sticky header that stays in view slides out of it; the compact header itself hides as the group leaves.
+  const was = state.root.getAttribute(ATTR_PLACE);
+  if (was !== null && was !== 'header' && was !== (sticky?.place ?? null)) leaveGhost(state.root, 'down');
   if (sticky !== null) {
     if (!sticky.placed(state.root)) sticky.put(state.root);
   } else if (state.anchor !== null && state.anchor.previousElementSibling !== state.root) {
@@ -664,7 +668,7 @@ function place(state: Mounted): void {
   }
   // A group left by another copy of Geld (one whose extension was reloaded or updated under the page, or a second
   // build installed beside this one) stood beside this one as a second 💬; only one copy is ever live (`geld:takeover`).
-  for (const stray of document.querySelectorAll(`.${GROUP_CLASS}`)) if (stray !== state.root) stray.remove();
+  for (const stray of document.querySelectorAll(`.${GROUP_CLASS}`)) if (stray !== state.root && !isGhost(stray)) stray.remove();
   const place = sticky?.place ?? null;
   if (state.root.getAttribute(ATTR_PLACE) !== place) {
     if (place === null) state.root.removeAttribute(ATTR_PLACE);

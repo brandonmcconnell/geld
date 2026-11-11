@@ -234,6 +234,21 @@ describe('syncCountsStandIn on the new page', () => {
     expect(counts?.parentElement).toBe(tabs);
   });
 
+  it('leaves a ghost in the bar to slide out as it goes back to the tab row, and none on the way in', () => {
+    vi.stubGlobal('CSSStartingStyleRule', class {});
+    const { tabs, bar } = overview(REAL_COUNTS);
+    syncCountsStandIn(ZERO);
+    stick(true);
+    syncCountsStandIn(ZERO);
+    expect(tabs.querySelector('[data-geld-ghost]')).toBeNull();
+    stick(false);
+    syncCountsStandIn(ZERO);
+    expect(bar.firstElementChild?.getAttribute('data-geld-ghost')).toBe('down');
+    expect(document.querySelectorAll(`[${ATTR_COUNTS_STAND_IN}]`)).toHaveLength(1);
+    expect(tabs.querySelector(`[${ATTR_COUNTS_STAND_IN}]`)).not.toBeNull();
+    vi.unstubAllGlobals();
+  });
+
   it('stands first in the bar when the page loads scrolled past the tabs', () => {
     const { bar } = overview(REAL_COUNTS, true);
     expect(syncCountsStandIn(ZERO)).toBe(true);

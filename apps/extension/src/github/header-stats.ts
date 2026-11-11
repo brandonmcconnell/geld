@@ -9,6 +9,7 @@ import { createElement, OWN_UI_ATTRIBUTE, originalText, parseLineStats, queryAll
 import { newHeaderBranchGroup, persistentBarActions, persistentBarStuck } from './persistent-bar';
 import { headerReactSettled, reactSettled, subtreeSettled } from './react-hydration';
 import { tabCountsOn } from './tab-counts';
+import { leaveGhost } from './ui/bar-motion';
 import { attachBreakdownTooltip, detachBreakdownTooltip } from './ui/tooltip';
 
 /** A "+93 −53" pair somewhere in the page header, plus the element to hang a tooltip on. */
@@ -342,7 +343,10 @@ function syncStandInTabs(existing: HTMLElement | null, want: StandIn | null): bo
   }
   const key = want === SKELETON ? SKELETON : standInKey(want);
   if (existing !== null && existing.getAttribute(ATTR_COUNTS_STAND_IN) === key) {
-    if (existing.parentElement !== home) placeStandIn(home, existing);
+    if (existing.parentElement !== home) {
+      if (home !== bar && existing.parentElement === persistentBarActions()) leaveGhost(existing, 'down');
+      placeStandIn(home, existing);
+    }
     return false;
   }
   // Geld's own skeleton, not one in GitHub's classes: it is the shape the stylesheet holds the place with before then.

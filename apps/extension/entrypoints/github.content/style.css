@@ -877,6 +877,130 @@ html[data-geld-tab-counts] [data-component='PageHeader']:has([class*='branchGrou
 }
 
 /*
+ * What a sticky header gains as it takes over from the page header slides in: GitHub's tab switcher, its divider and the
+ * state label (or Geld's pill) from the left, the review group and the counts up from under the bar, as the tab row they
+ * came from scrolled up under it. What it loses is gone at once, so a ghost of it slides back out (`ui/bar-motion.ts`),
+ * by a `to`-only animation that starts from wherever the ghost stands.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  :is(
+      [data-testid='diff-comparison-viewer-sticky-header-bar'] [class*='miniHeaderInner'] > :is([data-testid='mini-header-tab-switcher-trigger'], [class*='navigationDivider']),
+      [data-testid='diff-comparison-viewer-sticky-header-bar'] [class*='miniHeaderInner'] > [class*='metadata'] > :is([data-component='StateLabel'], button:has(> [data-component='StateLabel']), button[data-geld-status-pill]),
+      .geld-quick-review[data-geld-place],
+      [class*='miniHeaderInner'] > [class*='actions'] > [data-geld-counts-stand-in]
+    ):not([data-geld-ghost]) {
+    transition:
+      translate 200ms cubic-bezier(0.2, 0, 0, 1),
+      opacity 200ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  @starting-style {
+    :is(
+        [data-testid='diff-comparison-viewer-sticky-header-bar'] [class*='miniHeaderInner'] > :is([data-testid='mini-header-tab-switcher-trigger'], [class*='navigationDivider']),
+        [data-testid='diff-comparison-viewer-sticky-header-bar'] [class*='miniHeaderInner'] > [class*='metadata'] > :is([data-component='StateLabel'], button:has(> [data-component='StateLabel']), button[data-geld-status-pill])
+      ):not([data-geld-ghost]) {
+      translate: -12px 0;
+      opacity: 0;
+    }
+
+    :is(.geld-quick-review[data-geld-place], [class*='miniHeaderInner'] > [class*='actions'] > [data-geld-counts-stand-in]):not([data-geld-ghost]) {
+      translate: 0 10px;
+      opacity: 0;
+    }
+  }
+
+  [data-geld-ghost] {
+    align-self: center;
+    pointer-events: none;
+    animation-duration: 160ms;
+    animation-timing-function: cubic-bezier(0.3, 0, 1, 1);
+    animation-fill-mode: both;
+  }
+
+  [data-geld-ghost='left'] {
+    animation-name: geld-bar-leave-left;
+  }
+
+  [data-geld-ghost='down'] {
+    animation-name: geld-bar-leave-down;
+  }
+
+  /* The group's ghost keeps its 8px from the counts' ghost beside it, whose stand-in mark it no longer carries. */
+  .geld-quick-review[data-geld-ghost]:has(+ [data-geld-ghost]) {
+    margin-right: 8px;
+  }
+
+  /*
+   * About 130px arrive on the left at once, which pushed the title over in one jump: where `auto` widths interpolate,
+   * the newcomers grow from nothing and the ghosts shrink to it, so the title glides. They are clipped while narrower
+   * than their content and never shrink otherwise, as GitHub has them (the switcher's `min-width: max-content`).
+   */
+  @supports (interpolate-size: allow-keywords) {
+    :is(
+        [data-testid='diff-comparison-viewer-sticky-header-bar'] [class*='miniHeaderInner'] > :is([data-testid='mini-header-tab-switcher-trigger'], [class*='navigationDivider']),
+        [data-testid='diff-comparison-viewer-sticky-header-bar'] [class*='miniHeaderInner'] > [class*='metadata'] > :is([data-component='StateLabel'], button:has(> [data-component='StateLabel']), button[data-geld-status-pill]),
+        [data-geld-ghost='left']
+      ) {
+      interpolate-size: allow-keywords;
+      flex-shrink: 0;
+      min-width: 0;
+      overflow-x: clip;
+    }
+
+    :is(
+        [data-testid='diff-comparison-viewer-sticky-header-bar'] [class*='miniHeaderInner'] > :is([data-testid='mini-header-tab-switcher-trigger'], [class*='navigationDivider']),
+        [data-testid='diff-comparison-viewer-sticky-header-bar'] [class*='miniHeaderInner'] > [class*='metadata'] > :is([data-component='StateLabel'], button:has(> [data-component='StateLabel']), button[data-geld-status-pill])
+      ):not([data-geld-ghost]) {
+      transition:
+        translate 200ms cubic-bezier(0.2, 0, 0, 1),
+        opacity 200ms cubic-bezier(0.2, 0, 0, 1),
+        width 200ms cubic-bezier(0.2, 0, 0, 1),
+        padding-inline 200ms cubic-bezier(0.2, 0, 0, 1),
+        margin-inline 200ms cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    @starting-style {
+      :is(
+          [data-testid='diff-comparison-viewer-sticky-header-bar'] [class*='miniHeaderInner'] > :is([data-testid='mini-header-tab-switcher-trigger'], [class*='navigationDivider']),
+          [data-testid='diff-comparison-viewer-sticky-header-bar'] [class*='miniHeaderInner'] > [class*='metadata'] > :is([data-component='StateLabel'], button:has(> [data-component='StateLabel']), button[data-geld-status-pill])
+        ):not([data-geld-ghost]) {
+        width: 0;
+        padding-inline: 0;
+        margin-inline: 0;
+      }
+    }
+
+    [data-geld-ghost='left'] {
+      animation-name: geld-bar-collapse-left;
+    }
+  }
+}
+
+@keyframes geld-bar-leave-left {
+  to {
+    translate: -12px 0;
+    opacity: 0;
+  }
+}
+
+@keyframes geld-bar-leave-down {
+  to {
+    translate: 0 10px;
+    opacity: 0;
+  }
+}
+
+@keyframes geld-bar-collapse-left {
+  to {
+    translate: -12px 0;
+    opacity: 0;
+    width: 0;
+    padding-inline: 0;
+    margin-inline: 0;
+  }
+}
+
+/*
  * [✓ | ✗ | 💬]: a Primer button group dressed as the Files changed toolbar's own default buttons (Merge status, the
  * settings gear): their surface, border and resting shadow, from the same tokens.
  */

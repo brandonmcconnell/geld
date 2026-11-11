@@ -29,6 +29,7 @@ import { RepoConfigSource, validConfigs } from './repo-config-source';
 import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, queryAll, restoreManagedText, svgFromString, writeAttribute } from './dom';
 import { conversationHeadSha, detectHeadSha, documentNavigatedSinceLoad, fetchHeadSha, forgetAskedHead, rememberAskedHead, shaFromCommitUrl, watchFilesRefresh } from './head-sha';
 import { applyQuickReview, quickReviewStandBusy, reassertStatusPills, rememberReviewGroup, removeQuickReview } from './quick-review';
+import { ghostBarDepartures } from './ui/bar-motion';
 import type { HeaderStatGroup } from './header-stats';
 import { applyHeaderStats, branchGroupTotals, findHeaderStatGroups, holdsHeaderStats, isCountsStandIn, isSrOnlyText, removeCountsStandIn, restoreHeaderStats, syncCountsStandIn } from './header-stats';
 import { rememberTabCounts, setTabCounts } from './tab-counts';
@@ -537,6 +538,8 @@ export class GeldController {
     // Likewise before paint: chips whose row GitHub just re-rendered come
     // straight back from the in-memory diff states, so no frame lacks them.
     if (chipRemoved(records)) this.applyListChips();
+    // GitHub's parts its bar just dropped (the tabs back in view) slide out rather than vanish.
+    if (this.mayDressPage()) ghostBarDepartures(records);
     // The status pill too: a header GitHub (re)rendered shows Geld's pill in its first frame.
     if (this.settings.quickReview && this.mayDressPage()) reassertStatusPills();
     // The description GitHub just rendered (a switch back to the conversation tab) is folded in its first frame.
