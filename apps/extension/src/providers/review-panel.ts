@@ -38,6 +38,16 @@ export interface ProviderReviewPanelEvent {
   readonly lowSignal?: boolean;
 }
 
+/** An environment this review deployed to, as the host reports it. */
+export interface ProviderDeployment {
+  readonly id: string;
+  readonly name: string;
+  readonly state: 'active' | 'deploying' | 'failed' | 'waiting' | 'unknown';
+  readonly environmentUrl: string;
+  readonly siteUrl?: string;
+  readonly deployedAt?: string;
+}
+
 export interface ProviderReviewAuthorPresentation {
   readonly authorId: string;
   readonly displayName: string;
@@ -93,6 +103,7 @@ export interface ProviderReviewPanelOptions {
   readonly approvalsRequired?: number | null;
   readonly approvalsLeft?: number | null;
   readonly requirements?: readonly ProviderReviewRequirement[] | null;
+  readonly deployments?: readonly ProviderDeployment[];
   readonly onOpenSource?: (url: string, anchor: string, event: MouseEvent) => void;
   readonly copyText?: (text: string) => void | Promise<void>;
   readonly transformItems?: (items: readonly ReviewItem[]) => readonly ReviewItem[];
@@ -172,6 +183,7 @@ const GROUPS: readonly { readonly id: string; readonly label: string; readonly s
   { id: 'done', label: 'Reviewed on this device', statuses: ['done-manual'], open: false },
 ];
 
+const DEPLOYMENT_STATE: Readonly<Record<ProviderDeployment['state'], string>> = { active: 'Deployed', deploying: 'Deploying', failed: 'Failed', waiting: 'Waiting', unknown: 'Unknown' };
 const REQUIREMENT_STATE: Readonly<Record<ProviderReviewRequirement['state'], string>> = { passed: 'Passed', failed: 'Failed', pending: 'Pending', unknown: 'Unknown' };
 
 function safeUrl(value: string, origin?: string): string | null {
@@ -325,7 +337,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   function syncStatusRows(changed: ReadonlySet<string>): void {
     const restoreAnchor = readingAnchor();
     statusOnly = true;
-    const rows: readonly [string, () => HTMLElement | null][] = [['reviewers', reviewStandings], ['bots', botsSection], ['reports', reportsSection], ['checks', checksSection]];
+    const rows: readonly [string, () => HTMLElement | null][] = [['reviewers', reviewStandings], ['bots', botsSection], ['reports', reportsSection], ['checks', checksSection], ['deployments', deploymentsSection]];
     for (const [key, renderRow] of rows) {
       if (!changed.has(key)) continue;
       const next = renderRow();
@@ -336,6 +348,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       if (previous !== null) previous.replaceWith(next);
       else if (key === 'bots') panel.querySelector(':scope > [data-geld-review-key="reviewers"]')?.after(next);
       else if (key === 'reports') panel.querySelector(':scope > [data-geld-review-key="checks"]')?.before(next);
+      else if (key === 'deployments') (panel.querySelector(':scope > [data-geld-review-key="previews"]') ?? panel.querySelector(':scope > [data-geld-review-key="checks"]'))?.after(next);
     }
     statusOnly = false;
     syncUpdating();syncTimes();refreshComments();restoreAnchor?.();
@@ -1372,6 +1385,42 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     return section;
   }
 
+  // GitHub's Deployments row: one line per environment, its state, its site and its page on the host.
+  function deploymentsSection(): HTMLElement | null {
+    const deployments = options.deployments ?? [];
+    if (deployments.length === 0) return null;
+    const section = disclosure('deployments', 'Deployments', false);
+    const summary = section.querySelector('[data-geld-review-toggle]');
+    const preview = node('span', '', 'geld-provider-review__row-preview');
+    for (const deployment of deployments) {
+      const chip = node('span', '', 'geld-provider-review__status-chip');
+      chip.dataset.geldDeploymentState = deployment.state;
+      chip.title = `${deployment.name}: ${DEPLOYMENT_STATE[deployment.state]}`;
+      const glyph = deployment.state === 'active' ? 'check' : deployment.state === 'failed' ? 'changes' : deployment.state === 'deploying' ? 'activity' : deployment.state === 'waiting' ? 'dot' : null;
+      chip.append(node('span', deployment.name));
+      if (glyph !== null) chip.append(digestIcon(glyph, doc));
+      preview.append(chip);
+    }
+    summary?.setAttribute('aria-label', `Deployments · ${deployments.map(deployment => `${deployment.name} ${DEPLOYMENT_STATE[deployment.state].toLowerCase()}`).join(' · ')}`);
+    summary?.append(preview);
+    const list = node('ul', '', 'geld-provider-review__checks');
+    for (const deployment of deployments) {
+      const row = node('li', '', 'geld-provider-review__check');
+      row.dataset.geldDeployment = deployment.id;
+      row.dataset.state = deployment.state;
+      row.append(node('strong', deployment.name));
+      const status = node('span', DEPLOYMENT_STATE[deployment.state], 'geld-provider-review__check-part');
+      status.dataset.geldCheckState = deployment.state === 'active' ? 'passed' : deployment.state === 'failed' ? 'failed' : 'pending';
+      row.append(status);
+      if (deployment.siteUrl !== undefined) row.append(link('Open site', deployment.siteUrl, '', true));
+      row.append(link('Environment', deployment.environmentUrl, '', true));
+      if (deployment.deployedAt !== undefined) { const at = timestamp(deployment.deployedAt);if (at !== null) row.append(at); }
+      list.append(row);
+    }
+    section.append(list);
+    return section;
+  }
+
   function publicationSection(): HTMLElement | null {
     const publication = options.publication;
     if (publication === undefined || publication.result.status === 'none') return null;
@@ -1547,7 +1596,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const common = [route.href, (options.agentNotes ?? []).map(note => [note.id, note.signature]), options.comments, options.events, options.references, options.complete, options.unavailable, options.suggestedFixes, options.reviewGrouping, options.hasViewChoice, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, requestSignature, commentSignatures, nativeSignatures, eventSignatures, actionSignatures, derived, options.onOpenSettings !== undefined, options.onGrouping !== undefined, options.renderComment !== undefined];
     const conversationData = (value: ProviderReviewInput | undefined): unknown => value === undefined ? null : [value.subject, value.threads, value.bots, value.complete, value.closed];
     const conversationSignature = JSON.stringify([common, conversationData(input), conversationData(options.sourceInput)]);
-    const signature = JSON.stringify([common, input, options.sourceInput, options.reviewerControls?.available, options.approvalsRequired, options.approvalsLeft, options.requirements]);
+    const signature = JSON.stringify([common, input, options.sourceInput, options.reviewerControls?.available, options.approvalsRequired, options.approvalsLeft, options.requirements, options.deployments]);
     if (signature === lastSignature) {
       syncUpdating();syncTimes();refreshComments();releaseHiddenFocus();
       return;
@@ -1558,6 +1607,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       ['reviewers', JSON.stringify([input.reviewers, options.reviewerControls?.available, options.approvalsRequired, options.approvalsLeft])],
       ['reports', JSON.stringify(input.checks ?? null)],
       ['checks', JSON.stringify([input.checks, input.checksCoverage, options.requirements ?? null])],
+      ['deployments', JSON.stringify(options.deployments ?? null)],
     ]);
     const changedStatus = new Set([...statusSignatures].filter(([key, value]) => lastStatusSignatures.get(key) !== value).map(([key]) => key));
     lastStatusSignatures = statusSignatures;
@@ -1748,6 +1798,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     children.push(checksSection());
     const previews = previewsSection();
     if (previews !== null) children.push(previews);
+    const deployments = deploymentsSection();
+    if (deployments !== null) children.push(deployments);
     const comments = new Map(input.threads.flatMap((thread) => thread.comments.map((comment) => [comment.anchor, comment] as const)));
     const ordinary = (options.comments ?? []).filter((comment) => !comments.has(comment.anchor));
     if (items.length === 0) children.push(node('p', panel.dataset.state === 'partial' ? 'No review threads in the available data.' : 'No review threads.'));

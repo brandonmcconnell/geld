@@ -333,6 +333,7 @@ export class ProviderConversation {
         unavailable: [...snapshot.unavailable, ...(this.error === '' ? [] : [{ area: 'Refresh', reason: this.error }]), ...(this.publication.error === '' ? [] : [{ area: 'Published summary', reason: this.publication.error }])],
         approvalsRequired: snapshot.approvalsRequired, approvalsLeft: snapshot.approvalsLeft,
         ...(snapshot.requirements === undefined ? {} : { requirements: snapshot.requirements }),
+        ...(snapshot.deployments === undefined ? {} : { deployments: snapshot.deployments }),
         transformItems: (items: Parameters<ProviderAiTriage['apply']>[0]) => this.ai.apply(hidden ? items : publication?.items ?? items).map((item) => hidden ? { ...item, id: originalId(item.id) } : item),
         ai: {
           enabled: settings.aiEnabled,

@@ -7,6 +7,7 @@ import type { GitLabReviewSnapshot } from './review';
 
 vi.mock('./review', async (importOriginal) => ({ ...await importOriginal<typeof import('./review')>(), fetchGitLabReview: vi.fn() }));
 vi.mock('./config', () => ({ fetchGitLabConfig: vi.fn() }));
+vi.mock('./deployments', () => ({ fetchGitLabDeployments: vi.fn(async () => undefined) }));
 
 const REVIEW = 'https://gitlab.com/group/repo/-/merge_requests/7';
 const HEAD = 'a'.repeat(40);

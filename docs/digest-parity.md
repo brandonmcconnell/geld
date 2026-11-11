@@ -108,7 +108,7 @@ Paths are under `apps/extension/src/` unless they start with `packages/`.
 | Rows only when they have something to say | partial: `review-panel.ts` `render()` | partial: same | — | — |
 | Order: Reviews, Review bots, Agent notes, Reports, CI, Previews, Deployments | partial: the same order with the merge checks inside Checks, Deployments missing | partial: same | — | — |
 | Merge checks / requirements | match: inside the Checks row, above CI (`mergeChecksList`, `gitlab/merge-checks.ts`) | match: same (`bitbucket/requirements.ts`) | DOM: merge widget rows / sidebar | should be a slot, today a copy |
-| Deployments row | missing | missing | GL: `/deployments`, environments API · BB: `/deployments` (Pipelines) | data |
+| Deployments row | match: `deploymentsSection` from the merge request's `ci_environments_status` (`gitlab/deployments.ts`) | missing | GL: the merge widget's `ci_environments_status`, answered signed out · BB: `/deployments` (Pipelines) | data |
 
 GitHub has no Merge checks row because its merge box sits under the digest and the status pill carries the merge choice.
 Decision needed: keep Merge checks as a provider row, or fold it into CI and the status pill as GitHub does (see §7).

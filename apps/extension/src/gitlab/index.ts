@@ -9,6 +9,7 @@ import { gitLabListRows } from './list-surfaces';
 import { describeGitLabPage } from './page';
 import { fetchGitLabDiff } from './source';
 import { fetchGitLabStandaloneDiff } from './standalone-source';
+import { fetchGitLabDeployments } from './deployments';
 import { fetchGitLabReview } from './review';
 import type { GitLabNativeThreadCapabilities } from './review';
 import { gitLabActionVisit, readGitLabActions } from './actions';
@@ -52,7 +53,7 @@ export const gitlabAdapter: ProviderAdapter = {
   statusAction: readGitLabStatus,
   fetchReview: async (page, signal, doc) => {
     const actionVisit = gitLabActionVisit(doc);
-    const snapshot = await fetchGitLabReview(page, signal, doc);
+    const [snapshot, deployments] = await Promise.all([fetchGitLabReview(page, signal, doc), fetchGitLabDeployments(page, signal)]);
     const authorPresentation = createGitLabAuthorPresentationReader(snapshot.input, snapshot.comments, doc);
     const permissionsForNote = new Map<string, GitLabNativeThreadCapabilities>();
     for (const thread of snapshot.threadCapabilities.values()) {
@@ -60,6 +61,7 @@ export const gitlabAdapter: ProviderAdapter = {
     }
     return {
       ...snapshot,
+      ...(deployments === undefined ? {} : { deployments }),
       get requirements() { return readGitLabMergeChecks(doc, snapshot.input.subject); },
       renderEvent: (event, host) => renderGitLabComment({ ...event, anchor: `note_${event.id}` }, host, doc, undefined, undefined, true),
       botRequests: (input, comments, current) => readGitLabBotRequests(doc, input, comments, snapshot.capabilities.signedIn, current),

@@ -3607,6 +3607,8 @@ Rendering joins completed scene receipts from the same public pull request and r
 GitLab and Bitbucket use Geld's compact digest structure with the provider's own font, surface, border and interaction tokens.
 The toolbar contains a conditional resolved-thread meter, Flow, grouping, View, copy and settings controls rather than a separate metric dashboard.
 Reviewer summaries stay inline with the Reviews row while conversation details remain inside its disclosure, and an unknown pending-request state is not presented as a review verdict.
+GitLab's Deployments row reads the merge request widget's own `…/merge_requests/N/ci_environments_status` (`gitlab/deployments.ts`), which answers signed out: one line per environment with its state, its review app (https only) and its environment page on the host.
+It is read beside the review and never as part of it, so a failed read leaves the row out and the review whole, with no unavailable area.
 GitLab and Bitbucket show one Checks row: its preview leads with the merge checks ("3/4 merge checks", in the worst rule's state) and then the CI tally, and it opens to Merge checks above CI.
 Long rule names stay inside the row, never in its label.
 The inline combined view uses the Geld and provider marks with a plus sign and an accessible full label, while its View menu option also spells out Digest and Timeline.
