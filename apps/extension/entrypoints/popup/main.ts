@@ -1,7 +1,7 @@
 import { browser } from 'wxt/browser';
 import { allCategories } from '@geld/core';
 import { formatCount, pluralize } from '@geld/core';
-import type { EnsureContentMessage, GetTabStateMessage, SetTabDisabledMessage, TabState } from '../../src/lib/messages';
+import type { EnsureContentMessage, GetTabStateMessage, TabState } from '../../src/lib/messages';
 import { isEnsureContentResponse, isTabState } from '../../src/lib/messages';
 import { compileRepoRules, decideRepo, ownerProbe, repoFromPathname, withRepoRule } from '@geld/core';
 import { allHosts, isAutoViewedForAll, isCategoryEnabled, isCategoryInPicker, plainText, sectionsFor, withAutoViewedForAll } from '@geld/core';
@@ -526,28 +526,10 @@ async function main(): Promise<void> {
   }
   renderRepo();
 
-  const tabSwitch = switchRow({
-    id: 'tab-enabled',
-    label: 'Geld in this tab',
-    description: 'Turn Geld off or on in this tab only. Other tabs are not affected. The choice lasts until the tab is closed.',
-    checked: true,
-    onChange: async (value) => {
-      if (tab === null) return;
-      const message: SetTabDisabledMessage = { type: 'geld:set-tab-disabled', disabled: !value };
-      await browser.tabs.sendMessage(tab.id, message).catch(() => undefined);
-      setTimeout(() => void refreshContext(), 250);
-    },
-  });
-  tabSwitch.row.classList.add('popup__tab-switch');
-  tabSwitch.row.hidden = true;
-  requireElement('context', HTMLElement).insertBefore(tabSwitch.row, actions);
-
   async function refreshContext(): Promise<void> {
     if (tab === null) return;
     const state = await requestTabState(tab.id);
     const tabOff = state?.tabDisabled === true;
-    tabSwitch.row.hidden = !settings.enabled || state === null;
-    tabSwitch.set(!tabOff);
     repo = state?.repo ?? repo;
     renderRepo();
 

@@ -170,10 +170,6 @@ body {
   color: var(--rule);
 }
 
-.popup__tab-switch {
-  margin-top: 8px;
-}
-
 /* Repository config ----------------------------------------------------------- */
 
 .popup__repo-config .geld-alert {
