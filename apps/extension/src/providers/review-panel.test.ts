@@ -1406,3 +1406,20 @@ it('refreshes formatted system activity when its native body hydrates without ch
   expect(panel.element.querySelector('[data-geld-event="9"]')?.textContent).toContain('requested review from Reviewer');
   expect(panel.element.querySelector('[data-geld-event="9"]')?.textContent).not.toContain('<a>');
 });
+
+it('shows a Deployments row with each environment, its state, site and host page', () => {
+  const deployments = [
+    { id: '1', name: 'review/mr-7', state: 'active' as const, environmentUrl: 'https://gitlab.com/group/repo/-/environments/1', siteUrl: 'https://review-7.example.dev/', deployedAt: '2026-11-10T17:58:31.506Z' },
+    { id: '2', name: 'staging', state: 'waiting' as const, environmentUrl: 'https://gitlab.com/group/repo/-/environments/2' },
+  ];
+  const panel = renderProviderReviewPanel(host(), input(), { deployments });
+  const row = panel.element.querySelector('[data-geld-review-key="deployments"]');
+  expect(row?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('Deployments · review/mr-7 deployed · staging waiting');
+  expect([...row?.querySelectorAll('[data-geld-deployment-state]') ?? []].map(chip => chip.getAttribute('data-geld-deployment-state'))).toEqual(['active', 'waiting']);
+  const links = [...row?.querySelectorAll<HTMLAnchorElement>('[data-geld-deployment="1"] a') ?? []].map(link => [link.textContent, link.href]);
+  expect(links).toEqual([['Open site', 'https://review-7.example.dev/'], ['Environment', 'https://gitlab.com/group/repo/-/environments/1']]);
+  expect(panel.element.querySelector('[data-geld-deployment="2"]')?.textContent).not.toContain('Open site');
+  panel.update(input(), {});
+  expect(panel.element.querySelector('[data-geld-review-key="deployments"]')).toBeNull();
+});
+

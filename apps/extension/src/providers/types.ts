@@ -1,7 +1,7 @@
 import type { ProviderCommentRenderContext } from './comment-render';
 import type { GeldSettings, FileStats, RepositoryIdentity } from '@geld/core';
 import type { ProviderReviewComment, ProviderReviewInput, ProviderSourceCoverage } from '@geld/review';
-import type { ProviderReviewAuthorPresentation, ProviderReviewPanelEvent, ProviderReviewRequirement, ProviderReviewSourceAction } from './review-panel';
+import type { ProviderDeployment, ProviderReviewAuthorPresentation, ProviderReviewPanelEvent, ProviderReviewRequirement, ProviderReviewSourceAction } from './review-panel';
 import type { ProviderConfigFetcher } from './repo-config';
 import type { ProviderReviewReference } from './references';
 import type { ProviderBotRequest } from './bot-request';
@@ -205,6 +205,7 @@ export interface ProviderReviewSnapshot {
   readonly approvalsRequired: number | null;
   readonly approvalsLeft: number | null;
   readonly requirements?: readonly ProviderReviewRequirement[] | null;
+  readonly deployments?: readonly ProviderDeployment[];
   readonly actions: readonly ProviderReviewAction[];
 }
 
