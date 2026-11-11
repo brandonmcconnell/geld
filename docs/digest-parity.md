@@ -117,7 +117,7 @@ Decision needed: keep Merge checks as a provider row, or fold it into CI and the
 
 | GitHub feature | GitLab | Bitbucket | Source | Slot |
 | --- | --- | --- | --- | --- |
-| Pill per bot with traffic light (`botHealth`) | partial: `botsSection` chip with `data-geld-bot-health`, check only when good, no light glyphs | partial: same | comments, checks | data |
+| Pill per bot with traffic light (`botHealth`) | match: `botsSection` chip lights a check, an amber dot, a red exclamation, the refusal triangle or a red cross | match: same | comments, checks | data |
 | Recognised without setup (registry, `/apps/` links) | partial: needs a bound account in settings (`providerReviewWithTrustedAccounts`) | partial: same, and `bots: []` from the fetch | user `bot`/`user_type` (GL) · none reliable (BB) | — |
 | Opened: one line per bot (`botLine`) | partial: a disclosure per bot with health, verdict, score, reason, "View review" | partial: same | — | — |
 | Line opens to latest summary as a one-bubble chat | partial: summary in a hover card (`summary-preview.ts`), not in the row | partial: same | sanitised copy | should be a slot (the note node) |

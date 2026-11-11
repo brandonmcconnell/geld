@@ -1294,6 +1294,18 @@ it('distinguishes severe open bot findings from a completed resolved review', ()
   expect(panel.element.querySelector('[data-geld-review-bot]')?.getAttribute('data-geld-bot-health')).toBe('good');
 });
 
+it('lights each bot pill as GitHub does: check, amber dot, red exclamation', () => {
+  const light = (body: string, resolved = false): string | null => {
+    const finding = { ...comment('1', body), author: { id: 'native-bot', login: 'project_bot', automated: true } };
+    const panel = renderProviderReviewPanel(host(), { ...input([thread('a', { comments: [finding], resolved })]), complete: true, bots: [{ id: 'coderabbit', authorId: 'native-bot' }] });
+    const chip = panel.element.querySelector('[data-geld-review-key="bots"] .geld-provider-review__status-chip');
+    return [...chip?.querySelectorAll('svg') ?? []].at(-1)?.innerHTML ?? null;
+  };
+  expect(light('**High Severity**\nValidate the request.')).toContain('M12 7v6');
+  expect(light('Consider a guard here.')).toContain('r="4"');
+  expect(light('**High Severity**\nValidate the request.', true)).toContain('m7 12 3 3 7-7');
+});
+
 it('opens the shared settings UI and explains a failed request without acting after teardown', async () => {
   const open = vi.fn(async () => { throw new Error('No popup'); });
   const panel = renderProviderReviewPanel(host(), input(), { onOpenSettings: open });
