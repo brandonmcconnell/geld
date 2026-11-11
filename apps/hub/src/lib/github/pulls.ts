@@ -1,4 +1,6 @@
+import { createMatcher, DEFAULT_SETTINGS } from "@geld/core";
 import { createServerFn } from "@tanstack/react-start";
+import { type PullSignals, pullSignalsFrom } from "../geld/pull-signals";
 import { RequestError } from "octokit";
 import type {
 	GitHubActor,
@@ -2009,6 +2011,41 @@ export const getPullFileSummaries = createServerFn({ method: "GET" })
 		}
 
 		return getPullFileSummariesResult(context, data);
+	});
+
+// Enough for any pull request someone reads line by line: 4 batches of 500.
+const PULL_SIGNALS_BATCHES = 4;
+
+/**
+ * What a list row shows of a pull request beyond GitHub's totals: how its
+ * changed lines split between what is left to review and what Geld's
+ * categories set aside. Only paths and counts are read, and nothing is kept.
+ */
+export const getPullSignals = createServerFn({ method: "GET" })
+	.validator(identityValidator<PullFileSummariesPageInput>)
+	.handler(async ({ data }): Promise<PullSignals | null> => {
+		const context = await getGitHubContextForRepository(data);
+		if (!context) {
+			return null;
+		}
+
+		const files: PullFileSummary[] = [];
+		let cursor: string | null = null;
+		for (let batch = 0; batch < PULL_SIGNALS_BATCHES; batch++) {
+			const page = await getPullFileSummariesResult(context, {
+				...data,
+				cursor,
+			});
+			files.push(...page.items);
+			cursor = page.nextCursor;
+			if (cursor === null) break;
+		}
+
+		return pullSignalsFrom(
+			files,
+			createMatcher(DEFAULT_SETTINGS, `${data.owner}/${data.repo}`),
+			cursor !== null,
+		);
 	});
 
 export const getPullFiles = createServerFn({ method: "GET" })

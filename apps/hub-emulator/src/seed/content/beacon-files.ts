@@ -689,3 +689,23 @@ export class WebTransportTransport implements Transport {
 	}
 }
 `;
+
+export const beaconSseHeadersTest = `import { describe, expect, it } from "vitest";
+import { parseFrames } from "../transport/sse";
+
+describe("parseFrames", () => {
+	it("joins multi-line data fields", () => {
+		const frames = parseFrames("data: one\\ndata: two\\n\\n");
+		expect(frames).toEqual([{ event: "message", data: "one\\ntwo" }]);
+	});
+
+	it("keeps a partial frame for the next chunk", () => {
+		expect(parseFrames("data: half")).toEqual([]);
+	});
+
+	it("reads the event name", () => {
+		const frames = parseFrames("event: ping\\ndata: {}\\n\\n");
+		expect(frames[0]?.event).toBe("ping");
+	});
+});
+`;

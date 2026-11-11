@@ -24,6 +24,7 @@
 	"dependencies": {
 		"@awesome.me/kit-2e791c163e": "1.0.4",
 		"@geld/hub-icons": "workspace:*",
+		"@geld/core": "workspace:*",
 		"@geld/domain": "workspace:*",
 		"@geld/github": "workspace:*",
 		"@geld/hub-ui": "workspace:*",
