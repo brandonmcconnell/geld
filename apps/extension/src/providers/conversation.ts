@@ -219,6 +219,7 @@ export class ProviderConversation {
       this.status?.remove(); this.status = null;
       const references = (this.adapter.readReferences?.(page, document, people.events, [...input.threads.flatMap((thread) => thread.comments), ...comments]) ?? []).filter((reference) => (reference.source.anchor === null || !people.hiddenAnchors.has(reference.source.anchor)) && (reference.source.eventId === undefined || !people.hiddenEvents.has(reference.source.eventId)) && (reference.source.author === undefined || !hiddenIds.has(reference.source.author.id)));
       const reviewerControls = snapshot.reviewerControls;
+      const viewerId = this.adapter.viewerAuthorId?.(document);
       const options = {
         agentNotes,
         onRevealAgentNote: (note: (typeof agentNotes)[number]): void => {
@@ -343,6 +344,7 @@ export class ProviderConversation {
         },
         suggestedFixes: settings.suggestedFixes,
         reviewGrouping: settings.reviewGrouping,
+        ...(viewerId === null || viewerId === undefined ? {} : { viewerId }),
         ...(!this.reviewedReady ? {} : { localReviewed: {
           ids: this.reviewed,
           pending: this.reviewedPending,

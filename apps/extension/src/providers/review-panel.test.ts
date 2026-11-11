@@ -513,7 +513,7 @@ describe('provider conversation digest', () => {
     expect(panel.element.querySelector('[data-geld-review-group="open"]')).toBeNull();
     expect(panel.element.textContent).toContain('Automated account');
     expect(panel.element.textContent).not.toMatch(/Bugbot|Clean|Findings|running review/i);
-    expect([...panel.element.querySelectorAll('button')].filter((button) => !button.hasAttribute('data-geld-item-copy') && !button.hasAttribute('data-geld-review-toggle')).map((button) => button.getAttribute('aria-label'))).toEqual(['Copy digest']);
+    expect([...panel.element.querySelectorAll('button')].filter((button) => !button.hasAttribute('data-geld-item-copy') && !button.hasAttribute('data-geld-review-toggle') && button.closest('.geld-provider-review__row-menu') === null).map((button) => button.getAttribute('aria-label'))).toEqual(['Copy digest']);
   });
 
   it('distinguishes a known empty review, an unavailable source and malformed data', () => {
@@ -747,6 +747,71 @@ describe('provider conversation digest', () => {
     expect(panel.element.querySelector('[data-geld-review-bot="coderabbit"]')?.textContent).not.toContain('No findings');
   });
 
+  it('opens a thread as a chat headed by the bot summary from the same run', () => {
+    const author = { id: 'bot-1', login: 'greptile-bot', automated: true };
+    const first = { ...comment('1', 'Null check missing.'), author, createdAt: '2026-11-01T12:00:00Z' };
+    const reply = { ...comment('2', 'Fixed in the latest push.'), createdAt: '2026-11-01T12:30:00Z' };
+    const summary = { ...comment('9', 'Confidence Score: 4/5'), author, createdAt: '2026-11-01T12:01:00Z' };
+    const stale = { ...comment('8', 'An older run'), author, createdAt: '2026-10-30T12:00:00Z' };
+    const panel = renderProviderReviewPanel(host(), input([thread('a', { comments: [first, reply] })]), { comments: [stale, summary] });
+    const item = panel.element.querySelector('[data-geld-item]');
+    expect(item?.querySelectorAll('[data-geld-chat-message]')).toHaveLength(2);
+    expect(item?.querySelector('[data-geld-comment-row]')).toBeNull();
+    const pin = item?.querySelector<HTMLElement>('[data-geld-pin]');
+    expect(pin?.dataset.geldPin).toBe(summary.anchor);
+    const toggle = pin?.querySelector<HTMLButtonElement>('button');
+    expect(toggle?.textContent).toContain("greptile-bot's summary");
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    toggle?.click();
+    expect(pin?.querySelector<HTMLElement>(`[data-geld-pin-source="${summary.anchor}"]`)?.hidden).toBe(false);
+    expect(panel.element.querySelectorAll(`[data-geld-source="${summary.anchor}"]`).length).toBeLessThanOrEqual(1);
+    panel.destroy();
+  });
+
+  it('lays a thread out as GitHub\'s chat: the reader on the right, one author\'s run named once, and its actions behind the row\'s ⋯', () => {
+    const me = { id: '7', login: 'me' };
+    const first = { ...comment('1', 'First'), createdAt: '2026-11-01T12:00:00Z' };
+    const second = { ...comment('2', 'Second'), createdAt: '2026-11-01T12:01:00Z' };
+    const mine = { ...comment('3', 'Mine'), author: me, createdAt: '2026-11-01T12:05:00Z', updatedAt: '2026-11-01T13:00:00Z' };
+    const panel = renderProviderReviewPanel(host(), input([thread('a', { comments: [first, second, mine] })]), { viewerId: '7' });
+    const messages = [...panel.element.querySelectorAll<HTMLElement>('[data-geld-chat-message]')];
+    expect(messages.map((message) => message.dataset.geldRun)).toEqual(['first', 'last', 'only']);
+    expect(messages.map((message) => message.hasAttribute('data-geld-mine'))).toEqual([false, false, true]);
+    expect(messages[2]?.querySelector('[data-geld-edited]')).not.toBeNull();
+    expect(messages[2]?.querySelector('time')?.dateTime).toBe('2026-11-01T13:00:00.000Z');
+    expect(messages[0]?.querySelector('[data-geld-edited]')).toBeNull();
+    expect(messages[0]?.querySelector('.geld-provider-review__byline > a')).toBeNull();
+    expect(messages[0]?.querySelector('.geld-provider-review__msg-side a[data-geld-view]')?.textContent).toBe('Show in timeline');
+    const item = panel.element.querySelector<HTMLElement>('[data-geld-item]')!;
+    const menu = item.querySelector<HTMLDetailsElement>(':scope > [data-geld-row-menu]');
+    expect(menu?.querySelector('summary')?.getAttribute('aria-label')).toBe('More actions for this thread');
+    expect([...menu!.querySelectorAll('.geld-provider-review__menu-list button, .geld-provider-review__menu-list a')].map((entry) => entry.textContent)).toEqual(['Copy as Markdown', 'Show in timeline', 'Copy link']);
+    expect(item.querySelector(':scope > .geld-provider-review__section-content [data-geld-item-copy]')).toBeNull();
+    panel.destroy();
+  });
+
+  it('pins nothing on a person\'s thread or a bot thread with no summary in its run', () => {
+    const author = { id: 'bot-1', login: 'greptile-bot', automated: true };
+    const person = renderProviderReviewPanel(host(), input([thread('a', { comments: [comment('1')] })]), { comments: [comment('9')] });
+    expect(person.element.querySelector('[data-geld-pin]')).toBeNull();
+    const far = { ...comment('9', 'Summary'), author, createdAt: '2026-11-01T13:00:00Z' };
+    const bot = renderProviderReviewPanel(host(), input([thread('a', { comments: [{ ...comment('1'), author, createdAt: '2026-11-01T12:00:00Z' }] })]), { comments: [far] });
+    expect(bot.element.querySelector('[data-geld-pin]')).toBeNull();
+  });
+
+  it('gives every event row a glyph and a View link slot so its columns line up', () => {
+    const events = [
+      { id: 'e1', url: 'https://gitlab.com/group/project/-/merge_requests/1#note_5', author: { id: '1', login: 'alice' }, body: 'added 2 commits', createdAt: '2026-11-01T12:00:00Z', kind: 'push' as const },
+      { id: 'e2', url: 'javascript:alert(1)', author: { id: '1', login: 'alice' }, body: 'changed the title', createdAt: '2026-11-01T12:05:00Z', kind: 'activity' as const },
+    ];
+    const panel = renderProviderReviewPanel(host(), input(), { events });
+    const rows = [...panel.element.querySelectorAll<HTMLElement>('[data-geld-event]')];
+    expect(rows).toHaveLength(2);
+    for (const row of rows) { expect(row.firstElementChild?.tagName.toLowerCase()).toBe('svg');expect(row.children).toHaveLength(6); }
+    expect(rows[0]?.querySelector('a[data-geld-view]')?.textContent).toBe('View');
+    expect(rows[1]?.querySelector('a')).toBeNull();
+  });
+
   it('uses the native avatar of a bound bot account for its compact summary', () => {
     const author = { id: 'trusted-bot', login: 'project-reviewer', automated: true };
     const source = { ...comment('1'), author };
@@ -838,9 +903,9 @@ describe('provider conversation digest', () => {
     expect([...rounds].every((round) => round.parentElement?.closest('[data-geld-review-pushes]') !== null)).toBe(true);
     expect(rounds[1]?.querySelector('[data-geld-review-pointer]')?.textContent).toContain(comment('1').body);
     expect(rounds[1]?.querySelector('[data-geld-source="note_2"]')?.textContent).toContain(edited.body);
-    expect(rounds[1]?.textContent).toContain('Edited');
+    expect(rounds[1]?.querySelector('[data-geld-source="note_2"] [data-geld-edited]')).not.toBeNull();
     expect(rounds[1]?.querySelector<HTMLTimeElement>('[data-geld-source="note_2"] time:last-of-type')?.dateTime).toBe('2026-11-01T14:00:00.000Z');
-    expect(rounds[0]?.textContent).toContain('Latest recorded push');
+    expect(rounds[0]?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toContain('Latest recorded push');
     expect(rounds[0]?.textContent).toContain(latest.body);
     expect(rounds[0]?.querySelector('[data-geld-source="note_2"]')).toBeNull();
     expect(rounds[1]?.querySelector<HTMLAnchorElement>('[data-geld-source="note_2"] a')?.href).toBe(edited.url);
@@ -872,12 +937,12 @@ describe('provider conversation digest', () => {
     const laterRound = panel.element.querySelector('[data-geld-review-round="push-b"]');
     expect(panel.element.querySelector('[data-geld-review-attention] [data-geld-source="note_1"]')?.textContent).toContain(edited.body);
     expect(panel.element.querySelector('[data-geld-review-attention] [data-geld-source="note_3"]')?.textContent).toContain(reply.body);
-    expect(panel.element.querySelector('[data-geld-review-attention]')?.textContent).toContain('Edited');
+    expect(panel.element.querySelector('[data-geld-review-attention] [data-geld-edited]')).not.toBeNull();
     expect(earlierRound?.querySelector('[data-geld-review-pointer]')?.textContent).toContain(edited.body);
     expect(panel.element.querySelector('[data-geld-review-attention] [data-geld-source="note_2"]')?.textContent).toContain(later.body);
     expect(laterRound?.querySelector('[data-geld-review-pointer]')?.textContent).toContain(later.body);
     expect(laterRound?.querySelector('[data-geld-source="note_1"], [data-geld-source="note_3"]')).toBeNull();
-    expect(laterRound?.textContent).toContain('Latest recorded push');
+    expect(laterRound?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toContain('Latest recorded push');
     expect(laterRound?.querySelector<HTMLElement>('[data-geld-review-pointer]')?.dataset.geldReviewPointer).toBe(originalLaterId);
     expect([...panel.element.querySelectorAll<HTMLElement>('[data-geld-source]')].map((source) => source.dataset.geldSource)).toEqual(['note_1', 'note_3', 'note_2']);
     expect(refreshed.subject.headSha).toBe(subject.headSha);
@@ -899,7 +964,7 @@ describe('provider conversation digest', () => {
     expect(laterRound?.querySelector('[data-geld-source="note_2"]')?.textContent).toContain(report.body);
     expect(laterRound?.querySelector<HTMLTimeElement>('[data-geld-source="note_2"] time:last-of-type')?.dateTime).toBe('2026-11-01T14:00:00.000Z');
     expect(laterRound?.textContent).toContain('Automated account');
-    expect(laterRound?.textContent).toContain('Edited');
+    expect(laterRound?.querySelector('[data-geld-edited]')).not.toBeNull();
     expect(panel.element.querySelectorAll('[data-geld-source="note_2"]')).toHaveLength(1);
   });
 
@@ -1026,7 +1091,7 @@ describe('provider conversation digest', () => {
     expect(roles.map((role) => role.textContent)).toEqual(['Author', 'Developer']);
     expect(roles.every((role) => role.classList.contains('badge-neutral') && role.style.color === '' && role.style.backgroundColor === '')).toBe(true);
     expect(panel.element.querySelector('time')?.dateTime).toBe(source.createdAt.replace('Z', '.000Z'));
-    [...panel.element.querySelectorAll<HTMLAnchorElement>('[data-geld-source="note_1"] a')].find((anchor) => anchor.textContent === 'View original')?.click();
+    [...panel.element.querySelectorAll<HTMLAnchorElement>('[data-geld-source="note_1"] a')].find((anchor) => anchor.textContent === 'Show in timeline')?.click();
     expect(opened).toHaveBeenCalledWith(source.url, source.anchor, expect.any(MouseEvent));
     [...panel.element.querySelectorAll<HTMLButtonElement>('[data-geld-source="note_1"] button')].find((button) => button.textContent === 'Native reply')?.click();
     await vi.waitFor(() => expect(activate).toHaveBeenCalledTimes(1));
@@ -1326,13 +1391,13 @@ it('keeps open threads and their body disclosures across a new head and moves th
   const panel = renderProviderReviewPanel(host(), native, { renderComment: (_comment, body) => { body.innerHTML = '<details><summary>More</summary>Original detail</details>';return true; } });
   const item = panel.element.querySelector<HTMLElement & { open: boolean }>('.geld-provider-review__item')!;
   item.open = true;
-  const detail = panel.element.querySelector<HTMLDetailsElement>('details')!;detail.open = true;detail.dispatchEvent(new Event('toggle'));
+  const detail = panel.element.querySelector<HTMLDetailsElement>('.geld-provider-review__body details')!;detail.open = true;detail.dispatchEvent(new Event('toggle'));
   panel.suspend();expect(panel.element.hidden).toBe(true);expect(panel.element.inert).toBe(true);
   panel.update({ ...native, subject: { ...subject, headSha: 'b'.repeat(40) }, threads: native.threads.map(thread => ({ ...thread, resolved: true })) });
   expect(panel.element.hidden).toBe(false);expect(panel.element.inert).toBe(false);
   expect(panel.element.querySelector<HTMLElement & { open: boolean }>('.geld-provider-review__item')?.open).toBe(true);
   expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-group="resolved"]')?.open).toBe(true);
-  expect(panel.element.querySelector<HTMLDetailsElement>('details')?.open).toBe(true);
+  expect(panel.element.querySelector<HTMLDetailsElement>('.geld-provider-review__body details')?.open).toBe(true);
 });
 
 it('keeps a user-folded destination group closed when an opened thread becomes resolved', () => {
@@ -1440,16 +1505,16 @@ it('groups threads and comments by type into rounds to review, a current round a
   ];
   const panel = renderProviderReviewPanel(host(), native, { events, comments: [{ ...comment('5', 'Looks better now.'), createdAt: '2026-11-01T13:30:00Z' }] });
   const review = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-round-group="review"]');
-  expect(review?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('1 round to review');
+  expect(review?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('1 round to review · 1 open thread');
   expect(review?.open).toBe(true);
   const rounds = [...(review?.querySelectorAll<HTMLElement>('[data-geld-type-round]') ?? [])];
   expect(rounds.map(round => round.dataset.geldTypeRound)).toEqual(['push-2', 'push-1']);
-  expect(rounds[0]?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('Round 3 · 1 comment');
-  expect(rounds[1]?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('Round 2 · 0/1 resolved');
+  expect(rounds[0]?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('Round 3 · 1 comment');
+  expect(rounds[1]?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('Round 2 · 0/1 resolved');
   const settled = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-round-group="settled"]');
-  expect(settled?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('1 settled round');
+  expect(settled?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('1 resolved thread');
   expect(settled?.open).toBe(false);
-  expect(settled?.querySelector('[data-geld-type-round="before"] [data-geld-review-toggle]')?.textContent).toBe('Round 1 · 1/1 resolved');
+  expect(settled?.querySelector('[data-geld-type-round="before"] [data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('Round 1 · 1/1 resolved');
   expect(panel.element.querySelector('[data-geld-review-key="comments"]')).toBeNull();
 });
 
@@ -1460,7 +1525,7 @@ it('heads a latest round with no threads "Current round" when nothing is left to
   const current = panel.element.querySelector('[data-geld-round-group="current"]');
   expect(current?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('Current round');
   expect(current?.textContent).toContain('No conversation since this push.');
-  expect(panel.element.querySelector('[data-geld-round-group="settled"] [data-geld-review-toggle]')?.textContent).toBe('1 settled round');
+  expect(panel.element.querySelector('[data-geld-round-group="settled"] [data-geld-review-toggle]')?.textContent).toBe('1 resolved thread');
 });
 
 it('keeps at most one row open, as the GitHub digest does, leaving groups alone', () => {

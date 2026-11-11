@@ -1054,7 +1054,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Everything is undone when a node goes home.
 - **The digest's three levels are told apart by surface and type, never by indent** (every level keeps the same glyph column): a section heading ("2 rounds to review", "Other activity", `.geld-review__group`) is a muted band with 12.5px semibold text - a divider that folds, not a row;
   a row is white at 14px;
-  what opens under a row is held to it by a 2px accent rail (`box-shadow: inset 2px 0 0`) along the left edge of the open row *and* its slot, and the headings inside ("1 unresolved thread", "3 bot comments", the commits toggle) are 11px small-caps labels.
+  what opens under a row is held to it by a 2px accent rail (`box-shadow: inset 2px 0 0`) along the left edge of the open row *and* its slot, and the headings inside ("1 unresolved thread", "3 bot comments", the commits toggle) are 11px uppercase labels.
   Adding a level means picking one of these treatments, not a new indent.
 - **A loaned node must read the same as it does at home, or the panel loops.**
   The panel is swapped whenever its signature changes;
@@ -3680,6 +3680,22 @@ Without a recorded push everything is one round.
 The Reviews and Review bots rows hold the people's and bots' standing only, so a status-row refresh never touches a conversation.
 A registered bot's latest summary is seated on its Review bots line, which opens to it, and not in its round (`seatedSummaries`), as on GitHub.
 Its rows are an accordion like GitHub's: opening a thread, comment or bot row closes the row open before it (`ACCORDION_ROW`), while groups and rounds fold on their own.
+An opened thread reads as GitHub's chat: every message shows (`chatMessage`), none folds behind a row of its own.
+It sits at the row's word column (42px, GitHub's thread slot) in one box: the pinned strip, then the messages, others' on the left and the reader's own on the right (`viewerId`, from the adapter's `viewerAuthorId`: GitLab's `data-current-user-data`, Bitbucket's bootstrap `uuid`).
+The host's picture keeps its native size in a 40px gutter and the author line (name, handle, role labels, time) stands above the bubble once per author's run (`markRuns`), so the identity stays the host's and the bubble holds the message alone.
+A byline's time is the edit's, with a clock whose title says when it was first posted (`data-geld-edited`), as GitHub's.
+GitLab's edit is `last_edited_at` when it sends one: resolving a thread moves `updated_at`, which read every resolved message as edited.
+A comment's own actions, "Show in timeline" and "Copy link" are behind its ⋯ on the bubble's empty side, and a thread row's ⋯ beside its chevron holds Copy as Markdown, Copy suggested fix, Mark reviewed on this device, Show in timeline and Copy link (`rowMenu`), rather than buttons above the thread.
+A bot's thread is headed by a pinned strip for its top-level summary from the same run (`threadHead`: the same account, posted or edited from 2 minutes before the thread to 5 minutes after it, the nearest), which unfolds a copy of the summary (`data-geld-pin-source`, so its home stays the bot's line).
+A person's thread and a bot thread with no summary in that window pin nothing.
+Event rows lead with their kind's glyph and always keep a link cell, so pictures, times and "View" line up down the list.
+Every disclosure takes one of GitHub's levels (`assignLevels`, `data-geld-level`): a status row, a muted band ("1 round to review · 5 open threads", "Other activity"), a white row under a band, and 11px uppercase labels with a glyph inside an open row ("2 unresolved threads"), as GitHub's `.geld-review__subhead`, which an accent rail holds to its row.
+That rail is a `::before` drawn over the open row and everything in it: an inset shadow sat under the nested rows' own backgrounds and broke at each one.
+A status row's pills stand out by their own padding and border, so the picture inside lines up with the label column's words, and Deployments is a status row with its rocket.
+A picture missing its image shows an initial inside the same 1px ring as every picture.
+A round row reads as GitHub's: a progress glyph, the posters' pictures, "Round N", the resolved meter, a comment count and the latest time, and a run of pushes with nothing posted between them is one round.
+A thread row is the state's glyph, the posters' pictures, the bold title, its muted path, people and comment count, a pill for a state other than open or resolved, and the time.
+Other activity is one band: a row per kind of event and one mentions row holding "Where this is mentioned" and "What this mentions".
 GitLab merge blockers come from its qualified merge widget separately from pipeline checks, and system-note activity uses the same author-bound inert renderer as normal comments.
 An explicit Digest selection folds represented originals revealed through source links or native find, while ordinary refreshes preserve those reveals and active native editors.
 The gitlab-expanded-digest installed-browser slice opens triage-ops MR4544 and verifies expanded bot content, merge blockers, formatted emoji, timeline restore/refold, description headings and menu isolation.

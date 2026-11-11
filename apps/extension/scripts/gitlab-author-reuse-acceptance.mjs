@@ -67,7 +67,7 @@ export function gitLabAuthorReuseProbe(records) {
       && originalAuthors[0].getAttribute('data-user-id') === record.author.id && originalAuthors[0].getAttribute('data-username') === record.author.username;
     return { id: record.id, nameCount: byline?.querySelectorAll('[data-geld-author-name]').length ?? 0, profileCount: byline?.querySelectorAll('[data-geld-author-profile]').length ?? 0, aliasCount: aliases.length, avatarCount: byline?.querySelectorAll('[data-geld-author-avatar]').length ?? 0, slotCount: byline?.querySelectorAll('[data-geld-author-avatar-slot]').length ?? 0, nativeCount: originalValid ? 1 : 0, invalidAnchorCount: anchors.length - (originalValid ? 1 : 0), articleCount: articles.length,
       sourceTuple: article === null ? null : { id: article.getAttribute('data-geld-source-id'), anchor: article.getAttribute('data-geld-source'), url: article.getAttribute('data-geld-source-url'),
-        links: [...byline?.querySelectorAll(':scope > a[href]') ?? []].map((link) => link.href), times: [...byline?.querySelectorAll('time[datetime]') ?? []].map((time) => time.getAttribute('datetime')) },
+        links: [...byline?.querySelectorAll(':scope > a[href]') ?? [], ...article?.querySelectorAll(':scope > .geld-provider-review__msg-side a[data-geld-view][href]') ?? []].map((link) => link.href), times: [...byline?.querySelectorAll('time[datetime]') ?? []].map((time) => time.getAttribute('datetime')), edited: byline?.querySelector('[data-geld-edited]') !== null && byline?.querySelector('[data-geld-edited]') !== undefined },
       name: sample(byline?.querySelector('[data-geld-author-name]')), alias: aliases.length === 1 ? sample(aliases[0]) : null,
       profile: byline?.querySelector('[data-geld-author-profile]')?.href ?? null, badges: [...byline?.querySelectorAll('[data-geld-author-badge]') ?? []].map((node) => node.textContent.trim()),
       avatar: ownAvatar === null ? null : { ...sample(ownAvatar), src: ownAvatar.src, className: ownAvatar.className }, slot: sample(slot) };
@@ -116,8 +116,10 @@ function assertComparison(value, records, head, requirePresented) {
     assert.equal(finding.invalidAnchorCount, 0, 'A copied, duplicate or malformed target ID cannot establish native availability');
     assert.equal(finding.nativeCount, 0, 'Account reuse acceptance requires the actual finding to remain unmounted');assert.equal(finding.articleCount, 1);
     assert.equal(finding.nameCount, 1);assert.equal(finding.profileCount, 1);assert.equal(finding.aliasCount, 1);assert.ok(finding.avatarCount <= 1 && finding.slotCount <= 1);
-    assert.ok(finding.sourceTuple?.times.includes(new Date(source.createdAt).toISOString()));
-    if (source.updatedAt !== source.createdAt) assert.ok(finding.sourceTuple?.times.includes(new Date(source.updatedAt).toISOString()));
+    // The byline shows the edit's time with a clock for the first posting, as GitHub's does.
+    const edited = source.updatedAt !== undefined && source.updatedAt !== source.createdAt;
+    assert.ok(finding.sourceTuple?.times.includes(new Date(edited ? source.updatedAt : source.createdAt).toISOString()));
+    assert.equal(finding.sourceTuple?.edited, edited);
     assert.equal(finding.sourceTuple?.id, source.id);assert.equal(finding.sourceTuple?.anchor, `note_${source.id}`);assert.equal(finding.sourceTuple?.url, source.url);assert.ok(finding.sourceTuple?.links.includes(source.url));
     assert.equal(finding.name?.text, native.name.text);assert.equal(finding.alias?.text, native.alias.text);assert.equal(finding.profile, native.tuple.profile);assert.deepEqual(finding.badges, [], 'A donor badge must not become a finding-specific role');
     if (!requirePresented) continue;

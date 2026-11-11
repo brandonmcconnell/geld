@@ -27,6 +27,10 @@ import type { ReviewerIdentityChoice, ReviewerIdentityControl } from './reviewer
 import { renderProviderBotRequest } from './bot-request';
 import type { ProviderBotRequest, ProviderBotRequestControl } from './bot-request';
 
+const SAME_RUN_BEFORE_MS = 2 * 60_000;
+const RUN_SETTLE_MS = 5 * 60_000;
+const EVENT_GLYPHS = { push: 'push', commit: 'commit', state: 'activity', task: 'check', activity: 'activity' } as const;
+
 export interface ProviderReviewPanelEvent {
   readonly id: string;
   readonly url: string;
@@ -109,6 +113,8 @@ export interface ProviderReviewPanelOptions {
   readonly transformItems?: (items: readonly ReviewItem[]) => readonly ReviewItem[];
   readonly suggestedFixes?: 'all' | 'bots' | 'ai' | 'off';
   readonly reviewGrouping?: 'type' | 'batch';
+  /** The signed-in reader's account id, so their own messages stand on the right as on GitHub. */
+  readonly viewerId?: string;
   readonly localReviewed?: {
     readonly ids: ReadonlySet<string>;
     readonly pending: ReadonlySet<string>;
@@ -183,6 +189,7 @@ const GROUPS: readonly { readonly id: string; readonly label: string; readonly s
   { id: 'done', label: 'Reviewed on this device', statuses: ['done-manual'], open: false },
 ];
 
+const THREAD_GROUP_NOUN: Readonly<Record<string, string>> = { open: 'unresolved thread', addressed: 'addressed thread', outdated: 'outdated thread', resolved: 'resolved thread', done: 'thread reviewed on this device' };
 const ACCORDION_ROW = /^(?:item|comment|bot|automated):/;
 const DEPLOYMENT_STATE: Readonly<Record<ProviderDeployment['state'], string>> = { active: 'Deployed', deploying: 'Deploying', failed: 'Failed', waiting: 'Waiting', unknown: 'Unknown' };
 const REQUIREMENT_STATE: Readonly<Record<ProviderReviewRequirement['state'], string>> = { passed: 'Passed', failed: 'Failed', pending: 'Pending', unknown: 'Unknown' };
@@ -303,6 +310,19 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     if (focused instanceof HTMLElement && panel.contains(focused) && !availableFocus(focused)) focused.blur();
   }
 
+  // GitHub's three levels: a status row or a muted band at the top, white rows under them, small-caps labels inside an open row.
+  function assignLevels(top: readonly HTMLElement[]): void {
+    for (const child of top) {
+      if (!child.hasAttribute('data-geld-review-key')) continue;
+      child.dataset.geldLevel = child.hasAttribute('data-geld-status-row') ? 'status' : 'band';
+      for (const section of child.querySelectorAll<HTMLElement>('[data-geld-review-key]')) {
+        const parent = section.parentElement?.closest<HTMLElement>('[data-geld-review-key]')?.dataset.geldLevel;
+        const rowLike = section.classList.contains('geld-provider-review__item') || section.classList.contains('geld-provider-review__entry') || section.hasAttribute('data-geld-type-round') || section.hasAttribute('data-geld-review-round');
+        section.dataset.geldLevel = parent === 'band' || parent === 'status' || parent === 'label' || rowLike ? 'row' : 'label';
+      }
+    }
+  }
+
   function wrapSectionContent(child: HTMLElement): void {
     const sections = [child, ...child.querySelectorAll<HTMLElement>('[data-geld-review-key]')].filter(section => section.hasAttribute('data-geld-review-key'));
     for (const section of sections) {
@@ -312,7 +332,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       content.setAttribute('role', 'region');
       content.setAttribute('aria-labelledby', `${section.id}-toggle`);
       for (const entry of [...section.childNodes]) {
-        if (entry instanceof Element && (entry.hasAttribute('data-geld-review-toggle') || entry.hasAttribute('data-geld-review-preview'))) continue;
+        if (entry instanceof Element && (entry.hasAttribute('data-geld-review-toggle') || entry.hasAttribute('data-geld-review-preview') || entry.hasAttribute('data-geld-row-menu'))) continue;
         content.append(entry);
       }
       section.append(content);
@@ -341,7 +361,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const next = renderRow();
       const previous = panel.querySelector<HTMLElement>(`:scope > [data-geld-review-key="${key}"]`);
       if (next === null) { previous?.remove();continue; }
-      wrapSectionContent(next);
+      assignLevels([next]);wrapSectionContent(next);
       if (previous?.outerHTML === next.outerHTML) continue;
       if (previous !== null) previous.replaceWith(next);
       else if (key === 'bots') panel.querySelector(':scope > [data-geld-review-key="reviewers"]')?.after(next);
@@ -410,8 +430,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     toggle.id = `${id}-toggle`;
     toggle.setAttribute('aria-controls', `${id}-content`);
     toggle.append(node('span', label, 'geld-provider-review__section-label'));
-    const icons: Readonly<Record<string, DigestIcon>> = { reviewers: 'reviews', checks: 'check', bots: 'check', requirements: 'check', reports: 'report', 'agent-notes': 'report', previews: 'preview', comments: 'comment', activity: 'activity' };
-    const glyph = icons[key] ?? (key.startsWith('references:') ? 'link' : undefined);
+    const icons: Readonly<Record<string, DigestIcon>> = { reviewers: 'reviews', checks: 'check', bots: 'check', requirements: 'check', reports: 'report', 'agent-notes': 'report', previews: 'preview', deployments: 'rocket', comments: 'comment' };
+    const glyph = icons[key];
     if (glyph !== undefined) {
       section.dataset.geldStatusRow = '';
       toggle.prepend(digestIcon(glyph, doc));
@@ -438,6 +458,13 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     section.append(toggle);
     setOpen(expanded.get(key) ?? initiallyOpen);
     return section;
+  }
+
+  function viewLink(url: string, anchor: string): HTMLAnchorElement {
+    const value = link('View', url, anchor);
+    value.setAttribute('aria-label', 'View original');
+    value.dataset.geldView = '';
+    return value;
   }
 
   function link(label: string, url: string, anchor = '', external = false): HTMLAnchorElement {
@@ -520,7 +547,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const presentation = authorPresentations.get(authorPresentationKey(comment));
     const name = node('strong', presentation?.displayName ?? comment.author.login);
     name.dataset.geldAuthorName = '';
-    if (presentation === undefined) byline.append(name);
+    if (presentation === undefined) byline.append(authorAvatar(comment.author, 'geld-provider-review__byline-avatar'), name);
     else {
       const nativeClasses = (className: string | undefined): string => (className ?? '').split(/\s+/).filter((token) => /^[a-zA-Z0-9_!@:/.-]+$/.test(token) && !token.startsWith('geld-')).join(' ');
       const avatar = presentation.avatar;
@@ -544,7 +571,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         slot.style.height = slot.style.blockSize = `${avatar.height}px`;
         slot.append(image);
         byline.append(slot);
-      }
+      } else byline.append(authorAvatar(comment.author, 'geld-provider-review__byline-avatar'));
       const profileUrl = presentation.profileUrl === undefined ? null : safeUrl(presentation.profileUrl, input.subject.origin);
       if (profileUrl === null) byline.append(name);
       else {
@@ -564,17 +591,20 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       }
     }
     if (comment.author.automated === true) byline.append(node('span', 'Automated account', 'geld-provider-review__muted'));
-    const time = timestamp(comment.createdAt);
+    // As GitHub's byline: the time is the edit's, and a clock beside it says when the comment was first posted.
+    const edited = comment.updatedAt !== undefined && comment.updatedAt !== comment.createdAt && Number.isFinite(Date.parse(comment.updatedAt)) ? comment.updatedAt : undefined;
+    const time = timestamp(edited ?? comment.createdAt);
     if (time !== null) byline.append(time);
-    if (comment.updatedAt !== undefined && comment.updatedAt !== comment.createdAt) {
-      const edited = timestamp(comment.updatedAt);
-      if (edited !== null) {
-        edited.prepend(doc.createTextNode('Edited '));
-        byline.append(edited);
-      }
+    const posted = new Date(comment.createdAt);
+    if (edited !== undefined && Number.isFinite(posted.getTime())) {
+      const mark = node('span', '', 'geld-provider-review__edited');
+      mark.dataset.geldEdited = '';
+      mark.title = `Edited · originally posted ${posted.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`;
+      mark.setAttribute('role', 'img');mark.setAttribute('aria-label', mark.title);
+      mark.append(digestIcon('history', doc));
+      byline.append(mark);
     }
     const url = sourceLink({ anchor: comment.anchor, kind: 'comment', author: comment.author.login, url: comment.url }, input.subject);
-    if (url !== null) byline.append(link('View original', url, comment.anchor));
     const body = node('div', comment.body, 'geld-provider-review__body');
     body.style.whiteSpace = 'pre-wrap';
     body.style.overflowWrap = 'anywhere';
@@ -614,10 +644,12 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       identities.push(renderReviewerIdentity(article, comment, identify.repository, choices, (botId) => identify.save(comment, botId)));
     }
     const actions = options.actionsForSource?.(comment).filter((action) => action.available) ?? [];
+    // GitHub's comment ⋯: the host's own actions, then where the comment stands in the timeline and its link.
+    const menu = rowMenu(`More actions for ${comment.author.login}'s comment`);
+    const controls = menu.querySelector<HTMLElement>('.geld-provider-review__menu-list')!;
+    controls.classList.add('geld-provider-review__source-actions');
+    controls.setAttribute('aria-label', `Actions for ${comment.author.login}'s comment`);
     if (actions.length > 0) {
-      const controls = node('div', '', 'geld-provider-review__source-actions');
-      controls.setAttribute('role', 'group');
-      controls.setAttribute('aria-label', `Actions for ${comment.author.login}'s comment`);
       for (const action of actions) {
         const button = node('button', action.label);
         button.type = 'button';
@@ -645,9 +677,47 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         });
         controls.append(button);
       }
-      article.append(controls);
+    }
+    if (url !== null) {
+      const timeline = viewLink(url, comment.anchor);
+      timeline.textContent = 'Show in timeline';
+      controls.append(timeline, copyLinkButton(url));
+    }
+    if (controls.childElementCount > 0) {
+      const side = node('div', '', 'geld-provider-review__msg-side');
+      side.append(menu);
+      article.append(side);
     }
     return article;
+  }
+
+  // A ⋯ menu in GitHub's place: a summary with the glyph, and a list that opens beside it.
+  function rowMenu(label: string): HTMLDetailsElement {
+    const menu = node('details', '', 'geld-provider-review__menu geld-provider-review__row-menu');
+    const toggle = node('summary', '', 'geld-provider-review__tool geld-provider-review__more');
+    toggle.title = label;toggle.setAttribute('aria-label', label);
+    toggle.append(digestIcon('more', doc));
+    const list = node('div', '', 'geld-provider-review__menu-list');
+    list.setAttribute('role', 'group');
+    menu.append(toggle, list);
+    menu.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();event.stopPropagation();menu.open = false;toggle.focus();
+    });
+    menu.addEventListener('click', event => {
+      if (event.target instanceof Element && event.target.closest('a[href]') !== null) menu.open = false;
+    });
+    return menu;
+  }
+
+  function copyLinkButton(url: string): HTMLButtonElement {
+    const button = node('button', 'Copy link');button.type = 'button';
+    button.dataset.geldCopyLink = '';
+    button.addEventListener('click', () => {
+      const write = options.copyText ?? ((value: string): Promise<void> => navigator.clipboard.writeText(value));
+      void Promise.resolve().then(() => write(url)).then(() => { button.textContent = 'Link copied'; }, () => { button.textContent = 'Could not copy'; });
+    });
+    return button;
   }
 
   function reviewStandingSummary(): ReviewsSummary {
@@ -676,28 +746,101 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     return source === undefined ? undefined : conversationComments().find(comment => comment.anchor === source.anchor)?.author;
   }
 
-  function threadGroups(selected: readonly ReviewItem[], key: string): readonly HTMLElement[] {
+  function threadGroups(selected: readonly ReviewItem[], key: string, allOpen = false): readonly HTMLElement[] {
     const comments = new Map(input.threads.flatMap(thread => thread.comments.map(comment => [comment.anchor, comment] as const)));
     return GROUPS.flatMap(group => {
       const members = selected.filter(item => group.statuses.includes(item.status));
       if (members.length === 0) return [];
       const groupKey = `${key}:group:${group.id}`;
       if (!touched.has(groupKey) && members.some(item => expanded.get(itemDisclosureKey(item)) === true)) expanded.set(groupKey, true);
-      const section = disclosure(groupKey, `${group.label.replace('items', 'threads')} · ${threadCounts(members).total}`, group.open);
+      const count = threadCounts(members).total;
+      const section = disclosure(groupKey, `${count} ${THREAD_GROUP_NOUN[group.id] ?? 'thread'}${count === 1 ? '' : 's'}`, allOpen || group.open);
       section.dataset.geldReviewGroup = group.id;
+      section.querySelector('[data-geld-review-toggle]')?.prepend(digestIcon(group.id === 'resolved' || group.id === 'done' ? 'check' : 'circle', doc));
       for (const item of members) section.append(itemSection(item, comments));
       return [section];
     });
   }
 
-  function authorAvatar(author: ProviderReviewAuthor): HTMLElement {
+  function authorAvatar(author: ProviderReviewAuthor, extra = ''): HTMLElement {
     const presentation = [...authorPresentations.values()].find(value => value.authorId === author.id);
-    const mark = node('span', '', 'geld-provider-review__reviewer-avatar');mark.setAttribute('aria-hidden', 'true');
+    const mark = node('span', '', `geld-provider-review__reviewer-avatar ${extra}`.trim());mark.setAttribute('aria-hidden', 'true');
     const url = presentation?.avatar === undefined ? null : safeUrl(presentation.avatar.src);
     if (url !== null && new URL(url).protocol === 'https:') {
       const image = node('img');image.src = url;image.alt = '';image.referrerPolicy = 'no-referrer';mark.append(image);
     } else mark.textContent = author.login.charAt(0).toUpperCase();
     return mark;
+  }
+
+  // GitHub's thread chat: every message shows, no row of its own.
+  function chatMessage(comment: ProviderReviewComment): HTMLElement {
+    const message = sourceComment(comment);
+    message.dataset.geldChatMessage = '';
+    if (options.viewerId !== undefined && comment.author.id === options.viewerId) message.dataset.geldMine = '';
+    return message;
+  }
+
+  // One author's consecutive messages share a run: the name and picture once, the bubbles close together.
+  function markRuns(messages: readonly HTMLElement[]): void {
+    const author = (message: HTMLElement | undefined): string | undefined => message === undefined ? undefined : comments().get(message.dataset.geldSource ?? '')?.author.id;
+    messages.forEach((message, index) => {
+      const same = (other: HTMLElement | undefined): boolean => other !== undefined && other.hasAttribute('data-geld-chat-message') && author(other) === author(message);
+      const before = same(messages[index - 1]);const after = same(messages[index + 1]);
+      message.dataset.geldRun = before && after ? 'mid' : before ? 'last' : after ? 'first' : 'only';
+    });
+  }
+
+  function comments(): ReadonlyMap<string, ProviderReviewComment> {
+    return new Map(conversationComments().map((comment) => [comment.anchor, comment] as const));
+  }
+
+  // The bot's top-level summary from the same run heads its thread, as GitHub's threadHeadOf does (2 min before to 5 min after).
+  function threadHead(item: ReviewItem, comments: ReadonlyMap<string, ProviderReviewComment>): ProviderReviewComment | null {
+    const first = item.sources.map((source) => comments.get(source.anchor)).find((comment) => comment !== undefined);
+    if (first === undefined || !automatedAuthor(first.author)) return null;
+    const at = Date.parse(first.createdAt);
+    if (!Number.isFinite(at)) return null;
+    let best: ProviderReviewComment | null = null;let gap = Infinity;
+    for (const candidate of options.comments ?? []) {
+      if (candidate.author.id !== first.author.id || candidate.anchor === first.anchor) continue;
+      for (const when of [candidate.createdAt, candidate.updatedAt]) {
+        const written = when === undefined ? NaN : Date.parse(when);
+        const offset = written - at;
+        if (!Number.isFinite(offset) || offset < -SAME_RUN_BEFORE_MS || offset > RUN_SETTLE_MS) continue;
+        if (Math.abs(offset) < gap) { gap = Math.abs(offset);best = candidate; }
+      }
+    }
+    return best;
+  }
+
+  function pinnedSource(item: ReviewItem, head: ProviderReviewComment): HTMLElement {
+    const strip = node('div', '', 'geld-provider-review__pin');
+    strip.dataset.geldPin = head.anchor;
+    const button = node('button', '', 'geld-provider-review__pin-toggle');
+    button.type = 'button';
+    const key = `pin:${item.id}`;
+    const open = expanded.get(key) === true;
+    button.setAttribute('aria-expanded', String(open));
+    const preview = head.body.replace(/<[^>]*>/g, ' ').replace(/[#>*_`|-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+    button.append(digestIcon('pin', doc), authorAvatar(head.author), node('strong', `${head.author.login}'s summary`), node('span', preview, 'geld-provider-review__pin-preview'));
+    const time = timestamp(head.createdAt);if (time !== null) button.append(time);
+    // A copy made only once opened: the summary's own home is the bot's line, so its source marks stay there.
+    let body: HTMLElement | null = null;
+    const show = (visible: boolean): void => {
+      if (visible && body === null) {
+        body = sourceComment(head);
+        body.dataset.geldPinSource = head.anchor;
+        delete body.dataset.geldSource;delete body.dataset.geldSourceId;delete body.dataset.geldSourceUrl;
+        strip.append(body);
+      }
+      if (body !== null) body.hidden = !visible;
+      button.setAttribute('aria-expanded', String(visible));
+      expanded.set(key, visible);
+    };
+    button.addEventListener('click', () => show(button.getAttribute('aria-expanded') !== 'true'));
+    strip.append(button);
+    if (open) show(true);
+    return strip;
   }
 
   function commentRow(comment: ProviderReviewComment): HTMLElement {
@@ -1003,7 +1146,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         : health === 'warn' ? (verdict?.verdict === 'failed' ? 'skipped' : 'dot') : null;
       if (light !== null) compact.append(digestIcon(light, doc));
       preview.append(compact);
-      row.querySelector('[data-geld-review-toggle]')?.replaceChildren(digestIcon('reviews', doc), compact.querySelector('img')?.cloneNode(true) ?? node('span'), node('strong', registered?.title ?? id), node('span', verdict === undefined ? 'No result' : verdictLabel(verdict), 'geld-provider-review__entry-preview'));
+      // A bot line leads with its verdict's light in the glyph column, as GitHub's does.
+      const lineLight = light === null ? node('span') : digestIcon(light, doc);
+      row.querySelector('[data-geld-review-toggle]')?.replaceChildren(lineLight, compact.querySelector('img')?.cloneNode(true) ?? node('span'), node('strong', registered?.title ?? id), node('span', verdict === undefined ? 'No result' : verdictLabel(verdict), 'geld-provider-review__entry-preview'));
       row.dataset.geldBotHealth = health;
       const status = node('span', { good: 'Clear', warn: 'Needs attention', severe: 'Severe findings', bad: 'Review failed', pending: 'Pending' }[health], 'geld-provider-review__bot-health');
       status.dataset.health = health;row.append(status);
@@ -1042,13 +1187,17 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const label = [...authorPresentations.values()].find(value => value.authorId === author.id)?.displayName ?? author.login;
       const selected = items.filter(item => itemAuthor(item)?.id === author.id);
       const open = selected.filter(item => isOpenStatus(item.status)).length;
-      const standing = reviewer === undefined ? countLabel(open, 'open thread') : reviewerLabel(reviewer);
+      const standing = reviewer === undefined ? open === 0 ? '' : countLabel(open, 'open thread') : reviewerLabel(reviewer);
       const compact = node('span', '', 'geld-provider-review__status-chip');compact.dataset.state = reviewer?.state ?? 'commented';
       compact.toggleAttribute('data-geld-review-requested', reviewer !== undefined && reviewerRequested(reviewer));
-      compact.append(authorAvatar(author), node('span', label), node('span', standing, 'geld-provider-review__muted'));preview.append(compact);
+      const stateGlyph = reviewer?.state === 'approved' ? 'check' : reviewer?.state === 'changes_requested' ? 'changes' : open > 0 ? 'dot' : null;
+      compact.append(authorAvatar(author), node('span', label));
+      if (standing !== '') compact.append(node('span', standing, 'geld-provider-review__muted'));
+      if (stateGlyph !== null) compact.append(digestIcon(stateGlyph, doc));
+      preview.append(compact);
       const row = disclosure(`automated:${author.id}`, '', false);
-      row.dataset.geldAutomatedReviewer = author.id;row.classList.add('geld-provider-review__entry');
-      row.querySelector('[data-geld-review-toggle]')?.replaceChildren(digestIcon('reviews', doc), authorAvatar(author), node('strong', label), node('span', standing, 'geld-provider-review__entry-preview'));
+      row.dataset.geldAutomatedReviewer = author.id;row.dataset.state = reviewer?.state ?? (open > 0 ? 'open' : '');row.classList.add('geld-provider-review__entry');
+      row.querySelector('[data-geld-review-toggle]')?.replaceChildren(stateGlyph === null ? node('span') : digestIcon(stateGlyph, doc), authorAvatar(author), node('strong', label), node('span', standing, 'geld-provider-review__entry-preview'));
       row.append(node('p', reviewer === undefined ? 'No conversation recorded.' : reviewerLabel(reviewer), 'geld-provider-review__muted'));
       section.append(row);
     }
@@ -1068,28 +1217,38 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     details.dataset.state = item.status;
     const summary = details.querySelector('[data-geld-review-toggle]');
     if (summary !== null) {
+      // GitHub's thread row: the state's glyph, who wrote, the bold title, its path, people and comments, a pill, the time.
       const title = node('span', '', 'geld-provider-review__item-title');
       inline(title, item.title);
-      summary.append(title, node('span', STATUS[item.status], 'geld-provider-review__item-state'));
-      const metadata = [item.path === undefined ? '' : `${item.path}${item.line === undefined ? '' : `:${item.line}`}`, [...new Set(item.sources.map((source) => source.author))].join(', '), countLabel(item.sources.length, 'comment')].filter((value) => value !== '').join(' · ');
-      summary.append(node('span', metadata, 'geld-provider-review__muted'));
+      const posted = item.sources.flatMap((source) => { const comment = comments.get(source.anchor);return comment === undefined ? [] : [comment]; });
+      const avatars = node('span', '', 'geld-provider-review__posters');
+      for (const author of [...new Map(posted.map((comment) => [comment.author.id, comment.author])).values()].slice(0, 3)) avatars.append(authorAvatar(author));
+      const glyph = digestIcon(item.status === 'resolved' || item.status === 'done-manual' ? 'check' : 'circle', doc);
+      const metadata = [item.path === undefined ? '' : `${item.path}${item.line === undefined ? '' : `:${item.line}`}`, [...new Set(item.sources.map((source) => source.author))].join(', '), item.sources.length > 1 ? countLabel(item.sources.length, 'comment') : ''].filter((value) => value !== '').join(' · ');
+      const state = node('span', STATUS[item.status], 'geld-provider-review__item-state');
+      const latest = posted.map((comment) => comment.updatedAt ?? comment.createdAt).filter((at) => Number.isFinite(Date.parse(at))).sort().at(-1);
+      const time = latest === undefined ? null : timestamp(latest);
+      time?.classList.add('geld-provider-review__row-time');
+      summary.append(glyph, avatars, title, node('span', metadata, 'geld-provider-review__muted geld-provider-review__item-meta'), state, ...(time === null ? [] : [time]));
     }
     const originalItem = nativeItems.get(item.id);
+    // GitHub's thread row carries its ⋯ beside the chevron: copy, mark, the timeline and the link live there, not in the thread.
+    const menu = rowMenu('More actions for this thread');
+    menu.dataset.geldRowMenu = '';
+    const menuList = menu.querySelector<HTMLElement>('.geld-provider-review__menu-list')!;
+    menuList.setAttribute('aria-label', 'Thread actions');
     if (originalItem !== undefined) {
-      const controls = node('div', '', 'geld-provider-review__source-actions');
-      controls.setAttribute('role', 'group');controls.setAttribute('aria-label', 'Copy review item');
-      controls.append(copyControl('Copy as Markdown', item.id, 'markdown', () => renderProviderItemMarkdown(item, input.subject, {
+      menuList.append(copyControl('Copy as Markdown', item.id, 'markdown', () => renderProviderItemMarkdown(item, input.subject, {
         showFix: fixVisible(item.fix, options.suggestedFixes ?? 'all'), sourceStatus: originalItem.status,
         reviewedOnDevice: options.localReviewed?.ids.has(item.id) === true,
       })));
-      details.append(controls);
+      if (fixVisible(item.fix, options.suggestedFixes ?? 'all')) { const value = item.fix.text;menuList.append(copyControl('Copy suggested fix', item.id, 'fix', () => value)); }
     }
     if (item.rewritten === true) details.append(node('p', 'AI triage · original comments below', 'geld-provider-review__muted'));
     const local = options.localReviewed;
     if (local !== undefined) {
       const reviewed = local.ids.has(item.id);
       const pending = local.pending.has(item.id);
-      const controls = node('div', '', 'geld-provider-review__source-actions');
       const button = node('button', reviewed ? 'Undo local review mark' : 'Mark reviewed on this device');
       button.type = 'button';
       button.dataset.geldLocalReviewed = item.id;
@@ -1097,8 +1256,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       button.setAttribute('aria-pressed', String(reviewed));
       if (pending) button.setAttribute('aria-busy', 'true');
       button.addEventListener('click', () => { if (!destroyed && !button.disabled) local.set(item, !reviewed); });
-      controls.append(button);
-      details.append(controls);
+      menuList.append(button);
       if (reviewed) {
         const native = nativeItems.get(item.id);
         const note = node('p', `Reviewed on this device. Native status: ${native === undefined ? 'Unavailable' : STATUS[native.status]}.`, 'geld-provider-review__muted');
@@ -1117,24 +1275,35 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       details.append(assessment);
     }
     if (fixVisible(item.fix, options.suggestedFixes ?? 'all')) {
-      const fix = node('div');
-      const heading = node('div', '', 'geld-provider-review__source-actions');
-      heading.append(node('strong', item.fix.source === 'ai' ? 'Suggested fix · AI' : 'Suggested fix'));
-      const value = item.fix.text;
-      if (originalItem !== undefined) heading.append(copyControl('Copy suggested fix', item.id, 'fix', () => value));
-      fix.append(heading, node('pre', value));
+      const fix = node('div', '', 'geld-provider-review__fix');
+      fix.append(node('span', item.fix.source === 'ai' ? 'Suggested fix · AI' : 'Suggested fix', 'geld-provider-review__fix-label'), node('pre', item.fix.text));
       details.append(fix);
     }
+    // GitHub's thread chat: one box, the pinned source first, then every message, the reader's own on the right.
+    const chat = node('div', '', 'geld-provider-review__chat');
+    const head = threadHead(item, comments);
+    if (head !== null) chat.append(pinnedSource(item, head));
+    const body = node('div', '', 'geld-provider-review__chat-body');
+    const messages: HTMLElement[] = [];
     for (const source of item.sources) {
       const original = comments.get(source.anchor);
-      if (original !== undefined) details.append(commentRow(original));
+      if (original !== undefined) { const message = chatMessage(original);messages.push(message);body.append(message); }
       else {
-        const missing = node('p', 'Original comment unavailable.');
+        const missing = node('p', 'Original comment unavailable.', 'geld-provider-review__muted');
         const url = sourceLink(source, input.subject);
-        if (url !== null) missing.append(doc.createTextNode(' '), link('View original', url, source.anchor));
-        details.append(missing);
+        if (url !== null) { const timeline = viewLink(url, source.anchor);timeline.textContent = 'Show in timeline';missing.append(doc.createTextNode(' '), timeline); }
+        messages.push(missing);body.append(missing);
       }
     }
+    markRuns(messages);
+    chat.append(body);
+    details.append(chat);
+    const url = item.sources.map((source) => sourceLink(source, input.subject)).find((value) => value !== null);
+    if (url !== undefined && url !== null) {
+      const timeline = viewLink(url, item.sources[0]?.anchor ?? '');timeline.textContent = 'Show in timeline';
+      menuList.append(timeline, copyLinkButton(url));
+    }
+    if (menuList.childElementCount > 0) details.append(menu);
     if (item.rewritten !== true) {
       const title = details.querySelector('.geld-provider-review__item-title');
       const body = details.querySelector('.geld-provider-review__body');
@@ -1202,14 +1371,14 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   function eventRow(event: ProviderReviewPanelEvent): HTMLElement {
     const row = node('div', '', 'geld-provider-review__event');
     row.dataset.geldEvent = event.id;
-    row.append(node('strong', event.author.login));
+    row.append(digestIcon(EVENT_GLYPHS[event.kind ?? 'activity'], doc), authorAvatar(event.author), node('strong', event.author.login));
     const body = node('div', '', 'geld-provider-review__body');
     if (options.renderEvent?.(event, body) !== true) inline(body, event.body);
     row.append(body);
-    const time = timestamp(event.createdAt);
-    if (time !== null) row.append(time);
+    row.append(timestamp(event.createdAt) ?? node('span', '', 'geld-provider-review__event-slot'));
     const url = safeUrl(event.url, input.subject.origin);
-    if (url !== null) row.append(link('View original', url, new URL(url).hash.slice(1)));
+    if (url === null) row.append(node('span', '', 'geld-provider-review__event-slot'));
+    else row.append(viewLink(url, new URL(url).hash.slice(1)));
     return row;
   }
 
@@ -1231,12 +1400,14 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const itemEntry = (item: ReviewItem): HTMLElement => {
       const home = homes.get(item.id);
       if (home === undefined || attention === null) return itemSection(item, comments);
-      const pointer = node('div', '', 'geld-provider-review__source-actions');
+      // GitHub's pointer row: the thread's own row shape, leading to its home under Needs attention.
+      const pointer = node('div', '', 'geld-provider-review__pointer');
       pointer.dataset.geldReviewPointer = item.id;
-      const title = node('span');inline(title, item.title);pointer.append(title);
-      if (item.path !== undefined) pointer.append(node('span', `${item.path}${item.line === undefined ? '' : `:${item.line}`}`, 'geld-provider-review__muted'));
-      pointer.append(node('span', STATUS[item.status], 'geld-provider-review__item-state'));
-      const open = node('button', 'Open thread');open.type = 'button';
+      pointer.dataset.state = item.status;
+      const open = node('button', '', 'geld-provider-review__pointer-toggle');open.type = 'button';
+      const title = node('span', '', 'geld-provider-review__item-title');inline(title, item.title);
+      const meta = node('span', item.path === undefined ? '' : `${item.path}${item.line === undefined ? '' : `:${item.line}`}`, 'geld-provider-review__muted geld-provider-review__item-meta');
+      open.append(digestIcon(item.status === 'resolved' || item.status === 'done-manual' ? 'check' : 'circle', doc), title, meta, node('span', STATUS[item.status], 'geld-provider-review__item-state'), digestIcon('chevron-right', doc));
       open.setAttribute('aria-controls', home.id);
       open.setAttribute('aria-label', `Open thread: ${parseInlineMarkdown(item.title).map((run) => run.text).join('')}`);
       open.addEventListener('click', () => {
@@ -1290,10 +1461,36 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
           if (touched.has(previous[0].dataset.geldReviewKey ?? '')) touched.add(roundKey);
         }
       }
-      const section = disclosure(roundKey, `Push round ${index + 1}${index === boundaries.length - 1 ? ' · Latest recorded push' : ''}`, index === boundaries.length - 1);
+      const name = `Push ${String(index + 1).padStart(String(boundaries.length).length, '0')}`;
+      const commitCount = boundary.pushes.reduce((sum, push) => sum + Number(/\badded (\d+) (?:new )?commits?\b/i.exec(push.body)?.[1] ?? 0), 0);
+      const label = `${name}${commitCount > 0 ? ` · ${countLabel(commitCount, 'commit')}` : ''}${index === boundaries.length - 1 ? ' · Latest recorded push' : ''}`;
+      const section = disclosure(roundKey, label, index === boundaries.length - 1);
       section.dataset.geldReviewRound = ids.join(':');section.dataset.geldRoundEvents = JSON.stringify(ids);
       for (const push of boundary.pushes) section.append(eventRow(push));
       const members = entries.filter((entry) => Number.isFinite(entry.at) && entry.at >= boundary.at && entry.at < next);
+      // GitHub's push row: the push glyph, who pushed, "Push 07 · 3 commits", the threads' meter, a comment count and when.
+      const toggle = section.querySelector<HTMLElement>(':scope > [data-geld-review-toggle]');
+      if (toggle !== null) {
+        toggle.setAttribute('aria-label', label);
+        const pushers = node('span', '', 'geld-provider-review__posters');
+        for (const author of [...new Map(boundary.pushes.map((push) => [push.author.id, push.author])).values()].slice(0, 3)) pushers.append(authorAvatar(author));
+        const parts: Node[] = [digestIcon('push', doc), pushers, node('span', name, 'geld-provider-review__round-name')];
+        if (commitCount > 0) parts.push(node('span', `· ${countLabel(commitCount, 'commit')}`, 'geld-provider-review__muted'));
+        const pushItems = items.filter((item) => members.some((entry) => entry.key === `item:${item.id}`));
+        const threads = threadCounts(pushItems);
+        if (threads.total > 0) {
+          const meter = node('progress', '', 'geld-provider-review__meter');meter.max = threads.total;meter.value = threads.total - threads.open;meter.setAttribute('aria-hidden', 'true');
+          parts.push(meter, node('span', `${threads.total - threads.open}/${threads.total} resolved`, 'geld-provider-review__muted'));
+        }
+        if (members.length > 0) {
+          const chip = node('span', '', 'geld-provider-review__count-chip');chip.setAttribute('aria-hidden', 'true');
+          chip.append(digestIcon('comment', doc), node('span', String(members.length)));parts.push(chip);
+        }
+        const time = timestamp(boundary.pushes[0]?.createdAt ?? '');
+        if (time !== null) { time.classList.add('geld-provider-review__row-time');parts.push(time); }
+        toggle.replaceChildren(...parts);
+        if (threads.open > 0) section.dataset.tone = 'warn';
+      }
       for (const entry of members) section.append(entry.render());
       if (members.length === 0) section.append(node('p', 'No conversation recorded after this push.', 'geld-provider-review__muted'));
       rounds.push(section);
@@ -1303,7 +1500,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     group.dataset.geldReviewPushes = '';
     group.append(...rounds.reverse());
     if (before.length > 0) {
-      const section = disclosure('history:before', 'Before the first recorded push', false);
+      const section = disclosure('history:before', 'Earlier', false);
       for (const entry of before) section.append(entry.render());
       group.append(section);
     }
@@ -1331,7 +1528,14 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const roundAt = (at: number): Round => rounds[Number.isFinite(at) ? boundaries.filter((boundary) => boundary.at <= at).length : boundaries.length] ?? rounds[0]!;
     for (const item of items) roundAt(Math.min(...item.sources.map((source) => Date.parse(comments.get(source.anchor)?.createdAt ?? '')).filter(Number.isFinite))).items.push(item);
     for (const comment of ordinary) roundAt(Date.parse(comment.author.automated === true ? comment.updatedAt ?? comment.createdAt : comment.createdAt)).comments.push(comment);
-    const shown = rounds.filter((round, index) => index > 0 || round.items.length + round.comments.length > 0);
+    // A run of pushes with nothing posted between them is one round, as GitHub merges a run of commit rows.
+    const merged: Round[] = [];
+    for (const [index, round] of rounds.entries()) {
+      const previous = merged.at(-1);
+      if (index > 1 && previous !== undefined && previous.items.length + previous.comments.length === 0) merged[merged.length - 1] = { key: `${previous.key}:${round.key}`, items: round.items, comments: round.comments };
+      else merged.push(round);
+    }
+    const shown = merged.filter((round, index) => index > 0 || round.items.length + round.comments.length > 0);
     if (shown.every((round) => round.items.length + round.comments.length === 0)) return [];
     const width = String(shown.length).length;
     const latest = shown.at(-1);
@@ -1339,37 +1543,66 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const toReview = shown.filter((round) => round.items.some((item) => isOpenStatus(item.status)));
     const settled = shown.filter((round) => round !== current && !toReview.includes(round));
     const fill = (section: HTMLElement, round: Round): void => {
-      section.append(...threadGroups(round.items, `round:${round.key}`));
+      section.append(...threadGroups(round.items, `round:${round.key}`, true));
       if (round.comments.length > 0) {
         const group = disclosure(`round:${round.key}:comments`, countLabel(round.comments.length, 'comment'), true);
+        group.querySelector('[data-geld-review-toggle]')?.prepend(digestIcon('comment', doc));
         for (const comment of round.comments) group.append(commentRow(comment));
         section.append(group);
       }
       if (round.items.length + round.comments.length === 0) section.append(node('p', 'No conversation since this push.', 'geld-provider-review__muted'));
     };
+    // GitHub's round row: a progress glyph, who posted, "Round N", the resolved meter, a comment count and the time.
     const render = (round: Round, open: boolean): HTMLElement => {
       const threads = threadCounts(round.items);
-      const label = [`Round ${String(shown.indexOf(round) + 1).padStart(width, '0')}`, ...(threads.total === 0 ? [] : [`${threads.total - threads.open}/${threads.total} resolved`]), ...(round.comments.length === 0 ? [] : [countLabel(round.comments.length, 'comment')])].join(' · ');
+      const name = `Round ${String(shown.indexOf(round) + 1).padStart(width, '0')}`;
+      const label = [name, ...(threads.total === 0 ? [] : [`${threads.total - threads.open}/${threads.total} resolved`]), ...(round.comments.length === 0 ? [] : [countLabel(round.comments.length, 'comment')])].join(' · ');
       const section = disclosure(`round:${round.key}`, label, open);
       section.dataset.geldTypeRound = round.key;
+      const posted = [...round.items.flatMap((item) => item.sources.flatMap((source) => { const comment = comments.get(source.anchor);return comment === undefined ? [] : [comment]; })), ...round.comments];
+      const posters = [...new Map(posted.map((comment) => [comment.author.id, comment.author])).values()].slice(0, 4);
+      const latest = posted.map((comment) => comment.updatedAt ?? comment.createdAt).filter((at) => Number.isFinite(Date.parse(at))).sort().at(-1);
+      const toggle = section.querySelector<HTMLElement>(':scope > [data-geld-review-toggle]');
+      if (toggle !== null) {
+        toggle.setAttribute('aria-label', label);
+        const glyph = digestIcon(threads.total === 0 ? 'comment' : threads.open === 0 ? 'check' : 'circle', doc);
+        if (threads.total > 0 && threads.open === 0) glyph.dataset.geldRoundSettled = '';
+        const avatars = node('span', '', 'geld-provider-review__posters');
+        for (const author of posters) avatars.append(authorAvatar(author));
+        const parts: Node[] = [glyph, avatars, node('span', name, 'geld-provider-review__round-name')];
+        if (threads.total > 0) {
+          const meter = node('progress', '', 'geld-provider-review__meter');meter.max = threads.total;meter.value = threads.total - threads.open;
+          meter.setAttribute('aria-hidden', 'true');
+          parts.push(meter, node('span', `${threads.total - threads.open}/${threads.total} resolved`, 'geld-provider-review__muted'));
+        }
+        if (posted.length > 0) {
+          const chip = node('span', '', 'geld-provider-review__count-chip');
+          chip.setAttribute('aria-hidden', 'true');
+          chip.append(digestIcon('comment', doc), node('span', String(posted.length)));parts.push(chip);
+        }
+        const time = latest === undefined ? null : timestamp(latest);
+        if (time !== null) { time.classList.add('geld-provider-review__row-time');parts.push(time); }
+        toggle.replaceChildren(...parts);
+      }
       fill(section, round);
       return section;
     };
     const sections: HTMLElement[] = [];
     if (toReview.length === 0 && current !== null) {
       const group = disclosure('rounds:review', 'Current round', true);
-      group.dataset.geldRoundGroup = 'current';group.dataset.geldTypeRound = current.key;
-      fill(group, current);
+      group.dataset.geldRoundGroup = 'current';
+      group.append(render(current, false));
       sections.push(group);
     } else if (toReview.length > 0) {
       const open = current === null || toReview.includes(current) ? toReview : [...toReview, current];
-      const group = disclosure('rounds:review', `${countLabel(toReview.length, 'round')} to review`, true);
+      const group = disclosure('rounds:review', `${countLabel(toReview.length, 'round')} to review · ${countLabel(threadCounts(items).open, 'open thread')}`, true);
       group.dataset.geldRoundGroup = 'review';
       for (const round of [...open].reverse()) group.append(render(round, round === toReview.at(-1)));
       sections.push(group);
     }
     if (settled.length > 0) {
-      const group = disclosure('rounds:settled', countLabel(settled.length, 'settled round'), false);
+      const resolved = settled.flatMap((round) => round.items);
+      const group = disclosure('rounds:settled', resolved.length > 0 ? countLabel(threadCounts(resolved).total, 'resolved thread') : countLabel(settled.length, 'settled round'), false);
       group.dataset.geldRoundGroup = 'settled';
       for (const round of [...settled].reverse()) group.append(render(round, false));
       sections.push(group);
@@ -1826,7 +2059,12 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const botSection = botsSection();
     if (botSection !== null) children.push(botSection);
     if (options.agentNotes !== undefined && options.agentNotes.length > 0) {
-      const notes = disclosure('agent-notes', `Agent notes · ${options.agentNotes.length}`, false);
+      const notes = disclosure('agent-notes', 'Agent notes', false);
+      // One pill per agent, as GitHub's Agent notes row has.
+      const pills = node('span', '', 'geld-provider-review__row-preview');pills.dataset.geldReviewPreview = '';
+      for (const note of options.agentNotes) pills.append(node('span', note.name, 'geld-provider-review__status-chip'));
+      notes.querySelector('[data-geld-review-toggle]')?.append(pills);
+      notes.querySelector('[data-geld-review-toggle]')?.setAttribute('aria-label', `Agent notes · ${options.agentNotes.length}`);
       for (const note of options.agentNotes) {
         const section = disclosure(`agent-note:${note.id}`, note.name, false);
         if (note.preview !== '') section.append(node('p', note.preview, 'geld-provider-review__muted'));
@@ -1853,16 +2091,10 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     if (items.length === 0) children.push(node('p', panel.dataset.state === 'partial' ? 'No review threads in the available data.' : 'No review threads.'));
     if (options.reviewGrouping === 'batch') children.push(...historySections(comments, ordinary));
     else children.push(...roundSections(comments, ordinary));
-    for (const direction of ['incoming', 'outgoing']) {
-      const entries = references().filter((reference) => reference.direction === direction);
-      if (entries.length === 0) continue;
-      const section = disclosure(`references:${direction}`, `${direction === 'incoming' ? 'Incoming' : 'Outgoing'} references · ${entries.length}`, false);
-      for (const reference of entries) section.append(referenceRow(reference));
-      children.push(section);
-    }
+    // GitHub's "Other activity": one band, a row per kind of event, and one mentions row holding both directions.
+    const other: HTMLElement[] = [];
     const events = activityEvents();
     if (options.reviewGrouping !== 'batch' && events.length > 0) {
-      const section = disclosure('activity', `Activity · ${events.length}`, false);
       const types = new Map<string, ProviderReviewPanelEvent[]>();
       for (const event of events) {
         const type = event.kind === 'push' || event.kind === 'commit' ? 'Commits' : event.kind === 'state' ? 'Status changes' : event.kind === 'task' ? 'Tasks'
@@ -1872,12 +2104,31 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         const group = types.get(type) ?? [];group.push(event);types.set(type, group);
       }
       for (const [type, entries] of types) {
-        const group = disclosure(`activity:${type}`, `${type} · ${entries.length}`, false);
+        const group = disclosure(`activity:${type}`, type === 'Commits' ? `${entries.length} push${entries.length === 1 ? '' : 'es'}` : `${type} · ${entries.length}`, false);
+        group.querySelector('[data-geld-review-toggle]')?.prepend(digestIcon(type === 'Commits' ? 'commit' : 'activity', doc));
         for (const event of entries) group.append(eventRow(event));
-        section.append(group);
+        other.push(group);
       }
-      children.push(section);
     }
+    const mentions = references();
+    if (mentions.length > 0) {
+      const row = disclosure('mentions', countLabel(mentions.length, 'mention'), false);
+      row.querySelector('[data-geld-review-toggle]')?.prepend(digestIcon('link', doc));
+      for (const direction of ['incoming', 'outgoing']) {
+        const entries = mentions.filter((reference) => reference.direction === direction);
+        if (entries.length === 0) continue;
+        const section = disclosure(`references:${direction}`, `${direction === 'incoming' ? 'Where this is mentioned' : 'What this mentions'} · ${entries.length}`, true);
+        for (const reference of entries) section.append(referenceRow(reference));
+        row.append(section);
+      }
+      other.push(row);
+    }
+    if (other.length > 0) {
+      const band = disclosure('other-activity', 'Other activity', true);
+      band.append(...other);
+      children.push(band);
+    }
+    assignLevels(children);
     for (const child of children) wrapSectionContent(child);
     panel.replaceChildren(...children);
     syncUpdating();

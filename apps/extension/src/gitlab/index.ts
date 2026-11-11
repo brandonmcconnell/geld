@@ -10,7 +10,7 @@ import { describeGitLabPage } from './page';
 import { fetchGitLabDiff } from './source';
 import { fetchGitLabStandaloneDiff } from './standalone-source';
 import { fetchGitLabDeployments } from './deployments';
-import { fetchGitLabReview } from './review';
+import { fetchGitLabReview, gitLabReviewIdentity } from './review';
 import type { GitLabNativeThreadCapabilities } from './review';
 import { gitLabActionVisit, readGitLabActions } from './actions';
 import type { ProviderReviewComment } from '@geld/review';
@@ -31,6 +31,7 @@ import { createGitLabDiffSyntax } from './diff-syntax';
 
 export const gitlabAdapter: ProviderAdapter = {
   id: 'gitlab',
+  viewerAuthorId: (doc) => { const identity = gitLabReviewIdentity(doc);return identity?.startsWith('user:') === true ? identity.slice(5) : null; },
   attachmentLink: gitLabAttachmentLink,
   createNativeView: (doc, changed, choice) => new GitLabNativeWhitespace(doc, changed, choice),
   diffSyntax: createGitLabDiffSyntax(),

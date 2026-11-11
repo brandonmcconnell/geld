@@ -2240,14 +2240,17 @@ async function gitLabBotBodyEvidence(page, item) {
   page.on('request', request);
   try {
     progress.openedSummaries = await openReviewAncestors(page, selector);
-    const handle = await page.evaluateHandle((selector) => [...document.querySelectorAll(`${selector} > .geld-provider-review__byline > a[href]`)].find((link) => link.textContent.trim() === 'View original') ?? null, selector);
+    // The comment's ⋯ holds "Show in timeline" as GitHub's does; open it before the real click on the link.
+    await page.evaluate((selector) => { const menu = document.querySelector(`${selector} > .geld-provider-review__msg-side > details`);if (menu !== null) menu.open = true; }, selector);
+    const handle = await page.evaluateHandle((selector) => document.querySelector(`${selector} > .geld-provider-review__msg-side a[data-geld-view][href]`)
+      ?? [...document.querySelectorAll(`${selector} > .geld-provider-review__byline > a[href]`)].find((link) => link.textContent.trim() === 'View' || link.textContent.trim() === 'View original') ?? null, selector);
     const original = handle.asElement();assert.ok(original !== null, 'Mounted native bot summary must retain its original-source control');
     try {
       assert.equal(await original.evaluate((link) => link.href), `${GL_BOT}#${anchor}`);
       const url = page.url();
       await original.evaluate((link) => link.scrollIntoView({ block: 'center', inline: 'nearest' }));await original.click();
       assert.equal(page.url(), url, 'Revealing the already mounted native summary must not navigate');
-      progress.originalClick = { label: 'View original', input: 'Real Puppeteer pointer click reveals the existing native note without navigation' };
+      progress.originalClick = { label: 'Show in timeline', input: 'Real Puppeteer pointer click reveals the existing native note without navigation' };
     } finally { await discardHandle(handle); }
     const read = async (stage) => {
       const body = await page.evaluate(commentBodyPresentationProbe, 'gitlab', anchor);
@@ -2661,7 +2664,7 @@ async function localReviewedFlag(page, requiredSource = null) {
     return { itemId, headSha, headEvidence, pressed: button.getAttribute('aria-pressed'), disabled: button.disabled, buttonText: button.textContent,
       localStatus: item.getAttribute('data-state'), statusText: item.querySelector('.geld-provider-review__item-state')?.textContent,
       group: item.closest('[data-geld-review-group]')?.getAttribute('data-geld-review-group'), notice: item.querySelector('[data-geld-local-review-notice]')?.textContent ?? null,
-      sourceLinks: [...item.querySelectorAll('[data-geld-source] .geld-provider-review__byline > a[href]')].map((link) => link.href), nativeSources: sources, checks: rows('.geld-provider-review__check'), bots: rows('[data-geld-review-bot]'), aiRunControls: panel.querySelectorAll('[data-geld-ai-run]').length };
+      sourceLinks: [...item.querySelectorAll('[data-geld-source] .geld-provider-review__byline > a[href], [data-geld-source] > .geld-provider-review__msg-side a[data-geld-view]')].map((link) => link.href), nativeSources: sources, checks: rows('.geld-provider-review__check'), bots: rows('[data-geld-review-bot]'), aiRunControls: panel.querySelectorAll('[data-geld-ai-run]').length };
   }, itemId);
   const original = await poll(observe, (value) => value !== null && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value.headSha) && value.sourceLinks.length > 0 && value.nativeSources.some((source) => source.nativeId !== null) && !value.disabled, 'Local mark has an actual native source head, original source and canonical links');
   assert.equal(original.aiRunControls, 0, 'Local flag smoke must not expose an AI run');
@@ -3126,7 +3129,7 @@ async function bitbucketCommentDigest(page) {
     const dangerous = body == null ? null : [...body.querySelectorAll('*')].some((node) => /^(SCRIPT|STYLE|IFRAME|OBJECT|EMBED|FORM|BUTTON|INPUT|SELECT|TEXTAREA|SVG)$/.test(node.tagName) || [...node.attributes].some((attribute) => attribute.name.startsWith('on') || ['style', 'contenteditable', 'id'].includes(attribute.name)));
     return { authenticated, panelState: panel?.getAttribute('data-state') ?? null, nativeId: native?.id ?? null,
       nativeBody: nativeBody?.textContent.trim() ?? null, renderedBody: body?.textContent.trim() ?? null, renderedSanitized: dangerous === false,
-      originalLink: originalLink?.href ?? null, sourceLinks: [...source?.querySelectorAll('.geld-provider-review__byline > a[href]') ?? []].map((link) => link.href),
+      originalLink: originalLink?.href ?? null, sourceLinks: [...source?.querySelectorAll('.geld-provider-review__byline > a[href], :scope > .geld-provider-review__msg-side a[data-geld-view]') ?? []].map((link) => link.href),
       nativeOutdated: [...header?.querySelectorAll('span') ?? []].some((node) => node.children.length === 0 && node.textContent.trim() === 'Outdated'),
       nativePath: header?.querySelector('[data-qa="bk-filepath"]')?.textContent ?? null, itemState: item?.getAttribute('data-state') ?? null,
       sourceActions: [...source?.querySelectorAll('.geld-provider-review__source-actions button') ?? []].map((button) => button.textContent.trim()),

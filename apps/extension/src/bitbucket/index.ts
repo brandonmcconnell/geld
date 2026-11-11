@@ -30,6 +30,13 @@ export type { BitbucketReviewSnapshot } from './review';
 
 export const bitbucketAdapter: ProviderAdapter = {
   id: 'bitbucket',
+  viewerAuthorId: (doc) => {
+    if (!bitbucketAuthenticated(doc)) return null;
+    try {
+      const value: unknown = JSON.parse(doc.head.querySelector('meta#bb-bootstrap[data-current-user]')?.getAttribute('data-current-user') ?? 'null');
+      return typeof value === 'object' && value !== null && 'uuid' in value && typeof value.uuid === 'string' && value.uuid !== '' ? value.uuid : null;
+    } catch { return null; }
+  },
   attachmentLink: bitbucketAttachmentLink,
   createPageMode: createBitbucketWhitespaceMode,
   createNativeView: (doc, changed) => new BitbucketSourceReferences(doc, changed),

@@ -176,3 +176,203 @@ svg.geld-provider-digest-icon[data-geld-outline] > [fill="currentColor"] { fill:
 .geld-provider-review__check-group + .geld-provider-review__check-group { margin-block-start: var(--geld-provider-space-3); }
 .geld-provider-review__checks > .geld-provider-review__check > :first-child { flex: 1 1 auto; }
 .geld-provider-review__checks > .geld-provider-review__check > .geld-provider-review__check-part { white-space: nowrap; }
+
+/* GitHub's three levels, told apart by surface and type, never by indent: a band folds a group, a row is white at the
+ * body size, and what opens under a row is held to it by a 2px accent rail, with 11px uppercase labels for its own groups, as GitHub's `.geld-review__subhead`. */
+.geld-provider-review [data-geld-level='band'] { background: var(--geld-provider-bg-subtle); }
+.geld-provider-review [data-geld-level='band'] > .geld-provider-review__section-toggle {
+  justify-content: flex-start; gap: 6px; min-block-size: 32px; padding-block: 0;
+  font: var(--geld-provider-font-small); font-weight: var(--geld-provider-heading-weight); color: var(--geld-provider-text);
+}
+.geld-provider-review [data-geld-level='band'] > .geld-provider-review__section-toggle::after,
+.geld-provider-review [data-geld-level='label'] > .geld-provider-review__section-toggle::after { margin-inline-start: 0; inline-size: .35em; block-size: .35em; opacity: .7; }
+.geld-provider-review [data-geld-level='band'] > .geld-provider-review__section-toggle:hover { background: transparent; color: var(--geld-provider-link); }
+.geld-provider-review [data-geld-level='band'] > .geld-provider-review__section-content { padding: 0; background: var(--geld-provider-bg); }
+.geld-provider-review [data-geld-level='row'] { border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); background: var(--geld-provider-bg); }
+.geld-provider-review [data-geld-level='row'] > .geld-provider-review__section-toggle {
+  min-block-size: 40px; padding: 0 var(--geld-provider-space-3) 0 var(--geld-provider-space-5); gap: 10px;
+  font-weight: var(--geld-provider-font-weight); color: var(--geld-provider-text);
+}
+.geld-provider-review [data-geld-level='row'] > .geld-provider-review__section-content { padding: 0 0 var(--geld-provider-space-3); }
+.geld-provider-review [data-geld-level='row'] { position: relative; }
+/* The rail is drawn over the row and everything it holds: an inset shadow sat under nested rows' own backgrounds and broke at each one. */
+.geld-provider-review [data-geld-level='row'][data-geld-review-open='true']::before {
+  content: ''; position: absolute; inset-block: 0; inset-inline-start: 0; z-index: 2; inline-size: 2px; background: var(--geld-provider-link); pointer-events: none;
+}
+.geld-provider-review [data-geld-level='row'] [data-geld-level='row']::before { content: none; }
+.geld-provider-review [data-geld-level='label'] { border-top: 0; background: transparent; }
+.geld-provider-review [data-geld-level='label'] > .geld-provider-review__section-toggle {
+  justify-content: flex-start; gap: 6px; min-block-size: 28px; padding: var(--geld-provider-space-2) var(--geld-provider-space-5) 0;
+  font: var(--geld-provider-font-small); font-size: 11px; font-weight: var(--geld-provider-heading-weight); text-transform: uppercase; letter-spacing: .04em;
+  color: var(--geld-provider-text-subtle);
+}
+.geld-provider-review [data-geld-level='label'] > .geld-provider-review__section-toggle:hover { background: transparent; color: var(--geld-provider-text); }
+.geld-provider-review [data-geld-level='label'] > .geld-provider-review__section-content { padding: 0; }
+.geld-provider-review [data-geld-level='label'] > .geld-provider-review__section-content > [data-geld-level='row']:first-child { border-top: 0; }
+.geld-provider-review [data-geld-level] .geld-provider-review__section-content > :is(p, .geld-provider-review__event, .geld-provider-review__reference, .geld-provider-review__source, .geld-provider-review__source-actions) { margin-inline: var(--geld-provider-space-5); }
+[data-geld-status-row] > .geld-provider-review__section-toggle { font-weight: var(--geld-provider-font-weight); }
+.geld-provider-review [data-geld-level='status'] > .geld-provider-review__section-content > [data-geld-level='row']:first-child { border-top: 0; }
+.geld-provider-review__posters { display: inline-flex; flex: 0 0 auto; }
+.geld-provider-review__posters > .geld-provider-review__reviewer-avatar + .geld-provider-review__reviewer-avatar { margin-inline-start: -6px; box-shadow: 0 0 0 2px var(--geld-provider-bg); }
+.geld-provider-review__round-name { flex: 0 0 auto; }
+.geld-provider-review progress.geld-provider-review__meter { appearance: none; border: 0; width: 64px; height: 6px; border-radius: 6px; overflow: hidden; background: var(--geld-provider-border); }
+.geld-provider-review__meter::-webkit-progress-bar { background: var(--geld-provider-border); }
+.geld-provider-review__meter::-webkit-progress-value { background: var(--geld-provider-success); border-radius: 6px; }
+.geld-provider-review__meter::-moz-progress-bar { background: var(--geld-provider-success); border-radius: 6px; }
+.geld-provider-review__count-chip { display: inline-flex; align-items: center; gap: 2px; padding: 0 6px; border-radius: 999px; background: var(--geld-provider-bg-subtle); color: var(--geld-provider-text-subtle); font: var(--geld-provider-font-small); }
+.geld-provider-review__count-chip > svg { width: 12px; height: 12px; }
+.geld-provider-review__row-time { margin-inline-start: auto; color: var(--geld-provider-text-subtle); font: var(--geld-provider-font-small); white-space: nowrap; }
+.geld-provider-review__row-time + * { margin-inline-start: 0; }
+[data-geld-type-round] > .geld-provider-review__section-toggle > svg:first-child { color: var(--geld-provider-text-subtle); }
+[data-geld-type-round] > .geld-provider-review__section-toggle > svg[data-geld-round-settled] { color: var(--geld-provider-success); }
+.geld-provider-review [data-geld-level='row'] > .geld-provider-review__section-toggle:has(> .geld-provider-review__row-time)::after { margin-inline-start: var(--geld-provider-space-3); }
+[data-geld-review-bot][data-geld-bot-health='good'] > .geld-provider-review__section-toggle > svg:first-child,
+[data-geld-automated-reviewer][data-state='approved'] > .geld-provider-review__section-toggle > svg:first-child { color: var(--geld-provider-success); }
+[data-geld-review-bot][data-geld-bot-health='warn'] > .geld-provider-review__section-toggle > svg:first-child,
+[data-geld-automated-reviewer][data-state='open'] > .geld-provider-review__section-toggle > svg:first-child { color: var(--geld-provider-warning); }
+[data-geld-review-bot]:is([data-geld-bot-health='severe'], [data-geld-bot-health='bad']) > .geld-provider-review__section-toggle > svg:first-child,
+[data-geld-automated-reviewer][data-state='changes_requested'] > .geld-provider-review__section-toggle > svg:first-child { color: var(--geld-provider-danger); }
+.geld-provider-review__status-chip[data-state='open'] > svg { color: var(--geld-provider-warning); }
+.geld-provider-review [data-geld-level='label'] > .geld-provider-review__section-toggle > svg:first-child { width: 14px; height: 14px; margin-inline-end: 6px; color: var(--geld-provider-text-subtle); }
+.geld-provider-review [data-geld-review-group='resolved'] > .geld-provider-review__section-toggle > svg:first-child { color: var(--geld-provider-success); }
+.geld-provider-review [data-geld-level='label'] { border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); }
+.geld-provider-review [data-geld-level='label'] > .geld-provider-review__section-toggle { min-block-size: 32px; padding-block: 0; }
+/* A thread row reads as GitHub's: glyph, pictures, the bold title, the muted path line, a state pill and the time. */
+.geld-provider-review .geld-provider-review__item[data-geld-level='row'] > .geld-provider-review__section-toggle { display: flex; }
+.geld-provider-review__item > .geld-provider-review__section-toggle > .geld-provider-review__item-title { flex: 0 1 auto; font-weight: var(--geld-provider-heading-weight); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.geld-provider-review__item > .geld-provider-review__section-toggle > .geld-provider-review__item-meta { flex: 0 1 auto; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--geld-provider-font-small); }
+.geld-provider-review__item > .geld-provider-review__section-toggle > .geld-provider-review__item-state { flex: 0 0 auto; margin: 0; padding: 0 6px; border: var(--geld-provider-border-width) solid var(--geld-provider-border); border-radius: 999px; font: var(--geld-provider-font-small); }
+.geld-provider-review__item:is([data-state='open'], [data-state='resolved'], [data-state='needs-reply']) > .geld-provider-review__section-toggle > .geld-provider-review__item-state { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
+.geld-provider-review__item > .geld-provider-review__section-toggle > svg:first-child { color: var(--geld-provider-text-subtle); }
+.geld-provider-review__item:is([data-state='resolved'], [data-state='done-manual']) > .geld-provider-review__section-toggle > svg:first-child { color: var(--geld-provider-success); }
+.geld-provider-review__item > .geld-provider-review__section-toggle:has(> .geld-provider-review__row-time)::after { margin-inline-start: var(--geld-provider-space-3); }
+.geld-provider-review__item > .geld-provider-review__section-toggle > .geld-provider-review__item-state:last-child { margin-inline-end: auto; }
+/* A push with an open thread is amber, as GitHub's push rows are: a wash of the tone, never the words. */
+.geld-provider-review [data-geld-level='row'][data-tone='warn'] > .geld-provider-review__section-toggle { background: linear-gradient(90deg, color-mix(in srgb, var(--geld-provider-warning) 22%, transparent), color-mix(in srgb, var(--geld-provider-warning) 5%, transparent)); }
+.geld-provider-review [data-geld-level='row'][data-tone='warn'] > .geld-provider-review__section-toggle > svg:first-child { color: var(--geld-provider-warning); }
+.geld-provider-review [data-geld-level='row'][data-tone] > .geld-provider-review__section-toggle:hover,
+.geld-provider-review [data-geld-level='row'][data-tone][data-geld-review-open='true'] > .geld-provider-review__section-toggle { background: var(--geld-provider-button-hover-bg); }
+/* An event is one line, as GitHub's compact events are: picture, actor, the fewest words, then the time at the end. */
+.geld-provider-review .geld-provider-review__event { display: grid; grid-template-columns: 16px auto auto minmax(0, 1fr) auto minmax(3em, auto); align-items: center; column-gap: var(--geld-provider-space-3); min-block-size: 36px; padding-block: var(--geld-provider-space-2); border-bottom: 0; border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); }
+.geld-provider-review .geld-provider-review__event:first-child { border-top: 0; }
+.geld-provider-review .geld-provider-review__event > .geld-provider-review__body { min-inline-size: 0; max-block-size: calc(var(--geld-provider-line-height, 1.5) * 1em); overflow: hidden; color: var(--geld-provider-text-subtle); white-space: nowrap; text-overflow: ellipsis; }
+.geld-provider-review .geld-provider-review__event > .geld-provider-review__body * { display: inline; margin: 0; padding: 0; }
+.geld-provider-review .geld-provider-review__event > .geld-provider-review__body :is(ul, ol, li) { list-style: none; }
+.geld-provider-review .geld-provider-review__event > time { color: var(--geld-provider-text-subtle); font: var(--geld-provider-font-small); white-space: nowrap; }
+.geld-provider-review .geld-provider-review__event > a { justify-self: end; font: var(--geld-provider-font-small); white-space: nowrap; }
+.geld-provider-review .geld-provider-review__event > .geld-provider-review__body { padding: 0; border: 0; line-height: 20px; max-block-size: 20px; }
+
+.geld-provider-review .geld-provider-review__event > svg { inline-size: 16px; block-size: 16px; color: var(--geld-provider-text-subtle); }
+.geld-provider-review .geld-provider-review__event > .geld-provider-review__event-slot { display: block; }
+
+.geld-provider-review .geld-provider-review__pin { margin-inline: var(--geld-provider-space-5); margin-block: var(--geld-provider-space-2); border: var(--geld-provider-border-width) solid var(--geld-provider-border); border-radius: var(--geld-provider-radius); background: var(--geld-provider-bg-subtle); }
+.geld-provider-review .geld-provider-review__pin-toggle { display: flex; align-items: center; gap: var(--geld-provider-space-2); inline-size: 100%; min-block-size: 32px; padding: 0 var(--geld-provider-space-3); border: 0; background: none; color: inherit; font: var(--geld-provider-font-small); text-align: start; cursor: pointer; }
+.geld-provider-review .geld-provider-review__pin-toggle > svg { inline-size: 16px; block-size: 16px; flex: none; color: var(--geld-provider-text-subtle); }
+.geld-provider-review .geld-provider-review__pin-preview { flex: 1; min-inline-size: 0; overflow: hidden; color: var(--geld-provider-text-subtle); white-space: nowrap; text-overflow: ellipsis; }
+.geld-provider-review .geld-provider-review__pin-toggle > time { flex: none; color: var(--geld-provider-text-subtle); }
+.geld-provider-review .geld-provider-review__pin > .geld-provider-review__source { margin: 0; border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); }
+
+.geld-provider-review .geld-provider-review__pointer { border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); }
+.geld-provider-review .geld-provider-review__pointer-toggle { display: flex; align-items: center; gap: var(--geld-provider-space-3); inline-size: 100%; min-block-size: 40px; padding: 0 var(--geld-provider-space-5); border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.geld-provider-review .geld-provider-review__pointer-toggle:hover { background: var(--geld-provider-bg-subtle); }
+.geld-provider-review .geld-provider-review__pointer-toggle > svg { inline-size: 16px; block-size: 16px; flex: none; color: var(--geld-provider-text-subtle); }
+.geld-provider-review .geld-provider-review__pointer-toggle > svg:last-child { margin-inline-start: auto; }
+.geld-provider-review .geld-provider-review__pointer-toggle > .geld-provider-review__item-title { flex: 0 1 auto; min-inline-size: 0; overflow: hidden; font-weight: var(--geld-provider-heading-weight, 600); white-space: nowrap; text-overflow: ellipsis; }
+.geld-provider-review .geld-provider-review__pointer-toggle > .geld-provider-review__item-meta { flex: 0 1 auto; min-inline-size: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.geld-provider-review .geld-provider-review__pointer-toggle > .geld-provider-review__item-state { flex: 0 0 auto; padding: 0 6px; border: var(--geld-provider-border-width) solid var(--geld-provider-border); border-radius: 999px; font: var(--geld-provider-font-small); }
+.geld-provider-review .geld-provider-review__pointer:is([data-state='open'], [data-state='resolved'], [data-state='needs-reply']) .geld-provider-review__item-state { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
+
+/* ---- GitHub's thread chat ------------------------------------------------------------------------------------------
+ * An opened thread sits at the row's word column (GitHub's slot: 8px 16px 8px 42px), in one box: the pinned source,
+ * then the messages, everyone else's on the left and the reader's own on the right, the picture in a 32px gutter and
+ * the name and time above the bubble once per author's run. The bubble holds the message alone. */
+.geld-provider-review { --geld-chat-avatar: 32px; --geld-chat-gutter: 40px; --geld-chat-radius: 12px; --geld-chat-tight: 4px; --geld-chat-indent: 42px; }
+.geld-provider-review .geld-provider-review__item[data-geld-level='row'] > .geld-provider-review__section-content { padding: var(--geld-provider-space-3) var(--geld-provider-space-5) var(--geld-provider-space-3) var(--geld-chat-indent); }
+.geld-provider-review .geld-provider-review__chat {
+  border: var(--geld-provider-border-width) solid var(--geld-provider-border); border-radius: var(--geld-provider-radius);
+  background: var(--geld-provider-bg);
+}
+.geld-provider-review .geld-provider-review__chat > .geld-provider-review__pin { margin: 0; border: 0; border-block-end: var(--geld-provider-border-width) solid var(--geld-provider-border); border-radius: var(--geld-provider-radius) var(--geld-provider-radius) 0 0; }
+.geld-provider-review .geld-provider-review__chat-body { display: flex; flex-direction: column; gap: 4px; padding: var(--geld-provider-space-4); container-type: inline-size; }
+.geld-provider-review .geld-provider-review__chat-body > p { margin: 0; }
+.geld-provider-review .geld-provider-review__chat [data-geld-chat-message] {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; align-self: flex-start;
+  box-sizing: border-box; max-inline-size: calc(100% - var(--geld-chat-gutter)); min-inline-size: 0;
+  margin: 0; padding: 0 0 0 var(--geld-chat-gutter); border: 0; border-radius: 0; background: none;
+}
+.geld-provider-review .geld-provider-review__chat [data-geld-chat-message]:is([data-geld-run='first'], [data-geld-run='only']):not(:first-child) { margin-block-start: 8px; }
+.geld-provider-review .geld-provider-review__chat [data-geld-chat-message][data-geld-mine] { align-items: flex-end; align-self: flex-end; padding: 0 var(--geld-chat-gutter) 0 0; }
+.geld-provider-review .geld-provider-review__chat [data-geld-chat-message] > .geld-provider-review__byline {
+  position: static; flex-wrap: nowrap; align-items: center; gap: var(--geld-provider-space-2);
+  inline-size: 0; min-inline-size: 100%; min-block-size: 20px; margin: 0 0 4px; white-space: nowrap; line-height: 20px;
+}
+.geld-provider-review .geld-provider-review__chat [data-geld-mine] > .geld-provider-review__byline { flex-direction: row-reverse; }
+.geld-provider-review .geld-provider-review__chat [data-geld-chat-message] > .geld-provider-review__byline > :is(.geld-provider-review__avatar-slot, .geld-provider-review__byline-avatar) {
+  position: absolute; inset-block-start: 0; inset-inline-start: 0;
+}
+/* The host's own picture keeps its native size (the slot carries it); a stand-in initial takes the same 32px. */
+.geld-provider-review .geld-provider-review__chat [data-geld-chat-message] > .geld-provider-review__byline > .geld-provider-review__byline-avatar { inline-size: var(--geld-chat-avatar); block-size: var(--geld-chat-avatar); }
+.geld-provider-review .geld-provider-review__chat [data-geld-mine] > .geld-provider-review__byline > :is(.geld-provider-review__avatar-slot, .geld-provider-review__byline-avatar) { inset-inline: auto 0; }
+/* The handle and role labels stay as the host draws them: the author line is the host's identity, only placed as GitHub's chat places it. */
+.geld-provider-review .geld-provider-review__chat [data-geld-chat-message]:is([data-geld-run='mid'], [data-geld-run='last']) > .geld-provider-review__byline { display: none; }
+.geld-provider-review .geld-provider-review__chat [data-geld-chat-message] > .geld-provider-review__body {
+  box-sizing: border-box; max-inline-size: 100%; min-inline-size: 0; margin: 0; padding: 6px 12px;
+  border: var(--geld-provider-border-width) solid var(--geld-provider-border); border-radius: var(--geld-chat-radius);
+  background: var(--geld-provider-bg-subtle); overflow-wrap: anywhere;
+}
+.geld-provider-review .geld-provider-review__chat [data-geld-chat-message] > .geld-provider-review__body > :first-child { margin-block-start: 0; }
+.geld-provider-review .geld-provider-review__chat [data-geld-chat-message] > .geld-provider-review__body > :last-child { margin-block-end: 0; }
+.geld-provider-review .geld-provider-review__chat [data-geld-mine] > .geld-provider-review__body { border-color: color-mix(in srgb, var(--geld-provider-link) 40%, transparent); background: color-mix(in srgb, var(--geld-provider-link) 10%, var(--geld-provider-bg)); }
+.geld-provider-review .geld-provider-review__chat [data-geld-run='first']:not([data-geld-mine]) > .geld-provider-review__body { border-end-start-radius: var(--geld-chat-tight); }
+.geld-provider-review .geld-provider-review__chat [data-geld-run='mid']:not([data-geld-mine]) > .geld-provider-review__body { border-start-start-radius: var(--geld-chat-tight); border-end-start-radius: var(--geld-chat-tight); }
+.geld-provider-review .geld-provider-review__chat [data-geld-run='last']:not([data-geld-mine]) > .geld-provider-review__body { border-start-start-radius: var(--geld-chat-tight); }
+.geld-provider-review .geld-provider-review__chat [data-geld-mine][data-geld-run='first'] > .geld-provider-review__body { border-end-end-radius: var(--geld-chat-tight); }
+.geld-provider-review .geld-provider-review__chat [data-geld-mine][data-geld-run='mid'] > .geld-provider-review__body { border-start-end-radius: var(--geld-chat-tight); border-end-end-radius: var(--geld-chat-tight); }
+.geld-provider-review .geld-provider-review__chat [data-geld-mine][data-geld-run='last'] > .geld-provider-review__body { border-start-end-radius: var(--geld-chat-tight); }
+/* The comment's ⋯ stands on the empty side, level with the bubble's first line, shown on hover, focus or while open. */
+.geld-provider-review .geld-provider-review__chat [data-geld-chat-message] > .geld-provider-review__msg-side { position: absolute; inset-block-start: 24px; inset-inline-start: 100%; z-index: 3; padding-inline-start: 4px; }
+.geld-provider-review .geld-provider-review__chat [data-geld-chat-message]:is([data-geld-run='mid'], [data-geld-run='last']) > .geld-provider-review__msg-side { inset-block-start: 0; }
+.geld-provider-review .geld-provider-review__chat [data-geld-mine] > .geld-provider-review__msg-side { inset-inline: auto 100%; padding-inline: 0 4px; }
+.geld-provider-review .geld-provider-review__chat [data-geld-chat-message] > .geld-provider-review__msg-side > .geld-provider-review__row-menu:not([open]) { opacity: 0; }
+.geld-provider-review .geld-provider-review__chat [data-geld-chat-message]:is(:hover, :focus-within) > .geld-provider-review__msg-side > .geld-provider-review__row-menu { opacity: 1; }
+.geld-provider-review .geld-provider-review__chat [data-geld-mine] .geld-provider-review__row-menu > .geld-provider-review__menu-list { inset-inline: auto 0; }
+.geld-provider-review .geld-provider-review__chat [data-geld-chat-message]:not([data-geld-mine]) .geld-provider-review__row-menu > .geld-provider-review__menu-list { inset-inline: 0 auto; }
+/* Outside a thread a comment keeps its card, its ⋯ at the byline's end. */
+.geld-provider-review .geld-provider-review__source:not([data-geld-chat-message]) { position: relative; }
+.geld-provider-review .geld-provider-review__source:not([data-geld-chat-message]) > .geld-provider-review__msg-side { position: absolute; inset-block-start: var(--geld-provider-space-2); inset-inline-end: var(--geld-provider-space-2); }
+.geld-provider-review .geld-provider-review__source:not([data-geld-chat-message]) > .geld-provider-review__byline { padding-inline-end: 32px; }
+
+/* ⋯ menus: a 28px square glyph button; the list is the host's overlay with plain items. */
+.geld-provider-review .geld-provider-review__more { inline-size: 28px; block-size: 28px; min-block-size: 28px; padding: 0; justify-content: center; }
+.geld-provider-review .geld-provider-review__row-menu > .geld-provider-review__menu-list { display: flex; flex-direction: column; margin: 0; }
+.geld-provider-review .geld-provider-review__row-menu:not([open]) > .geld-provider-review__menu-list { display: none; }
+.geld-provider-review .geld-provider-review__row-menu > .geld-provider-review__menu-list > :is(button, a),
+.geld-provider-review .geld-provider-review__row-menu > .geld-provider-review__menu-list > span > button {
+  display: block; inline-size: 100%; box-sizing: border-box; min-block-size: 0; padding: var(--geld-provider-space-2) var(--geld-provider-space-3);
+  border: 0; border-radius: var(--geld-provider-button-radius); background: transparent; box-shadow: none; color: var(--geld-provider-text);
+  font: var(--geld-provider-font); text-align: start; text-decoration: none; white-space: nowrap; cursor: pointer;
+}
+.geld-provider-review .geld-provider-review__row-menu > .geld-provider-review__menu-list > span { display: block; }
+.geld-provider-review .geld-provider-review__row-menu > .geld-provider-review__menu-list > span > .geld-provider-review__muted:empty { display: none; }
+.geld-provider-review .geld-provider-review__row-menu > .geld-provider-review__menu-list > :is(button, a):hover,
+.geld-provider-review .geld-provider-review__row-menu > .geld-provider-review__menu-list > span > button:hover { background: var(--geld-provider-button-hover-bg); }
+/* A thread row's ⋯ stands left of its chevron, inside the row's 40px. */
+.geld-provider-review .geld-provider-review__item > [data-geld-row-menu] { position: absolute; inset-block-start: 6px; inset-inline-end: calc(var(--geld-provider-space-3) + 1em + var(--geld-provider-space-2)); z-index: 3; }
+.geld-provider-review .geld-provider-review__item:has(> [data-geld-row-menu]) > .geld-provider-review__section-toggle { padding-inline-end: calc(var(--geld-provider-space-3) + 1em + var(--geld-provider-space-2) + 32px); }
+.geld-provider-review .geld-provider-review__item:has(> [data-geld-row-menu]) > .geld-provider-review__section-toggle::after { position: absolute; inset-block-start: 16px; inset-inline-end: calc(var(--geld-provider-space-3) + 3px); margin: 0; }
+.geld-provider-review .geld-provider-review__item > [data-geld-row-menu] > .geld-provider-review__menu-list { inset-inline: auto 0; }
+
+/* A suggested fix: a small label over the code, in the thread's column. */
+.geld-provider-review .geld-provider-review__fix { margin-block-end: var(--geld-provider-space-3); }
+.geld-provider-review .geld-provider-review__fix-label { display: block; margin-block-end: var(--geld-provider-space-2); color: var(--geld-provider-text-subtle); font: var(--geld-provider-font-small); font-size: 11px; font-weight: var(--geld-provider-heading-weight); text-transform: uppercase; letter-spacing: .04em; }
+.geld-provider-review .geld-provider-review__fix > pre { margin: 0; padding: var(--geld-provider-space-3); overflow-x: auto; border: var(--geld-provider-border-width) solid var(--geld-provider-border); border-radius: var(--geld-provider-radius); background: var(--geld-provider-bg-subtle); }
+
+/* The edit's clock beside the time. */
+.geld-provider-review .geld-provider-review__edited { display: inline-flex; align-items: center; color: var(--geld-provider-text-subtle); }
+.geld-provider-review .geld-provider-review__edited > svg { inline-size: 12px; block-size: 12px; }
+
+/* Pills stand out by their own padding and border, so the mark inside lines up with the label column's words, as GitHub's. */
+.geld-provider-review [data-geld-status-row] > .geld-provider-review__section-toggle > .geld-provider-review__row-preview:has(> .geld-provider-review__status-chip:first-child) { margin-inline-start: calc(-1 * (var(--geld-provider-space-3) + var(--geld-provider-border-width))); }
+
+/* An empty note in an open push or round sits at the rows' word column. */
+.geld-provider-review [data-geld-level='row'] > .geld-provider-review__section-content > p { margin-inline: var(--geld-chat-indent) var(--geld-provider-space-5); }

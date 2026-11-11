@@ -156,8 +156,8 @@ Decision needed: keep Merge checks as a provider row, or fold it into CI and the
 | By type: "N rounds to review", settled, current round | match: `roundSections`, rounds from push system notes | match: rounds from `/activity` updates | GL commit system notes · BB `/activity` updates | — |
 | By push: "Needs attention", "N pushes", newest first | match: `historySections` heads the pushes "N pushes", with what came before the first push as its last entry | match: same | GL commit system notes · BB `/activity` updates | — |
 | Grouping menu in the Geld row | match: `toolbarMenu` | match | — | — |
-| Thread opens to a chat of the host's own nodes with its reply box | missing: sanitised copy, proxy actions (`gitlab/thread-actions.ts`) | missing: same (`bitbucket/thread-actions.ts`) | discussions | **slot**: GitLab's `.discussion` node, Bitbucket's comment thread |
-| Pinned source strip and its revisions | missing | missing | GL notes have no edit history API; BB none | — |
+| Thread opens to a chat of the host's own nodes with its reply box | partial: GitHub's chat layout (one box at the word column, reader on the right, runs, byline outside the bubble, ⋯ on the empty side) over sanitised copies (`chatMessage`); Resolve and Reply relay the host's own controls behind the ⋯ (`gitlab/thread-actions.ts`) | partial: same (`bitbucket/thread-actions.ts`) | discussions | **slot**: GitLab's `.discussion` node, Bitbucket's comment thread |
+| Pinned source strip | match | match | the bot's same-run summary, live only: no edit history to show past readings | — |
 | One-open accordion, focus by key | match: opening a row closes the open one (`ACCORDION_ROW`), groups fold on their own | match: same | — | — |
 | Rows never jump | partial: status-only updates keep position, a full render replaces children | partial: same | — | — |
 | Times line up down a list | unverified | unverified | — | — |
