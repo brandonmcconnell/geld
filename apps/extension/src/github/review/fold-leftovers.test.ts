@@ -10,6 +10,16 @@ describe('groupLeftovers', () => {
     expect(groupLeftovers([]).find((group) => group.key === 'mentions')).toBeUndefined();
   });
 
+  it('keeps commits and force-pushes in timeline order in the commits row', () => {
+    const [first, push, last] = [row(), row(), row()];
+    const groups = groupLeftovers([
+      { kind: 'commit', root: first },
+      { kind: 'push', root: push },
+      { kind: 'commit', root: last },
+    ]);
+    expect(groups.map((group) => [group.key, group.label, group.nodes])).toEqual([['commits', '2 commits · 1 force-push', [first, push, last]]]);
+  });
+
   it('counts both ways in one row: the timeline’s references to this pull request and the description’s', () => {
     const incoming = [row(), row()];
     const groups = groupLeftovers(incoming.map((root) => ({ kind: 'mention', root })), ['/o/r/issues/1 One']);
