@@ -1,21 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
+import type { Cache } from "#/platform";
 import { readRepositoryStars } from "./repository-stars.server";
 
 const HOUR_MS = 60 * 60 * 1000;
 
 function createStarsHarness() {
 	const store = new Map<string, string>();
-	const kv = {
-		get: async (key: string) => JSON.parse(store.get(key) ?? "null"),
-		put: async (key: string, value: string) => {
+	const cache: Pick<Cache, "get" | "put"> = {
+		get: async (key) => store.get(key) ?? null,
+		put: async (key, value) => {
 			store.set(key, value);
 		},
-	} as unknown as KVNamespace;
+	};
 	const deferred: Promise<unknown>[] = [];
 	const fetchCount = vi.fn<() => Promise<number | null>>();
 	const read = (now: number) =>
 		readRepositoryStars({
-			kv,
+			cache,
 			fetchCount,
 			defer: (work) => deferred.push(work),
 			now,

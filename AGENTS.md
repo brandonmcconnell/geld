@@ -2295,8 +2295,8 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
 The new Geld review workspace, built as a separate app beside `apps/dashboard`.
 `apps/dashboard` and app.geld.sh are left untouched until the owner decides to move them.
 The "Website stack" rule in Conventions governs `apps/site` only: the hub follows its own stack by the owner's decision.
-That stack is TanStack Start on Vite, TanStack Router and Query, Drizzle, Tailwind 4, Radix components in `packages/hub-ui`, and `@pierre/diffs` for diffs, running as a Cloudflare Worker built by Void.
-Run it with `pnpm dev:hub:demo` (Node 24.22 or newer): a local GitHub emulator on port 4200 with seeded data and the app on port 3200, no GitHub app or secrets needed.
+That stack is TanStack Start on Vite, TanStack Router and Query, Drizzle on Postgres, Tailwind 4, Radix components in `packages/hub-ui`, and `@pierre/diffs` for diffs, running as a Cloudflare Worker built by Void.
+Run it with `pnpm dev:hub:demo` (Node 24.22 or newer, and the Postgres below): a local GitHub emulator on port 4200 with seeded data and the app on port 3200, no GitHub app or secrets needed.
 `pnpm dev:hub` runs against github.com and needs `apps/hub/.env`.
 The ports are the hub's own: 3000 is the site's and 3001 the old dashboard's.
 Each hub package's `check` is typecheck and unit tests, so root `pnpm check` and CI cover them on Node 22;
@@ -2308,7 +2308,20 @@ Direct dependencies are pinned to exact versions, since the app misbehaves on ne
 Do not add another icon library: check a package's own licence file, not only its manifest, before taking it.
 The only company marks in it are GitHub's and GitLab's, the Git providers'.
 Environment variables that configure deployment are prefixed `GELD_HUB_`.
-Not done yet: it still uses the D1, KV and R2 bindings it started with, signs in with GitHub alone and knows nothing of Geld's accounts, teams, Digest or categories.
+**It is hosted on Cloudflare and written to be portable**, so another host is a matter of swapping a few files, never a migration.
+Postgres only, through the ordinary `pg` driver (`src/db`, Drizzle's Postgres dialect): on Cloudflare the connection string is Hyperdrive's, under `vite dev` it is `DATABASE_URL`.
+A Worker may not carry a socket from one request into the next, so the Worker entry wraps each request in `withRequestDatabase` and `getDb()` opens a small pool per request;
+outside a request (a script, a Node server) `getDb()` shares one pool for the process.
+Migrations are plain Drizzle (`db:generate`, `db:migrate`, `scripts/migrate.mjs`), applied the same way locally, in CI and as a release step, so a deploy runs `void deploy --skip-migrations`: Void's own migration tracking is not used.
+Files go through the S3 API (`src/lib/file-store.server.ts`, signed with `aws4fetch`), never an R2 binding, so R2, AWS S3 and MinIO are one code path.
+**Everything else Cloudflare-specific sits behind `src/platform`**: `platform.config()` (the one reader of the environment), `cache()` (KV), `queue()` (Queues), `liveRooms()` and `rateLimiter()` (Durable Objects, exported from the Worker entry) and `runAfterResponse` (`waitUntil`).
+Code imports `platform` from `#/platform` and nothing from `cloudflare:*`, and `src/platform/boundary.test.ts` fails when a Cloudflare API or type appears outside `src/platform/cloudflare/`, `src/entry-worker.ts` and `src/env.d.ts`.
+The rate limiter's decisions are plain functions over plain data (`rate-limit-state.ts`), which the Durable Object only stores, so another host reuses them.
+Tests mock `#/platform` with `createTestPlatform()` (`src/platform/testing.ts`) and get a real Postgres in process from `createTestDatabase()` (PGlite, `src/lib/testing/postgres.ts`).
+Local development, demo mode and the end-to-end suite need a Postgres: `docker compose -f apps/hub/compose.yaml up -d` starts one on port 5433, and `GELD_HUB_DEMO_DATABASE_URL` names another for demo mode and the tests.
+Postgres refuses to touch a row twice in one upsert, which SQLite allowed, so `recordGitHubChanges` folds repeats of an entity first.
+No queue is bound yet and nothing in the app uses the queue, live rooms or the rate limiter: they are there for the features that need them.
+Not done yet: it signs in with GitHub alone and knows nothing of Geld's accounts, teams, Digest or categories.
 Each of those arrives as its own change.
 
 ## Diff syntax highlighting

@@ -10,6 +10,11 @@ import {
 
 const inCI = Boolean(process.env.CI);
 
+const demoEnv = parseEnv(readFileSync(demoEnvFile, "utf8"));
+if (process.env.GELD_HUB_DEMO_DATABASE_URL) {
+	demoEnv.DATABASE_URL = process.env.GELD_HUB_DEMO_DATABASE_URL;
+}
+
 export default defineConfig({
 	testDir: "./tests",
 	globalSetup: "./support/global-setup.ts",
@@ -59,11 +64,12 @@ export default defineConfig({
 		{
 			command: [
 				"rm -rf .wrangler/demo-state",
+				"node scripts/migrate.mjs --reset",
 				`pnpm exec vite dev --port ${new URL(dashboardUrl).port} --strictPort`,
 			].join(" && "),
 			cwd: "../hub",
 			env: {
-				...parseEnv(readFileSync(demoEnvFile, "utf8")),
+				...demoEnv,
 				GELD_HUB_DEMO: "1",
 				CI: "true",
 			},

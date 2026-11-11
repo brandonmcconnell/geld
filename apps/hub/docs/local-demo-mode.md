@@ -6,7 +6,7 @@ stand-in serves a seeded workspace, and you sign in with one click.
 
 ```sh
 pnpm install
-pnpm dev:hub:demo            # add --reset to reseed and wipe demo D1/KV/R2 state
+pnpm dev:hub:demo            # add --reset to reseed and empty the demo database and cache
 ```
 
 Open <http://localhost:3200>, click **Continue with GitHub**, pick **Nova Reyes
@@ -92,13 +92,13 @@ It throws in production builds (`import.meta.env.PROD`) and for non-localhost
 URLs. Unset, nothing changes.
 
 `pnpm dev:hub:demo` (`scripts/dev-demo.mjs`) checks that ports 3200 and 4200 are
-free, starts the emulator, waits for `/_geld/health`, runs the dashboard with
+free, applies the migrations to the demo database, starts the emulator, waits for `/_geld/health`, runs the dashboard with
 `GELD_HUB_DEMO=1` and makes the first request to `/login`. If any step or
 process fails, everything it started is stopped. See
 [local-dev.md](local-dev.md#when-something-is-off) for the error messages.
-`GELD_HUB_DEMO=1` keeps D1/KV/R2 state in `apps/hub/.wrangler/demo-state`,
-apart from your normal dev state, and the dashboard applies D1 migrations there
-on start. The script passes the committed `apps/hub-emulator/dashboard.env` to the
+The demo has a Postgres database of its own (`geld_hub_demo`), and
+`GELD_HUB_DEMO=1` keeps the cache and Durable Object state in
+`apps/hub/.wrangler/demo-state`, apart from your normal dev state. The script passes the committed `apps/hub-emulator/dashboard.env` to the
 dashboard through the shell, which takes precedence over your
 `apps/hub/.env`; that file is never read for anything else or touched.
 

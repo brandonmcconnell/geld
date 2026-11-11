@@ -28,6 +28,23 @@ type GitHubInstallationTokenCacheEntry = {
 	cachedAt: number;
 };
 
+function isInstallationTokenCacheEntry(
+	value: unknown,
+): value is GitHubInstallationTokenCacheEntry {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"installationId" in value &&
+		typeof value.installationId === "number" &&
+		"token" in value &&
+		typeof value.token === "string" &&
+		"expiresAt" in value &&
+		typeof value.expiresAt === "string" &&
+		"cachedAt" in value &&
+		typeof value.cachedAt === "number"
+	);
+}
+
 type GitHubInstallationAuthResult = {
 	token?: string;
 	expiresAt?: string;
@@ -339,33 +356,23 @@ async function writeGitHubInstallationTokenToStore(
 
 async function getGitHubInstallationTokenCacheStore(): Promise<GitHubInstallationTokenCacheStore | null> {
 	try {
-		const { env } = await import("cloudflare:workers");
-		const workerEnv = env as {
-			GITHUB_CACHE_KV?: KVNamespace;
-		};
-		const kv = workerEnv.GITHUB_CACHE_KV;
-
-		if (!kv) {
-			return null;
-		}
+		const { platform } = await import("#/platform");
+		const cache = platform.cache();
 
 		return {
 			async get(storageKey) {
-				const entry = await kv.get<GitHubInstallationTokenCacheEntry>(
-					storageKey,
-					{
-						type: "json",
-					},
-				);
-				return entry ?? null;
+				const stored = await cache.get(storageKey);
+				if (stored === null) return null;
+				const entry: unknown = JSON.parse(stored);
+				return isInstallationTokenCacheEntry(entry) ? entry : null;
 			},
 			async put(storageKey, entry, expirationTtlSeconds) {
-				await kv.put(storageKey, JSON.stringify(entry), {
-					expirationTtl: expirationTtlSeconds,
+				await cache.put(storageKey, JSON.stringify(entry), {
+					ttlSeconds: expirationTtlSeconds,
 				});
 			},
 			async delete(storageKey) {
-				await kv.delete(storageKey);
+				await cache.delete(storageKey);
 			},
 		};
 	} catch {

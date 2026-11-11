@@ -18,9 +18,10 @@ pnpm --filter @geld/hub-e2e test:e2e:ui                        # Playwright UI m
 
 1. Starts `apps/hub-emulator/src/e2e.ts`: the demo workspace, in memory, seeded
    once. It exposes `POST /_geld/e2e/checkpoint` and `/_geld/e2e/reset`.
-2. Wipes `apps/hub/.wrangler/demo-state` and starts `vite dev` with
-   `GELD_HUB_DEMO=1` and the values in `apps/hub-emulator/dashboard.env`; the
-   dashboard applies D1 migrations on start.
+2. Wipes `apps/hub/.wrangler/demo-state`, empties and migrates the demo
+   database, and starts `vite dev` with `GELD_HUB_DEMO=1` and the values in
+   `apps/hub-emulator/dashboard.env`. It needs the Postgres from
+   `apps/hub/compose.yaml`, or `GELD_HUB_DEMO_DATABASE_URL` naming another.
 3. `support/global-setup.ts` signs in as `nova` through the emulator's account
    picker, saves `apps/hub-e2e/.auth/nova.json`, visits the routes the specs use so
    the dev server compiles them before the specs race, and checkpoints the
@@ -32,7 +33,7 @@ the ports are taken, so stop `pnpm dev:hub:demo` first. Ports come from
 `apps/hub-emulator/dashboard.env` (`BETTER_AUTH_URL`, `GITHUB_EMULATOR_URL`);
 that file is the single source of truth.
 
-Running the suite deletes the demo D1 state used by `pnpm dev:hub:demo`
+Running the suite empties the demo database used by `pnpm dev:hub:demo`
 (`--reset` does the same). The emulator state for `dev:demo` is untouched: the
 suite never persists `apps/hub-emulator/.emulate/`.
 

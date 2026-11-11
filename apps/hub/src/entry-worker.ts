@@ -1,4 +1,5 @@
 import startEntry from "@tanstack/react-start/server-entry";
+import { withRequestDatabase } from "#/db";
 import { logRouteError } from "#/lib/route-safety.server";
 import {
 	applySecurityHeaders,
@@ -40,6 +41,10 @@ async function handleRequest(
 	return applySecurityHeaders(response);
 }
 
+// Durable Object classes have to be exports of the Worker's entry module.
+export { LiveRoomObject } from "#/platform/cloudflare/live-room";
+export { RateLimiterObject } from "#/platform/cloudflare/rate-limiter";
+
 export default {
 	async fetch(
 		request: Request,
@@ -47,7 +52,7 @@ export default {
 		ctx: ExecutionContext,
 	): Promise<Response> {
 		try {
-			return await handleRequest(request, env, ctx);
+			return await withRequestDatabase(() => handleRequest(request, env, ctx));
 		} catch (error) {
 			const { pathname } = new URL(request.url);
 			logRouteError("worker", "unhandled request error", error, {

@@ -4,7 +4,7 @@ import { guardRoute } from "#/lib/route-safety.server";
 import { PRIVATE_ROUTE_HEADERS } from "#/lib/seo";
 
 // Better Auth answers its own failures; this catches what escapes it (missing
-// secret, unreachable D1).
+// secret, unreachable database).
 const handleAuth = guardRoute(
 	"auth",
 	(request: Request) => getAuth().handler(request),

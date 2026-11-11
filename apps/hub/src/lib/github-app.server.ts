@@ -1,5 +1,5 @@
 import "@tanstack/react-start/server-only";
-import { env } from "cloudflare:workers";
+import { platform } from "#/platform";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { account } from "../db/schema";
@@ -43,7 +43,7 @@ type AppUserTokenState =
 	| { status: "expired" };
 
 function readEnvString(key: EnvStringKey): string | undefined {
-	const value: unknown = env[key];
+	const value = platform.config()[key];
 	return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
@@ -118,12 +118,13 @@ function getGitHubAppUserAccountByUserId(userId: string) {
 	return getAccountByProvider(userId, GITHUB_APP_USER_PROVIDER_ID);
 }
 
-function getAccountByProvider(userId: string, providerId: string) {
-	return getDb()
+async function getAccountByProvider(userId: string, providerId: string) {
+	const [row] = await getDb()
 		.select()
 		.from(account)
 		.where(and(eq(account.userId, userId), eq(account.providerId, providerId)))
-		.get();
+		.limit(1);
+	return row;
 }
 
 export async function hasGitHubAppUserAccount(userId: string) {
@@ -281,7 +282,7 @@ async function performGitHubAppUserTokenRefresh(
 			saveGitHubAppUserToken(userId, token),
 		);
 	} catch (error) {
-		// The new access token is good for this request even if D1 rejects the
+		// The new access token is good for this request even if the database rejects the
 		// write twice. The old refresh token is already rotated out, so the next
 		// refresh fails and the user re-authorizes; that beats failing this page.
 		console.error(
