@@ -834,6 +834,8 @@ describe('provider conversation digest', () => {
     const rounds = panel.element.querySelectorAll<HTMLElement & { open: boolean }>('[data-geld-review-round]');
     expect(rounds).toHaveLength(2);
     expect([...rounds].map((round) => round.dataset.geldReviewRound)).toEqual(['push-2', 'push-1']);
+    expect(panel.element.querySelector('[data-geld-review-pushes] > [data-geld-review-toggle]')?.textContent).toBe('2 pushes');
+    expect([...rounds].every((round) => round.parentElement?.closest('[data-geld-review-pushes]') !== null)).toBe(true);
     expect(rounds[1]?.querySelector('[data-geld-review-pointer]')?.textContent).toContain(comment('1').body);
     expect(rounds[1]?.querySelector('[data-geld-source="note_2"]')?.textContent).toContain(edited.body);
     expect(rounds[1]?.textContent).toContain('Edited');

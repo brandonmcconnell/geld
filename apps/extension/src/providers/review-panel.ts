@@ -1298,12 +1298,16 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       if (members.length === 0) section.append(node('p', 'No conversation recorded after this push.', 'geld-provider-review__muted'));
       rounds.push(section);
     }
-    sections.push(...rounds.reverse());
+    // GitHub heads the pushes "N pushes", newest first, with what came before them as the last entry.
+    const group = disclosure('history:pushes', `${rounds.length} push${rounds.length === 1 ? '' : 'es'}`, true);
+    group.dataset.geldReviewPushes = '';
+    group.append(...rounds.reverse());
     if (before.length > 0) {
       const section = disclosure('history:before', 'Before the first recorded push', false);
       for (const entry of before) section.append(entry.render());
-      sections.push(section);
+      group.append(section);
     }
+    sections.push(group);
     const unknown = entries.filter((entry) => !Number.isFinite(entry.at));
     if (unknown.length > 0) {
       const section = disclosure('history:unknown', 'History with unavailable timestamps', false);

@@ -154,7 +154,7 @@ Decision needed: keep Merge checks as a provider row, or fold it into CI and the
 | GitHub feature | GitLab | Bitbucket | Source | Slot |
 | --- | --- | --- | --- | --- |
 | By type: "N rounds to review", settled, current round | match: `roundSections`, rounds from push system notes | match: rounds from `/activity` updates | GL commit system notes · BB `/activity` updates | — |
-| By push: "Needs attention", "N pushes", newest first | partial: `historySections`, no "N pushes", extra "Before the first recorded push" groups | partial: same | GL commit system notes · BB `/activity` updates | — |
+| By push: "Needs attention", "N pushes", newest first | match: `historySections` heads the pushes "N pushes", with what came before the first push as its last entry | match: same | GL commit system notes · BB `/activity` updates | — |
 | Grouping menu in the Geld row | match: `toolbarMenu` | match | — | — |
 | Thread opens to a chat of the host's own nodes with its reply box | missing: sanitised copy, proxy actions (`gitlab/thread-actions.ts`) | missing: same (`bitbucket/thread-actions.ts`) | discussions | **slot**: GitLab's `.discussion` node, Bitbucket's comment thread |
 | Pinned source strip and its revisions | missing | missing | GL notes have no edit history API; BB none | — |
