@@ -113,6 +113,7 @@ export type {
 } from "./github/pulls";
 export {
 	approveWorkflowRuns,
+	askPullAssistant,
 	createPullRequest,
 	deduplicateCheckRuns,
 	deleteBranch,

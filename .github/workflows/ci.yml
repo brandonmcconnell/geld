@@ -269,7 +269,14 @@ jobs:
       - run: pnpm --filter @geld/hub db:migrate
         env:
           DATABASE_URL: postgres://geld_hub:geld_hub@localhost:5433/geld_hub_demo
-      - run: pnpm --filter @geld/hub-e2e exec playwright install --with-deps chromium
+      - run: pnpm --filter @geld/hub-e2e exec playwright install chromium
+      # The runner image already has the browser's libraries; this adds fonts, and the package mirrors are not always reachable.
+      - name: System packages for the browser (best effort)
+        run: |
+          if ! timeout 240 pnpm --filter @geld/hub-e2e exec playwright install-deps chromium; then
+            echo '### Hub: browser system packages were not installed' >> "$GITHUB_STEP_SUMMARY"
+            echo 'The package mirrors could not be reached. The tests ran with what the runner image has.' >> "$GITHUB_STEP_SUMMARY"
+          fi
       # Advisory until the suite has a record of passing here.
       - name: Run end-to-end tests (advisory)
         run: |
