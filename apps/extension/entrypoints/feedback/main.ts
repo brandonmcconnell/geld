@@ -51,7 +51,8 @@ let account: GitHubAccount | null = null;
 let sending = false;
 let showMarkdown = false;
 let previewFrame: number | null = null;
-let context: FeedbackContext = { environment: null, where: null, page: null, diagnostics: null };
+const EMPTY_CONTEXT: FeedbackContext = { environment: null, where: null, page: null, diagnostics: null };
+let context: FeedbackContext = EMPTY_CONTEXT;
 let visibility: RepoVisibility = 'unknown';
 let loadingContext = true;
 let contextLoad = 0;
@@ -332,6 +333,25 @@ async function pageOfTab(hosts: readonly string[]): Promise<URL | null> {
   }
 }
 
+const PERF_WAIT_MS = 2000;
+const UNREAD_CONTEXT: FeedbackContext & { readonly visibility: RepoVisibility } = { ...EMPTY_CONTEXT, visibility: 'unknown' };
+
+function within<T>(work: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(fallback);
+      },
+    );
+  });
+}
+
 async function gatherContext(): Promise<FeedbackContext & { readonly visibility: RepoVisibility }> {
   const manifest = browser.runtime.getManifest();
   const settings = await settingsItem.getValue();
@@ -339,13 +359,15 @@ async function gatherContext(): Promise<FeedbackContext & { readonly visibility:
   const named = manifest.version_name !== undefined && manifest.version_name !== manifest.version ? ` (${manifest.version_name})` : '';
   const browserWords = describeBrowser(navigator.userAgent, navigator.platform);
   const environment = [`${manifest.version}${named}`, browserWords].filter((part) => part !== '').join(' · ');
-  const [page, events, perf] = await Promise.all([pageOfTab(hosts), readDiagnostics(), collectTabPerf(hosts)]);
+  // A frozen GitHub tab answers the timings request only when it wakes: the report goes without them after a short wait.
+  const [page, events, perf] = await Promise.all([pageOfTab(hosts), readDiagnostics(), within(collectTabPerf(hosts), PERF_WAIT_MS, [])]);
   const seen: RepoVisibility = page === null ? 'unknown' : await repoVisibility(page);
   return {
     visibility: seen,
     environment,
     where: page === null ? null : whereWords(page),
-    page: page === null ? null : `${page.origin}${page.pathname}${page.search}`,
+    // The path alone: a public repository's search can still hold private words in its query.
+    page: page === null ? null : `${page.origin}${page.pathname}`,
     diagnostics: [formatDiagnostics(events, manifest.version), ...perf].join('\n\n'),
   };
 }
@@ -373,8 +395,11 @@ async function loadContext(): Promise<void> {
   const load = ++contextLoad;
   loadingContext = true;
   consent.checked = false;
+  // The choices about to be replaced cannot be changed meanwhile: the load would overwrite them.
+  for (const input of choicesHost.querySelectorAll('input')) input.disabled = true;
   renderAccount();
-  const { visibility: seen, ...gathered } = await gatherContext();
+  // Nothing on this page may keep the form waiting: a context that cannot be read is an empty one.
+  const { visibility: seen, ...gathered } = await gatherContext().catch(() => UNREAD_CONTEXT);
   // A later opening started meanwhile: its page is the one shown, whichever answers first.
   if (load !== contextLoad) return;
   context = gathered;

@@ -1156,6 +1156,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The page address is ticked by default only when its repository is public (`repoVisibility`: a cookieless `HEAD` for the repository's own page, a 404 or a sign-in redirect being private), and the note under it says which, since the issue itself is public.
   A page with no repository, or an answer Geld cannot read, is treated as private.
   The consent box stays unavailable while that context loads (the check can take five seconds), and only the latest opening's context is kept (`contextLoad`), so a slow answer for an earlier page never lands over a newer one.
+  The attachment checkboxes are locked for the load too, since it replaces them, and nothing in it may keep the form waiting: the per-tab timings get two seconds (`PERF_WAIT_MS`, a frozen tab answers only when it wakes) and a context that cannot be read is an empty one.
+  The page address is the origin and path only, never the query: a public repository's search can still hold private words.
   The page is the GitHub tab the popup was opened on (`?tab=<id>`, read with `tabs.get`, only on a GitHub host Geld runs on).
   The preview shows the exact title and body (`feedbackIssue`), rendered by default and as Markdown source behind "Show markdown".
   It is rendered on the device (`src/ui/issue-markdown.ts`: `marked` with GitHub-flavoured Markdown and line breaks, then DOMPurify), never by GitHub's Markdown API, so the draft goes nowhere before it is sent.
