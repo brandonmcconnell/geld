@@ -840,7 +840,7 @@ describe('provider conversation digest', () => {
     expect(rounds[1]?.querySelector('[data-geld-source="note_2"]')?.textContent).toContain(edited.body);
     expect(rounds[1]?.textContent).toContain('Edited');
     expect(rounds[1]?.querySelector<HTMLTimeElement>('[data-geld-source="note_2"] time:last-of-type')?.dateTime).toBe('2026-11-01T14:00:00.000Z');
-    expect(rounds[0]?.textContent).toContain('Latest recorded push');
+    expect(rounds[0]?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toContain('Latest recorded push');
     expect(rounds[0]?.textContent).toContain(latest.body);
     expect(rounds[0]?.querySelector('[data-geld-source="note_2"]')).toBeNull();
     expect(rounds[1]?.querySelector<HTMLAnchorElement>('[data-geld-source="note_2"] a')?.href).toBe(edited.url);
@@ -877,7 +877,7 @@ describe('provider conversation digest', () => {
     expect(panel.element.querySelector('[data-geld-review-attention] [data-geld-source="note_2"]')?.textContent).toContain(later.body);
     expect(laterRound?.querySelector('[data-geld-review-pointer]')?.textContent).toContain(later.body);
     expect(laterRound?.querySelector('[data-geld-source="note_1"], [data-geld-source="note_3"]')).toBeNull();
-    expect(laterRound?.textContent).toContain('Latest recorded push');
+    expect(laterRound?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toContain('Latest recorded push');
     expect(laterRound?.querySelector<HTMLElement>('[data-geld-review-pointer]')?.dataset.geldReviewPointer).toBe(originalLaterId);
     expect([...panel.element.querySelectorAll<HTMLElement>('[data-geld-source]')].map((source) => source.dataset.geldSource)).toEqual(['note_1', 'note_3', 'note_2']);
     expect(refreshed.subject.headSha).toBe(subject.headSha);

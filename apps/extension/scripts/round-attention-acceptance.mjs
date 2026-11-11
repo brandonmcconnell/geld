@@ -23,7 +23,7 @@ export function gitLabRoundSnapshot() {
     items: [...panel.querySelectorAll('[data-geld-item]')].map((item) => ({ id: item.getAttribute('data-geld-item'), state: item.getAttribute('data-state'), homeId: item.id, attention: item.closest('[data-geld-review-attention]') !== null, open: isOpen(item), focused: document.activeElement === control(item),
       sources: [...item.querySelectorAll('[data-geld-source]')].map((source) => ({ anchor: source.getAttribute('data-geld-source'), id: source.getAttribute('data-geld-source-id'), url: source.getAttribute('data-geld-source-url'), body: source.querySelector(':scope > .geld-provider-review__body')?.textContent, createdAt: source.querySelector('time[datetime]')?.getAttribute('datetime'), native: native(source.getAttribute('data-geld-source')) })) })),
     attention: isOpen(panel.querySelector('[data-geld-review-attention]')),
-    rounds: [...panel.querySelectorAll('[data-geld-review-round]')].map((round) => ({ id: round.getAttribute('data-geld-review-round'), label: control(round)?.textContent, at: round.querySelector('[data-geld-event] time[datetime]')?.getAttribute('datetime'), pointers: [...round.querySelectorAll('[data-geld-review-pointer]')].map((row) => row.getAttribute('data-geld-review-pointer')) })),
+    rounds: [...panel.querySelectorAll('[data-geld-review-round]')].map((round) => ({ id: round.getAttribute('data-geld-review-round'), label: control(round)?.getAttribute('aria-label') ?? control(round)?.textContent, at: round.querySelector('[data-geld-event] time[datetime]')?.getAttribute('datetime'), pointers: [...round.querySelectorAll('[data-geld-review-pointer]')].map((row) => row.getAttribute('data-geld-review-pointer')) })),
     beforePointers: [...panel.querySelectorAll('[data-geld-review-key="history:before"] [data-geld-review-pointer]')].map((row) => row.getAttribute('data-geld-review-pointer')),
     boundary: (() => { const node = document.getElementById('note_4135374883');return { time: node?.querySelector('time[datetime]')?.getAttribute('datetime'), commits: [...node?.querySelectorAll('a.gfm-commit[data-commit]') ?? []].map((link) => ({ sha: link.getAttribute('data-commit'), url: link.href, project: link.getAttribute('data-project-path') })) }; })(),
     input: globalThis.__geldRoundInput ?? null,
@@ -100,7 +100,7 @@ export async function verifyGitLabRoundAttention(page, item, { readSettings, pat
     proof.batch = await poll(read, (value) => value !== null && (!hasUnresolved || value.attention === true) && value.rounds.some((round) => round.id.split(':').includes(BOUNDARY)), 'Already-fetched typed native commit creates a real round with any unresolved work');
     assertGitLabRoundScope(proof.batch, { headSha, diffPageUrl });assertRoundSingleHomes(proof.before, proof.batch);
     const dates = proof.batch.rounds.map((round) => Date.parse(round.at));assert.ok(dates.every(Number.isFinite));assert.deepEqual(dates, [...dates].sort((a, b) => b - a));
-    assert.deepEqual(proof.batch.rounds.map((round) => Number(/^Push round ([1-9]\d*)/.exec(round.label)?.[1])), proof.batch.rounds.map((_, index, rounds) => rounds.length - index));
+    assert.deepEqual(proof.batch.rounds.map((round) => Number(/^Push 0*([1-9]\d*)/.exec(round.label)?.[1])), proof.batch.rounds.map((_, index, rounds) => rounds.length - index));
     if (!hasUnresolved) {
       proof.attentionInteraction = 'unavailable';
       proof.reason = 'This observed fixture has no unresolved items. Round/source preservation was checked; the Needs attention interaction remains unverified.';

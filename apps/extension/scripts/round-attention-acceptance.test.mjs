@@ -43,7 +43,7 @@ function protocol(options = {}) {
     const value = baseline();value.items = [value.items[0]];value.items[0].sources[0].createdAt = '2026-10-29T16:52:16.580Z';
     if (options.closed) value.items[0].state = 'resolved';
     value.items[0].attention = !options.closed && grouping === 'batch';value.items[0].open = opened;value.items[0].focused = focused;value.attention = attention;
-    value.rounds = grouping === 'batch' ? [{ id: '4135374883', label: 'Push round 1 · Latest recorded push', at: '2026-11-01T11:59:15.345Z' }] : [];
+    value.rounds = grouping === 'batch' ? [{ id: '4135374883', label: 'Push 1 · Latest recorded push', at: '2026-11-01T11:59:15.345Z' }] : [];
     value.boundary = { time: '2026-11-01T11:59:15.345Z', commits: [{ sha: headSha, project: 'gitlab-org/gitlab', url: `${baseline().url}/diffs?commit_id=${headSha}` }] };
     value.input = input;
     if (input !== null && options.headDrift) value.head = 'f'.repeat(40);

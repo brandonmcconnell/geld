@@ -1232,7 +1232,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   function eventRow(event: ProviderReviewPanelEvent): HTMLElement {
     const row = node('div', '', 'geld-provider-review__event');
     row.dataset.geldEvent = event.id;
-    row.append(node('strong', event.author.login));
+    row.append(authorAvatar(event.author), node('strong', event.author.login));
     const body = node('div', '', 'geld-provider-review__body');
     if (options.renderEvent?.(event, body) !== true) inline(body, event.body);
     row.append(body);
@@ -1320,10 +1320,36 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
           if (touched.has(previous[0].dataset.geldReviewKey ?? '')) touched.add(roundKey);
         }
       }
-      const section = disclosure(roundKey, `Push round ${index + 1}${index === boundaries.length - 1 ? ' · Latest recorded push' : ''}`, index === boundaries.length - 1);
+      const name = `Push ${String(index + 1).padStart(String(boundaries.length).length, '0')}`;
+      const commitCount = boundary.pushes.reduce((sum, push) => sum + Number(/\badded (\d+) (?:new )?commits?\b/i.exec(push.body)?.[1] ?? 0), 0);
+      const label = `${name}${commitCount > 0 ? ` · ${countLabel(commitCount, 'commit')}` : ''}${index === boundaries.length - 1 ? ' · Latest recorded push' : ''}`;
+      const section = disclosure(roundKey, label, index === boundaries.length - 1);
       section.dataset.geldReviewRound = ids.join(':');section.dataset.geldRoundEvents = JSON.stringify(ids);
       for (const push of boundary.pushes) section.append(eventRow(push));
       const members = entries.filter((entry) => Number.isFinite(entry.at) && entry.at >= boundary.at && entry.at < next);
+      // GitHub's push row: the push glyph, who pushed, "Push 07 · 3 commits", the threads' meter, a comment count and when.
+      const toggle = section.querySelector<HTMLElement>(':scope > [data-geld-review-toggle]');
+      if (toggle !== null) {
+        toggle.setAttribute('aria-label', label);
+        const pushers = node('span', '', 'geld-provider-review__posters');
+        for (const author of [...new Map(boundary.pushes.map((push) => [push.author.id, push.author])).values()].slice(0, 3)) pushers.append(authorAvatar(author));
+        const parts: Node[] = [digestIcon('push', doc), pushers, node('span', name, 'geld-provider-review__round-name')];
+        if (commitCount > 0) parts.push(node('span', `· ${countLabel(commitCount, 'commit')}`, 'geld-provider-review__muted'));
+        const pushItems = items.filter((item) => members.some((entry) => entry.key === `item:${item.id}`));
+        const threads = threadCounts(pushItems);
+        if (threads.total > 0) {
+          const meter = node('progress', '', 'geld-provider-review__meter');meter.max = threads.total;meter.value = threads.total - threads.open;meter.setAttribute('aria-hidden', 'true');
+          parts.push(meter, node('span', `${threads.total - threads.open}/${threads.total} resolved`, 'geld-provider-review__muted'));
+        }
+        if (members.length > 0) {
+          const chip = node('span', '', 'geld-provider-review__count-chip');chip.setAttribute('aria-hidden', 'true');
+          chip.append(digestIcon('comment', doc), node('span', String(members.length)));parts.push(chip);
+        }
+        const time = timestamp(boundary.pushes[0]?.createdAt ?? '');
+        if (time !== null) { time.classList.add('geld-provider-review__row-time');parts.push(time); }
+        toggle.replaceChildren(...parts);
+        if (threads.open > 0) section.dataset.tone = 'warn';
+      }
       for (const entry of members) section.append(entry.render());
       if (members.length === 0) section.append(node('p', 'No conversation recorded after this push.', 'geld-provider-review__muted'));
       rounds.push(section);
@@ -1333,7 +1359,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     group.dataset.geldReviewPushes = '';
     group.append(...rounds.reverse());
     if (before.length > 0) {
-      const section = disclosure('history:before', 'Before the first recorded push', false);
+      const section = disclosure('history:before', 'Earlier', false);
       for (const entry of before) section.append(entry.render());
       group.append(section);
     }
@@ -1892,7 +1918,12 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const botSection = botsSection();
     if (botSection !== null) children.push(botSection);
     if (options.agentNotes !== undefined && options.agentNotes.length > 0) {
-      const notes = disclosure('agent-notes', `Agent notes · ${options.agentNotes.length}`, false);
+      const notes = disclosure('agent-notes', 'Agent notes', false);
+      // One pill per agent, as GitHub's Agent notes row has.
+      const pills = node('span', '', 'geld-provider-review__row-preview');pills.dataset.geldReviewPreview = '';
+      for (const note of options.agentNotes) pills.append(node('span', note.name, 'geld-provider-review__status-chip'));
+      notes.querySelector('[data-geld-review-toggle]')?.append(pills);
+      notes.querySelector('[data-geld-review-toggle]')?.setAttribute('aria-label', `Agent notes · ${options.agentNotes.length}`);
       for (const note of options.agentNotes) {
         const section = disclosure(`agent-note:${note.id}`, note.name, false);
         if (note.preview !== '') section.append(node('p', note.preview, 'geld-provider-review__muted'));
