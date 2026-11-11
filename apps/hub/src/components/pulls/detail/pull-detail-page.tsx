@@ -34,6 +34,7 @@ import { findPullSummaryInLists } from "#/lib/github-query-updates";
 import { useHasMounted } from "#/lib/use-has-mounted";
 import { usePageTitle } from "#/lib/use-page-title";
 import { useRegisterTab } from "#/lib/use-register-tab";
+import { PullAssistantSection } from "./pull-assistant-section";
 import { PullBodySection } from "./pull-body-section";
 import { PullDigestSection } from "./pull-digest-section";
 import { PullDetailActivitySection } from "./pull-detail-activity";
@@ -325,6 +326,8 @@ export function PullDetailBody({
 				reviewComments={reviewComments}
 				threads={threadStatuses}
 			/>
+
+			<PullAssistantSection owner={owner} repo={repo} pullNumber={pullNumber} />
 
 			{pr.isMerged || pr.state === "closed" ? (
 				<PullStackSection pr={pr} owner={owner} repo={repo} scope={scope} />

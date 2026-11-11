@@ -1,6 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import type { PullSignals } from "../geld/pull-signals";
 import { RequestError } from "octokit";
+import {
+	ORG_CONFIG_PATHS,
+	ORG_CONFIG_REPO,
+	REPO_CONFIG_PATH,
+} from "@geld/core/repo-config";
+import type { AssistantAnswer } from "../ai/assistant";
+import { aiPolicyFrom, type PolicyFile } from "../ai/policy";
 import type {
 	GitHubActor,
 	PullCheckRun,
@@ -2051,6 +2058,101 @@ export const getPullSignals = createServerFn({ method: "GET" })
 			`${data.owner}/${data.repo}`,
 			cursor !== null,
 		);
+	});
+
+export type AskPullAssistantInput = PullFromRepoInput & { question: string };
+
+const ASSISTANT_FILE_PAGES = 3;
+
+async function readPolicyFile(
+	context: GitHubContext,
+	owner: string,
+	repo: string,
+	path: string,
+): Promise<PolicyFile> {
+	try {
+		const response = await context.octokit.rest.repos.getContent({
+			owner,
+			repo,
+			path,
+		});
+		const payload = response.data;
+		if (
+			Array.isArray(payload) ||
+			payload.type !== "file" ||
+			typeof payload.content !== "string"
+		) {
+			return { state: "unreadable" };
+		}
+		return {
+			state: "found",
+			text: Buffer.from(payload.content.replace(/\n/g, ""), "base64").toString(
+				"utf-8",
+			),
+		};
+	} catch (error) {
+		return error instanceof RequestError && error.status === 404
+			? { state: "missing" }
+			: { state: "unreadable" };
+	}
+}
+
+/**
+ * One question about a pull request, answered by the reader's own AI provider.
+ * The pull request's text goes to that provider for this request alone, only
+ * when the repository's Geld config allows it, and nothing is stored.
+ */
+export const askPullAssistant = createServerFn({ method: "POST" })
+	.validator(identityValidator<AskPullAssistantInput>)
+	.handler(async ({ data }): Promise<AssistantAnswer> => {
+		const context = await getGitHubContextForRepository(data);
+		if (!context) {
+			return { ok: false, error: "This pull request could not be read." };
+		}
+		const { askPullAssistant: ask } = await import(
+			"../ai/assistant.server"
+		);
+		return ask({
+			userId: context.session.user.id,
+			question: typeof data.question === "string" ? data.question : "",
+			policy: async () =>
+				aiPolicyFrom(
+					await Promise.all([
+						readPolicyFile(context, data.owner, data.repo, REPO_CONFIG_PATH),
+						...ORG_CONFIG_PATHS.map((path) =>
+							readPolicyFile(context, data.owner, ORG_CONFIG_REPO, path),
+						),
+					]),
+				),
+			loadContext: async () => {
+				const detail = await getPullDetailResult(context, data);
+				const files: PullFile[] = [];
+				let page: number | null = 1;
+				for (let read = 0; read < ASSISTANT_FILE_PAGES && page !== null; read++) {
+					const result: PullFilesPage = await getPullFilesResult(context, {
+						...data,
+						page,
+						perPage: 100,
+					});
+					files.push(...result.files);
+					page = result.nextPage;
+				}
+				return {
+					repository: `${data.owner}/${data.repo}`,
+					number: data.pullNumber,
+					title: detail.title,
+					body: detail.body,
+					partial: page !== null,
+					files: files.map((file) => ({
+						path: file.filename,
+						status: file.status,
+						additions: file.additions,
+						deletions: file.deletions,
+						patch: file.patch,
+					})),
+				};
+			},
+		});
 	});
 
 export const getPullFiles = createServerFn({ method: "GET" })

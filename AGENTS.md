@@ -2354,7 +2354,11 @@ Change the format, `allowedAiUrl` or the table only with the dashboard's.
 A key never leaves the server: the browser gets `hasKey`, and an edit that sends no key keeps the saved one.
 An address must be https at a listed provider or a host in `AI_ALLOWED_HOSTS`, the dashboard's rule, since the key is sent there.
 The hub edits API-key providers only, and lists the dashboard's built-in provider and sign-in connections without changing them.
-Nothing calls a provider from the hub yet.
+**The pull request page has an Assistant under its Digest** (`PullAssistantSection`, `askPullAssistant` in `src/lib/github/pulls.ts`, `src/lib/ai/assistant.server.ts`): one question about the pull request, answered by the reader's first provider that is on, has a key and lists a model.
+It is the only place the hub calls a provider, and only when the reader asks.
+The pull request's title, description and patches go to that provider for the one request, cut to a budget (`diffForModel`), and neither the question nor the answer is stored.
+A repository whose `.github/geld.yml`, or its organisation's in `.github`, says `review.ai: false` gets nothing sent, and so does one whose config cannot be read or understood (`aiPolicyFrom`), as the dashboard decides it.
+The provider and the policy are checked before the pull request is read, redirects from the provider are refused, and a failed call says only that the provider did not answer.
 Not done yet: GitHub's screens still read through the app's own GitHub client, another provider's pull request cannot be opened in the hub, and the hub knows nothing of Geld's teams.
 Each of those arrives as its own change.
 
