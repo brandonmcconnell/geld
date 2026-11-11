@@ -2340,7 +2340,8 @@ async function verifyProviderFlow(page, item) {
     progress.viaOverviewTab = true;
     await poll(() => page.$('.geld-provider-flow-button'), Boolean, 'Flow mounts in the overview digest toolbar');
   }
-  await page.click('.geld-provider-flow-button');
+  // The digest redraws its toolbar while it settles, so a click can land on a button already replaced.
+  await poll(() => page.click('.geld-provider-flow-button').then(() => true, (error) => /detached|not clickable|No element/i.test(String(error)) ? false : Promise.reject(error)), Boolean, 'Flow button takes the click');
   await poll(() => page.evaluate(() => {
     const dialog = document.querySelector('dialog.geld-provider-flow');return dialog?.open && !/Reading imports|Loading verified/.test(dialog.querySelector('[role="status"]')?.textContent ?? '');
   }), Boolean, 'File flow settles its bounded source reads');
