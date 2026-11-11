@@ -2040,11 +2040,14 @@ export const getPullSignals = createServerFn({ method: "GET" })
 			if (cursor === null) break;
 		}
 
-		const { defaultPullSignals } = await import(
-			"../geld/pull-signals.server"
-		);
-		return defaultPullSignals(
+		const [{ readerPullSignals }, { readGeldSettings }] = await Promise.all([
+			import("../geld/pull-signals.server"),
+			import("../geld/settings.server"),
+		]);
+		const { settings } = await readGeldSettings(context.session.user.id);
+		return readerPullSignals(
 			files,
+			settings,
 			`${data.owner}/${data.repo}`,
 			cursor !== null,
 		);

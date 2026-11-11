@@ -2337,10 +2337,12 @@ A row with a `provider` is GitLab's or Bitbucket's: it opens on that provider an
 A provider that does not answer is left out and named (`unreachableProviders`), never an error.
 Bitbucket lists across workspaces only by author, so its review requests are not in the lists yet.
 **A GitHub row in the lists shows the lines left to review** (`apps/hub/docs/signals.md`, `src/lib/geld/pull-signals.ts`, `getPullSignals`, `PullSignalsStat`): the pull request's files, paths and counts only, classified with `@geld/core`'s matcher under Geld's default categories, read once the row nears the viewport and stored nowhere on the server.
-The reader's settings and a repository's `.github/geld.yml` are not read there yet.
+**The hub's categories are the reader's own** (`readGeldSettings`, `src/lib/geld/settings.server.ts`): `users.settings`, the document the dashboard saves, validated with `validateSettingsDocument`, with the defaults for an account that saved none or whose saved value is invalid.
+The server builds each matcher from them, and the browser gets them once per session (`useLoadReaderSettings`, `setReaderSettings` behind `fileCategory`).
+The hub only reads them, and a repository's `.github/geld.yml` is not read there yet.
 **The pull request page carries a Digest** (`PullDigestSection`, `src/lib/geld/digest.ts`): threads resolved, each review bot's verdict and one line per thread, built in the browser by `@geld/review`'s `buildMeta` from what the page already loaded (`digestInputFrom`), so it asks for nothing more and stores nothing.
 The browser imports `@geld/core` and `@geld/review` by module (`@geld/review/build`), never their index, which would bring the settings parser and the AI client into the bundle.
-**In the files view a file in one of Geld's categories starts collapsed and names its category** (`defaultFileCategory`, `src/lib/geld/file-category.ts`, read in `diff-code-view.tsx` and `DiffFileHeader`), and the sidebar's foot says what is left to review (`LeftToReview`).
+**In the files view a file in one of Geld's categories starts collapsed and names its category** (`fileCategory`, `src/lib/geld/file-category.ts`, read in `diff-code-view.tsx` and `DiffFileHeader`), and the sidebar's foot says what is left to review (`LeftToReview`).
 Such a file is never removed or moved: the diff is a stream shown in its order.
 Not done yet: GitHub's screens still read through the app's own GitHub client, another provider's pull request cannot be opened in the hub, and the hub knows nothing of Geld's teams.
 Each of those arrives as its own change.

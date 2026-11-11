@@ -6,7 +6,7 @@ What the hub shows of a pull request beyond what its provider says, and where ea
 
 A pull request row first shows GitHub's totals. Once the row nears the viewport (`useInView`), `getPullSignals` reads the pull request's changed files, paths and line counts only, and classifies each with the matcher from `@geld/core`, the same one the extension uses. The row then shows the lines left to review and what was set aside, "+40 −12 2 tests", and the breakdown on hover: Essential, each category, Total.
 
-- The categories are Geld's defaults, so tests today (`DEFAULT_SETTINGS`). The reader's own settings and a repository's `.github/geld.yml` are not read yet.
+- The categories are the reader's own (see "The reader's settings" below). A repository's `.github/geld.yml` is not read yet.
 - A row whose pull request has nothing set aside keeps GitHub's totals.
 - Only the first 2,000 files are read. Past that the breakdown says it counted the files it read.
 - A deleted file and a rename with no edits are passed to the matcher as change kinds. The other kinds (binary, whitespace only, mode change) need the diff and are not known here.
@@ -31,7 +31,18 @@ It is built in the browser by `buildMeta` from `@geld/review`, the code the exte
 
 In the files view a file that falls in one of Geld's categories starts collapsed, as a deleted file does, and its header names the category in a dashed pill ("Tests"). Opening it is one click, and it is never removed from the list or the tree. The sidebar's foot says what is left: "2 to review +44 −17" and "1 test set aside" (`LeftToReview`, the same split a list row shows).
 
-`defaultFileCategory` (`src/lib/geld/file-category.ts`) decides by path with `@geld/core`'s matcher under the default settings, in the browser.
+`fileCategory` (`src/lib/geld/file-category.ts`) decides by path with `@geld/core`'s matcher under the reader's settings, in the browser.
 
 - Files set aside are not grouped at the end of the diff or the tree: the diff arrives as a stream and is shown in its order.
 - Marking them viewed for the reader, which the extension can do, is not here.
+
+## The reader's settings
+
+The hub reads the reader's Geld settings from their account: `users.settings`, the document the dashboard saves and validates (`readGeldSettings`, `src/lib/geld/settings.server.ts`). Categories switched on or off there, pattern groups, extra patterns and custom categories all apply in the hub.
+
+- On the server, `getPullSignals` builds its matcher from them, scoped to the repository, so `[owner/repo]` pattern sections apply to list rows.
+- In the browser, the signed-in layout loads them once (`useLoadReaderSettings`, kept five minutes) and `setReaderSettings` puts them behind `fileCategory`. Until they arrive the defaults stand in.
+- An account that never saved any gets the defaults. A saved value that is not valid Geld settings also gets the defaults (`ReaderSettings.invalid`), as on the dashboard. The hub does not say so on screen yet.
+- The browser's matcher is not scoped to a repository, so `[owner/repo]` pattern sections do not apply in the files view yet.
+- The hub only reads the settings. Changing them stays on the dashboard, the extension and geld.sh.
+- Settings kept only in the extension or in the reader's gist are not seen here: only what the account holds.
