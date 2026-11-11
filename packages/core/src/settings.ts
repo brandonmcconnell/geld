@@ -5,6 +5,7 @@ import { BUNDLED_CATALOG, CATEGORY_IDS, categoryById, groupKey, hiddenCategoryFr
 import { isCategoryIconName } from './category-icons';
 import type { TestPatternGroupId } from './test-patterns';
 import { isTestPatternGroupId } from './test-patterns';
+import { normalizeTrustedReviewAccounts } from './review-accounts';
 
 /**
  * User settings. Everything here is persisted to `browser.storage.sync` so it
@@ -160,6 +161,8 @@ export interface GeldSettings {
    * (Bugbot, Greptile, Copilot, …) are always recognised.
    */
   readonly reviewBots: readonly string[];
+  /** Native provider account ids explicitly trusted as a review service in one exact repository. */
+  readonly trustedReviewAccounts: readonly string[];
   /**
    * The master switch for every AI feature. Off, the gateway settings below
    * stay as they are and nothing is ever requested; on, they take effect once
@@ -273,6 +276,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   quickReview: true,
   holdToMerge: false,
   reviewBots: [],
+  trustedReviewAccounts: [],
   aiEnabled: false,
   aiBaseUrl: '',
   aiModel: '',
@@ -537,6 +541,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     quickReview: bool(record, 'quickReview', DEFAULT_SETTINGS.quickReview),
     holdToMerge: bool(record, 'holdToMerge', DEFAULT_SETTINGS.holdToMerge),
     reviewBots: isStringArray(record.reviewBots) ? record.reviewBots : DEFAULT_SETTINGS.reviewBots,
+    trustedReviewAccounts: normalizeTrustedReviewAccounts(record.trustedReviewAccounts),
     aiEnabled: bool(record, 'aiEnabled', DEFAULT_SETTINGS.aiEnabled),
     aiBaseUrl: typeof record.aiBaseUrl === 'string' ? normalizeAiBaseUrl(record.aiBaseUrl) : DEFAULT_SETTINGS.aiBaseUrl,
     issueTracker:parseIssueTracker(record.issueTracker),

@@ -116,3 +116,13 @@ describe('personal tracker patches',()=>{
   expect(applyPatch(DEFAULT_SETTINGS,{kind:'issue-tracker',value:null})).toMatchObject({ok:true,settings:{issueTracker:null}});
  });
 });
+
+describe('trusted review account settings', () => {
+  it('validates native account bindings and preserves them in the shared settings payload', () => {
+    const line = 'gitlab.com/acme/platform/widgets coderabbit 12345';
+    expect(SITE_LIST_KEYS).toContain('trustedReviewAccounts');
+    expect(validateList('trustedReviewAccounts', ['  ' + line + '  '])).toEqual({ ok: true, lines: [line] });
+    expect(applyPatch(DEFAULT_SETTINGS, { kind: 'list', key: 'trustedReviewAccounts', lines: [line] })).toMatchObject({ ok: true, settings: { trustedReviewAccounts: [line] } });
+    expect(validateList('trustedReviewAccounts', ['gitlab.com/acme/widgets coderabbit coderabbitai']).ok).toBe(false);
+  });
+});

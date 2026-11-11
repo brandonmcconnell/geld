@@ -730,6 +730,8 @@ export function parseBotBody(body: string, botId: string, anchor?: string): Pars
 }
 
 export interface RawCheckRun {
+  /** An authoritative review association for merge-result jobs whose commit differs from the source head. */
+  readonly reviewHeadSha?: string;
   readonly name: string;
   readonly status: string;
   readonly conclusion: string | null;
@@ -1239,7 +1241,7 @@ function checkRefusal(check: RawCheckRun): string | null {
 
 /** A check's own words, without the merge box's timing before them ("Completed in 3m — 8 issues identified"). */
 function checkWords(check: RawCheckRun): string {
-  return (check.description ?? '').replace(/^.*?\s[\u2014\u2013-]\s+/, '').trim();
+  return (check.description ?? '').replace(/^(?:Completed|Successful) in \d+(?:\.\d+)?\s*(?:ms|s|m|h|d|milliseconds?|seconds?|minutes?|hours?|days?)(?:\s*\d+(?:\.\d+)?\s*(?:ms|s|m|h|d|milliseconds?|seconds?|minutes?|hours?|days?))*\s+[\u2014\u2013-]\s+/i, '').trim();
 }
 
 /**

@@ -11,7 +11,9 @@ import { itemIdFor } from './model';
 import { isTriggerComment, looksLikeBotLogin, resolveBotId } from './bots';
 import type { FindingSeverity } from './bots';
 
-export interface RawComment {
+type SourceProvenance = Pick<ReviewSource, 'sourceId' | 'authorId' | 'automated' | 'provider' | 'origin' | 'url'>;
+
+export interface RawComment extends SourceProvenance {
   readonly anchor: string;
   readonly kind: SourceKind;
   readonly author: string;
@@ -39,11 +41,16 @@ export interface CommentReaction {
   readonly emoji: string;
 }
 
-export interface ThreadPeer {
+export interface ThreadPeer extends SourceProvenance {
   readonly anchor: string;
   readonly kind: SourceKind;
   readonly author: string;
   readonly body: string;
+}
+
+export interface ClusterOptions {
+  readonly resolveBot?: (source: RawComment | ThreadPeer) => string | null;
+  readonly isTrigger?: (comment: RawComment) => boolean;
 }
 
 const SUGGESTION = /```suggestion\r?\n([\s\S]*?)```/;
@@ -87,7 +94,7 @@ export function firstSentence(body: string): string {
     .split('\n')
     // Codex's raw "**<sub><sub>![P2 Badge](…)</sub></sub>  Resolve reference paths…**": the badge is no words, as on the page.
     .map((entry) => outsideCodeSpans(entry, (text) => text.replace(/<br\s*\/?>/gi, ' ').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/<\/?(?:sub|sup|picture|source|img|span|a|p|div)\b[^>]*>/gi, '')).replace(/^(\*\*|__)\s+/, '$1').trim())
-    .filter((entry) => entry !== '' && !entry.startsWith('<') && !/^#{1,6}\s/.test(entry) && !/^[-*]\s*$/.test(entry) && !BADGE_LINE.test(entry) && !GATE_HEADING.test(entry))
+    .filter((entry) => entry !== '' && /[\p{L}\p{N}]/u.test(entry) && !entry.startsWith('<') && !/^#{1,6}\s/.test(entry) && !/^[-*]\s*$/.test(entry) && !BADGE_LINE.test(entry) && !GATE_HEADING.test(entry))
     .map((entry) => entry.replace(/^\s*[-*]\s+/, ''))
     .find((entry) => entry !== '') ?? '';
   const cleaned = line.replace(/\s+/g, ' ').trim();
@@ -169,36 +176,51 @@ interface Atom {
   readonly openThreads: number;
 }
 
-function sourceOf(comment: RawComment | ThreadPeer, extraLogins: readonly string[]): ReviewSource {
-  const bot = resolveBotId(comment.author, extraLogins);
+function sourceOf(comment: RawComment | ThreadPeer, extraLogins: readonly string[], options: ClusterOptions): ReviewSource {
+  const bot = options.resolveBot === undefined ? resolveBotId(comment.author, extraLogins) : options.resolveBot(comment);
   const kind: SourceKind = 'kind' in comment ? comment.kind : 'comment';
-  return bot === null ? { anchor: comment.anchor, kind, author: comment.author } : { anchor: comment.anchor, kind, author: comment.author, bot };
+  return {
+    anchor: comment.anchor,
+    kind,
+    author: comment.author,
+    ...(bot === null ? {} : { bot }),
+    ...(comment.sourceId === undefined ? {} : { sourceId: comment.sourceId }),
+    ...(comment.authorId === undefined ? {} : { authorId: comment.authorId }),
+    ...(comment.automated === undefined ? {} : { automated: comment.automated }),
+    ...(comment.provider === undefined ? {} : { provider: comment.provider }),
+    ...(comment.origin === undefined ? {} : { origin: comment.origin }),
+    ...(comment.url === undefined ? {} : { url: comment.url }),
+  };
 }
 
-function atomFrom(comment: RawComment, extraLogins: readonly string[]): Atom {
-  const sources = [sourceOf(comment, extraLogins)];
+function automated(source: ReviewSource): boolean {
+  return source.bot !== undefined || (source.automated ?? looksLikeBotLogin(source.author));
+}
+
+function atomFrom(comment: RawComment, extraLogins: readonly string[], options: ClusterOptions): Atom {
+  const sources = [sourceOf(comment, extraLogins, options)];
   const bodies = [comment.body];
   for (const peer of comment.threadAnchors ?? []) {
     if (peer.anchor === comment.anchor) continue;
-    sources.push(sourceOf(peer, extraLogins));
+    sources.push(sourceOf(peer, extraLogins, options));
     bodies.push(peer.body);
   }
   const botIds = new Set<string>();
   const humanAuthors: string[] = [];
   for (const source of sources) {
     if (source.bot !== undefined) botIds.add(source.bot);
-    else if (!looksLikeBotLogin(source.author)) humanAuthors.push(source.author);
+    else if (!automated(source)) humanAuthors.push(source.author);
   }
   const lead = sources[0];
   return {
     sources,
     bodies,
     title: firstSentence(comment.body),
-    humanLead: lead !== undefined && lead.bot === undefined && !looksLikeBotLogin(lead.author),
+    humanLead: lead !== undefined && !automated(lead),
     path: comment.path,
     line: comment.line,
     suggestion: suggestionOf(comment.body),
-    suggestionBy: suggestionOf(comment.body) === null ? null : lead !== undefined && (lead.bot !== undefined || looksLikeBotLogin(lead.author)) ? 'bot' : 'human',
+    suggestionBy: suggestionOf(comment.body) === null ? null : lead !== undefined && automated(lead) ? 'bot' : 'human',
     ruleId: ruleIdOf(comment.body),
     botIds,
     humanAuthors,
@@ -257,7 +279,7 @@ function severityOf(atom: Atom): ReviewSeverity {
   for (let index = 0; index < atom.bodies.length; index += 1) {
     const body = atom.bodies[index] ?? '';
     const source = atom.sources[index];
-    const bot = source?.bot !== undefined;
+    const bot = source !== undefined && automated(source);
     const next = guessSeverity(body, bot, human && body.includes('?'));
     if (rank[next] < rank[worst]) worst = next;
   }
@@ -313,8 +335,9 @@ export function isBotSummaryComment(comment: RawComment, extraLogins: readonly s
  * there would come straight back on reload; they stay in the timeline
  * (or fold, for bots and review requests).
  */
-export function isReviewItemComment(comment: RawComment, extraLogins: readonly string[] = []): boolean {
-  return comment.kind === 'thread' && comment.body.trim() !== '' && !isTriggerComment(comment.body, extraLogins);
+export function isReviewItemComment(comment: RawComment, extraLogins: readonly string[] = [], options: ClusterOptions = {}): boolean {
+  const trigger = options.isTrigger === undefined ? isTriggerComment(comment.body, extraLogins) : options.isTrigger(comment);
+  return comment.kind === 'thread' && comment.body.trim() !== '' && !trigger;
 }
 
 /**
@@ -323,16 +346,16 @@ export function isReviewItemComment(comment: RawComment, extraLogins: readonly s
  * said "1 of 2 threads resolved" and opened two conversations, and on the Overview (where every thread names its
  * line) a finding absorbed another reviewer's thread a few lines away.
  */
-export function clusterComments(comments: readonly RawComment[], extraLogins: readonly string[] = []): readonly ReviewItem[] {
-  return comments.filter((comment) => isReviewItemComment(comment, extraLogins)).map((comment) => itemFromAtom(atomFrom(comment, extraLogins)));
+export function clusterComments(comments: readonly RawComment[], extraLogins: readonly string[] = [], options: ClusterOptions = {}): readonly ReviewItem[] {
+  return comments.filter((comment) => isReviewItemComment(comment, extraLogins, options)).map((comment) => itemFromAtom(atomFrom(comment, extraLogins, options)));
 }
 
 /**
  * Every thread together with the threads it overlaps (same lines, the same suggestion, or one bot's rule): the
  * dashboard's consolidated findings, where one finding resolves all of its source threads at once.
  */
-export function groupOverlappingThreads(comments: readonly RawComment[], extraLogins: readonly string[] = []): readonly ReviewItem[] {
-  const atoms = comments.filter((comment) => isReviewItemComment(comment, extraLogins)).map((comment) => atomFrom(comment, extraLogins));
+export function groupOverlappingThreads(comments: readonly RawComment[], extraLogins: readonly string[] = [], options: ClusterOptions = {}): readonly ReviewItem[] {
+  const atoms = comments.filter((comment) => isReviewItemComment(comment, extraLogins, options)).map((comment) => atomFrom(comment, extraLogins, options));
   const parent = atoms.map((_, index) => index);
   const find = (index: number): number => {
     const current = parent[index] ?? index;
@@ -361,5 +384,5 @@ export function groupOverlappingThreads(comments: readonly RawComment[], extraLo
 }
 
 export function isBotOnly(item: ReviewItem): boolean {
-  return item.sources.length > 0 && item.sources.every((source) => source.bot !== undefined || looksLikeBotLogin(source.author));
+  return item.sources.length > 0 && item.sources.every(automated);
 }

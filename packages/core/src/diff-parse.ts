@@ -52,9 +52,17 @@ export function pathFromGitHeader(line: string, side: 'old' | 'new' = 'new'): st
   // Quoted paths (contain spaces or special characters) look like:
   //   diff --git "a/with space.ts" "b/with space.ts"
   if (rest.startsWith('"')) {
-    const quoted = rest.match(/^"a\/((?:\\.|[^"\\])*)" "b\/((?:\\.|[^"\\])*)"$/);
-    if (quoted) return unescapeGitPath((side === 'old' ? quoted[1] : quoted[2]) ?? '');
-    return null;
+    const quoted = rest.match(/^"a\/((?:\\.|[^"\\])*)" (.*)$/);
+    if (quoted?.[1] === undefined || quoted[2] === undefined) return null;
+    const destination = destinationPath(quoted[2]);
+    if (destination === null) return null;
+    return side === 'old' ? unescapeGitPath(quoted[1]) : destination;
+  }
+  const quotedDestination = rest.indexOf(' "b/');
+  if (quotedDestination !== -1) {
+    const destination = destinationPath(rest.slice(quotedDestination + 1));
+    if (destination === null) return null;
+    return side === 'old' ? rest.slice('a/'.length, quotedDestination) : destination;
   }
   // Unquoted: paths cannot contain spaces here, but be defensive about the
   // "a/foo b/foo" split by finding the " b/" that mirrors the "a/" prefix.
@@ -65,11 +73,21 @@ export function pathFromGitHeader(line: string, side: 'old' | 'new' = 'new'): st
   return side === 'old' ? aPath : bPath || aPath;
 }
 
+function destinationPath(text: string): string | null {
+  if (text.startsWith('b/')) return text.slice(2);
+  const quoted = /^"b\/((?:\\.|[^"\\])*)"$/.exec(text);
+  return quoted?.[1] === undefined ? null : unescapeGitPath(quoted[1]);
+}
+
 function unescapeGitPath(text: string): string {
-  return text.replace(/\\(.)/g, (_match, char: string) => {
-    if (char === 'n') return '\n';
-    if (char === 't') return '\t';
-    return char;
+  // Git quotes UTF-8 bytes as octal, including when only one side of a rename needs quoting.
+  return text.replace(/(?:\\[0-7]{3})+|\\(.)/g, (match: string, char: string | undefined) => {
+    if (char !== undefined) {
+      const escapes: Readonly<Record<string, string>> = { a: '\x07', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v' };
+      return escapes[char] ?? char;
+    }
+    const bytes = match.split('\\').slice(1).map((octal) => Number.parseInt(octal, 8));
+    return new TextDecoder().decode(new Uint8Array(bytes));
   });
 }
 
