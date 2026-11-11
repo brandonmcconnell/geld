@@ -52,7 +52,7 @@ describe('nightlyView', () => {
   it('asks for the folder before anything can install, naming the one the installer wrote', () => {
     const view = nightlyView(status({ latest: release(3305) }), null, '0.1.2.3301', NOW);
     expect(view.action?.kind).toBe('connect');
-    expect(nightlyView(status({}), null, '0.1.2.3301', NOW, null, '/Users/me/Geld Nightly/Work').detail).toBe('Connect /Users/me/Geld Nightly/Work so Geld can install builds. Pick it when Chrome asks.');
+    expect(nightlyView(status({}), null, '0.1.2.3301', NOW, { installedIn: '/Users/me/Geld Nightly/Work' }).detail).toBe('Connect /Users/me/Geld Nightly/Work so Geld can install builds. Pick it when Chrome asks.');
   });
 
   it('says why a build Automatic found did not install on its own', () => {
@@ -71,6 +71,20 @@ describe('nightlyView', () => {
     expect(wrongFolder.action).toEqual({ kind: 'connect', label: 'Connect folder' });
     expect(nightlyView(status(blocked('folder', minutesAgo(601))), folder, '0.1.2.3301', NOW).action?.kind).toBe('install');
     expect(nightlyView(status({ ...blocked('permission', minutesAgo(1)), latest: release(3306) }), folder, '0.1.2.3301', NOW).action?.label).toBe('Install');
+  });
+
+  it('promises installs on their own only in Automatic', () => {
+    const waiting = status({ latest: release(3305), blocked: { version: '0.1.2.3305', need: 'permission', reason: 'x', at: minutesAgo(1) } });
+    expect(nightlyView(waiting, folder, '0.1.2.3301', NOW, { mode: 'manual' }).detail).toBe('Chrome needs your OK before Geld can write to its folder. Choose Allow on every visit and Chrome stops asking.');
+  });
+
+  it('shows whichever of a failure and a blocker came later, and a broken folder before both', () => {
+    const blocked = { version: '0.1.2.3305', need: 'permission' as const, reason: 'x', at: minutesAgo(5) };
+    const failure = (at: string, broken?: true) => ({ version: '0.1.2.3305', stillOn: '0.1.2.3301', reason: 'The download failed (503).', at, restored: true as const, ...(broken === undefined ? {} : { broken }) });
+    const view = (patch: Partial<NightlyStatus>) => nightlyView(status({ latest: release(3305), blocked, ...patch }), folder, '0.1.2.3301', NOW).action?.kind;
+    expect(view({ failure: failure(minutesAgo(10)) })).toBe('install');
+    expect(view({ failure: failure(minutesAgo(1)) })).toBe('retry');
+    expect(view({ failure: failure(minutesAgo(10), true) })).toBe('restore');
   });
 
   it('shows an install under way', () => {

@@ -1,6 +1,7 @@
 import { buildOf, compareVersions } from '@geld/core/nightly';
+import type { NightlyRelease } from '@geld/core/nightly';
 import type { Conflict } from './conflicts';
-import type { NightlyFolder, NightlyStatus } from './state';
+import type { NightlyFolder, NightlyStatus, UpdateMode } from './state';
 
 /** What the nightly panel says, worked out from the stored state alone, the same in the popup and on the page. */
 
@@ -48,8 +49,35 @@ export function pausedView(conflict: Conflict): NightlyView {
       };
 }
 
-/** `installedIn`: the folder the installer wrote, named so the reader knows what to pick when Chrome asks. */
-export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null, version: string, now: number, conflict: Conflict | null = null, installedIn: string | null = null): NightlyView {
+export interface NightlyViewContext {
+  readonly conflict?: Conflict | null;
+  /** The folder the installer wrote, named so the reader knows what to pick when Chrome asks. */
+  readonly installedIn?: string | null;
+  readonly mode?: UpdateMode;
+}
+
+/** Why the waiting build did not install, when that is still the case and newer than any failure of the same build. */
+function blockerView(status: NightlyStatus, folder: NightlyFolder, newer: NightlyRelease, mode: UpdateMode): NightlyView | null {
+  const blocked = status.blocked;
+  if (blocked === null || blocked.version !== newer.version || newer.version === status.skipped) return null;
+  const failure = status.failure;
+  if (failure !== null && failure.version === newer.version && Date.parse(failure.at) > Date.parse(blocked.at)) return null;
+  const headline = `${capital(buildLabel(newer.version))} is ready`;
+  if (blocked.need === 'permission') {
+    const then = mode === 'automatic' ? 'later builds install on their own' : 'Chrome stops asking';
+    return {
+      headline,
+      detail: `Chrome needs your OK before Geld can write to its folder. Choose Allow on every visit and ${then}.`,
+      tone: 'ready',
+      action: { kind: 'install', label: 'Allow and install' },
+    };
+  }
+  if (Date.parse(blocked.at) < Date.parse(folder.connectedAt)) return null;
+  return { headline, detail: blocked.reason, tone: 'ready', action: { kind: 'connect', label: 'Connect folder' } };
+}
+
+export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null, version: string, now: number, context: NightlyViewContext = {}): NightlyView {
+  const { conflict = null, installedIn = null, mode = 'automatic' } = context;
   if (conflict !== null) return pausedView(conflict);
   const latest = status.latest;
   const newer = latest !== null && compareVersions(latest.version, version) > 0 ? latest : null;
@@ -58,15 +86,17 @@ export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null,
     return { headline: `${back ? 'Going back to' : 'Installing'} ${buildLabel(status.installing)}…`, detail: 'Geld reloads when it is done.', tone: 'busy', action: null };
   }
   const failure = status.failure;
-  if (failure !== null && (failure.broken === true || (newer !== null && failure.version === newer.version))) {
-    if (failure.broken === true) {
-      return {
-        headline: `Update to ${buildLabel(failure.version)} failed`,
-        detail: `Geld could not put ${buildLabel(failure.stillOn)} back, so it may not start next time. ${failure.reason}`,
-        tone: 'error',
-        action: { kind: 'restore', label: `Restore ${buildLabel(failure.stillOn)}` },
-      };
-    }
+  if (failure?.broken === true) {
+    return {
+      headline: `Update to ${buildLabel(failure.version)} failed`,
+      detail: `Geld could not put ${buildLabel(failure.stillOn)} back, so it may not start next time. ${failure.reason}`,
+      tone: 'error',
+      action: { kind: 'restore', label: `Restore ${buildLabel(failure.stillOn)}` },
+    };
+  }
+  const blocker = folder === null || newer === null ? null : blockerView(status, folder, newer, mode);
+  if (blocker !== null) return blocker;
+  if (failure !== null && newer !== null && failure.version === newer.version) {
     return {
       headline: `Update to ${buildLabel(failure.version)} failed`,
       detail: `Still on ${buildLabel(failure.stillOn)}. ${failure.reason}`,
@@ -81,20 +111,6 @@ export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null,
       tone: newer === null ? 'ok' : 'ready',
       action: { kind: 'connect', label: 'Connect folder' },
     };
-  }
-  const blocked = status.blocked;
-  if (newer !== null && blocked !== null && blocked.version === newer.version && newer.version !== status.skipped) {
-    if (blocked.need === 'permission') {
-      return {
-        headline: `${capital(buildLabel(newer.version))} is ready`,
-        detail: 'Chrome needs your OK before Geld can write to its folder. Choose Allow on every visit and later builds install on their own.',
-        tone: 'ready',
-        action: { kind: 'install', label: 'Allow and install' },
-      };
-    }
-    if (Date.parse(blocked.at) >= Date.parse(folder.connectedAt)) {
-      return { headline: `${capital(buildLabel(newer.version))} is ready`, detail: blocked.reason, tone: 'ready', action: { kind: 'connect', label: 'Connect folder' } };
-    }
   }
   if (newer !== null) {
     return {
