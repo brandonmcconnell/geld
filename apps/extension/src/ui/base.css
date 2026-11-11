@@ -789,6 +789,15 @@ summary::-webkit-details-marker {
   gap: 8px;
 }
 
+.geld-account__prompt .geld-button:not(.geld-button--primary) {
+  border-color: light-dark(oklch(0.8 0.12 80), oklch(0.5 0.1 75));
+  background: light-dark(oklch(0.92 0.09 85), oklch(0.36 0.08 75));
+}
+
+.geld-account__prompt .geld-button:not(.geld-button--primary):hover {
+  background: light-dark(oklch(0.89 0.11 85), oklch(0.41 0.09 75));
+}
+
 .geld-account__error {
   padding: 6px 14px;
   color: var(--destructive);
