@@ -25,16 +25,20 @@ describe('feedbackIssue', () => {
     expect(bare).not.toContain('Diagnostics');
     const full = feedbackIssue({ kind: 'idea', title: 't', text: 'Please add this.' }, CONTEXT, ALL).body;
     expect(full).toContain('- **Geld:** 0.1.3.812 · Chrome 148 on macOS');
-    expect(full).toContain('- **Where:** pull request conversation');
-    expect(full).toContain('- **Page:** <https://github.com/wxt-dev/wxt/pull/2544>');
+    expect(full).toContain('- **Page type:** pull request conversation');
+    expect(full).toContain('- **Page address:** <https://github.com/wxt-dev/wxt/pull/2544>');
     expect(full).toContain('<details><summary>Diagnostics</summary>');
     expect(full).toContain('fetch wxt-dev/wxt#2545 ok 98ms');
   });
 
+  it('leaves out empty details, so the preview can stand in for them', () => {
+    expect(feedbackIssue({ kind: 'bug', title: '', text: '  ' }, CONTEXT, NONE).body).toBe('<sub>Sent from the feedback form in the Geld extension.</sub>');
+  });
+
   it('skips context this device has none of', () => {
     const body = feedbackIssue({ kind: 'bug', title: 't', text: 'x' }, { ...CONTEXT, page: null, where: null }, ALL).body;
-    expect(body).not.toContain('**Page:**');
-    expect(body).not.toContain('**Where:**');
+    expect(body).not.toContain('**Page address:**');
+    expect(body).not.toContain('**Page type:**');
   });
 
   it('fences a report holding backticks with a longer fence', () => {
