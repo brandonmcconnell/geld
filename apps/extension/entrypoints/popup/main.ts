@@ -3,7 +3,6 @@ import { allCategories } from '@geld/core';
 import { formatCount, pluralize } from '@geld/core';
 import type { EnsureContentMessage, GetTabStateMessage, TabState } from '../../src/lib/messages';
 import { isEnsureContentResponse, isTabState } from '../../src/lib/messages';
-import { fitMiddleTruncated } from '../../src/ui/middle-truncate';
 import { compileRepoRules, decideRepo, ownerProbe, repoFromPathname, withRepoRule } from '@geld/core';
 import { allHosts, isAutoViewedForAll, isCategoryEnabled, isCategoryInPicker, plainText, sectionsFor, withAutoViewedForAll } from '@geld/core';
 import type { AnyCategoryId, CategoriesField, GeldSettings, ToggleField } from '@geld/core';
@@ -341,10 +340,11 @@ async function main(): Promise<void> {
   requireElement('popup-body', HTMLDivElement).addEventListener('scroll', hideTip, { passive: true });
 
   /* Tab context */
-  const contextHead = requireElement('context-head', HTMLParagraphElement);
   const contextRepo = requireElement('context-repo', HTMLSpanElement);
   const summary = requireElement('context-summary', HTMLParagraphElement);
-  const stats = requireElement('context-stats', HTMLSpanElement);
+  const noRepo = requireElement('context-no-repo', HTMLParagraphElement);
+  const ruleState = requireElement('context-state', HTMLSpanElement);
+  const stats = requireElement('context-stats', HTMLParagraphElement);
   const statHidden = requireElement('context-hidden', HTMLSpanElement);
   const statAdd = requireElement('context-add', HTMLSpanElement);
   const statDel = requireElement('context-del', HTMLSpanElement);
@@ -510,34 +510,41 @@ async function main(): Promise<void> {
 
   const tab = await activeGitHubTab(allHosts(settings));
   let repo: string | null = tab === null ? null : repoFromPathname(tab.url.pathname);
-  wireFeedbackLink(requireElement('feedback-link', HTMLAnchorElement), tab === null ? {} : { tabId: tab.id });
+  const feedbackOpening = tab === null ? {} : { tabId: tab.id };
+  wireFeedbackLink(requireElement('feedback-link', HTMLAnchorElement), feedbackOpening);
+  wireFeedbackLink(requireElement('context-feedback', HTMLAnchorElement), feedbackOpening);
+
+  /** The repo stands in for the tagline in the header; off a repo the tagline and "No repo detected" show instead. */
+  function renderRepo(): void {
+    noRepo.hidden = repo !== null;
+    if (repo === null || tab === null) return;
+    contextRepo.textContent = tab.url.hostname === 'github.com' ? repo : `${tab.url.hostname}/${repo}`;
+    // Marks the subtitle as live context (kept when signed in) rather than the generic tagline (hidden once signed in).
+    contextRepo.dataset.context = 'repo';
+  }
+  renderRepo();
 
   async function refreshContext(): Promise<void> {
     if (tab === null) return;
     const state = await requestTabState(tab.id);
     repo = state?.repo ?? repo;
-    contextHead.hidden = repo === null;
-    if (repo !== null) {
-      contextRepo.dataset.full = tab.url.hostname === 'github.com' ? repo : `${tab.url.hostname}/${repo}`;
-      contextRepo.textContent = contextRepo.dataset.full;
-    }
+    renderRepo();
 
     const rules = compileRepoRules(settings.repoRules);
     const decision = repo === null ? { allowed: true, rule: null } : decideRepo(rules, repo);
 
     const showStats = settings.enabled && decision.allowed && state !== null && state.hasDiff && state.visible !== null && state.all !== null;
 
-    // One line says it all when there are numbers; prose only when there are none.
-    if (!settings.enabled) {
-      summary.textContent = 'Geld is turned off.';
-    } else if (!decision.allowed) {
-      summary.textContent = `Off here because of the rule "${decision.rule?.raw ?? ''}".`;
-    } else if (state === null || !state.hasDiff) {
-      summary.textContent = repo === null ? 'Open a GitHub repo to see what Geld is doing.' : 'No diff on this page.';
-    } else if (!showStats) {
-      summary.textContent = state.hiddenCount === 0 ? 'Nothing hidden on this page.' : `${pluralize(state.hiddenCount, 'file', 'files')} hidden on this page.`;
+    // One line says it all when there are numbers; prose only when there are none. Off a repo, or off by a rule, the
+    // "No repo detected" line or the org and repo toggles say it instead.
+    let line: string | null = null;
+    if (!settings.enabled) line = 'Geld is turned off.';
+    else if (repo !== null && decision.allowed && !showStats) {
+      if (state === null || !state.hasDiff) line = 'No diff on this page.';
+      else line = state.hiddenCount === 0 ? 'Nothing hidden on this page.' : `${pluralize(state.hiddenCount, 'file', 'files')} hidden on this page.`;
     }
-    summary.hidden = showStats;
+    summary.textContent = line ?? '';
+    summary.hidden = line === null;
 
     stats.hidden = !showStats;
     if (showStats && state !== null && state.visible !== null && state.all !== null) {
@@ -551,21 +558,25 @@ async function main(): Promise<void> {
         state.all.deletions,
       )} in ${pluralize(state.all.files, 'file', 'files')}${state.expanded ? '. Currently shown on the page' : ''}`;
     }
-    if (repo !== null) requestAnimationFrame(() => fitMiddleTruncated(contextRepo));
 
     actions.hidden = repo === null || !settings.enabled;
     renderRepoConfig(settings.enabled && decision.allowed ? (state?.repoConfig ?? null) : null);
     if (repo !== null) {
       const org = orgOf(repo);
       const orgDecision = decideRepo(rules, ownerProbe(org));
-      renderRuleButton(toggleRepo, 'repo', repo, decision.allowed, repo);
+      ruleState.textContent = decision.allowed ? 'Enabled' : 'Disabled';
       renderRuleButton(toggleOrg, 'org', `${org}/*`, orgDecision.allowed, org);
+      renderRuleButton(toggleRepo, 'repo', repo, decision.allowed, repo);
     }
   }
 
-  /** "Disable for this repo" while Geld runs there, "Enable for this repo" once a rule turns it off. */
+  /** "✓ org" (green) while Geld runs there, "✕ org" (red) once a rule turns it off; a click flips it. */
   function renderRuleButton(button: HTMLButtonElement, scope: 'repo' | 'org', label: string, on: boolean, target: string): void {
-    button.textContent = `${on ? 'Disable' : 'Enable'} for this ${scope}`;
+    const icon = document.createElement('span');
+    icon.className = `geld-button__icon geld-button__icon--${on ? 'check' : 'x'}`;
+    icon.setAttribute('aria-hidden', 'true');
+    button.replaceChildren(icon, document.createTextNode(scope));
+    button.setAttribute('aria-pressed', String(on));
     button.title = on ? `Geld is on for ${label}. Click to turn it off.` : `Geld is off for ${label}. Click to turn it on.`;
     button.dataset.target = target;
     button.dataset.allow = String(!on);

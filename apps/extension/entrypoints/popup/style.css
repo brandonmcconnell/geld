@@ -41,8 +41,8 @@ body {
   min-width: 70px;
 }
 
-/* Signed in, the tagline is redundant; the wordmark centres on the account control. */
-.popup__header:has(.geld-account__summary) .geld-brand__tagline {
+/* Signed in, the generic tagline is redundant; the wordmark centres on the account control. Live repo context stays. */
+.popup__header:has(.geld-account__summary) .geld-brand__tagline:not([data-context]) {
   display: none;
 }
 
@@ -99,30 +99,21 @@ body {
   font-size: 13px;
 }
 
-.popup__context-head:not([hidden]) + .popup__context-line:not([hidden]) {
-  margin-top: 4px;
+.popup__context > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 8px;
 }
 
-/* The repo on the left, middle-truncated in JS so its name stays whole; the counts on the right. */
-.popup__context-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-}
-
-.popup__repo {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
+.popup__link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .popup__stats {
   display: flex;
-  flex: none;
   gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
 }
 
 .popup__stat--hidden {
@@ -137,26 +128,44 @@ body {
   color: var(--deletion);
 }
 
-/* Both buttons share one line at every width; a label that cannot fit is clipped, never wrapped. */
+/* Whether Geld runs here, then one toggle for the org and one for the repo: green with a check while on, red with
+ * a cross once a rule turns it off. */
 .popup__quick {
   display: flex;
+  align-items: center;
   gap: 6px;
-  margin-top: 8px;
 }
 
-.popup__quick .geld-button {
-  flex: 1 1 0;
-  min-width: 0;
-  padding: 0 8px;
-  overflow: hidden;
-  white-space: nowrap;
+.popup__quick-state {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.popup__rule {
+  gap: 6px;
+}
+
+.popup__rule[aria-pressed] {
+  --rule: var(--deletion);
+  border-color: color-mix(in oklch, var(--rule) 40%, transparent);
+  background: color-mix(in oklch, var(--rule) 10%, transparent);
+  color: var(--foreground);
+}
+
+.popup__rule[aria-pressed='true'] {
+  --rule: var(--addition);
+}
+
+.popup__rule[aria-pressed]:hover {
+  background: color-mix(in oklch, var(--rule) 18%, transparent);
+}
+
+.popup__rule .geld-button__icon {
+  color: var(--rule);
 }
 
 /* Repository config ----------------------------------------------------------- */
-
-.popup__repo-config {
-  margin-top: 12px;
-}
 
 .popup__repo-config .geld-alert {
   padding: 10px 12px;
