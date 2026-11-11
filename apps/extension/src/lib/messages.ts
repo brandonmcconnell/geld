@@ -89,6 +89,12 @@ export interface GetTabStateMessage {
   readonly type: 'geld:get-tab-state';
 }
 
+/** Popup → content script: turn Geld off or on in this tab only. Answered with the tab's state. */
+export interface SetTabDisabledMessage {
+  readonly type: 'geld:set-tab-disabled';
+  readonly disabled: boolean;
+}
+
 /** Options page → content script: what Geld has cost on this tab so far (`lib/perf.ts`), for Copy diagnostics. */
 export interface PerfReportMessage {
   readonly type: 'geld:perf-report';
@@ -166,6 +172,8 @@ export interface TabState {
   readonly diffPageUrl: string | null;
   /** Whether the diffs are rendered on this page (so a reveal can happen in place). */
   readonly onDiffPage: boolean;
+  /** Geld is turned off in this tab alone. Absent from copies that predate the switch. */
+  readonly tabDisabled?: boolean;
 }
 
 /** Content script → background: update the toolbar badge for this tab. */
@@ -292,6 +300,10 @@ export function isToggleHiddenMessage(value: unknown): value is ToggleHiddenMess
 
 export function isGetTabStateMessage(value: unknown): value is GetTabStateMessage {
   return isRecord(value) && value.type === 'geld:get-tab-state';
+}
+
+export function isSetTabDisabledMessage(value: unknown): value is SetTabDisabledMessage {
+  return isRecord(value) && value.type === 'geld:set-tab-disabled' && typeof value.disabled === 'boolean';
 }
 
 export function isPerfReportMessage(value: unknown): value is PerfReportMessage {

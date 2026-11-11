@@ -190,6 +190,10 @@ body {
   opacity: 1;
 }
 
+.popup__tab-switch {
+  margin-top: 8px;
+}
+
 .popup__quick {
   display: flex;
   flex-wrap: wrap;
