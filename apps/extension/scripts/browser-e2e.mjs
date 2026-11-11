@@ -2332,6 +2332,14 @@ async function verifyProviderAgentNotes(page, item) {
 async function verifyProviderFlow(page, item) {
   const progress = { status: 'running', scope: 'Public card counts, category inclusion and focus restoration. Dependency parsing and immutable fork selection have separate unit coverage.' };item.fileFlow = progress;
   const before = await tabState(page);
+  // Flow stands in the overview digest's toolbar only, so a diff page switches to the native Overview tab first.
+  if (await page.$('.geld-provider-flow-button') === null) {
+    const overview = await page.evaluateHandle(() => [...document.querySelectorAll('.merge-request-tabs a[href]')].find((link) => /\/merge_requests\/\d+\/?$/.test(new URL(link.href).pathname)) ?? null);
+    const tab = overview.asElement();assert.ok(tab !== null, 'Native Overview tab');
+    await tab.click();await overview.dispose();
+    progress.viaOverviewTab = true;
+    await poll(() => page.$('.geld-provider-flow-button'), Boolean, 'Flow mounts in the overview digest toolbar');
+  }
   await page.click('.geld-provider-flow-button');
   await poll(() => page.evaluate(() => {
     const dialog = document.querySelector('dialog.geld-provider-flow');return dialog?.open && !/Reading imports|Loading verified/.test(dialog.querySelector('[role="status"]')?.textContent ?? '');
