@@ -113,6 +113,8 @@ export interface ProviderReviewPanelOptions {
   readonly transformItems?: (items: readonly ReviewItem[]) => readonly ReviewItem[];
   readonly suggestedFixes?: 'all' | 'bots' | 'ai' | 'off';
   readonly reviewGrouping?: 'type' | 'batch';
+  /** The signed-in reader's account id, so their own messages stand on the right as on GitHub. */
+  readonly viewerId?: string;
   readonly localReviewed?: {
     readonly ids: ReadonlySet<string>;
     readonly pending: ReadonlySet<string>;
@@ -330,7 +332,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       content.setAttribute('role', 'region');
       content.setAttribute('aria-labelledby', `${section.id}-toggle`);
       for (const entry of [...section.childNodes]) {
-        if (entry instanceof Element && (entry.hasAttribute('data-geld-review-toggle') || entry.hasAttribute('data-geld-review-preview'))) continue;
+        if (entry instanceof Element && (entry.hasAttribute('data-geld-review-toggle') || entry.hasAttribute('data-geld-review-preview') || entry.hasAttribute('data-geld-row-menu'))) continue;
         content.append(entry);
       }
       section.append(content);
@@ -428,7 +430,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     toggle.id = `${id}-toggle`;
     toggle.setAttribute('aria-controls', `${id}-content`);
     toggle.append(node('span', label, 'geld-provider-review__section-label'));
-    const icons: Readonly<Record<string, DigestIcon>> = { reviewers: 'reviews', checks: 'check', bots: 'check', requirements: 'check', reports: 'report', 'agent-notes': 'report', previews: 'preview', comments: 'comment' };
+    const icons: Readonly<Record<string, DigestIcon>> = { reviewers: 'reviews', checks: 'check', bots: 'check', requirements: 'check', reports: 'report', 'agent-notes': 'report', previews: 'preview', deployments: 'rocket', comments: 'comment' };
     const glyph = icons[key];
     if (glyph !== undefined) {
       section.dataset.geldStatusRow = '';
@@ -545,7 +547,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const presentation = authorPresentations.get(authorPresentationKey(comment));
     const name = node('strong', presentation?.displayName ?? comment.author.login);
     name.dataset.geldAuthorName = '';
-    if (presentation === undefined) byline.append(name);
+    if (presentation === undefined) byline.append(authorAvatar(comment.author, 'geld-provider-review__byline-avatar'), name);
     else {
       const nativeClasses = (className: string | undefined): string => (className ?? '').split(/\s+/).filter((token) => /^[a-zA-Z0-9_!@:/.-]+$/.test(token) && !token.startsWith('geld-')).join(' ');
       const avatar = presentation.avatar;
@@ -569,7 +571,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         slot.style.height = slot.style.blockSize = `${avatar.height}px`;
         slot.append(image);
         byline.append(slot);
-      }
+      } else byline.append(authorAvatar(comment.author, 'geld-provider-review__byline-avatar'));
       const profileUrl = presentation.profileUrl === undefined ? null : safeUrl(presentation.profileUrl, input.subject.origin);
       if (profileUrl === null) byline.append(name);
       else {
@@ -589,17 +591,20 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       }
     }
     if (comment.author.automated === true) byline.append(node('span', 'Automated account', 'geld-provider-review__muted'));
-    const time = timestamp(comment.createdAt);
+    // As GitHub's byline: the time is the edit's, and a clock beside it says when the comment was first posted.
+    const edited = comment.updatedAt !== undefined && comment.updatedAt !== comment.createdAt && Number.isFinite(Date.parse(comment.updatedAt)) ? comment.updatedAt : undefined;
+    const time = timestamp(edited ?? comment.createdAt);
     if (time !== null) byline.append(time);
-    if (comment.updatedAt !== undefined && comment.updatedAt !== comment.createdAt) {
-      const edited = timestamp(comment.updatedAt);
-      if (edited !== null) {
-        edited.prepend(doc.createTextNode('Edited '));
-        byline.append(edited);
-      }
+    const posted = new Date(comment.createdAt);
+    if (edited !== undefined && Number.isFinite(posted.getTime())) {
+      const mark = node('span', '', 'geld-provider-review__edited');
+      mark.dataset.geldEdited = '';
+      mark.title = `Edited · originally posted ${posted.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`;
+      mark.setAttribute('role', 'img');mark.setAttribute('aria-label', mark.title);
+      mark.append(digestIcon('history', doc));
+      byline.append(mark);
     }
     const url = sourceLink({ anchor: comment.anchor, kind: 'comment', author: comment.author.login, url: comment.url }, input.subject);
-    if (url !== null) byline.append(viewLink(url, comment.anchor));
     const body = node('div', comment.body, 'geld-provider-review__body');
     body.style.whiteSpace = 'pre-wrap';
     body.style.overflowWrap = 'anywhere';
@@ -639,10 +644,12 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       identities.push(renderReviewerIdentity(article, comment, identify.repository, choices, (botId) => identify.save(comment, botId)));
     }
     const actions = options.actionsForSource?.(comment).filter((action) => action.available) ?? [];
+    // GitHub's comment ⋯: the host's own actions, then where the comment stands in the timeline and its link.
+    const menu = rowMenu(`More actions for ${comment.author.login}'s comment`);
+    const controls = menu.querySelector<HTMLElement>('.geld-provider-review__menu-list')!;
+    controls.classList.add('geld-provider-review__source-actions');
+    controls.setAttribute('aria-label', `Actions for ${comment.author.login}'s comment`);
     if (actions.length > 0) {
-      const controls = node('div', '', 'geld-provider-review__source-actions');
-      controls.setAttribute('role', 'group');
-      controls.setAttribute('aria-label', `Actions for ${comment.author.login}'s comment`);
       for (const action of actions) {
         const button = node('button', action.label);
         button.type = 'button';
@@ -670,9 +677,47 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         });
         controls.append(button);
       }
-      article.append(controls);
+    }
+    if (url !== null) {
+      const timeline = viewLink(url, comment.anchor);
+      timeline.textContent = 'Show in timeline';
+      controls.append(timeline, copyLinkButton(url));
+    }
+    if (controls.childElementCount > 0) {
+      const side = node('div', '', 'geld-provider-review__msg-side');
+      side.append(menu);
+      article.append(side);
     }
     return article;
+  }
+
+  // A ⋯ menu in GitHub's place: a summary with the glyph, and a list that opens beside it.
+  function rowMenu(label: string): HTMLDetailsElement {
+    const menu = node('details', '', 'geld-provider-review__menu geld-provider-review__row-menu');
+    const toggle = node('summary', '', 'geld-provider-review__tool geld-provider-review__more');
+    toggle.title = label;toggle.setAttribute('aria-label', label);
+    toggle.append(digestIcon('more', doc));
+    const list = node('div', '', 'geld-provider-review__menu-list');
+    list.setAttribute('role', 'group');
+    menu.append(toggle, list);
+    menu.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();event.stopPropagation();menu.open = false;toggle.focus();
+    });
+    menu.addEventListener('click', event => {
+      if (event.target instanceof Element && event.target.closest('a[href]') !== null) menu.open = false;
+    });
+    return menu;
+  }
+
+  function copyLinkButton(url: string): HTMLButtonElement {
+    const button = node('button', 'Copy link');button.type = 'button';
+    button.dataset.geldCopyLink = '';
+    button.addEventListener('click', () => {
+      const write = options.copyText ?? ((value: string): Promise<void> => navigator.clipboard.writeText(value));
+      void Promise.resolve().then(() => write(url)).then(() => { button.textContent = 'Link copied'; }, () => { button.textContent = 'Could not copy'; });
+    });
+    return button;
   }
 
   function reviewStandingSummary(): ReviewsSummary {
@@ -717,9 +762,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     });
   }
 
-  function authorAvatar(author: ProviderReviewAuthor): HTMLElement {
+  function authorAvatar(author: ProviderReviewAuthor, extra = ''): HTMLElement {
     const presentation = [...authorPresentations.values()].find(value => value.authorId === author.id);
-    const mark = node('span', '', 'geld-provider-review__reviewer-avatar');mark.setAttribute('aria-hidden', 'true');
+    const mark = node('span', '', `geld-provider-review__reviewer-avatar ${extra}`.trim());mark.setAttribute('aria-hidden', 'true');
     const url = presentation?.avatar === undefined ? null : safeUrl(presentation.avatar.src);
     if (url !== null && new URL(url).protocol === 'https:') {
       const image = node('img');image.src = url;image.alt = '';image.referrerPolicy = 'no-referrer';mark.append(image);
@@ -731,7 +776,22 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   function chatMessage(comment: ProviderReviewComment): HTMLElement {
     const message = sourceComment(comment);
     message.dataset.geldChatMessage = '';
+    if (options.viewerId !== undefined && comment.author.id === options.viewerId) message.dataset.geldMine = '';
     return message;
+  }
+
+  // One author's consecutive messages share a run: the name and picture once, the bubbles close together.
+  function markRuns(messages: readonly HTMLElement[]): void {
+    const author = (message: HTMLElement | undefined): string | undefined => message === undefined ? undefined : comments().get(message.dataset.geldSource ?? '')?.author.id;
+    messages.forEach((message, index) => {
+      const same = (other: HTMLElement | undefined): boolean => other !== undefined && other.hasAttribute('data-geld-chat-message') && author(other) === author(message);
+      const before = same(messages[index - 1]);const after = same(messages[index + 1]);
+      message.dataset.geldRun = before && after ? 'mid' : before ? 'last' : after ? 'first' : 'only';
+    });
+  }
+
+  function comments(): ReadonlyMap<string, ProviderReviewComment> {
+    return new Map(conversationComments().map((comment) => [comment.anchor, comment] as const));
   }
 
   // The bot's top-level summary from the same run heads its thread, as GitHub's threadHeadOf does (2 min before to 5 min after).
@@ -1172,21 +1232,23 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       summary.append(glyph, avatars, title, node('span', metadata, 'geld-provider-review__muted geld-provider-review__item-meta'), state, ...(time === null ? [] : [time]));
     }
     const originalItem = nativeItems.get(item.id);
+    // GitHub's thread row carries its ⋯ beside the chevron: copy, mark, the timeline and the link live there, not in the thread.
+    const menu = rowMenu('More actions for this thread');
+    menu.dataset.geldRowMenu = '';
+    const menuList = menu.querySelector<HTMLElement>('.geld-provider-review__menu-list')!;
+    menuList.setAttribute('aria-label', 'Thread actions');
     if (originalItem !== undefined) {
-      const controls = node('div', '', 'geld-provider-review__source-actions');
-      controls.setAttribute('role', 'group');controls.setAttribute('aria-label', 'Copy review item');
-      controls.append(copyControl('Copy as Markdown', item.id, 'markdown', () => renderProviderItemMarkdown(item, input.subject, {
+      menuList.append(copyControl('Copy as Markdown', item.id, 'markdown', () => renderProviderItemMarkdown(item, input.subject, {
         showFix: fixVisible(item.fix, options.suggestedFixes ?? 'all'), sourceStatus: originalItem.status,
         reviewedOnDevice: options.localReviewed?.ids.has(item.id) === true,
       })));
-      details.append(controls);
+      if (fixVisible(item.fix, options.suggestedFixes ?? 'all')) { const value = item.fix.text;menuList.append(copyControl('Copy suggested fix', item.id, 'fix', () => value)); }
     }
     if (item.rewritten === true) details.append(node('p', 'AI triage · original comments below', 'geld-provider-review__muted'));
     const local = options.localReviewed;
     if (local !== undefined) {
       const reviewed = local.ids.has(item.id);
       const pending = local.pending.has(item.id);
-      const controls = node('div', '', 'geld-provider-review__source-actions');
       const button = node('button', reviewed ? 'Undo local review mark' : 'Mark reviewed on this device');
       button.type = 'button';
       button.dataset.geldLocalReviewed = item.id;
@@ -1194,8 +1256,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       button.setAttribute('aria-pressed', String(reviewed));
       if (pending) button.setAttribute('aria-busy', 'true');
       button.addEventListener('click', () => { if (!destroyed && !button.disabled) local.set(item, !reviewed); });
-      controls.append(button);
-      details.append(controls);
+      menuList.append(button);
       if (reviewed) {
         const native = nativeItems.get(item.id);
         const note = node('p', `Reviewed on this device. Native status: ${native === undefined ? 'Unavailable' : STATUS[native.status]}.`, 'geld-provider-review__muted');
@@ -1214,26 +1275,35 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       details.append(assessment);
     }
     if (fixVisible(item.fix, options.suggestedFixes ?? 'all')) {
-      const fix = node('div');
-      const heading = node('div', '', 'geld-provider-review__source-actions');
-      heading.append(node('strong', item.fix.source === 'ai' ? 'Suggested fix · AI' : 'Suggested fix'));
-      const value = item.fix.text;
-      if (originalItem !== undefined) heading.append(copyControl('Copy suggested fix', item.id, 'fix', () => value));
-      fix.append(heading, node('pre', value));
+      const fix = node('div', '', 'geld-provider-review__fix');
+      fix.append(node('span', item.fix.source === 'ai' ? 'Suggested fix · AI' : 'Suggested fix', 'geld-provider-review__fix-label'), node('pre', item.fix.text));
       details.append(fix);
     }
+    // GitHub's thread chat: one box, the pinned source first, then every message, the reader's own on the right.
+    const chat = node('div', '', 'geld-provider-review__chat');
     const head = threadHead(item, comments);
-    if (head !== null) details.append(pinnedSource(item, head));
+    if (head !== null) chat.append(pinnedSource(item, head));
+    const body = node('div', '', 'geld-provider-review__chat-body');
+    const messages: HTMLElement[] = [];
     for (const source of item.sources) {
       const original = comments.get(source.anchor);
-      if (original !== undefined) details.append(chatMessage(original));
+      if (original !== undefined) { const message = chatMessage(original);messages.push(message);body.append(message); }
       else {
-        const missing = node('p', 'Original comment unavailable.');
+        const missing = node('p', 'Original comment unavailable.', 'geld-provider-review__muted');
         const url = sourceLink(source, input.subject);
-        if (url !== null) missing.append(doc.createTextNode(' '), viewLink(url, source.anchor));
-        details.append(missing);
+        if (url !== null) { const timeline = viewLink(url, source.anchor);timeline.textContent = 'Show in timeline';missing.append(doc.createTextNode(' '), timeline); }
+        messages.push(missing);body.append(missing);
       }
     }
+    markRuns(messages);
+    chat.append(body);
+    details.append(chat);
+    const url = item.sources.map((source) => sourceLink(source, input.subject)).find((value) => value !== null);
+    if (url !== undefined && url !== null) {
+      const timeline = viewLink(url, item.sources[0]?.anchor ?? '');timeline.textContent = 'Show in timeline';
+      menuList.append(timeline, copyLinkButton(url));
+    }
+    if (menuList.childElementCount > 0) details.append(menu);
     if (item.rewritten !== true) {
       const title = details.querySelector('.geld-provider-review__item-title');
       const body = details.querySelector('.geld-provider-review__body');

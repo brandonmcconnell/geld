@@ -36,7 +36,7 @@ describe('by-push Needs attention', () => {
     expect(panel.element.querySelector('[data-geld-review-round="4135374883"]')?.textContent).toContain('No conversation recorded after this push.');
     expect(panel.element.querySelector('[data-geld-review-round="first"] [data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('Push 1');
     for (const source of [before, old, done]) expect(panel.element.querySelectorAll(`[data-geld-source="note_${source.id}"]`)).toHaveLength(1);
-    expect(panel.element.querySelectorAll('[data-geld-source] button')).toHaveLength(3);
+    expect(panel.element.querySelectorAll('[data-geld-source] button:not([data-geld-copy-link])')).toHaveLength(3);
     const item = buildProviderReviewItems(input).find((entry) => entry.sources.some((source) => source.anchor === old.anchor));
     if (item === undefined || attention === null) throw new Error('Missing attention item');
     const home = [...attention.querySelectorAll<HTMLElement & { open: boolean }>('[data-geld-item]')].find((entry) => entry.dataset.geldItem === item.id);

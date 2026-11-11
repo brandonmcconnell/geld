@@ -46,6 +46,9 @@ html[data-geld-provider] [data-geld-provider-author-hidden] { display: none !imp
 .geld-provider-review__reviewers > .geld-provider-review__standing { display: inline-flex; flex-direction: column; gap: var(--geld-provider-space-2); padding: 0; min-inline-size: 0; color: var(--geld-provider-text); }
 .geld-provider-review__reviewer { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--geld-provider-space-2); max-inline-size: 100%; padding: var(--geld-provider-space-2) var(--geld-provider-space-3); border: var(--geld-provider-border-width) solid var(--geld-provider-border); border-radius: var(--geld-provider-button-radius); background: var(--geld-provider-bg-subtle); font: var(--geld-provider-byline-font); color: var(--geld-provider-text); }
 .geld-provider-review__reviewer-avatar { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; inline-size: 1.5em; block-size: 1.5em; overflow: hidden; border-radius: 50%; background: var(--geld-provider-bg); color: var(--geld-provider-text-subtle); }
+/* Every picture wears GitHub's 1px ring, a letter standing in for a missing one too, so it never reads as loose text. */
+.geld-provider-review__reviewer-avatar { position: relative; inline-size: 20px; block-size: 20px; font-size: 11px; font-weight: 600; background: var(--geld-provider-bg-subtle); }
+.geld-provider-review__reviewer-avatar::after { content: ''; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--geld-provider-border); pointer-events: none; }
 .geld-provider-review__reviewer-avatar img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
 .geld-provider-review__reviewer-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-inline-size: 16ch; }
 .geld-provider-review__standing[data-state="approved"] .geld-provider-review__reviewer-verdict { color: var(--geld-provider-success); }

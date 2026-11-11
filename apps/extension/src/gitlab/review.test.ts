@@ -69,6 +69,15 @@ describe('GitLab discussion normalization', () => {
     expect(parsed.events).toMatchObject([{ id: '14', body: 'pushed 1 commit', icon: 'commit', kind: 'push' }]);
   });
 
+  it('reads an edit from last_edited_at, since resolving a thread moves updated_at too', () => {
+    const resolvedOnly = note(11, 'Body', { last_edited_at: null });
+    const edited = note(12, 'Body', { last_edited_at: '2026-10-30T10:00:00.000Z' });
+    const parsed = parseGitLabDiscussions([discussion('a'.repeat(40), [resolvedOnly, edited])], subject);
+    const comments = parsed.threads.flatMap((thread) => thread.comments);
+    expect(comments[0]?.updatedAt).toBeUndefined();
+    expect(comments[1]?.updatedAt).toBe('2026-10-30T10:00:00.000Z');
+  });
+
   it('uses the native diff position and URL while keeping outdated separate from resolved', () => {
     const path = 'src/fix.ts';
     const parsed = parseGitLabDiscussions([discussion('a'.repeat(40), [note(11)], {

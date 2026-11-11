@@ -235,6 +235,8 @@ export interface ProviderNativeView {
 }
 
 export interface ProviderAdapter {
+  /** The signed-in reader's native account id, as review authors carry it; null when signed out or unknown. */
+  viewerAuthorId?(doc: Document): string | null;
   createPageMode?(doc: Document, changed: () => void): ProviderPageMode;
   createNativeView?(doc: Document, changed: () => void, choice: (url: URL, showWhitespace: boolean) => void): ProviderNativeView;
   readonly wholeTests?: ProviderWholeTestAdapter;

@@ -2240,14 +2240,17 @@ async function gitLabBotBodyEvidence(page, item) {
   page.on('request', request);
   try {
     progress.openedSummaries = await openReviewAncestors(page, selector);
-    const handle = await page.evaluateHandle((selector) => [...document.querySelectorAll(`${selector} > .geld-provider-review__byline > a[href]`)].find((link) => link.textContent.trim() === 'View' || link.textContent.trim() === 'View original') ?? null, selector);
+    // The comment's ⋯ holds "Show in timeline" as GitHub's does; open it before the real click on the link.
+    await page.evaluate((selector) => { const menu = document.querySelector(`${selector} > .geld-provider-review__msg-side > details`);if (menu !== null) menu.open = true; }, selector);
+    const handle = await page.evaluateHandle((selector) => document.querySelector(`${selector} > .geld-provider-review__msg-side a[data-geld-view][href]`)
+      ?? [...document.querySelectorAll(`${selector} > .geld-provider-review__byline > a[href]`)].find((link) => link.textContent.trim() === 'View' || link.textContent.trim() === 'View original') ?? null, selector);
     const original = handle.asElement();assert.ok(original !== null, 'Mounted native bot summary must retain its original-source control');
     try {
       assert.equal(await original.evaluate((link) => link.href), `${GL_BOT}#${anchor}`);
       const url = page.url();
       await original.evaluate((link) => link.scrollIntoView({ block: 'center', inline: 'nearest' }));await original.click();
       assert.equal(page.url(), url, 'Revealing the already mounted native summary must not navigate');
-      progress.originalClick = { label: 'View original', input: 'Real Puppeteer pointer click reveals the existing native note without navigation' };
+      progress.originalClick = { label: 'Show in timeline', input: 'Real Puppeteer pointer click reveals the existing native note without navigation' };
     } finally { await discardHandle(handle); }
     const read = async (stage) => {
       const body = await page.evaluate(commentBodyPresentationProbe, 'gitlab', anchor);

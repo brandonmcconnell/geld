@@ -2,7 +2,7 @@
 .geld-provider-review__section--bot-previews > .geld-provider-review__section-toggle { grid-area: 1 / 1; }
 .geld-provider-review__section--bot-previews > .geld-provider-review__row-preview {
   grid-area: 1 / 1; align-self: center; z-index: 1; pointer-events: none;
-  margin-inline: calc(var(--geld-provider-space-5) + 16px + var(--geld-provider-space-4) * 2 + 120px) calc(var(--geld-provider-space-5) + var(--geld-provider-space-4) + 1em);
+  margin-inline: calc(var(--geld-provider-space-5) + 16px + var(--geld-provider-space-4) * 2 + 120px - var(--geld-provider-space-3) - var(--geld-provider-border-width)) calc(var(--geld-provider-space-5) + var(--geld-provider-space-4) + 1em);
   padding-block: var(--geld-provider-space-2);
 }
 .geld-provider-review__section--bot-previews > .geld-provider-review__section-content { grid-column: 1; }
@@ -25,5 +25,5 @@
 .geld-provider-summary-preview__body pre { white-space: pre-wrap; }
 @media (max-width: 700px) {
   .geld-provider-review .geld-provider-review__section--bot-previews > .geld-provider-review__section-toggle > .geld-provider-review__section-label { flex: 0 0 96px; }
-  .geld-provider-review__section--bot-previews > .geld-provider-review__row-preview { margin-inline-start: calc(var(--geld-provider-space-5) + 16px + var(--geld-provider-space-3) * 2 + 96px); }
+  .geld-provider-review__section--bot-previews > .geld-provider-review__row-preview { margin-inline-start: calc(var(--geld-provider-space-5) + 16px + var(--geld-provider-space-3) * 2 + 96px - var(--geld-provider-space-3) - var(--geld-provider-border-width)); }
 }
