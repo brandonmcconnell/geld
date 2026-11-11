@@ -764,18 +764,22 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const preview = head.body.replace(/<[^>]*>/g, ' ').replace(/[#>*_`|-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
     button.append(digestIcon('pin', doc), authorAvatar(head.author), node('strong', `${head.author.login}'s summary`), node('span', preview, 'geld-provider-review__pin-preview'));
     const time = timestamp(head.createdAt);if (time !== null) button.append(time);
-    const body = sourceComment(head);
-    // A copy: the summary's own home is the bot's line, so its source marks stay there.
-    body.dataset.geldPinSource = head.anchor;
-    delete body.dataset.geldSource;delete body.dataset.geldSourceId;delete body.dataset.geldSourceUrl;
-    body.hidden = !open;
-    button.addEventListener('click', () => {
-      const next = body.hidden;
-      body.hidden = !next;
-      button.setAttribute('aria-expanded', String(next));
-      expanded.set(key, next);
-    });
-    strip.append(button, body);
+    // A copy made only once opened: the summary's own home is the bot's line, so its source marks stay there.
+    let body: HTMLElement | null = null;
+    const show = (visible: boolean): void => {
+      if (visible && body === null) {
+        body = sourceComment(head);
+        body.dataset.geldPinSource = head.anchor;
+        delete body.dataset.geldSource;delete body.dataset.geldSourceId;delete body.dataset.geldSourceUrl;
+        strip.append(body);
+      }
+      if (body !== null) body.hidden = !visible;
+      button.setAttribute('aria-expanded', String(visible));
+      expanded.set(key, visible);
+    };
+    button.addEventListener('click', () => show(button.getAttribute('aria-expanded') !== 'true'));
+    strip.append(button);
+    if (open) show(true);
     return strip;
   }
 
