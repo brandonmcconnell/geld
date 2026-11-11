@@ -138,6 +138,19 @@ describe('anonymizeDiagnostics', () => {
     ).toBe('fetch ghe.acme.internal/acme/secret#1 ok from=ghe.acme.internal at https://ghe.acme.internal/acme/secret/pull/1');
   });
 
+  it('obfuscates an address with a port, and a host with no dot or a trailing one', () => {
+    expect(anonymizeDiagnostics('see https://ghe.example.com:8443/acme/secret/pull/12 now', null)).toBe(
+      'see https://[obfuscated]/[obfuscated]/[obfuscated]/pull/[obfuscated] now',
+    );
+    expect(anonymizeDiagnostics('fetch ghe/acme/secret#77 ok\nfetch ghe./acme/secret@0a1b2c3 ok', null)).toBe(
+      'fetch [obfuscated]/[obfuscated]/[obfuscated]#[obfuscated] ok\nfetch [obfuscated]/[obfuscated]/[obfuscated]@[obfuscated] ok',
+    );
+    expect(anonymizeDiagnostics('https://ghe.example.com:8443/acme/secret/pull/12', { repo: 'acme/secret', host: 'ghe.example.com' })).toBe(
+      'https://ghe.example.com:8443/acme/secret/pull/12',
+    );
+    expect(anonymizeDiagnostics('key:acme/secret#1', null)).toBe('key:[obfuscated]/[obfuscated]#[obfuscated]');
+  });
+
   it('never names the same owner/repo on another host', () => {
     const report = 'fetch acme/widgets#3 ok\ninject ghe.example.com/acme/widgets#77 present\nghe.example.com/acme/widgets@0a1b2c3 (hidden): up 1s';
     expect(anonymizeDiagnostics(report, { repo: 'acme/widgets', host: 'github.com' })).toBe(

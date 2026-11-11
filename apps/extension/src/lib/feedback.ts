@@ -88,9 +88,14 @@ export const OBFUSCATED = '[obfuscated]';
 /** `owner/repo`, then `#N` or `@sha`, standing on their own (a rate like `45.2/min` is no repository). */
 const REPO_REFERENCE = /(?<![\w./-])([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)(?:(#)\d+|(@)[0-9a-f]{7,40})?(?![\w-])/g;
 /** A repository's page on a host: `https://host/owner/repo`, then `/pull/N`, `/issues/N`, `/discussions/N` and the like. */
-const REPO_URL = /\bhttps?:\/\/([A-Za-z0-9.-]+)\/([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)(?:\/(pull|pulls|issues|discussions|commit|commits|compare|tree|blob|actions|releases)(?:\/([^\s/?#]+))?)?/g;
-/** A reference the log prefixes with its host, for any host but github.com (`tabSubject`): `ghe.example.com/owner/repo#N`. */
-const HOSTED_REFERENCE = /(?<![\w./:-])([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)\/([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)(?:(#)\d+|(@)[0-9a-f]{7,40})?(?![\w-])/g;
+const REPO_URL = /\bhttps?:\/\/([^\s/?#]+)\/([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)(?:\/(pull|pulls|issues|discussions|commit|commits|compare|tree|blob|actions|releases)(?:\/([^\s/?#]+))?)?/g;
+/**
+ * A reference the log prefixes with its host, for any host but github.com (`tabSubject`): `ghe.example.com/owner/repo#N`.
+ * Any host token counts (`ghe`, `ghe.`), since three segments before the reference can only be a host and a repository.
+ */
+const HOSTED_REFERENCE = /(?<![\w./:-])([A-Za-z0-9][A-Za-z0-9.-]*)\/([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)(?:(#)\d+|(@)[0-9a-f]{7,40})?(?![\w-])/g;
+/** All three in one pass, earliest first: an address or reference is read once, so nothing inside one left whole is read again. */
+const REFERENCE = new RegExp(`${REPO_URL.source}|${HOSTED_REFERENCE.source}|${REPO_REFERENCE.source}`, 'g');
 const HOST_FIELD = /\bfrom=([^\s]+)/g;
 
 function isGitHubHost(host: string): boolean {
@@ -109,21 +114,32 @@ function isGitHubHost(host: string): boolean {
 export function anonymizeDiagnostics(report: string, named: NamedPage | null): string {
   const kept = named?.repo.toLowerCase() ?? null;
   const keptHost = named?.host.toLowerCase() ?? null;
-  const hostShown = (host: string): string => (isGitHubHost(host) || host.toLowerCase() === keptHost ? host : OBFUSCATED);
+  // An address's authority may carry a port (`ghe.example.com:8443`), which the page's own hostname never does.
+  const sameHost = (host: string): boolean => host.toLowerCase().replace(/:\d+$/, '') === keptHost;
+  const hostShown = (host: string): string => (isGitHubHost(host) || sameHost(host) ? host : OBFUSCATED);
+  const tail = (pull: string | undefined, sha: string | undefined): string => (pull !== undefined ? `#${OBFUSCATED}` : sha !== undefined ? `@${OBFUSCATED}` : '');
+  const isKept = (owner: string, repo: string): boolean => `${owner}/${repo}`.toLowerCase() === kept;
   return report
-    .replace(REPO_URL, (whole: string, host: string, owner: string, repo: string, kind: string | undefined, item: string | undefined) => {
-      if (`${owner}/${repo}`.toLowerCase() === kept && host.toLowerCase() === keptHost) return whole;
-      const path = kind === undefined ? '' : `/${kind}${item === undefined ? '' : `/${OBFUSCATED}`}`;
-      return `${whole.startsWith('http://') ? 'http' : 'https'}://${hostShown(host)}/${OBFUSCATED}/${OBFUSCATED}${path}`;
-    })
-    .replace(HOSTED_REFERENCE, (whole: string, host: string, owner: string, repo: string, pull: string | undefined, sha: string | undefined) => {
-      if (`${owner}/${repo}`.toLowerCase() === kept && host.toLowerCase() === keptHost) return whole;
-      return `${hostShown(host)}/${OBFUSCATED}/${OBFUSCATED}${pull !== undefined ? `#${OBFUSCATED}` : sha !== undefined ? `@${OBFUSCATED}` : ''}`;
-    })
-    // A reference with no host is github.com's: the page's repository keeps its name only when the page is on github.com too.
-    .replace(REPO_REFERENCE, (whole: string, owner: string, repo: string, pull: string | undefined, sha: string | undefined) => {
-      if (`${owner}/${repo}`.toLowerCase() === kept && keptHost === 'github.com') return whole;
-      return `${OBFUSCATED}/${OBFUSCATED}${pull !== undefined ? `#${OBFUSCATED}` : sha !== undefined ? `@${OBFUSCATED}` : ''}`;
+    .replace(REFERENCE, (whole: string, ...groups: unknown[]) => {
+      const part = (index: number): string | undefined => {
+        const value = groups[index];
+        return typeof value === 'string' ? value : undefined;
+      };
+      const [urlHost, urlOwner, urlRepo, kind, item] = [part(0), part(1), part(2), part(3), part(4)];
+      if (urlHost !== undefined && urlOwner !== undefined && urlRepo !== undefined) {
+        if (isKept(urlOwner, urlRepo) && sameHost(urlHost)) return whole;
+        const path = kind === undefined ? '' : `/${kind}${item === undefined ? '' : `/${OBFUSCATED}`}`;
+        return `${whole.startsWith('http://') ? 'http' : 'https'}://${hostShown(urlHost)}/${OBFUSCATED}/${OBFUSCATED}${path}`;
+      }
+      const [host, hostedOwner, hostedRepo] = [part(5), part(6), part(7)];
+      if (host !== undefined && hostedOwner !== undefined && hostedRepo !== undefined) {
+        if (isKept(hostedOwner, hostedRepo) && sameHost(host)) return whole;
+        return `${hostShown(host)}/${OBFUSCATED}/${OBFUSCATED}${tail(part(8), part(9))}`;
+      }
+      const [owner, repo] = [part(10), part(11)];
+      // A reference with no host is github.com's: the page's repository keeps its name only when the page is on github.com too.
+      if (owner !== undefined && repo !== undefined && isKept(owner, repo) && keptHost === 'github.com') return whole;
+      return `${OBFUSCATED}/${OBFUSCATED}${tail(part(12), part(13))}`;
     })
     .replace(HOST_FIELD, (_whole: string, host: string) => `from=${hostShown(host)}`);
 }
