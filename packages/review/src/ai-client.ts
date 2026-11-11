@@ -135,8 +135,9 @@ export async function completeChat(options: ChatCompletionOptions): Promise<Chat
   const body: Record<string, unknown> = {
     model: options.model,
     messages: options.messages,
-    temperature: options.temperature ?? 0,
   };
+  // Reasoning models (OpenAI's gpt-5 and later, o-series) answer 400 to any temperature but their default.
+  if (options.temperature !== undefined) body.temperature = options.temperature;
   if (options.jsonSchema !== undefined) {
     body.response_format = {
       type: 'json_schema',
