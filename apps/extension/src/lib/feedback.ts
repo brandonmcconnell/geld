@@ -122,7 +122,7 @@ export function anonymizeDiagnostics(report: string, named: NamedPage | null): s
 }
 
 /** The page whose address goes into the issue, as the report may name it; `null` when no address does. */
-function namedPage(page: string | null, included: boolean): NamedPage | null {
+export function namedPage(page: string | null, included: boolean): NamedPage | null {
   if (!included || page === null) return null;
   try {
     const url = new URL(page);

@@ -6,7 +6,7 @@ import { accountItem } from '../../src/lib/account';
 import { formatDiagnostics, readDiagnostics } from '../../src/lib/diagnostics';
 import { installErrorCapture } from '../../src/lib/error-capture';
 import type { ContextChoice, ContextKey, FeedbackContext, FeedbackDraft } from '../../src/lib/feedback';
-import { draftIsEmpty, EMPTY_DRAFT, FEEDBACK_KINDS, FEEDBACK_REPO, feedbackIssue, parseDraft } from '../../src/lib/feedback';
+import { draftIsEmpty, EMPTY_DRAFT, FEEDBACK_KINDS, FEEDBACK_REPO, feedbackIssue, namedPage, parseDraft } from '../../src/lib/feedback';
 import type { FeedbackOpenMessage, FeedbackSubmitMessage } from '../../src/lib/messages';
 import { isFeedbackOpenMessage, isFeedbackSubmitResponse } from '../../src/lib/messages';
 import { collectTabPerf } from '../../src/lib/perf-report';
@@ -105,7 +105,9 @@ const PAGE_NOTES: Readonly<Record<RepoVisibility, string>> = {
 function noteFor(key: ContextKey): string | null {
   if (key === 'page') return PAGE_NOTES[visibility];
   if (key === 'diagnostics')
-    return 'Diff fetches and timings for this session. Organizations, repositories and their pull requests show as [obfuscated] unless the page address is included, which names this page\'s repository. No page content or tokens.';
+    return namedPage(context.page, true) === null
+      ? 'Diff fetches and timings for this session. Organizations, repositories and their pull requests show as [obfuscated]. No page content or tokens.'
+      : 'Diff fetches and timings for this session. Organizations, repositories and their pull requests show as [obfuscated] unless the page address is included, which names this page\'s repository. No page content or tokens.';
   return null;
 }
 
