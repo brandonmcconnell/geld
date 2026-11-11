@@ -2359,7 +2359,10 @@ It is the only place the hub calls a provider, and only when the reader asks.
 The pull request's title, description and patches go to that provider for the one request, cut to a budget (`diffForModel`), and neither the question nor the answer is stored.
 A repository whose `.github/geld.yml`, or its organisation's in `.github`, says `review.ai: false` gets nothing sent, and so does one whose config cannot be read or understood (`aiPolicyFrom`), as the dashboard decides it.
 The provider and the policy are checked before the pull request is read, redirects from the provider are refused, and a failed call says only that the provider did not answer.
-Not done yet: GitHub's screens still read through the app's own GitHub client, another provider's pull request cannot be opened in the hub, and the hub knows nothing of Geld's teams.
+**Settings lists the reader's teams and changes none** (`listTeams`, `src/lib/teams`): name, role, plan, members against seats and repositories, read from the dashboard's `teams`, `team_members`, `team_repos` and `subscriptions`.
+Those tables are not declared in the hub's schema and the hub never creates or writes them: it asks Postgres whether they exist, and a database of the hub's own says it has no teams.
+Only counts are shown, never members' names, and a team being deleted is left out.
+Not done yet: GitHub's screens still read through the app's own GitHub client, another provider's pull request cannot be opened in the hub, and teams, their members, access and billing are still changed only in the dashboard.
 Each of those arrives as its own change.
 
 ## Diff syntax highlighting

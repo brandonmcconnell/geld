@@ -16,6 +16,7 @@ const settingsNav = [
 	{ to: "/settings", label: "General" },
 	{ to: "/settings/connections", label: "Connections" },
 	{ to: "/settings/ai", label: "AI providers" },
+	{ to: "/settings/teams", label: "Teams" },
 	{ to: "/settings/shortcuts", label: "Shortcuts" },
 ] as const;
 
