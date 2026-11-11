@@ -238,11 +238,11 @@ describe('provider conversation integrations', () => {
     let passed = true;
     const source: ProviderReviewSnapshot = { ...snapshot(), get requirements(): NonNullable<ProviderReviewSnapshot['requirements']> { return [{ id: 'native-minimum-approvals', label: 'Minimum approvals', state: passed ? 'passed' : 'unknown' }]; } };
     const f = fixture(source, {}, { aiEnabled: false });
-    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-review-key="requirements"]')?.textContent).toContain('Passed'));
+    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-merge-checks]')?.textContent).toContain('Passed'));
     expect(f.fetchReview).toHaveBeenCalledOnce();
     passed = false;
     f.apply();
-    expect(f.host.querySelector('[data-geld-review-key="requirements"]')?.textContent).toContain('Unknown');
+    expect(f.host.querySelector('[data-geld-merge-checks]')?.textContent).toContain('Unknown');
     expect(f.fetchReview).toHaveBeenCalledOnce();
     expect(f.host.textContent).not.toMatch(/\d+\/\d+ approvals/);
   });

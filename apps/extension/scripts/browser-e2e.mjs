@@ -2332,7 +2332,16 @@ async function verifyProviderAgentNotes(page, item) {
 async function verifyProviderFlow(page, item) {
   const progress = { status: 'running', scope: 'Public card counts, category inclusion and focus restoration. Dependency parsing and immutable fork selection have separate unit coverage.' };item.fileFlow = progress;
   const before = await tabState(page);
-  await page.click('.geld-provider-flow-button');
+  // Flow stands in the overview digest's toolbar only, so a diff page switches to the native Overview tab first.
+  if (await page.$('.geld-provider-flow-button') === null) {
+    const overview = await page.evaluateHandle(() => [...document.querySelectorAll('.merge-request-tabs a[href]')].find((link) => /\/merge_requests\/\d+\/?$/.test(new URL(link.href).pathname)) ?? null);
+    const tab = overview.asElement();assert.ok(tab !== null, 'Native Overview tab');
+    await tab.click();await overview.dispose();
+    progress.viaOverviewTab = true;
+    await poll(() => page.$('.geld-provider-flow-button'), Boolean, 'Flow mounts in the overview digest toolbar');
+  }
+  // The digest redraws its toolbar while it settles, so a click can land on a button already replaced.
+  await poll(() => page.click('.geld-provider-flow-button').then(() => true, (error) => /detached|not clickable|No element/i.test(String(error)) ? false : Promise.reject(error)), Boolean, 'Flow button takes the click');
   await poll(() => page.evaluate(() => {
     const dialog = document.querySelector('dialog.geld-provider-flow');return dialog?.open && !/Reading imports|Loading verified/.test(dialog.querySelector('[role="status"]')?.textContent ?? '');
   }), Boolean, 'File flow settles its bounded source reads');
@@ -3581,7 +3590,7 @@ try {
         unavailable: [...panel.querySelectorAll('.geld-provider-review__unavailable')].map((node) => node.textContent),
         sourceLinks: [...panel.querySelectorAll('[data-geld-source] a[href]')].slice(0, 8).map((link) => link.href),
         aiRunControls: panel.querySelectorAll('[data-geld-ai-run]').length };
-    }), (value) => value !== null && ['ready', 'partial'].includes(value.state) && /Reviews/.test(value.reviews ?? '') && /CI checks/.test(value.checks ?? '') && value.items > 0 && value.sources > 0 && value.reviewerRows > 0 && value.checkRows > 0 && value.activity > 0, 'Installed public MR digest with real source items, review/CI rows and activity');
+    }), (value) => value !== null && ['ready', 'partial'].includes(value.state) && /Reviews/.test(value.reviews ?? '') && /^Checks/.test(value.checks ?? '') && value.items > 0 && value.sources > 0 && value.reviewerRows > 0 && value.checkRows > 0 && value.activity > 0, 'Installed public MR digest with real source items, review/CI rows and activity');
     assert.equal(item.digest.aiRunControls, 0, 'AI is disabled in this signed-out smoke');
     item.state = await tabState(page);
     assert.equal(item.state.repository?.provider, 'gitlab');

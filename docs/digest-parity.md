@@ -107,7 +107,7 @@ Paths are under `apps/extension/src/` unless they start with `packages/`.
 | --- | --- | --- | --- | --- |
 | Rows only when they have something to say | partial: `review-panel.ts` `render()` | partial: same | — | — |
 | Order: Reviews, Review bots, Agent notes, Reports, CI, Previews, Deployments | partial: Reviews, Merge checks, Review bots, Agent notes, Reports, CI, Previews | partial: same | — | — |
-| Merge checks / requirements | extra row (`requirementsSection`, `gitlab/merge-checks.ts`) | extra row (`bitbucket/requirements.ts`) | DOM: merge widget rows / sidebar | should be a slot, today a copy |
+| Merge checks / requirements | match: inside the Checks row, above CI (`mergeChecksList`, `gitlab/merge-checks.ts`) | match: same (`bitbucket/requirements.ts`) | DOM: merge widget rows / sidebar | should be a slot, today a copy |
 | Deployments row | missing | missing | GL: `/deployments`, environments API · BB: `/deployments` (Pipelines) | data |
 
 GitHub has no Merge checks row because its merge box sits under the digest and the status pill carries the merge choice.
