@@ -9,28 +9,24 @@ import { buildOf, buildProblem, claimLock, compareVersions, LATEST_RELEASE_PAGE,
 import type { NightlyBrowser, NightlyRelease, ZipEntry } from '@geld/core/nightly';
 import { BACKGROUND_CHECK_MINUTES, limitedUntil, navigationDue, needsDetails } from './schedule';
 import { startPauseWatch } from './pause';
-import { nightlyCelebratedItem, nightlyConflictItem, nightlyFolderItem, nightlyPrefsItem, nightlyProfileTokenItem, nightlyStatusItem, readNightlyStatus, nightlyTabCountsItem } from './state';
+import { nightlyConflictItem, nightlyFolderItem, nightlyPrefsItem, nightlyProfileTokenItem, nightlyStatusItem, readNightlyStatus, nightlyTabCountsItem } from './state';
 import type { NightlyFailure, NightlyInstall, NightlyStatus, NightlyWrite, UpdateMode } from './state';
 import { decode, sha256Hex, unzip } from './unzip';
 import { BUSY, folderLock, readInstallRecord, copyRunningBuild, downloadsReach, downloadsTarget, folderIsOurs, folderPermission, folderTarget, versionOnDisk } from './writers';
 import type { BuildTarget } from './writers';
-import { NO_BADGE, showIconBadge } from './icon-badge';
-import type { IconBadge } from './icon-badge';
+import { showIconProgress } from './icon-progress';
 
 /** Background side of nightly builds: looks for a newer release, marks the toolbar icon, installs and rolls back. */
 
 const ALARM = 'geld:nightly-check';
+const READY_COLOR = '#1a7f37';
 const FAILED_COLOR = '#cf222e';
 /** Mirrors the hidden-file badge in background.ts, which hands a nightly build's tab badges to `showTabBadge`. */
 const COUNT_COLOR = '#59636e';
 /** The reply goes out before the reload, which closes every page that asked for it. */
 const RELOAD_DELAY_MS = 300;
-/** The download's part of the progress ring; writing the files into the folder is the rest. */
+/** The download's part of the spiral; writing the files into the folder is the rest. */
 const DOWNLOAD_SHARE = 0.7;
-/** How long the check stands on the icon once an update is in. */
-const DONE_MS = 3000;
-/** The reload after an install starts the next worker within a second or two: an install older than this was not just now. */
-const JUST_INSTALLED_MS = 30_000;
 
 type Failed = Extract<NightlyInstallResult, { ok: false }>;
 
@@ -64,39 +60,36 @@ function patchStatus(patch: Partial<NightlyStatus>): Promise<NightlyStatus> {
   return run;
 }
 
-/** A new build, an update under way and one just done are drawn into the icon (`iconBadgeOf`), so the text badge keeps the tab's count. */
-type Mark = '' | '!' | 'OFF';
+/** An update under way is drawn into the icon instead (`icon-progress.ts`), so its ↓ goes once the install starts. */
+type Mark = '' | '↓' | '!' | 'OFF';
 let mark: Mark = '';
 /** The share of the update under way, null while none is. */
 let progress: number | null = null;
-let done = false;
 
 function markOf(status: NightlyStatus, paused: boolean): Mark {
-  return paused ? 'OFF' : status.failure?.broken === true || status.writing !== null ? '!' : '';
+  if (paused) return 'OFF';
+  if (status.failure?.broken === true || status.writing !== null) return '!';
+  return status.installing === null && isNewer(status) ? '↓' : '';
 }
 
-function iconBadgeOf(status: NightlyStatus, paused: boolean): IconBadge {
-  if (paused) return NO_BADGE;
-  if (status.installing !== null) return { kind: 'progress', share: progress ?? 0 };
-  if (done) return { kind: 'done' };
-  if (markOf(status, paused) !== '') return NO_BADGE;
-  return isNewer(status) ? { kind: 'available' } : NO_BADGE;
+function markColor(): string {
+  return mark === '' ? COUNT_COLOR : mark === '↓' ? READY_COLOR : FAILED_COLOR;
 }
 
 function showProgress(share: number): void {
   progress = share;
-  showIconBadge({ kind: 'progress', share });
+  showIconProgress(share);
 }
 
 /**
  * A tab's own badge (its hidden-file count) hides the global one, so on GitHub, where the reader is, the
- * mark rides on the count. The count's colour stays unless there is a mark.
+ * mark rides on the count: "3↓". The count's colour stays unless there is a mark.
  */
 async function paintTab(tabId: number, count: number): Promise<void> {
   const text = mark === 'OFF' ? mark : `${count > 0 ? count : ''}${mark}`;
   await browser.action.setBadgeText({ tabId, text }).catch(() => undefined);
   if (text === '') return;
-  await browser.action.setBadgeBackgroundColor({ tabId, color: mark === '' ? COUNT_COLOR : FAILED_COLOR }).catch(() => undefined);
+  await browser.action.setBadgeBackgroundColor({ tabId, color: markColor() }).catch(() => undefined);
   await browser.action.setBadgeTextColor({ tabId, color: '#ffffff' }).catch(() => undefined);
 }
 
@@ -119,7 +112,6 @@ export function showTabBadge(tabId: number, count: number): void {
 function titleOf(status: NightlyStatus, ready: NightlyRelease | null): string {
   if (mark === 'OFF') return 'Geld Nightly · paused while another Geld is on';
   if (status.installing !== null) return `Geld Nightly · installing build ${buildOf(status.installing) ?? status.installing}`;
-  if (done) return 'Geld Nightly · updated';
   if (mark === '!') return 'Geld Nightly · an update failed';
   return ready === null ? 'Geld Nightly' : `Geld Nightly · build ${ready.build} is ready`;
 }
@@ -130,9 +122,9 @@ async function showBadge(status: NightlyStatus): Promise<void> {
   const next = markOf(status, paused);
   const changed = next !== mark;
   mark = next;
-  showIconBadge(iconBadgeOf(status, paused));
+  showIconProgress(!paused && status.installing !== null ? (progress ?? 0) : null);
   await browser.action.setBadgeText({ text: mark }).catch(() => undefined);
-  if (mark !== '') await browser.action.setBadgeBackgroundColor({ color: FAILED_COLOR }).catch(() => undefined);
+  if (mark !== '') await browser.action.setBadgeBackgroundColor({ color: markColor() }).catch(() => undefined);
   await browser.action.setTitle({ title: titleOf(status, ready) }).catch(() => undefined);
   if (!changed) return;
   for (const [tabId, count] of Object.entries(await nightlyTabCountsItem.getValue())) void paintTab(Number(tabId), count);
@@ -327,7 +319,7 @@ async function replace(
     return null;
   } catch (error) {
     const failure = { version, stillOn: previous.version, reason: message(error), at };
-    // The ring starts over for the undo, so it never stands still at the share the failed write reached.
+    // The spiral starts over for the undo, so it never stands still at the share the failed write reached.
     showProgress(0);
     try {
       await target.write(previous.files, [...new Set([...owned, ...nextPaths])], (written, total) => showProgress(written / total));
@@ -361,11 +353,9 @@ async function sharedInstall(from: string, to: string, trigger: UpdateMode): Pro
   return { ok: true, version: to };
 }
 
-/** The reload resets the icon, so the next worker draws the check again for its full time (`showJustInstalled`). */
+/** The mark stands all green until the reload puts the plain icon back. */
 function reloadSoon(): void {
-  progress = null;
-  done = true;
-  showIconBadge({ kind: 'done' });
+  showProgress(1);
   setTimeout(() => browser.runtime.reload(), RELOAD_DELAY_MS);
 }
 
@@ -482,19 +472,6 @@ async function settleInterrupted(): Promise<NightlyStatus> {
   return patchStatus({ installing: null, failure });
 }
 
-/** The first worker of a build Geld just wrote shows the check, once: session storage starts empty after the reload. */
-async function showJustInstalled(status: NightlyStatus): Promise<void> {
-  const install = status.lastInstall;
-  if (install === null || install.to !== installedVersion() || !(Date.now() - Date.parse(install.at) < JUST_INSTALLED_MS)) return;
-  if ((await nightlyCelebratedItem.getValue()) === install.at) return;
-  await nightlyCelebratedItem.setValue(install.at);
-  done = true;
-  setTimeout(() => {
-    done = false;
-    void readNightlyStatus().then(showBadge);
-  }, DONE_MS);
-}
-
 /**
  * A folder the installer put directly in the profile's download folder can be written through the downloads
  * API, which needs no picker, so it is connected from the installer's record. Anywhere else Chrome's folder
@@ -564,10 +541,7 @@ export function startNightly(): void {
   browser.runtime.onInstalled.addListener(() => void checkForUpdate());
   nightlyPrefsItem.watch(() => void checkForUpdate());
   // This worker has only just started, so no install of its own is under way: one marked is left from a worker Chrome stopped mid-install.
-  void settleInterrupted().then(async (status) => {
-    await showJustInstalled(status).catch(() => undefined);
-    await showBadge(status);
-  });
+  void settleInterrupted().then(showBadge);
   void adoptInstallerFolder();
   void scheduleChecks();
   startPauseWatch();
