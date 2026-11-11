@@ -267,3 +267,13 @@ svg.geld-provider-digest-icon[data-geld-outline] > [fill="currentColor"] { fill:
 .geld-provider-review .geld-provider-review__pin-preview { flex: 1; min-inline-size: 0; overflow: hidden; color: var(--geld-provider-text-subtle); white-space: nowrap; text-overflow: ellipsis; }
 .geld-provider-review .geld-provider-review__pin-toggle > time { flex: none; color: var(--geld-provider-text-subtle); }
 .geld-provider-review .geld-provider-review__pin > .geld-provider-review__source { margin: 0; border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); }
+
+.geld-provider-review .geld-provider-review__pointer { border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); }
+.geld-provider-review .geld-provider-review__pointer-toggle { display: flex; align-items: center; gap: var(--geld-provider-space-3); inline-size: 100%; min-block-size: 40px; padding: 0 var(--geld-provider-space-5); border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.geld-provider-review .geld-provider-review__pointer-toggle:hover { background: var(--geld-provider-bg-subtle); }
+.geld-provider-review .geld-provider-review__pointer-toggle > svg { inline-size: 16px; block-size: 16px; flex: none; color: var(--geld-provider-text-subtle); }
+.geld-provider-review .geld-provider-review__pointer-toggle > svg:last-child { margin-inline-start: auto; }
+.geld-provider-review .geld-provider-review__pointer-toggle > .geld-provider-review__item-title { flex: 0 1 auto; min-inline-size: 0; overflow: hidden; font-weight: var(--geld-provider-heading-weight, 600); white-space: nowrap; text-overflow: ellipsis; }
+.geld-provider-review .geld-provider-review__pointer-toggle > .geld-provider-review__item-meta { flex: 0 1 auto; min-inline-size: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.geld-provider-review .geld-provider-review__pointer-toggle > .geld-provider-review__item-state { flex: 0 0 auto; padding: 0 6px; border: var(--geld-provider-border-width) solid var(--geld-provider-border); border-radius: 999px; font: var(--geld-provider-font-small); }
+.geld-provider-review .geld-provider-review__pointer:is([data-state='open'], [data-state='resolved'], [data-state='needs-reply']) .geld-provider-review__item-state { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }

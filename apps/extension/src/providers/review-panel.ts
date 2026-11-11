@@ -1330,12 +1330,14 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const itemEntry = (item: ReviewItem): HTMLElement => {
       const home = homes.get(item.id);
       if (home === undefined || attention === null) return itemSection(item, comments);
-      const pointer = node('div', '', 'geld-provider-review__source-actions');
+      // GitHub's pointer row: the thread's own row shape, leading to its home under Needs attention.
+      const pointer = node('div', '', 'geld-provider-review__pointer');
       pointer.dataset.geldReviewPointer = item.id;
-      const title = node('span');inline(title, item.title);pointer.append(title);
-      if (item.path !== undefined) pointer.append(node('span', `${item.path}${item.line === undefined ? '' : `:${item.line}`}`, 'geld-provider-review__muted'));
-      pointer.append(node('span', STATUS[item.status], 'geld-provider-review__item-state'));
-      const open = node('button', 'Open thread');open.type = 'button';
+      pointer.dataset.state = item.status;
+      const open = node('button', '', 'geld-provider-review__pointer-toggle');open.type = 'button';
+      const title = node('span', '', 'geld-provider-review__item-title');inline(title, item.title);
+      const meta = node('span', item.path === undefined ? '' : `${item.path}${item.line === undefined ? '' : `:${item.line}`}`, 'geld-provider-review__muted geld-provider-review__item-meta');
+      open.append(digestIcon(item.status === 'resolved' || item.status === 'done-manual' ? 'check' : 'circle', doc), title, meta, node('span', STATUS[item.status], 'geld-provider-review__item-state'), digestIcon('chevron-right', doc));
       open.setAttribute('aria-controls', home.id);
       open.setAttribute('aria-label', `Open thread: ${parseInlineMarkdown(item.title).map((run) => run.text).join('')}`);
       open.addEventListener('click', () => {
