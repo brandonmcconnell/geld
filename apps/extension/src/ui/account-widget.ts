@@ -215,8 +215,8 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
             `Your GitHub account already has Geld settings (saved ${when}) that differ from this device's. Which should win?`,
           ]),
           el('div', 'geld-account__prompt-actions', [
-            button(['Use account settings'], 'geld-button--small geld-button--primary', () => void act('resolve-remote')),
-            button(['Keep mine (overwrite account)'], 'geld-button--small', () => void act('resolve-local')),
+            button(['Use account'], 'geld-button--small geld-button--primary', () => void act('resolve-remote')),
+            button(['Overwrite account'], 'geld-button--small', () => void act('resolve-local')),
           ]),
         ]),
       );
