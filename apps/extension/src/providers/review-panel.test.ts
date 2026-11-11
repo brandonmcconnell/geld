@@ -842,7 +842,8 @@ describe('provider conversation digest', () => {
     const item = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-attention] [data-geld-item]');
     if (item !== null && item !== undefined) item.open = true;
     panel.update(original, { ...options, reviewGrouping: 'type' });
-    expect(panel.element.querySelector('[data-geld-review-round]')).toBeNull();
+    expect(panel.element.querySelector('[data-geld-review-attention]')).toBeNull();
+    expect(panel.element.querySelector('[data-geld-round-group="review"] [data-geld-review-round="push-1"] [data-geld-item]')).not.toBeNull();
     expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-item]')?.open).toBe(true);
     panel.update(original, { ...options, comments: [] });
     expect(panel.element.querySelector('[data-geld-review-round="push-2"]')?.textContent).toContain('No conversation recorded after this push.');
@@ -1365,7 +1366,7 @@ it('suspends old digest clipboard controls until a current snapshot resumes the 
   await vi.waitFor(() => expect(write).toHaveBeenCalledOnce());
 });
 
-it('gives automated reviewers their own nested rows without service branding or duplicate comments', () => {
+it('gives automated reviewers their own rows and seats their threads in rounds without service branding or duplicates', () => {
   const bot = { id: 'duo', login: 'GitLabDuo', automated: true };
   const first = { ...comment('1', ':wave: Please check'), author: bot };
   const native: ProviderReviewInput = { ...input([thread('a', { comments: [first] })]), reviewers: [
@@ -1375,20 +1376,21 @@ it('gives automated reviewers their own nested rows without service branding or 
   const panel = renderProviderReviewPanel(host(), native, { renderComment: (_comment, host) => { host.innerHTML = '<p>👋 Please check</p>';return true; } });
   const bots = panel.element.querySelector('[data-geld-review-key="bots"]');
   expect(bots?.querySelector('[data-geld-automated-reviewer="duo"] [data-geld-review-toggle]')?.textContent).toContain('Approved');
-  expect(bots?.querySelector('[data-geld-item]')?.textContent).not.toContain(':wave:');
-  expect(bots?.querySelector('[data-geld-comment-row="1"]')).not.toBeNull();
+  expect(bots?.querySelector('[data-geld-item]')).toBeNull();
+  const round = panel.element.querySelector('[data-geld-round-group="review"]');
+  expect(round?.querySelector('[data-geld-item]')?.textContent).not.toContain(':wave:');
   expect(panel.element.querySelectorAll('[data-geld-source="note_1"]')).toHaveLength(1);
   expect(panel.element.querySelector('[data-geld-review-key="reviewers"]')?.textContent).not.toContain('GitLabDuo');
   expect(panel.element.querySelector('[data-geld-reviewer="human"]')?.textContent).toContain('Review requested');
   expect(panel.element.querySelector('[data-geld-review-bot]')).toBeNull();
 });
 
-it('groups human comments into nested push rounds and separates activity types', () => {
+it('seats human comments in their push round and separates activity types', () => {
   const panel = renderProviderReviewPanel(host(), input(), { comments: [comment('1'), comment('2')], events: [
     { id: 'push', url: `${reviewUrl}#note_3`, author: comment('3').author, body: 'added a commit', createdAt: '2026-11-01T11:00:00Z', kind: 'push' },
     { id: 'assignment', url: `${reviewUrl}#note_4`, author: comment('4').author, body: 'assigned to @alice', createdAt: '2026-11-01T11:01:00Z' },
   ] });
-  expect(panel.element.querySelector('[data-geld-review-key="comments:round:push"]')?.querySelectorAll('[data-geld-comment-row]')).toHaveLength(2);
+  expect(panel.element.querySelector('[data-geld-round-group="current"] [data-geld-review-key="round:push:comments"]')?.querySelectorAll('[data-geld-comment-row]')).toHaveLength(2);
   expect(panel.element.querySelector('[data-geld-review-key="activity:Commits"] [data-geld-event="push"]')).not.toBeNull();
   expect(panel.element.querySelector('[data-geld-review-key="activity:Assignments"] [data-geld-event="assignment"]')).not.toBeNull();
 });
@@ -1423,3 +1425,35 @@ it('shows a Deployments row with each environment, its state, site and host page
   expect(panel.element.querySelector('[data-geld-review-key="deployments"]')).toBeNull();
 });
 
+
+it('groups threads and comments by type into rounds to review, a current round and settled rounds', () => {
+  const settledComment = { ...comment('2'), createdAt: '2026-11-01T10:00:00Z' };
+  const native = input([thread('a'), thread('b', { resolved: true, comments: [settledComment] })]);
+  const events: readonly ProviderReviewPanelEvent[] = [
+    { id: 'push-1', url: reviewUrl, author: comment('1').author, body: 'Pushed', createdAt: '2026-11-01T11:00:00Z', kind: 'push' },
+    { id: 'push-2', url: reviewUrl, author: comment('1').author, body: 'Pushed', createdAt: '2026-11-01T13:00:00Z', kind: 'push' },
+  ];
+  const panel = renderProviderReviewPanel(host(), native, { events, comments: [{ ...comment('5', 'Looks better now.'), createdAt: '2026-11-01T13:30:00Z' }] });
+  const review = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-round-group="review"]');
+  expect(review?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('1 round to review');
+  expect(review?.open).toBe(true);
+  const rounds = [...(review?.querySelectorAll<HTMLElement>('[data-geld-review-round]') ?? [])];
+  expect(rounds.map(round => round.dataset.geldReviewRound)).toEqual(['push-2', 'push-1']);
+  expect(rounds[0]?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('Round 3 · 1 comment');
+  expect(rounds[1]?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('Round 2 · 0/1 resolved');
+  const settled = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-round-group="settled"]');
+  expect(settled?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('1 settled round');
+  expect(settled?.open).toBe(false);
+  expect(settled?.querySelector('[data-geld-review-round="before"] [data-geld-review-toggle]')?.textContent).toBe('Round 1 · 1/1 resolved');
+  expect(panel.element.querySelector('[data-geld-review-key="comments"]')).toBeNull();
+});
+
+it('heads a latest round with no threads "Current round" when nothing is left to review', () => {
+  const native = input([thread('a', { resolved: true })]);
+  const events: readonly ProviderReviewPanelEvent[] = [{ id: 'push-1', url: reviewUrl, author: comment('1').author, body: 'Pushed', createdAt: '2026-11-01T13:00:00Z', kind: 'push' }];
+  const panel = renderProviderReviewPanel(host(), native, { events });
+  const current = panel.element.querySelector('[data-geld-round-group="current"]');
+  expect(current?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('Current round');
+  expect(current?.textContent).toContain('No conversation since this push.');
+  expect(panel.element.querySelector('[data-geld-round-group="settled"] [data-geld-review-toggle]')?.textContent).toBe('1 settled round');
+});

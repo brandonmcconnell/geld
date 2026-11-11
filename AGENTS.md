@@ -3674,8 +3674,10 @@ A provider digest creates a local stacking context so its View menu scrolls belo
 GitLab's MR metadata supplies assigned reviewers when the detailed reviewer endpoint is unavailable, but assignees and suggested reviewers are not review requests.
 GitLab approval payloads can omit automation flags present on the same account's discussion payload, so reconcile only matching account IDs and usernames rather than classifying by a bot-like name.
 Automated conversation rows do not grant a registered bot identity, summary parser or trigger permission.
-Human reviews and automated feedback own nested thread and comment disclosures, and comments use recorded pushes for rounds when those boundaries exist.
-Nested author conversation bodies survive reviewer and CI-only refreshes so selected text and native media or table bindings remain intact.
+The provider digest's default grouping is by type with GitHub's rounds (`roundSections`): each recorded push opens a round, and its threads and comments are seated by when they were posted (a bot's by its latest edit).
+Rounds with an open thread stand under "N rounds to review", the newest open, the latest round with no threads at all is the current round, never a settled one, and is headed "Current round" when it is alone there, and the rest fold under "N settled rounds".
+Without a recorded push everything is one round.
+The Reviews and Review bots rows hold the people's and bots' standing only, so a status-row refresh never touches a conversation.
 GitLab merge blockers come from its qualified merge widget separately from pipeline checks, and system-note activity uses the same author-bound inert renderer as normal comments.
 An explicit Digest selection folds represented originals revealed through source links or native find, while ordinary refreshes preserve those reveals and active native editors.
 The gitlab-expanded-digest installed-browser slice opens triage-ops MR4544 and verifies expanded bot content, merge blockers, formatted emoji, timeline restore/refold, description headings and menu isolation.
