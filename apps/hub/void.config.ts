@@ -3,15 +3,12 @@ import { defineConfig } from "void/config";
 // The Worker and its bindings; cron schedules live in crons/.
 //
 // A new instance leaves the GELD_HUB_* variables unset: `void deploy` creates
-// D1, KV and R2 in your account and records them in void.lock.json. An
-// instance with existing resources (app.geld.sh does) pins all four on
-// every deploy. Leaving R2 out of a deploy makes Void bind a new, empty
-// bucket, so a partial pin is an error.
+// the KV namespace and the Hyperdrive configuration (from DATABASE_URL in the
+// shell) in your account and records them in void.lock.json. An instance with
+// existing resources pins both on every deploy.
 const PINNED_RESOURCE_VARS = [
-	"GELD_HUB_D1_DATABASE_NAME",
-	"GELD_HUB_D1_DATABASE_ID",
+	"GELD_HUB_HYPERDRIVE_ID",
 	"GELD_HUB_KV_ID",
-	"GELD_HUB_R2_BUCKET",
 ] as const;
 
 function pinnedResources() {
@@ -25,20 +22,10 @@ function pinnedResources() {
 		);
 	}
 	return {
-		d1_databases: [
-			{
-				binding: "DB",
-				database_name: process.env.GELD_HUB_D1_DATABASE_NAME,
-				database_id: process.env.GELD_HUB_D1_DATABASE_ID,
-				migrations_dir: "db/migrations",
-			},
+		hyperdrive: [
+			{ binding: "HYPERDRIVE", id: process.env.GELD_HUB_HYPERDRIVE_ID },
 		],
-		kv_namespaces: [
-			{ binding: "GITHUB_CACHE_KV", id: process.env.GELD_HUB_KV_ID },
-		],
-		r2_buckets: [
-			{ binding: "COMMENT_MEDIA", bucket_name: process.env.GELD_HUB_R2_BUCKET },
-		],
+		kv_namespaces: [{ binding: "CACHE_KV", id: process.env.GELD_HUB_KV_ID }],
 	};
 }
 
@@ -50,11 +37,13 @@ function customDomain() {
 }
 
 export default defineConfig({
+	// Postgres through Hyperdrive; `vite dev` connects to DATABASE_URL directly.
+	database: "pg",
 	inference: {
 		bindings: {
-			db: "DB",
-			kv: "GITHUB_CACHE_KV",
-			storage: "COMMENT_MEDIA",
+			kv: "CACHE_KV",
+			// Files go through the S3 API, so no bucket is bound.
+			storage: false,
 			ai: false,
 		},
 	},
@@ -77,6 +66,18 @@ export default defineConfig({
 		},
 		// /api/health reports the serving version from this binding.
 		version_metadata: { binding: "CF_VERSION_METADATA" },
+		durable_objects: {
+			bindings: [
+				{ name: "LIVE_ROOM", class_name: "LiveRoomObject" },
+				{ name: "RATE_LIMITER", class_name: "RateLimiterObject" },
+			],
+		},
+		migrations: [
+			{
+				tag: "v1",
+				new_sqlite_classes: ["LiveRoomObject", "RateLimiterObject"],
+			},
+		],
 		...pinnedResources(),
 	},
 });

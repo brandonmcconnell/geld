@@ -4,16 +4,14 @@ import {
 	type CommentMediaUploadRuntime,
 	handleCommentMediaUpload,
 } from "./comment-media-upload.handler";
+import type { FileStore } from "./file-store.server";
 
 const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 function setup(overrides: Partial<CommentMediaUploadRuntime> = {}) {
-	const put = vi.fn(async () => ({}));
+	const put = vi.fn<FileStore["put"]>(async () => undefined);
 	const runtime: CommentMediaUploadRuntime = {
-		storage: {
-			bucket: { put } as unknown as Pick<R2Bucket, "put">,
-			publicBaseUrl: "https://cdn.test",
-		},
+		storage: { put, publicBaseUrl: "https://cdn.test" },
 		getSession: async () => ({ user: { id: "user-1" } }),
 		...overrides,
 	};
@@ -65,10 +63,8 @@ describe("handleCommentMediaUpload", () => {
 		expect(body.publicUrl).toBe(`https://cdn.test/${body.key}`);
 		expect(put).toHaveBeenCalledWith(
 			body.key,
-			expect.anything(),
-			expect.objectContaining({
-				httpMetadata: expect.objectContaining({ contentType: "image/png" }),
-			}),
+			expect.any(File),
+			expect.objectContaining({ contentType: "image/png" }),
 		);
 	});
 
@@ -80,7 +76,7 @@ describe("handleCommentMediaUpload", () => {
 
 		const down = setup({
 			getSession: async () => {
-				throw new Error("D1_ERROR");
+				throw new Error("database unavailable");
 			},
 		});
 		const response = await handleCommentMediaUpload(
@@ -143,14 +139,12 @@ describe("handleCommentMediaUpload", () => {
 		expect(put).not.toHaveBeenCalled();
 	});
 
-	it("502s when R2 rejects the write", async () => {
+	it("502s when the file store rejects the write", async () => {
 		const failing = setup();
 		failing.runtime.storage = {
-			bucket: {
-				put: async () => {
-					throw new Error("R2 put failed: 503");
-				},
-			} as unknown as Pick<R2Bucket, "put">,
+			put: async () => {
+				throw new Error("File store put failed: 503");
+			},
 			publicBaseUrl: "https://cdn.test",
 		};
 		const response = await handleCommentMediaUpload(

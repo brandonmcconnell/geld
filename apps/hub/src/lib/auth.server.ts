@@ -1,5 +1,4 @@
 import "@tanstack/react-start/server-only";
-import { env } from "cloudflare:workers";
 import { type BetterAuthPlugin, betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
@@ -9,6 +8,7 @@ import {
 	GITHUB_OAUTH_PROVIDER_ID,
 	getGitHubOAuthConfig,
 } from "./github-app.server";
+import { platform } from "#/platform";
 import { getGitHubEmulatorUrl } from "./github-emulator.server";
 
 const GITHUB_OAUTH_SCOPES = ["repo", "read:org", "user:email"];
@@ -140,12 +140,13 @@ function emulatorGitHubProvider(
 export function getAuth() {
 	const github = getGitHubOAuthConfig();
 	const emulatorUrl = getGitHubEmulatorUrl();
+	const config = platform.config();
 
 	return betterAuth({
-		baseURL: env.BETTER_AUTH_URL,
-		secret: env.BETTER_AUTH_SECRET,
+		baseURL: config.BETTER_AUTH_URL,
+		secret: config.BETTER_AUTH_SECRET,
 		database: drizzleAdapter(getDb(), {
-			provider: "sqlite",
+			provider: "pg",
 		}),
 		...(emulatorUrl
 			? {}

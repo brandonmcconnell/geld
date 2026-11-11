@@ -4,7 +4,7 @@
  * Modules under ./github/ that define server functions export only server
  * functions, types and client-safe helpers. TanStack Start strips handler
  * bodies from client and SSR-caller builds, but an exported helper survives
- * and drags its server-only imports (cloudflare:workers, D1) along. Shared
+ * and drags its server-only imports (the platform, the database) along. Shared
  * server code lives in the helper modules (client, installations, mappers,
  * shared, my-search, timeline, permissions), which are imported only from
  * handler bodies.

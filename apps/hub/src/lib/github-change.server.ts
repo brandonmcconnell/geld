@@ -1,9 +1,12 @@
+import { and, count, gt, lt, max, sql } from "drizzle-orm";
+import type { Database } from "#/db";
+import { githubChange } from "#/db/schema";
 import type { GitHubRepoEntity } from "./github-change-entities";
 import { formatEntityKey, parseEntityKey } from "./github-change-entities";
 
 // Storage rules that keep this table small: one row
 // per entity, deleted by the cron sweeper once unchanged for 15 minutes; writes
-// run in waitUntil and are dropped on failure; read failures degrade to
+// run after the response and are dropped on failure; read failures degrade to
 // "nothing changed", never to an error.
 
 export const GITHUB_CHANGE_RETENTION_MS = 15 * 60 * 1000;
@@ -11,13 +14,13 @@ export const GITHUB_CHANGE_RETENTION_MS = 15 * 60 * 1000;
 const GITHUB_CHANGE_CURSOR_MAX_AGE_MS = GITHUB_CHANGE_RETENTION_MS - 60 * 1000;
 const GITHUB_CHANGE_READ_LIMIT = 2000;
 
-// Batch limits that stayed clear of D1's 7429 error and per-query time limit.
-const GITHUB_CHANGE_SWEEP_BATCH_SIZE = 20_000;
-const GITHUB_CHANGE_SWEEP_PAUSE_MS = 4_000;
-const GITHUB_CHANGE_SWEEP_MAX_BATCHES = 10;
+const GITHUB_CHANGE_SWEEP_BATCH_SIZE = 5000;
+const GITHUB_CHANGE_SWEEP_MAX_BATCHES = 20;
+const GITHUB_CHANGE_MAX_EXPECTED_ROWS = 50_000;
 
-const D1_DATABASE_LIMIT_BYTES = 10 * 1000 * 1000 * 1000;
-const D1_SIZE_WARN_RATIO = 0.8;
+const INSERT_ROWS_PER_STATEMENT = 500;
+// Any constant: it only has to be the same for every writer of this table.
+const VERSION_LOCK_KEY = 7_318_402;
 
 export type GitHubChangeRow = {
 	repo: string;
@@ -25,14 +28,6 @@ export type GitHubChangeRow = {
 	isPrivate: boolean;
 	changedAt: number;
 };
-
-const INSERT_ROWS_PER_STATEMENT = 20;
-// D1 runs one statement at a time, so a version taken inside the write is
-// above every version a finished read has seen. The row's position keeps
-// versions unique within a statement.
-function nextVersionSql(position: number) {
-	return `(SELECT COALESCE(MAX(version), 0) + ${position + 1} FROM github_change)`;
-}
 
 export function toGitHubChangeRows(
 	entities: GitHubRepoEntity[],
@@ -55,34 +50,60 @@ export function toGitHubChangeRows(
 	return rows;
 }
 
+async function currentVersion(db: Database) {
+	const [row] = await db
+		.select({ version: max(githubChange.version) })
+		.from(githubChange);
+	return row?.version ?? 0;
+}
+
 export async function recordGitHubChanges(
-	db: D1Database,
+	db: Database,
 	rows: GitHubChangeRow[],
 ): Promise<void> {
 	if (rows.length === 0) return;
-	const statements: D1PreparedStatement[] = [];
-	for (let start = 0; start < rows.length; start += INSERT_ROWS_PER_STATEMENT) {
-		const chunk = rows.slice(start, start + INSERT_ROWS_PER_STATEMENT);
-		statements.push(
-			db
-				.prepare(
-					`INSERT INTO github_change (repo, entity_key, is_private, version, changed_at) VALUES ${chunk
-						.map((_, position) => `(?, ?, ?, ${nextVersionSql(position)}, ?)`)
-						.join(
-							", ",
-						)} ON CONFLICT (repo, entity_key) DO UPDATE SET is_private = excluded.is_private, version = excluded.version, changed_at = MAX(changed_at, excluded.changed_at)`,
-				)
-				.bind(
-					...chunk.flatMap((row) => [
-						row.repo,
-						row.entityKey,
-						row.isPrivate ? 1 : 0,
-						row.changedAt,
-					]),
-				),
-		);
+	// One statement may not touch a row twice, so repeats of an entity are
+	// folded into its latest change first.
+	const latest = new Map<string, GitHubChangeRow>();
+	for (const row of rows) {
+		const key = `${row.repo}\n${row.entityKey}`;
+		const earlier = latest.get(key);
+		latest.set(key, {
+			...row,
+			changedAt: Math.max(row.changedAt, earlier?.changedAt ?? 0),
+		});
 	}
-	await db.batch(statements);
+	const merged = [...latest.values()];
+	await db.transaction(async (tx) => {
+		// Writers take turns, so a version read here is above every version a
+		// finished read has seen: a reader's cursor never skips a later commit
+		// that carries a lower number, which a sequence would allow.
+		await tx.execute(sql`SELECT pg_advisory_xact_lock(${VERSION_LOCK_KEY})`);
+		let version = await currentVersion(tx);
+		for (
+			let start = 0;
+			start < merged.length;
+			start += INSERT_ROWS_PER_STATEMENT
+		) {
+			const chunk = merged.slice(start, start + INSERT_ROWS_PER_STATEMENT);
+			await tx
+				.insert(githubChange)
+				.values(
+					chunk.map((row) => {
+						version += 1;
+						return { ...row, version };
+					}),
+				)
+				.onConflictDoUpdate({
+					target: [githubChange.repo, githubChange.entityKey],
+					set: {
+						isPrivate: sql`excluded.is_private`,
+						version: sql`excluded.version`,
+						changedAt: sql`GREATEST(${githubChange.changedAt}, excluded.changed_at)`,
+					},
+				});
+		}
+	});
 }
 
 export type GitHubChangeCursor = {
@@ -132,22 +153,8 @@ export type GitHubChangesResult =
 	| { cursor: string; entities: string[]; expired: false }
 	| { cursor: string; entities: []; expired: true };
 
-type ChangeRowRecord = {
-	version: number;
-	repo: string;
-	entity_key: string;
-	is_private: number;
-};
-
-async function currentVersion(db: D1Database) {
-	const row = await db
-		.prepare("SELECT COALESCE(MAX(version), 0) AS version FROM github_change")
-		.first<{ version: number }>();
-	return row?.version ?? 0;
-}
-
 export async function readGitHubChanges(
-	db: D1Database,
+	db: Database,
 	options: {
 		since: GitHubChangeCursor | null;
 		access: GitHubChangeAccess;
@@ -171,12 +178,17 @@ export async function readGitHubChanges(
 	}
 	const { since } = cursorState;
 
-	const { results } = await db
-		.prepare(
-			"SELECT version, repo, entity_key, is_private FROM github_change WHERE version > ? ORDER BY version LIMIT ?",
-		)
-		.bind(since.version, limit + 1)
-		.all<ChangeRowRecord>();
+	const results = await db
+		.select({
+			version: githubChange.version,
+			repo: githubChange.repo,
+			entityKey: githubChange.entityKey,
+			isPrivate: githubChange.isPrivate,
+		})
+		.from(githubChange)
+		.where(gt(githubChange.version, since.version))
+		.orderBy(githubChange.version)
+		.limit(limit + 1);
 
 	if (results.length > limit) {
 		return {
@@ -190,8 +202,8 @@ export async function readGitHubChanges(
 	}
 
 	if (results.length === 0) {
-		// A cursor ahead of the table predates a reset (such as the 0008
-		// migration), so changes since then would be invisible to it.
+		// A cursor ahead of the table predates a reset, so changes since then
+		// would be invisible to it.
 		const version = await currentVersion(db);
 		if (since.version > version) {
 			return {
@@ -206,13 +218,13 @@ export async function readGitHubChanges(
 	const entities = new Set<string>();
 	for (const row of results) {
 		lastVersion = Math.max(lastVersion, row.version);
-		if (!access.canRead(row.repo, row.is_private !== 0)) continue;
-		const parsed = parseEntityKey(row.entity_key);
+		if (!access.canRead(row.repo, row.isPrivate)) continue;
+		const parsed = parseEntityKey(row.entityKey);
 		if (!parsed) continue;
 		if (access.watched !== "all" && !access.watched.has(row.repo)) {
 			continue;
 		}
-		entities.add(row.entity_key);
+		entities.add(row.entityKey);
 	}
 
 	return {
@@ -223,13 +235,11 @@ export async function readGitHubChanges(
 }
 
 export async function sweepGitHubChanges(
-	db: D1Database,
+	db: Database,
 	options: {
 		now?: number;
 		batchSize?: number;
-		pauseMs?: number;
 		maxBatches?: number;
-		sleep?: (ms: number) => Promise<void>;
 	} = {},
 ): Promise<{ deleted: number; batches: number; complete: boolean }> {
 	const now = options.now ?? Date.now();
@@ -237,96 +247,74 @@ export async function sweepGitHubChanges(
 		options.batchSize ?? GITHUB_CHANGE_SWEEP_BATCH_SIZE,
 		GITHUB_CHANGE_SWEEP_BATCH_SIZE,
 	);
-	const pauseMs = options.pauseMs ?? GITHUB_CHANGE_SWEEP_PAUSE_MS;
 	const maxBatches = options.maxBatches ?? GITHUB_CHANGE_SWEEP_MAX_BATCHES;
-	const sleep =
-		options.sleep ??
-		((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
 	const cutoff = now - GITHUB_CHANGE_RETENTION_MS;
 
 	let deleted = 0;
 	let batches = 0;
 	while (batches < maxBatches) {
-		if (batches > 0) await sleep(pauseMs);
-		const result = await db
-			.prepare(
-				"DELETE FROM github_change WHERE rowid IN (SELECT rowid FROM github_change WHERE changed_at < ? AND version < (SELECT MAX(version) FROM github_change) ORDER BY version LIMIT ?)",
+		const stale = db
+			.select({ repo: githubChange.repo, entityKey: githubChange.entityKey })
+			.from(githubChange)
+			.where(
+				and(
+					lt(githubChange.changedAt, cutoff),
+					// The newest row stays, so the cursor never goes backwards.
+					lt(githubChange.version, sql`(SELECT MAX(version) FROM github_change)`),
+				),
 			)
-			.bind(cutoff, batchSize)
-			.run();
+			.orderBy(githubChange.version)
+			.limit(batchSize);
+		const removed = await db
+			.delete(githubChange)
+			.where(
+				sql`(${githubChange.repo}, ${githubChange.entityKey}) IN ${stale}`,
+			)
+			.returning({ version: githubChange.version });
 		batches += 1;
-		const changes = result.meta.changes ?? 0;
-		deleted += changes;
-		if (changes < batchSize) {
+		deleted += removed.length;
+		if (removed.length < batchSize) {
 			return { deleted, batches, complete: true };
 		}
 	}
 	return { deleted, batches, complete: false };
 }
 
-type D1Alert = "d1_size_warning" | "d1_change_table_growth";
-
-export type D1HealthReport = {
+export type DatabaseHealthReport = {
 	sizeBytes: number | null;
-	ratio: number | null;
 	changeRows: number | null;
-	alert: D1Alert | null;
+	alert: "change_table_growth" | null;
 };
 
-function pickD1Alert(
-	ratio: number | null,
-	warnRatio: number,
-	changeRows: number | null,
-	maxExpectedChangeRows: number,
-): D1Alert | null {
-	if (ratio !== null && ratio >= warnRatio) return "d1_size_warning";
-	if (changeRows !== null && changeRows > maxExpectedChangeRows) {
-		return "d1_change_table_growth";
-	}
-	return null;
-}
-
-// Size is D1's meta.size_after, the number `wrangler d1 info` reports. A large
-// change table means the sweeper is stuck.
-export async function checkD1Health(
-	db: D1Database,
+// A large change table means the sweeper is stuck.
+export async function checkDatabaseHealth(
+	db: Database,
 	options: {
-		limitBytes?: number;
-		warnRatio?: number;
 		maxExpectedChangeRows?: number;
 		log?: (line: string) => void;
 	} = {},
-): Promise<D1HealthReport> {
-	const limitBytes = options.limitBytes ?? D1_DATABASE_LIMIT_BYTES;
+): Promise<DatabaseHealthReport> {
 	const log = options.log ?? ((line: string) => console.warn(line));
-
-	const countResult = await db
-		.prepare("SELECT COUNT(*) AS count FROM github_change")
-		.all<{ count: number }>();
-	const changeRows = countResult.results[0]?.count ?? null;
-	const sizeBytes =
-		typeof countResult.meta.size_after === "number"
-			? countResult.meta.size_after
+	const [counted] = await db.select({ rows: count() }).from(githubChange);
+	const changeRows = counted?.rows ?? null;
+	const sizeBytes = await databaseSizeBytes(db);
+	const alert =
+		changeRows !== null &&
+		changeRows > (options.maxExpectedChangeRows ?? GITHUB_CHANGE_MAX_EXPECTED_ROWS)
+			? "change_table_growth"
 			: null;
-	const ratio = sizeBytes === null ? null : sizeBytes / limitBytes;
-	const alert = pickD1Alert(
-		ratio,
-		options.warnRatio ?? D1_SIZE_WARN_RATIO,
-		changeRows,
-		options.maxExpectedChangeRows ?? 50_000,
-	);
 
 	if (alert) {
-		log(
-			JSON.stringify({
-				level: "warn",
-				alert,
-				sizeBytes,
-				limitBytes,
-				ratio,
-				changeRows,
-			}),
-		);
+		log(JSON.stringify({ level: "warn", alert, sizeBytes, changeRows }));
 	}
-	return { sizeBytes, ratio, changeRows, alert };
+	return { sizeBytes, changeRows, alert };
+}
+
+export async function databaseSizeBytes(db: Database): Promise<number | null> {
+	const [row] = await db
+		.select({
+			bytes: sql<string>`pg_database_size(current_database())`.mapWith(Number),
+		})
+		.from(sql`(SELECT 1) AS one`);
+	return row && Number.isFinite(row.bytes) ? row.bytes : null;
 }

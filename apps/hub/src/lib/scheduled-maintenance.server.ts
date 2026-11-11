@@ -1,4 +1,5 @@
-import { checkD1Health, sweepGitHubChanges } from "./github-change.server";
+import type { Database } from "#/db";
+import { checkDatabaseHealth, sweepGitHubChanges } from "./github-change.server";
 import { describeError } from "./route-safety.server";
 
 type TaskResult<T> =
@@ -13,16 +14,15 @@ async function runTask<T>(task: () => Promise<T>): Promise<TaskResult<T>> {
 	}
 }
 
-// One JSON line per run: Workers Logs charts sweeps and alerts on `alert`.
+// One JSON line per run, so the log charts sweeps and alerts on `alert`.
 // A failing task is reported in the line and never stops the other one.
 export async function runScheduledMaintenance(
-	db: D1Database,
+	db: Database,
 	scheduledTime = Date.now(),
+	tasks = { sweep: sweepGitHubChanges, health: checkDatabaseHealth },
 ) {
-	const sweep = await runTask(() =>
-		sweepGitHubChanges(db, { now: scheduledTime }),
-	);
-	const health = await runTask(() => checkD1Health(db));
+	const sweep = await runTask(() => tasks.sweep(db, { now: scheduledTime }));
+	const health = await runTask(() => tasks.health(db));
 
 	const summary: Record<string, unknown> = {
 		task: "scheduled-maintenance",
@@ -32,8 +32,7 @@ export async function runScheduledMaintenance(
 			: { sweepError: sweep.error }),
 		...(health.status === "ok"
 			? {
-					d1SizeBytes: health.value.sizeBytes,
-					d1SizeRatio: health.value.ratio,
+					databaseSizeBytes: health.value.sizeBytes,
 					changeRows: health.value.changeRows,
 				}
 			: { healthError: health.error }),

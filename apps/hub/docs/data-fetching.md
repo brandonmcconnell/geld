@@ -94,7 +94,7 @@ The aim is to replace "every query polls GitHub on its own" with "one cheap
 request tells the client what changed".
 
 ```
-GitHub webhook ──► /api/webhooks/github ──► github_change (D1, 15 min TTL)
+GitHub webhook ──► /api/webhooks/github ──► github_change (Postgres, 15 min TTL)
                                                   │
 client (visible tab) ── every 15 s + on focus ──► /api/changes?since=<cursor>
         │                                          returns entity keys for
@@ -122,8 +122,7 @@ queryClient.invalidateQueries(keysFor(entity))   → only active, affected
     `version`. A repeat change updates the row instead of adding one: CI sends
     dozens of `check_run` and `workflow_job` deliveries per commit, and on
     2026-11-10 94% of a log-style table repeated an entity already in the
-    window. D1 bills each indexed write as a row written, so an upsert costs
-    two rows where an insert plus its later delete cost six.
+    window.
   - Rows unchanged for 15 minutes are useless, so a cron trigger deletes them
     in batches. It always keeps the newest row so `version` never goes
     backwards.
@@ -149,20 +148,20 @@ incident:
   the ETag, so there are no signal or namespace tables, and nothing keyed per
   entity grows forever. GraphQL has no ETags, so GraphQL resources such as
   "my pulls" are not cached server-side; L1 and L2 cover them.
-- **KV with `expirationTtl`.** Entries expire after 7 days of disuse, so cleanup
+- **The cache (`platform.cache()`, KV on Cloudflare) with a TTL.** Entries expire after 7 days of disuse, so cleanup
   is automatic. Write only on a 200, never on a 304.
-- **Writes in `waitUntil`, never awaited on the request path.** A failed read or
+- **Writes after the response (`platform.runAfterResponse`), never awaited on the request path.** A failed read or
   write means a cache miss, never an error.
 
 ### Cleanup and guardrails (all layers)
 
-- **Expiry and sweeping are part of every design.** Any new table or KV prefix
+- **Expiry and sweeping are part of every design.** Any new table or cache prefix
   ships with a TTL or retention rule and a sweeper, in the same PR.
-- **No append-only logs in D1.** Webhook de-duplication, if needed, is a KV key
+- **No append-only logs in the database.** Webhook de-duplication, if needed, is a cache key
   with a 24-hour TTL.
 - **Storage failure means a cache miss.** No storage read or write may turn into
   a user-facing error.
-- **Monitoring.** A scheduled check alerts at 80% of D1's 10 GB limit and on
+- **Monitoring.** A scheduled check reports the database's size and alerts on
   unusual row growth. The incident went unnoticed for about 11 weeks.
 
 ## Phases
@@ -220,20 +219,20 @@ incident:
 - **Access.** `/api/changes` returns public-repo changes to anyone and
   private-repo changes only for repos the *user* can read through the GitHub
   App: `GET /user/installations/{id}/repositories`, not the installation's
-  "all repos" coverage. Cached per user for 60 s in memory and 10 min in KV
-  (`change-access:v1:`, `expirationTtl`). OAuth-only repos refresh on focus.
+  "all repos" coverage. Cached per user for 60 s in memory and 10 min in the
+  cache (`change-access:v1:`, with a TTL). OAuth-only repos refresh on focus.
 - **Cursor** is `<last version>.<issued at>`. Each write takes
-  `MAX(version)` plus its position inside the statement, and D1 runs one
-  statement at a time, so a later write always gets a higher version than
+  `MAX(version)` plus its position, inside a transaction that holds an
+  advisory lock so writers take turns, so a later write always gets a higher version than
   any read has seen. A cursor older than 14 minutes, more than 2,000 rows
   behind, or ahead of the table (issued before a reset) answers
-  `expired: true`. A D1 read failure answers "nothing changed" with the
+  `expired: true`. A database read failure answers "nothing changed" with the
   client's own cursor, so an outage can't trigger a refetch storm.
 - **Cadence.** 15 s while visible, plus focus and reconnect. SSE stays out:
   it would mean one held connection per tab again.
 - **No delivery de-duplication.** A redelivered webhook only invalidates the
-  same queries twice within one poll; a KV key per delivery would cost
-  ~50k KV writes a day for nothing.
+  same queries twice within one poll; a cache key per delivery would cost
+  ~50k cache writes a day for nothing.
 - **Sweeper.** A cron trigger every 5 minutes deletes rows older than 15
   minutes in batches of at most 20k with 4 s pauses (at most 10 batches per
   run).
@@ -244,7 +243,7 @@ incident:
   over `src/lib/github/`. Modules that define server functions export only
   server functions, types and client-safe helpers: TanStack Start strips
   handler bodies from client and SSR-caller builds, but an exported helper
-  survives and pulls its server-only imports (`cloudflare:workers`, D1) into
+  survives and pulls its server-only imports (the platform, the database) into
   those builds. Shared server code lives in helper modules (`client`,
   `installations`, `mappers`, `shared`, `my-search`, `timeline`,
   `permissions`) that are imported only from handler bodies. `validators.ts`
@@ -298,16 +297,15 @@ run:
 
 ```json
 {"task":"scheduled-maintenance","sweep":{"deleted":412,"batches":1,"complete":true},
- "d1SizeBytes":81920,"d1SizeRatio":0.0000082,"changeRows":37}
+ "databaseSizeBytes":8133655,"changeRows":37}
 ```
 
-Database size comes from D1's `meta.size_after`, the number
-`wrangler d1 info` reports. At 80% of the 10 GB limit, or when
-`github_change` exceeds 50k rows (a stuck sweeper), it also logs
-`{"level":"warn","alert":"d1_size_warning" | "d1_change_table_growth", …}`.
+Database size is Postgres's `pg_database_size`. When `github_change` exceeds
+50k rows (a stuck sweeper), it also logs
+`{"level":"warn","alert":"change_table_growth", …}`.
 
 `sweep.complete: false` on consecutive runs means the backlog is outgrowing
-10 × 20k rows per 5 minutes; raise `GITHUB_CHANGE_SWEEP_MAX_BATCHES`.
+20 × 5k rows per 5 minutes; raise `GITHUB_CHANGE_SWEEP_MAX_BATCHES`.
 
 ## Open questions
 

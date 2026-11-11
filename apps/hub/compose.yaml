@@ -1,0 +1,20 @@
+# Postgres for local development, demo mode and the end-to-end tests.
+#   docker compose -f apps/hub/compose.yaml up -d
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: geld_hub
+      POSTGRES_PASSWORD: geld_hub
+      POSTGRES_DB: geld_hub
+    ports: ['127.0.0.1:5433:5432']
+    volumes:
+      - geld-hub-postgres:/var/lib/postgresql/data
+      - ./scripts/create-demo-database.sql:/docker-entrypoint-initdb.d/demo.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U geld_hub -d geld_hub]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+volumes:
+  geld-hub-postgres:

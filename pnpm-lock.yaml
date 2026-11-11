@@ -298,6 +298,9 @@ importers:
       '@xyflow/react':
         specifier: 12.10.2
         version: 12.10.2(@types/react@19.2.18)(immer@11.2.10)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      aws4fetch:
+        specifier: 1.0.20
+        version: 1.0.20
       better-auth:
         specifier: 1.6.0
         version: 1.6.0(b04f8b74d031c9109e1580d329f11f55)
@@ -322,6 +325,9 @@ importers:
       octokit:
         specifier: 5.0.5
         version: 5.0.5
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
       react:
         specifier: ^19.2.0
         version: 19.2.8
@@ -350,6 +356,9 @@ importers:
       '@cloudflare/workers-types':
         specifier: 5.20261109.1
         version: 5.20261109.1
+      '@electric-sql/pglite':
+        specifier: 0.4.6
+        version: 0.4.6
       '@geld/hub-tsconfig':
         specifier: workspace:*
         version: link:../../packages/hub-tsconfig
@@ -365,6 +374,9 @@ importers:
       '@types/node':
         specifier: 22.19.17
         version: 22.19.17
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
       '@types/react':
         specifier: ^19.2.0
         version: 19.2.18

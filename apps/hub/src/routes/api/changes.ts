@@ -6,8 +6,8 @@ import { PRIVATE_ROUTE_HEADERS } from "#/lib/seo";
 const handleChanges = guardRoute(
 	"changes",
 	async (request: Request) => {
-		const [{ env }, { getAuth }, changes, access] = await Promise.all([
-			import("cloudflare:workers"),
+		const [{ getDb }, { getAuth }, changes, access] = await Promise.all([
+			import("#/db"),
 			import("#/lib/auth.server"),
 			import("#/lib/github-change.server"),
 			import("#/lib/github-change-access.server"),
@@ -16,7 +16,7 @@ const handleChanges = guardRoute(
 			getSession: (incoming) =>
 				getAuth().api.getSession({ headers: incoming.headers }),
 			getReadableRepoSet: access.getReadableRepoSet,
-			readChanges: (options) => changes.readGitHubChanges(env.DB, options),
+			readChanges: (options) => changes.readGitHubChanges(getDb(), options),
 		});
 	},
 	"changes_unavailable",
