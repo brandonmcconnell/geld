@@ -1152,7 +1152,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The popup's and options page's Feedback links and Report with diagnostics open the extension's own `feedback.html` in a tab, never the site or GitHub's issue form;
   a tab rather than the popup, which closes when it loses focus.
   The reader picks a kind (`FEEDBACK_KINDS`, the title's `[Bug]`/`[Idea]`/`[Question]`/`[Feedback]` prefix), writes a title and details, and ticks what to attach (`ContextChoice`): Geld's version and `version_name` with the browser, the kind of page (`whereWords`), the page's address, and the Copy diagnostics report.
-  Version and page type start ticked, and diagnostics only when Report with diagnostics opened the form.
+  Version, page type and diagnostics start ticked, and the checklist puts diagnostics before the page address, which decides how they read (the issue keeps the address with the other facts, the report last).
+  The report covers every open GitHub tab, so it is always passed through `anonymizeDiagnostics`: each repository, pull request, commit and Enterprise host becomes a placeholder (`repo-1#pr-2`, `repo-1@commit-1`, `from=enterprise-host`), one name always the same one, except the page's own repository and host when its address goes into the issue too.
+  Without the address the row reads "Anonymized diagnostics" and the issue's block "Diagnostics, anonymized".
   The page address is ticked by default only when its repository is public (`repoVisibility`: a cookieless `HEAD` for the repository's own page, a 404 or a sign-in redirect being private), and the note under it says which, since the issue itself is public.
   A page with no repository, or an answer Geld cannot read, is treated as private.
   The consent box stays unavailable while that context loads (the check can take five seconds), and only the latest opening's context is kept (`contextLoad`), so a slow answer for an earlier page never lands over a newer one.

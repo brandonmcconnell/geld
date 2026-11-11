@@ -1,3 +1,5 @@
+import { repoFromPathname } from '@geld/core';
+
 /** The repository feedback is opened on, as a public issue from the reader's own account. */
 export const FEEDBACK_REPO = 'brandonmcconnell/geld';
 
@@ -70,19 +72,78 @@ function fenceFor(text: string): string {
   return '`'.repeat(Math.max(3, longest + 1));
 }
 
-function diagnosticsBlock(report: string): string {
+function diagnosticsBlock(report: string, summary: string): string {
   const fence = fenceFor(report);
-  return `<details><summary>Diagnostics</summary>\n\n${fence}text\n${report}\n${fence}\n\n</details>`;
+  return `<details><summary>${summary}</summary>\n\n${fence}text\n${report}\n${fence}\n\n</details>`;
+}
+
+/** What a report may still name: the page's own repository and host, when its address goes into the issue too. */
+export interface NamedPage {
+  readonly repo: string;
+  readonly host: string;
+}
+
+/** `owner/repo`, then `#N` or `@sha`, standing on their own (a rate like `45.2/min` is no repository). */
+const REPO_REFERENCE = /(?<![\w./-])([A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+)(?:(#\d+)|@([0-9a-f]{7,40}))?(?![\w-])/g;
+const HOST_FIELD = /\bfrom=([^\s]+)/g;
+
+function isGitHubHost(host: string): boolean {
+  return /(^|\.)github\.com$|(^|\.)githubusercontent\.com$/i.test(host);
+}
+
+/**
+ * The diagnostics report with every repository, pull request, commit and
+ * Enterprise host it names put in placeholders (`repo-1#pr-2`,
+ * `repo-1@commit-1`, `enterprise-host`), the same name always taking the same
+ * placeholder so the report still reads. The report covers every open GitHub
+ * tab, so even with the page's address in the issue only that page's own
+ * repository and host keep their names.
+ */
+export function anonymizeDiagnostics(report: string, named: NamedPage | null): string {
+  const repos = new Map<string, string>();
+  const pulls = new Map<string, string>();
+  const commits = new Map<string, string>();
+  const placeholder = (map: Map<string, string>, key: string, prefix: string): string => {
+    const known = map.get(key);
+    if (known !== undefined) return known;
+    const made = `${prefix}-${map.size + 1}`;
+    map.set(key, made);
+    return made;
+  };
+  const kept = named?.repo.toLowerCase() ?? null;
+  return report
+    .replace(REPO_REFERENCE, (whole: string, repo: string, pull: string | undefined, sha: string | undefined) => {
+      if (repo.toLowerCase() === kept) return whole;
+      const masked = placeholder(repos, repo.toLowerCase(), 'repo');
+      if (pull !== undefined) return `${masked}#${placeholder(pulls, `${repo.toLowerCase()}${pull}`, 'pr')}`;
+      if (sha !== undefined) return `${masked}@${placeholder(commits, `${repo.toLowerCase()}@${sha.toLowerCase()}`, 'commit')}`;
+      return masked;
+    })
+    .replace(HOST_FIELD, (whole: string, host: string) =>
+      isGitHubHost(host) || host.toLowerCase() === named?.host.toLowerCase() ? whole : 'from=enterprise-host',
+    );
+}
+
+/** The page whose address goes into the issue, as the report may name it; `null` when no address does. */
+function namedPage(page: string | null, included: boolean): NamedPage | null {
+  if (!included || page === null) return null;
+  try {
+    const url = new URL(page);
+    const repo = repoFromPathname(url.pathname);
+    return repo === null ? null : { repo, host: url.hostname };
+  } catch {
+    return null;
+  }
 }
 
 const TRIM_NOTE = '(Trimmed to fit the issue. The oldest lines were dropped.)';
 
 /** The report's header and its newest lines, as many as fit in `budget` characters once fenced. */
-function trimReport(report: string, budget: number): string {
+function trimReport(report: string, budget: number, summary: string): string {
   const lines = report.split('\n');
   const header = lines[0] ?? '';
   const kept: string[] = [];
-  let used = diagnosticsBlock(`${header}\n${TRIM_NOTE}`).length;
+  let used = diagnosticsBlock(`${header}\n${TRIM_NOTE}`, summary).length;
   for (let index = lines.length - 1; index >= 1; index -= 1) {
     const line = lines[index] ?? '';
     if (used + line.length + 1 > budget) break;
@@ -115,9 +176,12 @@ export function feedbackIssue(draft: FeedbackDraft, context: FeedbackContext, ch
   if (facts.length > 0) parts.push(facts.join('\n'));
   const fixed = [...parts, footer].join('\n\n');
   if (choice.diagnostics && context.diagnostics !== null) {
+    const named = namedPage(context.page, choice.page);
+    const report = anonymizeDiagnostics(context.diagnostics, named);
+    const summary = named === null ? 'Diagnostics, anonymized' : 'Diagnostics';
     const room = ISSUE_BODY_LIMIT - fixed.length - 4;
-    const whole = diagnosticsBlock(context.diagnostics);
-    const block = whole.length <= room ? whole : room > 200 ? diagnosticsBlock(trimReport(context.diagnostics, room)) : null;
+    const whole = diagnosticsBlock(report, summary);
+    const block = whole.length <= room ? whole : room > 200 ? diagnosticsBlock(trimReport(report, room, summary), summary) : null;
     if (block !== null) parts.push(block);
   }
   const body = [...parts, footer].join('\n\n');

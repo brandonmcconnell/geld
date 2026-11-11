@@ -56,7 +56,7 @@ let context: FeedbackContext = EMPTY_CONTEXT;
 let visibility: RepoVisibility = 'unknown';
 let loadingContext = true;
 let contextLoad = 0;
-const choice: Record<ContextKey, boolean> = { environment: true, where: true, page: false, diagnostics: query.get('diagnostics') === '1' };
+const choice: Record<ContextKey, boolean> = { environment: true, where: true, page: false, diagnostics: true };
 const tabParam = Number(query.get('tab') ?? NaN);
 let openingTab: number | null = Number.isInteger(tabParam) && tabParam >= 0 ? tabParam : null;
 
@@ -102,10 +102,32 @@ const PAGE_NOTES: Readonly<Record<RepoVisibility, string>> = {
   unknown: 'Geld could not tell whether this page is public, so its address is left out by default.',
 };
 
+/** The diagnostics name this page's repository only when its address goes into the issue too (`anonymizeDiagnostics`). */
+function namesPage(): boolean {
+  return choice.page && context.page !== null;
+}
+
+function labelFor(key: ContextKey): string {
+  if (key === 'diagnostics' && !namesPage()) return 'Anonymized diagnostics';
+  return CHOICE_LABELS[key];
+}
+
 function noteFor(key: ContextKey): string | null {
   if (key === 'page') return PAGE_NOTES[visibility];
-  if (key === 'diagnostics') return 'Diff fetches and timings for this session, naming pull requests by number. No page content or tokens.';
+  if (key === 'diagnostics')
+    return namesPage()
+      ? 'Diff fetches and timings for this session, naming this repository. Other repositories and their pull requests are replaced by placeholders. No page content or tokens.'
+      : 'Diff fetches and timings for this session, with every repository and pull request replaced by placeholders while the page address is left out. No page content or tokens.';
   return null;
+}
+
+let diagnosticsWords: { readonly label: HTMLElement; readonly note: HTMLElement } | null = null;
+
+/** Retitled in place when the page address is ticked or unticked, so the checkbox the reader just used keeps its focus. */
+function renderDiagnosticsWords(): void {
+  if (diagnosticsWords === null) return;
+  diagnosticsWords.label.textContent = labelFor('diagnostics');
+  diagnosticsWords.note.textContent = noteFor('diagnostics') ?? '';
 }
 
 function shown(key: ContextKey): string | null {
@@ -113,11 +135,13 @@ function shown(key: ContextKey): string | null {
   if (value === null) return null;
   if (key !== 'diagnostics') return value;
   const lines = value.split('\n').length;
-  return `${lines} ${lines === 1 ? 'line' : 'lines'}, shown in the preview`;
+  return `${lines} ${lines === 1 ? 'line' : 'lines'}`;
 }
 
 function renderChoices(): void {
-  const keys: readonly ContextKey[] = ['environment', 'where', 'page', 'diagnostics'];
+  // Diagnostics before the page address here, though the issue lists the address first: the address decides how they read.
+  const keys: readonly ContextKey[] = ['environment', 'where', 'diagnostics', 'page'];
+  diagnosticsWords = null;
   choicesHost.replaceChildren(
     ...keys.flatMap((key) => {
       const value = shown(key);
@@ -127,12 +151,18 @@ function renderChoices(): void {
       input.checked = choice[key];
       input.addEventListener('change', () => {
         choice[key] = input.checked;
+        if (key === 'page') renderDiagnosticsWords();
         renderPreview();
         renderSend();
       });
-      const words = el('span', 'feedback__choice-words', [el('span', 'feedback__choice-label', [CHOICE_LABELS[key]]), el('span', 'feedback__choice-value', [value])]);
+      const label = el('span', 'feedback__choice-label', [labelFor(key)]);
+      const words = el('span', 'feedback__choice-words', [label, el('span', 'feedback__choice-value', [value])]);
       const note = noteFor(key);
-      if (note !== null) words.append(el('span', 'geld-help', [note]));
+      if (note !== null) {
+        const help = el('span', 'geld-help', [note]);
+        words.append(help);
+        if (key === 'diagnostics') diagnosticsWords = { label, note: help };
+      }
       return [el('label', 'feedback__choice', [input, words])];
     }),
   );
