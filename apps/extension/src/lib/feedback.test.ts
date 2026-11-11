@@ -31,11 +31,10 @@ describe('feedbackIssue', () => {
     expect(full).toContain('fetch wxt-dev/wxt#2545 ok 98ms');
   });
 
-  it('anonymizes the diagnostics when the page address stays out', () => {
+  it('obfuscates the diagnostics when the page address stays out', () => {
     const body = feedbackIssue({ kind: 'bug', title: 't', text: 'x' }, CONTEXT, { ...ALL, page: false }).body;
-    expect(body).toContain('<details><summary>Diagnostics, anonymized</summary>');
-    expect(body).toContain('fetch repo-1#pr-1 ok 120ms');
-    expect(body).toContain('fetch repo-1#pr-2 ok 98ms');
+    expect(body).toContain('<details><summary>Diagnostics</summary>');
+    expect(body).toContain('fetch [obfuscated]/[obfuscated]#[obfuscated] ok 120ms');
     expect(body).not.toContain('wxt');
   });
 
@@ -107,30 +106,32 @@ describe('anonymizeDiagnostics', () => {
     '17:01:04.005 inject acme/secret#12/files present on=activated',
     '17:01:05.006 fetch wxt-dev/wxt#2544 ok 120ms from=patch-diff.githubusercontent.com',
     'acme/other (pulls): up 3s',
+    'seen at https://github.com/acme/secret/pull/12 and https://ghe.acme.internal/acme/other/discussions/4',
     '  pass: 1 runs (45.2/min, 1 in the last minute), mean 32.7ms',
   ].join('\n');
 
-  it('puts every repository, pull request, commit and Enterprise host in a placeholder, the same name always the same one', () => {
+  it('obfuscates every organization, repository, number and Enterprise host', () => {
     const out = anonymizeDiagnostics(REPORT, null);
     expect(out).not.toMatch(/acme|secret|wxt|ghe\./);
-    expect(out).toContain('fetch repo-1#pr-1 rate-limited status=429 from=github.com');
-    expect(out).toContain('fetch repo-1@commit-1 ok 80ms from=enterprise-host');
-    expect(out).toContain('inject repo-1#pr-1/files present');
-    expect(out).toContain('fetch repo-2#pr-2 ok 120ms from=patch-diff.githubusercontent.com');
-    expect(out).toContain('repo-3 (pulls): up 3s');
+    expect(out).toContain('fetch [obfuscated]/[obfuscated]#[obfuscated] rate-limited status=429 from=github.com');
+    expect(out).toContain('fetch [obfuscated]/[obfuscated]@[obfuscated] ok 80ms from=[obfuscated]');
+    expect(out).toContain('inject [obfuscated]/[obfuscated]#[obfuscated]/files present');
+    expect(out).toContain('from=patch-diff.githubusercontent.com');
+    expect(out).toContain('[obfuscated]/[obfuscated] (pulls): up 3s');
+    expect(out).toContain('seen at https://github.com/[obfuscated]/[obfuscated]/pull/[obfuscated] and https://[obfuscated]/[obfuscated]/[obfuscated]/discussions/[obfuscated]');
     expect(out).toContain('(45.2/min, 1 in the last minute)');
   });
 
   it('names only the page whose address goes into the issue', () => {
     const out = anonymizeDiagnostics(REPORT, { repo: 'wxt-dev/wxt', host: 'github.com' });
     expect(out).toContain('fetch wxt-dev/wxt#2544 ok 120ms');
-    expect(out).toContain('fetch repo-1#pr-1 rate-limited');
+    expect(out).toContain('fetch [obfuscated]/[obfuscated]#[obfuscated] rate-limited');
     expect(out).not.toContain('acme');
   });
 
-  it('keeps the page\'s own Enterprise host when its address is named', () => {
-    expect(anonymizeDiagnostics('fetch acme/secret#1 ok from=ghe.acme.internal', { repo: 'acme/secret', host: 'ghe.acme.internal' })).toBe(
-      'fetch acme/secret#1 ok from=ghe.acme.internal',
-    );
+  it('keeps the page\'s own repository and Enterprise host, in references and addresses alike', () => {
+    expect(
+      anonymizeDiagnostics('fetch acme/secret#1 ok from=ghe.acme.internal at https://ghe.acme.internal/acme/secret/pull/1', { repo: 'acme/secret', host: 'ghe.acme.internal' }),
+    ).toBe('fetch acme/secret#1 ok from=ghe.acme.internal at https://ghe.acme.internal/acme/secret/pull/1');
   });
 });
