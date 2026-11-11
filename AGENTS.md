@@ -1152,9 +1152,13 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The popup's and options page's Feedback links and Report with diagnostics open the extension's own `feedback.html` in a tab, never the site or GitHub's issue form;
   a tab rather than the popup, which closes when it loses focus.
   The reader picks a kind (`FEEDBACK_KINDS`, the title's `[Bug]`/`[Idea]`/`[Question]`/`[Feedback]` prefix), writes a title and details, and ticks what to attach (`ContextChoice`): Geld's version and `version_name` with the browser, the kind of page (`whereWords`), the page's address, and the Copy diagnostics report.
-  Version and page type start ticked, and diagnostics only when Report with diagnostics opened the form.
-  The page address is ticked by default only when its repository is public (`repoVisibility`: a cookieless `HEAD` for the repository's own page, a 404 or a sign-in redirect being private), and the note under it says which, since the issue itself is public.
-  A page with no repository, or an answer Geld cannot read, is treated as private.
+  There are three boxes: version, page type and diagnostics;
+  the page address goes with the diagnostics, which name it anyway, and the issue lists it with the other facts, the report last.
+  The diagnostics are sent as they are, every repository named, and their row says so after the line count ("79 lines, ⚠ includes the URL of every open Git tab", the alert octicon, not the character, which some systems draw as an emoji).
+  They start ticked only when every repository the report names (`reposNamedIn`, at most `MAX_VISIBILITY_CHECKS`) is public as a stranger sees it (`repoVisibility`: a cookieless `HEAD` for the repository's own page, a 404 or a sign-in redirect being private), or when Report with diagnostics asked for them, and the note under them says which.
+  A repository Geld cannot read, or more than it checks, counts as private.
+  The log writes every repository with its host first (`github.com/owner/repo#N`, `tabSubject`, `diagnosticSubject`), so the report says which provider and the same `owner/repo` on two hosts is two repositories.
+  The issue always carries the page's Git provider and host (`providerLabel` in `src/lib/git-provider.ts`: "GitHub (github.com)", "GitHub Enterprise (…)", and GitLab, Bitbucket and Azure DevOps by host or by the path's shape), with no box to tick.
   The consent box stays unavailable while that context loads (the check can take five seconds), and only the latest opening's context is kept (`contextLoad`), so a slow answer for an earlier page never lands over a newer one.
   The attachment checkboxes are locked for the load too, since it replaces them, and nothing in it may keep the form waiting: the per-tab timings get two seconds (`PERF_WAIT_MS`, a frozen tab answers only when it wakes) and a context that cannot be read is an empty one.
   The page address is the origin and path only, never the query: a public repository's search can still hold private words.
@@ -1167,7 +1171,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Send looks disabled until the draft can go (`aria-disabled`), but takes the click and says what is missing in a tooltip above it (`blocker`: title, details, sign-in, consent, length).
   A required checkbox names the account and the repository, and the draft is kept in `local:feedbackDraft` until it is sent, saved on every edit, so closing the tab or signing in loses nothing.
   There is one feedback tab: a Feedback link first asks an open feedback page to come forward (`geld:feedback-open`, answered `true`, carrying the link's tab and diagnostics), and opens a new tab only when nothing answers.
-  Coming forward clears the consent and sets the page address to the new page's default, since the page may now be a private repository's, and an opening that names no GitHub tab (the options page) drops the page from before.
+  Coming forward clears the consent and sets the diagnostics to the new context's default, since a private repository may be open now, and an opening that names no GitHub tab (the options page) drops the page from before.
   Sending clears the draft only when the stored one is still the draft that was sent, and the title, details and kind are read-only while the request is out.
   The background opens the issue on `brandonmcconnell/geld` with the reader's own Geld App user token (`submitFeedback` in `account-service.ts`, `POST /repos/…/issues` through `withToken`), so it is the reader's issue, marked by GitHub as made with the App, and no bot account posts on anyone's behalf.
   That needs the reader signed in with GitHub (the same device flow as settings sync, which signing in also turns on) and the Geld App installed on Geld's own repository, which user tokens can only write to where the App is installed;

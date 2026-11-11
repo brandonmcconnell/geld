@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { ContextChoice, FeedbackContext } from './feedback';
-import { feedbackIssue, ISSUE_BODY_LIMIT, parseCreatedIssue, parseDraft, refusalMessage } from './feedback';
+import { feedbackIssue, reposNamedIn, ISSUE_BODY_LIMIT, parseCreatedIssue, parseDraft, refusalMessage } from './feedback';
 
 const CONTEXT: FeedbackContext = {
   environment: '0.1.3.812 · Chrome 148 on macOS',
   where: 'pull request conversation',
   page: 'https://github.com/wxt-dev/wxt/pull/2544',
-  diagnostics: 'Geld 0.1.3 · 2 events\nfetch wxt-dev/wxt#2544 ok 120ms\nfetch wxt-dev/wxt#2545 ok 98ms',
+  diagnostics: 'Geld 0.1.3 · 2 events\nfetch github.com/wxt-dev/wxt#2544 ok 120ms\nfetch github.com/wxt-dev/wxt#2545 ok 98ms',
+  provider: 'GitHub (github.com)',
 };
-const ALL: ContextChoice = { environment: true, where: true, page: true, diagnostics: true };
-const NONE: ContextChoice = { environment: false, where: false, page: false, diagnostics: false };
+const ALL: ContextChoice = { environment: true, where: true, diagnostics: true };
+const NONE: ContextChoice = { environment: false, where: false, diagnostics: false };
 
 describe('feedbackIssue', () => {
   it('leads the title with the kind and keeps the words on one line', () => {
@@ -23,16 +24,26 @@ describe('feedbackIssue', () => {
     expect(bare).not.toContain('Chrome');
     expect(bare).not.toContain('wxt-dev');
     expect(bare).not.toContain('Diagnostics');
+    expect(bare).toContain('- **Git provider:** GitHub (github.com)');
     const full = feedbackIssue({ kind: 'idea', title: 't', text: 'Please add this.' }, CONTEXT, ALL).body;
     expect(full).toContain('- **Geld:** 0.1.3.812 · Chrome 148 on macOS');
     expect(full).toContain('- **Page type:** pull request conversation');
     expect(full).toContain('- **Page address:** <https://github.com/wxt-dev/wxt/pull/2544>');
     expect(full).toContain('<details><summary>Diagnostics</summary>');
-    expect(full).toContain('fetch wxt-dev/wxt#2545 ok 98ms');
+    expect(full).toContain('fetch github.com/wxt-dev/wxt#2545 ok 98ms');
+  });
+
+  it('sends the page address with the diagnostics, and the report as it is', () => {
+    const body = feedbackIssue({ kind: 'bug', title: 't', text: 'x' }, CONTEXT, { ...ALL, diagnostics: false }).body;
+    expect(body).not.toContain('**Page address:**');
+    expect(body).not.toContain('<details>');
+    const full = feedbackIssue({ kind: 'bug', title: 't', text: 'x' }, CONTEXT, ALL).body;
+    expect(full).toContain('- **Page address:** <https://github.com/wxt-dev/wxt/pull/2544>');
+    expect(full).toContain('fetch github.com/wxt-dev/wxt#2544 ok 120ms');
   });
 
   it('leaves out empty details, so the preview can stand in for them', () => {
-    expect(feedbackIssue({ kind: 'bug', title: '', text: '  ' }, CONTEXT, NONE).body).toBe('<sub>Sent from the feedback form in the Geld extension.</sub>');
+    expect(feedbackIssue({ kind: 'bug', title: '', text: '  ' }, { ...CONTEXT, provider: null }, NONE).body).toBe('<sub>Sent from the feedback form in the Geld extension.</sub>');
   });
 
   it('skips context this device has none of', () => {
@@ -88,5 +99,25 @@ describe('GitHub answers', () => {
     expect(refusalMessage(410, null, false)).toMatch(/turned off/);
     expect(refusalMessage(422, { message: 'Validation Failed' }, false)).toBe('GitHub did not accept the issue: Validation Failed');
     expect(refusalMessage(500, null, false)).toMatch(/answered 500/);
+  });
+});
+
+describe('reposNamedIn', () => {
+  it('lists every repository the report names once, on its host', () => {
+    const report = [
+      'Geld 0.1.3 diagnostics — 3 events (this browser session)',
+      '17:01:02.003 fetch github.com/wxt-dev/wxt#2544 ok 120ms from=patch-diff.githubusercontent.com',
+      '17:01:03.004 inject ghe.acme.internal/acme/secret@0a1b2c3 present on=install',
+      '17:01:04.005 fetch acme/old#3 ok',
+      'github.com/wxt-dev/wxt#2544/files (hidden): up 3s',
+      'github.com/acme/other (pulls): up 3s',
+      '  pass: 1 runs (45.2/min, 1 in the last minute), mean 32.7ms',
+    ].join('\n');
+    expect(reposNamedIn(report)).toEqual([
+      'https://github.com/wxt-dev/wxt',
+      'https://ghe.acme.internal/acme/secret',
+      'https://github.com/acme/old',
+      'https://github.com/acme/other',
+    ]);
   });
 });

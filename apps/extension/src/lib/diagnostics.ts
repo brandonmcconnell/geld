@@ -4,7 +4,7 @@ import { storage } from 'wxt/utils/storage';
  * A short log of what happened to diff fetches, for "Copy diagnostics" on the
  * options page. Kept in session storage (gone when the browser closes) and
  * written by the background worker only. Nothing sensitive: the subject is
- * `owner/repo#N` or `owner/repo@sha` — what the page itself shows — never a
+ * `host/owner/repo#N` or `host/owner/repo@sha` — what the page itself shows — never a
  * URL with a query, a cookie, or any of the diff's text.
  */
 export interface DiagnosticEvent {
@@ -55,29 +55,41 @@ export async function readDiagnostics(): Promise<readonly DiagnosticEvent[]> {
 }
 
 /**
- * What a tab is called in the log: `owner/repo#N` (with `/files` or
- * `/changes` when on that tab), `owner/repo@sha7`, `owner/repo (pulls)` for
+ * What a tab is called in the log: `host/owner/repo#N` (with `/files` or
+ * `/changes` when on that tab), `host/owner/repo@sha7`, `host/owner/repo (pulls)` for
  * a repository's list and compare pages, and `other page` for anything else.
  * Never a path as such: a profile, an organisation or a search URL names
  * people, and the log may name repositories and nothing more.
  */
 export function tabSubject(url: string): string {
-  let pathname: string;
+  let parsed: URL;
   try {
-    pathname = new URL(url).pathname;
+    parsed = new URL(url);
   } catch {
     return 'other page';
   }
+  const { pathname } = parsed;
+  const host = hostPrefix(parsed);
   const pull = /^\/([^/]+\/[^/]+)\/pull\/(\d+)(\/(?:files|changes|commits|checks))?/.exec(pathname);
-  if (pull !== null) return `${pull[1]}#${pull[2]}${pull[3] ?? ''}`;
+  if (pull !== null) return `${host}${pull[1]}#${pull[2]}${pull[3] ?? ''}`;
   const commit = /^\/([^/]+\/[^/]+)\/commit\/([0-9a-f]+)/i.exec(pathname);
-  if (commit !== null) return `${commit[1]}@${(commit[2] ?? '').slice(0, 7)}`;
+  if (commit !== null) return `${host}${commit[1]}@${(commit[2] ?? '').slice(0, 7)}`;
   const repoPage = /^\/([^/]+\/[^/]+)\/(pulls|compare|commits)(?:\/|$)/.exec(pathname);
-  if (repoPage !== null) return `${repoPage[1]} (${repoPage[2]})`;
+  if (repoPage !== null) return `${host}${repoPage[1]} (${repoPage[2]})`;
   return 'other page';
 }
 
-/** `owner/repo#N` for a pull request diff, `owner/repo@sha7` for a commit's; null for anything else. */
+/**
+ * The host before every repository (`github.com/owner/repo#N`): it says which
+ * Git provider, and the same `owner/repo` on two hosts is two repositories, of
+ * which the feedback form names only the one on the page's own host
+ * (`obfuscateRepos`).
+ */
+function hostPrefix(url: URL): string {
+  return `${url.hostname}/`;
+}
+
+/** `host/owner/repo#N` for a pull request diff, `host/owner/repo@sha7` for a commit's; null for anything else. */
 export function diagnosticSubject(diffUrl: string): string | null {
   let url: URL;
   try {
@@ -85,10 +97,11 @@ export function diagnosticSubject(diffUrl: string): string | null {
   } catch {
     return null;
   }
+  const host = hostPrefix(url);
   const pull = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\.diff$/.exec(url.pathname);
-  if (pull !== null) return `${pull[1]}/${pull[2]}#${pull[3]}`;
+  if (pull !== null) return `${host}${pull[1]}/${pull[2]}#${pull[3]}`;
   const commit = /^\/([^/]+)\/([^/]+)\/commit\/([0-9a-f]+)\.diff$/i.exec(url.pathname);
-  if (commit !== null) return `${commit[1]}/${commit[2]}@${(commit[3] ?? '').slice(0, 7)}`;
+  if (commit !== null) return `${host}${commit[1]}/${commit[2]}@${(commit[3] ?? '').slice(0, 7)}`;
   return null;
 }
 

@@ -6,12 +6,14 @@ import { tabSubject } from './diagnostics';
 
 describe('tabSubject', () => {
   it('names repositories and pull requests, never people or paths', () => {
-    expect(tabSubject('https://github.com/wxt-dev/wxt/pull/2544')).toBe('wxt-dev/wxt#2544');
-    expect(tabSubject('https://github.com/wxt-dev/wxt/pull/2544/files?w=1#diff-abc')).toBe('wxt-dev/wxt#2544/files');
-    expect(tabSubject('https://github.com/wxt-dev/wxt/commit/d05ac55ba78b7d01c5ab9feb0e862775e45509ef')).toBe('wxt-dev/wxt@d05ac55');
-    expect(tabSubject('https://github.com/wxt-dev/wxt/pulls?q=is%3Aopen')).toBe('wxt-dev/wxt (pulls)');
-    expect(tabSubject('https://github.com/wxt-dev/wxt/compare/main...feat')).toBe('wxt-dev/wxt (compare)');
+    expect(tabSubject('https://github.com/wxt-dev/wxt/pull/2544')).toBe('github.com/wxt-dev/wxt#2544');
+    expect(tabSubject('https://github.com/wxt-dev/wxt/pull/2544/files?w=1#diff-abc')).toBe('github.com/wxt-dev/wxt#2544/files');
+    expect(tabSubject('https://github.com/wxt-dev/wxt/commit/d05ac55ba78b7d01c5ab9feb0e862775e45509ef')).toBe('github.com/wxt-dev/wxt@d05ac55');
+    expect(tabSubject('https://github.com/wxt-dev/wxt/pulls?q=is%3Aopen')).toBe('github.com/wxt-dev/wxt (pulls)');
+    expect(tabSubject('https://github.com/wxt-dev/wxt/compare/main...feat')).toBe('github.com/wxt-dev/wxt (compare)');
     // A profile, an organisation, a search, a settings page: nothing of the path is kept.
+    expect(tabSubject('https://ghe.example.com/acme/widgets/pull/77/files')).toBe('ghe.example.com/acme/widgets#77/files');
+    expect(tabSubject('https://ghe.example.com/acme/widgets/commit/0a1b2c3d4e')).toBe('ghe.example.com/acme/widgets@0a1b2c3');
     expect(tabSubject('https://github.com/someone')).toBe('other page');
     expect(tabSubject('https://github.com/orgs/acme/people')).toBe('other page');
     expect(tabSubject('https://github.com/search?q=secret+project')).toBe('other page');
