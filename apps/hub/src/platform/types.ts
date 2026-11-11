@@ -20,6 +20,10 @@ export type AppConfig = {
 	GITHUB_APP_CLIENT_SECRET?: string;
 	GITHUB_APP_PRIVATE_KEY?: string;
 	GITHUB_WEBHOOK_SECRET?: string;
+	GITLAB_CLIENT_ID?: string;
+	GITLAB_CLIENT_SECRET?: string;
+	BITBUCKET_CLIENT_ID?: string;
+	BITBUCKET_CLIENT_SECRET?: string;
 	/** Local demo mode only. */
 	GITHUB_EMULATOR_URL?: string;
 	files: FileStoreConfig | null;

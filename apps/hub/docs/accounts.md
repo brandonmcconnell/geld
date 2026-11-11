@@ -37,8 +37,19 @@ Both ids are the dashboard's, so one row serves both apps. For that to hold in a
 
 "Continue with GitHub" signs in with `github-oauth`. Someone who is already signed in to Geld another way (email, another provider) arrives with a session and no GitHub: the setup page then offers "Connect GitHub", which adds the identity to their account.
 
+## Connections
+
+Settings, Connections lists the Git providers on the account: GitHub, GitLab and Bitbucket. Connecting one adds the dashboard's identity for it (`github-oauth`, `gitlab`, `bitbucket`), so a connection made in either app is one connection.
+
+GitLab and Bitbucket are offered only when this server has their OAuth app (`GITLAB_CLIENT_*`, `BITBUCKET_CLIENT_*`). A provider connected elsewhere that this server lacks is shown as connected and cannot be read here, since refreshing its token needs the app.
+
+`providerClientFor(userId, provider)` in `src/lib/providers/connections.server.ts` gives the shared client from `@geld/providers` for a connection. Its token comes through Better Auth, which decrypts it and refreshes an expired one. The page asks each connected provider for its first page of repositories to say whether the connection still works.
+
+GitHub's own screens still read through the app's GitHub client. GitLab and Bitbucket pull requests are not in the lists yet.
+
 ## Not here yet
 
-- The dashboard's other ways to sign in (email code, magic link, password, GitLab, Bitbucket, single sign-on). Their sessions work in the hub. Starting them from the hub's own sign-in page comes with the provider connections.
+- The dashboard's other ways to sign in (email code, magic link, password, single sign-on). Their sessions work in the hub. GitLab and Bitbucket can be connected to an account but do not start a sign-in from the hub's own page.
+- Disconnecting a provider. It stays on the dashboard with the rest of account management.
 - Account deletion and export. They stay on the dashboard, which runs the erasure steps.
-- The hub does not encrypt `idToken` as the dashboard does, since GitHub issues none. A provider that does must not be added to the hub before that is copied.
+- The hub does not encrypt `idToken` as the dashboard does. None of its providers issues one (GitLab is asked for `read_user` and `api`, not `openid`). A provider that does must not be added before that is copied.

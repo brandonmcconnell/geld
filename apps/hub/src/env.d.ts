@@ -30,6 +30,10 @@ declare namespace Cloudflare {
 		GITHUB_WEBHOOK_SECRET?: string;
 		GITHUB_CLIENT_ID?: string;
 		GITHUB_CLIENT_SECRET?: string;
+		GITLAB_CLIENT_ID?: string;
+		GITLAB_CLIENT_SECRET?: string;
+		BITBUCKET_CLIENT_ID?: string;
+		BITBUCKET_CLIENT_SECRET?: string;
 		BETTER_AUTH_SECRET: string;
 		BETTER_AUTH_URL: string;
 		/** Local demo mode only: base URL of `apps/hub-emulator` (e.g. http://localhost:4200). */

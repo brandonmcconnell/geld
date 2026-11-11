@@ -2329,7 +2329,10 @@ Change either side only with the other.
 Rows the hub writes to `identities` itself go through `sealToken`, since the dashboard reads them encrypted.
 The hub's own tables are prefixed `hub_`, and `db:migrate -- --reset` refuses a database that is not on this machine.
 Sign-in is the dashboard's `github-oauth` identity and the GitHub App authorization its `github-repository` one, so the hub must be given the same two GitHub apps as the dashboard.
-Not done yet: it signs in with GitHub alone and knows nothing of Geld's teams, Digest or categories.
+**A provider connection is an identity on the Geld account** (`apps/hub/src/lib/providers`): GitHub, GitLab and Bitbucket under the dashboard's ids, so a connection made in either app is one connection.
+`providerClientFor` gives the `@geld/providers` client for one, its token read through Better Auth so it is decrypted and refreshed as the dashboard would.
+GitLab and Bitbucket are offered only where the server has their OAuth app, and GitLab is never asked for `openid`: the hub does not encrypt id tokens as the dashboard does.
+Not done yet: GitLab and Bitbucket pull requests are in no list, GitHub's screens still read through the app's own GitHub client, and the hub knows nothing of Geld's teams, Digest or categories.
 Each of those arrives as its own change.
 
 ## Diff syntax highlighting

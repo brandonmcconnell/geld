@@ -25,6 +25,7 @@ import { Route as ApiChangesRouteImport } from './routes/api/changes'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ProtectedOwnerIndexRouteImport } from './routes/_protected/$owner/index'
 import { Route as ProtectedSettingsIndexRouteImport } from './routes/_protected/settings/index'
+import { Route as ProtectedSettingsConnectionsRouteImport } from './routes/_protected/settings/connections'
 import { Route as ProtectedSettingsShortcutsRouteImport } from './routes/_protected/settings/shortcuts'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiPullsDiffRouteImport } from './routes/api/pulls/diff'
@@ -146,6 +147,12 @@ const ProtectedSettingsIndexRoute = ProtectedSettingsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ProtectedSettingsRoute,
 } as any)
+const ProtectedSettingsConnectionsRoute =
+  ProtectedSettingsConnectionsRouteImport.update({
+    id: '/connections',
+    path: '/connections',
+    getParentRoute: () => ProtectedSettingsRoute,
+  } as any)
 const ProtectedSettingsShortcutsRoute =
   ProtectedSettingsShortcutsRouteImport.update({
     id: '/shortcuts',
@@ -399,6 +406,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof ProtectedSettingsRouteWithChildren
   '/api/changes': typeof ApiChangesRoute
   '/api/health': typeof ApiHealthRoute
+  '/settings/connections': typeof ProtectedSettingsConnectionsRoute
   '/settings/shortcuts': typeof ProtectedSettingsShortcutsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/pulls/diff': typeof ApiPullsDiffRoute
@@ -456,6 +464,7 @@ export interface FileRoutesByTo {
   '/api/changes': typeof ApiChangesRoute
   '/api/health': typeof ApiHealthRoute
   '/': typeof ProtectedIndexRoute
+  '/settings/connections': typeof ProtectedSettingsConnectionsRoute
   '/settings/shortcuts': typeof ProtectedSettingsShortcutsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/pulls/diff': typeof ApiPullsDiffRoute
@@ -514,6 +523,7 @@ export interface FileRoutesById {
   '/api/changes': typeof ApiChangesRoute
   '/api/health': typeof ApiHealthRoute
   '/_protected/': typeof ProtectedIndexRoute
+  '/_protected/settings/connections': typeof ProtectedSettingsConnectionsRoute
   '/_protected/settings/shortcuts': typeof ProtectedSettingsShortcutsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/pulls/diff': typeof ApiPullsDiffRoute
@@ -574,6 +584,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/changes'
     | '/api/health'
+    | '/settings/connections'
     | '/settings/shortcuts'
     | '/api/auth/$'
     | '/api/pulls/diff'
@@ -631,6 +642,7 @@ export interface FileRouteTypes {
     | '/api/changes'
     | '/api/health'
     | '/'
+    | '/settings/connections'
     | '/settings/shortcuts'
     | '/api/auth/$'
     | '/api/pulls/diff'
@@ -688,6 +700,7 @@ export interface FileRouteTypes {
     | '/api/changes'
     | '/api/health'
     | '/_protected/'
+    | '/_protected/settings/connections'
     | '/_protected/settings/shortcuts'
     | '/api/auth/$'
     | '/api/pulls/diff'
@@ -860,6 +873,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/settings/'
       preLoaderRoute: typeof ProtectedSettingsIndexRouteImport
+      parentRoute: typeof ProtectedSettingsRoute
+    }
+    '/_protected/settings/connections': {
+      id: '/_protected/settings/connections'
+      path: '/connections'
+      fullPath: '/settings/connections'
+      preLoaderRoute: typeof ProtectedSettingsConnectionsRouteImport
       parentRoute: typeof ProtectedSettingsRoute
     }
     '/_protected/settings/shortcuts': {
@@ -1153,11 +1173,13 @@ declare module '@tanstack/react-router' {
 }
 
 interface ProtectedSettingsRouteChildren {
+  ProtectedSettingsConnectionsRoute: typeof ProtectedSettingsConnectionsRoute
   ProtectedSettingsShortcutsRoute: typeof ProtectedSettingsShortcutsRoute
   ProtectedSettingsIndexRoute: typeof ProtectedSettingsIndexRoute
 }
 
 const ProtectedSettingsRouteChildren: ProtectedSettingsRouteChildren = {
+  ProtectedSettingsConnectionsRoute: ProtectedSettingsConnectionsRoute,
   ProtectedSettingsShortcutsRoute: ProtectedSettingsShortcutsRoute,
   ProtectedSettingsIndexRoute: ProtectedSettingsIndexRoute,
 }
