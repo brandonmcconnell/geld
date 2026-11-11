@@ -1,4 +1,24 @@
-import { badgeGeometry, badgeKey } from './icon-badge';
+import { badgeGeometry, badgeKey, showIconBadge } from './icon-badge';
+
+const setIcon = vi.hoisted(() => vi.fn<(details: unknown) => Promise<void>>());
+vi.mock('wxt/browser', () => ({ browser: { action: { setIcon }, runtime: { getURL: (path: string) => `chrome-extension://test${path}` } } }));
+
+const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+describe('showIconBadge', () => {
+  it('paints a state again when the paint before failed, and only once more', async () => {
+    setIcon.mockRejectedValueOnce(new Error('No icon')).mockResolvedValue(undefined);
+    showIconBadge({ kind: 'none' });
+    await settle();
+    expect(setIcon).toHaveBeenCalledTimes(1);
+    showIconBadge({ kind: 'none' });
+    await settle();
+    expect(setIcon).toHaveBeenCalledTimes(2);
+    showIconBadge({ kind: 'none' });
+    await settle();
+    expect(setIcon).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe('badgeKey', () => {
   it('repaints a download only when its whole percent changes', () => {

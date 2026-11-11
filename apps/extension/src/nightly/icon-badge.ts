@@ -129,24 +129,20 @@ async function paint(badge: IconBadge): Promise<void> {
   painted = key;
 }
 
-/** Paints run one at a time and only the latest asked for is painted next, so a fast download never queues up frames. */
+/**
+ * Paints run one at a time and only the latest asked for is painted next, so a fast download never queues up frames.
+ * A paint that fails ends the run unrecorded, so the next request for that state tries again rather than this one looping.
+ */
 export function showIconBadge(badge: IconBadge): void {
   wanted = badge;
   if (draining) return;
   draining = true;
-  void drain();
+  void drain().catch(() => undefined);
 }
 
 async function drain(): Promise<void> {
   try {
-    while (badgeKey(wanted) !== painted) {
-      const next = wanted;
-      try {
-        await paint(next);
-      } catch {
-        painted = badgeKey(next);
-      }
-    }
+    while (badgeKey(wanted) !== painted) await paint(wanted);
   } finally {
     draining = false;
   }

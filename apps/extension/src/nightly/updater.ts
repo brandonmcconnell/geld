@@ -268,8 +268,9 @@ async function fail(reported: NightlyFailure): Promise<Failed> {
 /** The release names the zip's size, so the download's share is known even when the redirect's answer has no length. */
 async function readBody(response: Response, size: number, onShare: (share: number) => void): Promise<Uint8Array> {
   const total = size > 0 ? size : Number(response.headers.get('content-length'));
-  const reader = response.body?.getReader();
-  if (reader === undefined || !(total > 0)) return new Uint8Array(await response.arrayBuffer());
+  // `getReader` locks the body, after which `arrayBuffer` rejects: decide on the plain read first.
+  if (response.body === null || !(total > 0)) return new Uint8Array(await response.arrayBuffer());
+  const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let received = 0;
   for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
@@ -326,8 +327,10 @@ async function replace(
     return null;
   } catch (error) {
     const failure = { version, stillOn: previous.version, reason: message(error), at };
+    // The ring starts over for the undo, so it never stands still at the share the failed write reached.
+    showProgress(0);
     try {
-      await target.write(previous.files, [...new Set([...owned, ...nextPaths])]);
+      await target.write(previous.files, [...new Set([...owned, ...nextPaths])], (written, total) => showProgress(written / total));
       await patchStatus({ writing: null });
       return { ...failure, restored: true };
     } catch {
