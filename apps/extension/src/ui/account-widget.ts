@@ -208,12 +208,9 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
 
     const choice = sync.pendingChoice;
     if (choice !== null) {
-      const when = new Date(choice.remoteUpdatedAt).toLocaleString();
       promptHost.append(
         el('div', 'geld-account__prompt', [
-          el('p', 'geld-account__prompt-text', [
-            `Your GitHub account already has Geld settings (saved ${when}) that differ from this device's. Which should win?`,
-          ]),
+          el('p', 'geld-account__prompt-text', ["Your account already has Geld settings that differ from this device's. Which should win?"]),
           el('div', 'geld-account__prompt-actions', [
             button(['Use account'], 'geld-button--small geld-button--primary', () => void act('resolve-remote')),
             button(['Overwrite account'], 'geld-button--small', () => void act('resolve-local')),
