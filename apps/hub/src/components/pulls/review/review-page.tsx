@@ -1,3 +1,5 @@
+import { defaultMatcher } from "#/lib/geld/file-category";
+import { hiddenLabel, pullSignalsFrom } from "#/lib/geld/pull-signals";
 import { LayoutAlignBottomIcon, TextWrapIcon } from "@geld/hub-icons";
 import { LineCounts } from "@geld/hub-ui/components/detail-layout";
 import {
@@ -889,6 +891,8 @@ export const ReviewSidebar = memo(function ReviewSidebar({
 				onFileClick={revealFile}
 			/>
 
+			{isStreamingSummaries ? null : <LeftToReview files={sidebarFiles} />}
+
 			<div className="flex h-9 shrink-0 items-center gap-2 border-t-[0.5px] border-header-rule px-4 text-xs font-[450] text-muted-foreground">
 				{isStreamingSummaries ? (
 					<>
@@ -913,6 +917,27 @@ export const ReviewSidebar = memo(function ReviewSidebar({
 		</div>
 	);
 });
+
+/** What Geld's categories leave to review, when they set anything aside. */
+function LeftToReview({ files }: { files: readonly PullFileSummary[] }) {
+	const signals = useMemo(
+		() => pullSignalsFrom(files, defaultMatcher()),
+		[files],
+	);
+	const label = hiddenLabel(signals);
+	if (!label) return null;
+	return (
+		<div
+			data-testid="left-to-review"
+			className="flex h-9 shrink-0 items-center gap-1.5 border-t-[0.5px] border-header-rule px-4 text-xs font-[450] text-muted-foreground tabular-nums"
+		>
+			<span>{signals.essential.files} to review</span>
+			<span className="text-added">+{signals.essential.additions}</span>
+			<span className="text-removed">−{signals.essential.deletions}</span>
+			<span className="ml-auto">{label} set aside</span>
+		</div>
+	);
+}
 
 function ViewedProgress({
 	viewedFiles,

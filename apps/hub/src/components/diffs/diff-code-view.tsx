@@ -1,3 +1,4 @@
+import { defaultFileCategory } from "#/lib/geld/file-category";
 import type { MentionConfig } from "@geld/hub-ui/components/markdown-editor";
 import { cn } from "@geld/hub-ui/lib/utils";
 import type {
@@ -277,7 +278,8 @@ function DiffCodeViewSurface({
 			type: "diff",
 			fileDiff: file.fileDiff,
 			annotations,
-			collapsed: file.status === "removed",
+			collapsed:
+				file.status === "removed" || defaultFileCategory(file.path) !== null,
 			version: 0,
 		};
 	};

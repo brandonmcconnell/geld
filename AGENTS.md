@@ -2340,6 +2340,8 @@ Bitbucket lists across workspaces only by author, so its review requests are not
 The reader's settings and a repository's `.github/geld.yml` are not read there yet.
 **The pull request page carries a Digest** (`PullDigestSection`, `src/lib/geld/digest.ts`): threads resolved, each review bot's verdict and one line per thread, built in the browser by `@geld/review`'s `buildMeta` from what the page already loaded (`digestInputFrom`), so it asks for nothing more and stores nothing.
 The browser imports `@geld/core` and `@geld/review` by module (`@geld/review/build`), never their index, which would bring the settings parser and the AI client into the bundle.
+**In the files view a file in one of Geld's categories starts collapsed and names its category** (`defaultFileCategory`, `src/lib/geld/file-category.ts`, read in `diff-code-view.tsx` and `DiffFileHeader`), and the sidebar's foot says what is left to review (`LeftToReview`).
+Such a file is never removed or moved: the diff is a stream shown in its order.
 Not done yet: GitHub's screens still read through the app's own GitHub client, another provider's pull request cannot be opened in the hub, and the hub knows nothing of Geld's teams.
 Each of those arrives as its own change.
 

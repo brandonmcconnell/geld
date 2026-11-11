@@ -1,3 +1,4 @@
+import { defaultFileCategory } from "#/lib/geld/file-category";
 import {
 	CheckIcon,
 	ChevronDownIcon,
@@ -73,6 +74,7 @@ export const DiffFileHeader = memo(function DiffFileHeader({
 	const { name, dir } = splitPath(file.path);
 	const moved = file.previousPath ? splitPath(file.previousPath) : null;
 	const change = CHANGE_LABEL[file.status];
+	const category = defaultFileCategory(file.path);
 	const emptyLabel =
 		file.fileDiff.hunks.length > 0
 			? null
@@ -154,6 +156,14 @@ export const DiffFileHeader = memo(function DiffFileHeader({
 					)}
 				>
 					{change.label}
+				</span>
+			) : null}
+			{category ? (
+				<span
+					title={`Set aside by Geld: ${category}`}
+					className="flex h-[18px] shrink-0 items-center rounded-full border-[0.5px] border-dashed border-rule px-1.5 text-[11px] font-medium text-muted-foreground"
+				>
+					{category}
 				</span>
 			) : null}
 			<button

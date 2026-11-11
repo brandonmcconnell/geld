@@ -26,3 +26,12 @@ It is built in the browser by `buildMeta` from `@geld/review`, the code the exte
 - A review's own words and the commit it reviewed are not loaded by the page, so a bot that reports only in a review body is read from its threads and its check alone.
 - Whether a thread is outdated is not known here, so an outdated thread counts as open until it is resolved.
 - There is no AI summary, previews row or reports row yet.
+
+## Categories, in the files view
+
+In the files view a file that falls in one of Geld's categories starts collapsed, as a deleted file does, and its header names the category in a dashed pill ("Tests"). Opening it is one click, and it is never removed from the list or the tree. The sidebar's foot says what is left: "2 to review +44 −17" and "1 test set aside" (`LeftToReview`, the same split a list row shows).
+
+`defaultFileCategory` (`src/lib/geld/file-category.ts`) decides by path with `@geld/core`'s matcher under the default settings, in the browser.
+
+- Files set aside are not grouped at the end of the diff or the tree: the diff arrives as a stream and is shown in its order.
+- Marking them viewed for the reader, which the extension can do, is not here.
