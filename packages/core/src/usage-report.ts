@@ -25,8 +25,13 @@ export type UpdateMode = 'manual' | 'automatic';
 /** How a nightly build got its new files: written through folder access, the downloads API, or by another profile sharing the folder. */
 export type UpdateMethod = 'folder' | 'downloads' | 'shared';
 
+/** What holds up a build Geld found but could not install: its folder is not connected, or the browser has not let it write there. */
+export type UpdateBlock = 'folder' | 'permission';
+
 export interface NightlyUsage {
   readonly mode: UpdateMode;
+  /** Present only while a newer build is waiting on it. */
+  readonly blocked?: UpdateBlock;
 }
 
 /** Every event says which version was running when it was noted, so one queued across an update keeps its own (the payload's when absent). */
@@ -78,6 +83,15 @@ const BROWSERS: readonly UsageBrowser[] = ['chrome', 'edge', 'firefox', 'safari'
 const CHANNELS: readonly UsageChannel[] = ['stable', 'nightly'];
 const MODES: readonly UpdateMode[] = ['manual', 'automatic'];
 const METHODS: readonly UpdateMethod[] = ['folder', 'downloads', 'shared'];
+const BLOCKS: readonly UpdateBlock[] = ['folder', 'permission'];
+
+function parseNightlyUsage(value: unknown): NightlyUsage | null {
+  if (!isRecord(value)) return null;
+  const mode = oneOf(MODES, value.mode);
+  if (mode === undefined) return null;
+  const blocked = oneOf(BLOCKS, value.blocked);
+  return { mode, ...(blocked === undefined ? {} : { blocked }) };
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -139,8 +153,8 @@ export function parseUsagePayload(value: unknown): UsagePayload | null {
   if (!Array.isArray(value.events) || value.events.length === 0 || value.events.length > MAX_USAGE_EVENTS) return null;
   const events = value.events.map(parseEvent);
   if (!events.every((event): event is UsageEvent => event !== null)) return null;
-  const mode = isRecord(value.selfUpdate) ? oneOf(MODES, value.selfUpdate.mode) : undefined;
-  return { v: USAGE_PAYLOAD_VERSION, version: value.version, channel, browser, ...(mode === undefined ? {} : { selfUpdate: { mode } }), events };
+  const selfUpdate = parseNightlyUsage(value.selfUpdate);
+  return { v: USAGE_PAYLOAD_VERSION, version: value.version, channel, browser, ...(selfUpdate === null ? {} : { selfUpdate }), events };
 }
 
 /** How far an update moved: the first part that changed, `downgrade` going back (a nightly roll back), `same` for a reinstall of one version. */
@@ -205,7 +219,7 @@ export function usageCaptures(payload: UsagePayload, receivedAt: number): UsageC
       build,
       channel: payload.channel,
       browser: payload.browser,
-      ...(payload.selfUpdate === undefined ? {} : { nightly_mode: payload.selfUpdate.mode }),
+      ...(payload.selfUpdate === undefined ? {} : { nightly_mode: payload.selfUpdate.mode, nightly_blocked: payload.selfUpdate.blocked ?? 'none' }),
     };
     switch (event.name) {
       case 'extension_installed':

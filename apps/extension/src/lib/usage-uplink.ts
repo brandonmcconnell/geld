@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
-import type { GeldSettings, UpdateMethod, UpdateMode, UsageBrowser, UsageCounter, UsageEvent, UsagePayload } from '@geld/core';
+import type { GeldSettings, UpdateBlock, UpdateMethod, UpdateMode, UsageBrowser, UsageCounter, UsageEvent, UsagePayload } from '@geld/core';
 import { MAX_USAGE_EVENTS, USAGE_COUNTER_CAP, USAGE_MAX_AGE_MS, USAGE_PAYLOAD_VERSION, usagePeriods, usageSettingsOf } from '@geld/core';
 import { recordDiagnostic } from './diagnostics';
 import { settingsItem } from './storage';
@@ -28,6 +28,7 @@ const RECONCILE_DELAY_MS = 5_000;
 export interface NightlyUsageInfo {
   readonly mode: UpdateMode;
   readonly install: { readonly method: UpdateMethod; readonly rollback?: true; readonly trigger?: UpdateMode } | null;
+  readonly blocked: UpdateBlock | null;
 }
 
 /** A self-updating nightly build says how it came to run `version`; store builds pass none. */
@@ -196,7 +197,7 @@ async function flush(nightly: NightlyUsageSource | null): Promise<void> {
     version: currentVersion(),
     channel: __GELD_CHANNEL__,
     browser: usageBrowser(),
-    ...(info === null ? {} : { selfUpdate: { mode: info.mode } }),
+    ...(info === null ? {} : { selfUpdate: { mode: info.mode, ...(info.blocked === null ? {} : { blocked: info.blocked }) } }),
     events: queue,
   };
   const outcome = await send(payload);

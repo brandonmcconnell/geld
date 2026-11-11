@@ -4,7 +4,7 @@ import { loadBackup, loadFolderHandle, saveBackup } from './handle-store';
 import type { BuildBackup } from './handle-store';
 import { isNightlyCheckMessage, isNightlyInstallMessage, isNightlyManageMessage, isNightlyRollbackMessage } from './messages';
 import { manageUrl } from './conflicts';
-import type { NightlyInstallResult } from './messages';
+import type { InstallNeed, NightlyInstallResult } from './messages';
 import { buildOf, buildProblem, claimLock, compareVersions, LATEST_RELEASE_PAGE, LATEST_RELEASE_URL, manifestTextOf, parseChecksum, parseRelease, releaseLock, tagFromReleaseUrl } from '@geld/core/nightly';
 import type { NightlyBrowser, NightlyRelease, ZipEntry } from '@geld/core/nightly';
 import { BACKGROUND_CHECK_MINUTES, limitedUntil, navigationDue, needsDetails } from './schedule';
@@ -111,10 +111,15 @@ async function mode(): Promise<UpdateMode> {
   return (await nightlyPrefsItem.getValue()).mode;
 }
 
-/** What the usage statistics say about this build: its Update setting, and how it came to be running `version` when it wrote that build itself. */
-export async function nightlyUsage(version: string): Promise<{ readonly mode: UpdateMode; readonly install: NightlyInstall | null }> {
-  const install = (await readNightlyStatus()).lastInstall;
-  return { mode: await mode(), install: install?.to === version ? install : null };
+/**
+ * What the usage statistics say about this build: its Update setting, how it came to be running `version` when it
+ * wrote that build itself, and what holds up a newer build it found.
+ */
+export async function nightlyUsage(version: string): Promise<{ readonly mode: UpdateMode; readonly install: NightlyInstall | null; readonly blocked: InstallNeed | null }> {
+  const status = await readNightlyStatus();
+  const install = status.lastInstall;
+  const blocked = status.blocked !== null && isNewer(status) && status.latest?.version === status.blocked.version ? status.blocked.need : null;
+  return { mode: await mode(), install: install?.to === version ? install : null, blocked };
 }
 
 /** Automatic leaves alone a build the reader rolled back from, and one whose write already broke off. */
