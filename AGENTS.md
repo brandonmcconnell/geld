@@ -1733,9 +1733,18 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   **What the bar gains and loses as it sticks slides rather than blinks** (`ui/bar-motion.ts`, the stylesheet's "What a sticky header gains" block, Nov 2026).
   On the way in it is CSS alone, `@starting-style` keyed on where things stand: GitHub's tab switcher, its divider and the state label (or Geld's pill) slide in from the left, and the review group (any `data-geld-place`) and the counts riding the bar rise from under it, as the tab row they came from scrolls up under the bar.
   Where `interpolate-size` is supported (Chrome) the left parts also grow from no width, so the title glides over rather than jumping the ~130px they take, which needs them `min-width: 0`, `flex-shrink: 0` and clipped on the x axis while they grow.
+  Their content is held at the right edge (`justify-content: flex-end`, which overflows at the start), so they read as sliding out from behind the left edge, and the label's 8px gap to the title (GitHub's metadata row) starts as a negative end margin.
   On the way out they are gone at once (React removes GitHub's parts, Geld moves its own back to the tab row), so a ghost stays in the old place and plays a `to`-only animation from wherever it stands: `ghostBarDepartures` in the controller's pre-paint callback for GitHub's parts, walking the records backwards since React drops the divider before the switcher, `leaveGhost` before `place` and `syncStandInTabs` move the group or counts out of a sticky place and before `syncStatusPills` drops a stale pill in the bar.
-  A ghost is an inert copy marked `data-geld-ui`, stripped of every attribute code finds live controls by (`id`, `data-testid`, the stand-in and pill marks): a ghost tab switcher still carrying its test id read as the bar stuck and pulled the counts straight back in.
-  It removes itself on `animationend`, or after 320 ms.
+  A ghost leaving down is the copy itself among its siblings, so every rule spacing it still holds: the counts' ghost keeps `data-geld-counts-stand-in`, since its 8px before "Merge status" is keyed on it and, the actions being right-aligned, losing it threw both ghosts 8px right as they left.
+  Code that finds the stand-in uses `LIVE_COUNTS_STAND_IN`, which skips ghosts.
+  A ghost with content leaving left (the switcher, the label or pill) is the copy whole inside a box of Geld's that narrows to nothing with the copy at its right edge, so it slides out behind the box's left edge;
+  narrowing the copy itself cut it across its own words and caret.
+  The empty divider is its own ghost, since GitHub spaces it as the bar's child and a box would change its margins, and a left ghost takes its parent's gap along (`--geld-ghost-gap`) so the title never closes up short and snaps at the end.
+  Every other mark code finds live controls by goes (`id`, `data-testid`, the pill mark): a ghost tab switcher still carrying its test id read as the bar stuck and pulled the counts straight back in.
+  A ghost is inert, marked `data-geld-ui`, `will-change: translate, opacity`, and removes itself on `animationend`, or after 320 ms.
+  The bar's slot counts as the `header` region (`regions.ts`), so its sticking runs the header pass only: as `unknown` it ran the full pass about 60 ms in, mid-slide, and the left's widths are layout on the main thread.
+  The right side moves only translate and opacity, which the compositor runs.
+  The live parts carry no `will-change`: the browser promotes a running transform or opacity transition by itself, and a permanent layer softens their text.
   No ghost is made where `@starting-style` is missing or the reader prefers reduced motion, and the stylesheet's rules sit inside `prefers-reduced-motion: no-preference`.
   The minifier turned an `animation` shorthand with no name into `animation: none`, so the ghosts' timing is written as longhands.
   On a narrow header (`@container (width <= 768px)`) the tab row's counts are hidden as the conversation's are, the copy beside the status label shows them, and the group stands in the bar.

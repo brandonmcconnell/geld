@@ -1,4 +1,4 @@
-import { OWN_UI_ATTRIBUTE } from '../dom';
+import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
 import { PERSISTENT_BAR_INNER } from '../persistent-bar';
 
 /**
@@ -11,8 +11,11 @@ export type GhostDirection = 'down' | 'left';
 const ATTR_GHOST = 'data-geld-ghost';
 /** Past the stylesheet's exit animation: the ghost goes then even when no `animationend` came (a hidden tab, a style change). */
 const GHOST_MS = 320;
-/** Attributes Geld's and GitHub's code find live controls by, which a ghost must not answer to: a ghost tab switcher read as the bar still stuck. */
-const LIVE_MARKS = ['id', 'data-testid', 'data-geld-counts-stand-in', 'data-geld-status-pill', 'data-geld-focus', 'aria-labelledby', 'aria-describedby', 'aria-controls'];
+/**
+ * Attributes Geld's and GitHub's code find live controls by, which a ghost must not answer to: a ghost tab switcher read
+ * as the bar still stuck. The counts' stand-in mark stays, for the spacing the stylesheet keys on it; code skips ghosts.
+ */
+const LIVE_MARKS = ['id', 'data-testid', 'data-geld-status-pill', 'data-geld-focus', 'aria-labelledby', 'aria-describedby', 'aria-controls'];
 
 /** GitHub's parts the bar shows only while it stands for the page header (its tabs scrolled under it). */
 const BAR_LEFT_PARTS = '[data-testid="mini-header-tab-switcher-trigger"], [class*="navigationDivider"]';
@@ -28,32 +31,51 @@ export function isGhost(element: Element): boolean {
   return element.hasAttribute(ATTR_GHOST);
 }
 
-function ghostOf(element: Element, direction: GhostDirection): HTMLElement | null {
+function inertCopy(element: Element): HTMLElement | null {
   const copy = element.cloneNode(true);
   if (!(copy instanceof HTMLElement)) return null;
   for (const node of [copy, ...copy.querySelectorAll('*')]) for (const name of LIVE_MARKS) node.removeAttribute(name);
   for (const node of copy.querySelectorAll('tool-tip, [popover], [role="tooltip"]')) node.remove();
-  copy.setAttribute(ATTR_GHOST, direction);
-  copy.setAttribute(OWN_UI_ATTRIBUTE, '');
-  copy.setAttribute('aria-hidden', 'true');
-  copy.inert = true;
+  return copy;
+}
+
+/**
+ * A ghost is the copy itself, in its place among its siblings so every rule spacing it still holds, except one with
+ * content leaving left: that copy goes whole inside a box of Geld's that narrows to nothing with the copy held at its right
+ * edge, so it slides out behind the box's left edge as the parts after it close up, rather than being cut by its own edge.
+ * An empty part (the divider) has nothing to cut, and GitHub spaces it as the bar's own child, which a box would undo.
+ * The parent's gap goes with a left ghost (`--geld-ghost-gap`), or the title would close up short and snap at the end.
+ */
+function ghostOf(element: Element, direction: GhostDirection, parent: Element): HTMLElement | null {
+  const copy = inertCopy(element);
+  if (copy === null) return null;
+  const ghost = direction === 'left' && element.childNodes.length > 0 ? createElement('span', {}, [copy]) : copy;
+  if (direction === 'left') {
+    const gap = Number.parseFloat(getComputedStyle(parent).columnGap);
+    if (Number.isFinite(gap) && gap > 0) ghost.style.setProperty('--geld-ghost-gap', `${gap}px`);
+  }
+  ghost.setAttribute(ATTR_GHOST, direction);
+  ghost.setAttribute(OWN_UI_ATTRIBUTE, '');
+  ghost.setAttribute('aria-hidden', 'true');
+  ghost.inert = true;
   let done = false;
   const remove = (): void => {
     if (done) return;
     done = true;
-    copy.remove();
+    ghost.remove();
   };
-  copy.addEventListener('animationend', (event) => {
-    if (event.target === copy) remove();
+  ghost.addEventListener('animationend', (event) => {
+    if (event.target === ghost) remove();
   });
   window.setTimeout(remove, GHOST_MS);
-  return copy;
+  return ghost;
 }
 
 /** Leave a copy of `element` where it stands, sliding out, before the caller moves or removes it. */
 export function leaveGhost(element: HTMLElement, direction: GhostDirection): void {
-  if (!element.isConnected || !motionAllowed()) return;
-  const ghost = ghostOf(element, direction);
+  const parent = element.parentElement;
+  if (parent === null || !element.isConnected || !motionAllowed()) return;
+  const ghost = ghostOf(element, direction, parent);
   if (ghost !== null) element.before(ghost);
 }
 
@@ -76,7 +98,7 @@ export function ghostBarDepartures(records: readonly MutationRecord[]): void {
     const ghosts: HTMLElement[] = [];
     for (const node of record.removedNodes) {
       if (!(node instanceof HTMLElement) || !node.matches(parts) || node.hasAttribute('data-geld-status-hidden') || isGhost(node)) continue;
-      const ghost = ghostOf(node, 'left');
+      const ghost = ghostOf(node, 'left', parent);
       if (ghost !== null) ghosts.push(ghost);
     }
     if (ghosts.length === 0) continue;

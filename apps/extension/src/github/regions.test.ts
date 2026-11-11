@@ -29,4 +29,10 @@ describe('regionsOf', () => {
     document.body.innerHTML = `<div class="Layout-sidebar"><div id="reviewers"></div></div>`;
     expect([...regionsOf(hiddenToggled(byId('reviewers')))]).toEqual(['conversation']);
   });
+
+  it("counts GitHub's bar over the new pull request page as header, so its sticking runs no full pass", () => {
+    document.body.innerHTML = `
+      <div data-testid="diff-comparison-viewer-sticky-header-slot"><div class="miniHeaderInner__x"><button id="switcher" type="button"></button></div></div>`;
+    expect([...regionsOf(hiddenToggled(byId('switcher')))]).toEqual(['header']);
+  });
 });

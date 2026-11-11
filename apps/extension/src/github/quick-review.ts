@@ -5,7 +5,7 @@ export { pullPathOf, timelineCommentRequest };
 import { loadWriter, prefetchWriter, writerNow } from './comment-writer';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import type { HeaderStatGroup } from './header-stats';
-import { ATTR_COUNTS_STAND_IN, countsSkeletonStandIn, countsWrapperBusy, isCountsStandIn } from './header-stats';
+import { countsSkeletonStandIn, countsWrapperBusy, isCountsStandIn, LIVE_COUNTS_STAND_IN } from './header-stats';
 import { persistentBarActions, persistentBarStuck } from './persistent-bar';
 import { detectHeadSha } from './head-sha';
 import type { MergeActions, MergeBox, MergeMethod, StatusAction } from './merge-actions';
@@ -592,7 +592,7 @@ function stickyPlace(state: Mounted): { readonly place: Place; readonly near: HT
   // GitHub or Geld just replaced (the skeleton turning into counts) waits for the pass, so the group never jumps meanwhile.
   const hidden = state.anchor !== null && state.anchor.isConnected && !isShown(state.anchor);
   if (bar !== null && (state.anchor === null || hidden || persistentBarStuck())) {
-    const counts = bar.querySelector<HTMLElement>(`:scope > [${ATTR_COUNTS_STAND_IN}]`);
+    const counts = bar.querySelector<HTMLElement>(`:scope > ${LIVE_COUNTS_STAND_IN}`);
     if (counts !== null) return { place: 'bar', near: counts, put: (root) => counts.insertAdjacentElement('beforebegin', root), placed: (root) => counts.previousElementSibling === root };
     return { place: 'bar', near: bar, put: (root) => bar.prepend(root), placed: (root) => bar.firstElementChild === root };
   }
