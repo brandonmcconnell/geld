@@ -53,6 +53,8 @@ let showMarkdown = false;
 let previewFrame: number | null = null;
 let context: FeedbackContext = { environment: null, where: null, page: null, diagnostics: null };
 let visibility: RepoVisibility = 'unknown';
+let loadingContext = true;
+let contextLoad = 0;
 const choice: Record<ContextKey, boolean> = { environment: true, where: true, page: false, diagnostics: query.get('diagnostics') === '1' };
 const tabParam = Number(query.get('tab') ?? NaN);
 let openingTab: number | null = Number.isInteger(tabParam) && tabParam >= 0 ? tabParam : null;
@@ -173,7 +175,7 @@ function renderAccount(): void {
   titleInput.readOnly = sending;
   textInput.readOnly = sending;
   for (const radio of kinds.querySelectorAll('input')) radio.disabled = sending;
-  consent.disabled = !ready || sending;
+  consent.disabled = !ready || sending || loadingContext;
   if (!ready) consent.checked = false;
   consentWords.textContent = ready
     ? `I understand this opens a public issue on ${FEEDBACK_REPO} from my GitHub account, @${account?.login ?? ''}, with what I wrote and what I ticked above.`
@@ -189,6 +191,7 @@ function blocker(): string | null {
   if (draft.text.trim() === '') return 'Details are required.';
   if (account === null) return 'Sign in with GitHub to send it.';
   if (account.auth !== 'app') return 'Sign in with GitHub again to send it.';
+  if (loadingContext) return 'Geld is still reading the page. Try again in a moment.';
   if (!consent.checked) return 'Tick the box above to send it.';
   const over = feedbackIssue(draft, context, currentChoice()).overBy;
   if (over > 0) return `That is ${over.toLocaleString()} characters more than one GitHub issue can hold. Shorten the details to send it.`;
@@ -327,7 +330,7 @@ async function pageOfTab(hosts: readonly string[]): Promise<URL | null> {
   }
 }
 
-async function gatherContext(): Promise<FeedbackContext> {
+async function gatherContext(): Promise<FeedbackContext & { readonly visibility: RepoVisibility }> {
   const manifest = browser.runtime.getManifest();
   const settings = await settingsItem.getValue();
   const hosts = allHosts(settings);
@@ -335,8 +338,9 @@ async function gatherContext(): Promise<FeedbackContext> {
   const browserWords = describeBrowser(navigator.userAgent, navigator.platform);
   const environment = [`${manifest.version}${named}`, browserWords].filter((part) => part !== '').join(' · ');
   const [page, events, perf] = await Promise.all([pageOfTab(hosts), readDiagnostics(), collectTabPerf(hosts)]);
-  visibility = page === null ? 'unknown' : await repoVisibility(page);
+  const seen: RepoVisibility = page === null ? 'unknown' : await repoVisibility(page);
   return {
+    visibility: seen,
     environment,
     where: page === null ? null : whereWords(page),
     page: page === null ? null : `${page.origin}${page.pathname}${page.search}`,
@@ -363,11 +367,21 @@ async function start(): Promise<void> {
 
 /** The page's context, with its address ticked by default only when its repository is public. */
 async function loadContext(): Promise<void> {
-  context = await gatherContext();
-  choice.page = visibility === 'public';
+  // Consent waits for the context: what it agrees to may still change while the visibility check runs (up to 5 s).
+  const load = ++contextLoad;
+  loadingContext = true;
+  consent.checked = false;
+  renderAccount();
+  const { visibility: seen, ...gathered } = await gatherContext();
+  // A later opening started meanwhile: its page is the one shown, whichever answers first.
+  if (load !== contextLoad) return;
+  context = gathered;
+  visibility = seen;
+  choice.page = seen === 'public';
+  loadingContext = false;
   renderChoices();
   renderPreview();
-  renderSend();
+  renderAccount();
 }
 
 void start();
