@@ -28,6 +28,7 @@ import { Route as ProtectedSettingsIndexRouteImport } from './routes/_protected/
 import { Route as ProtectedSettingsAiRouteImport } from './routes/_protected/settings/ai'
 import { Route as ProtectedSettingsConnectionsRouteImport } from './routes/_protected/settings/connections'
 import { Route as ProtectedSettingsShortcutsRouteImport } from './routes/_protected/settings/shortcuts'
+import { Route as ProtectedSettingsTeamsRouteImport } from './routes/_protected/settings/teams'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiPullsDiffRouteImport } from './routes/api/pulls/diff'
 import { Route as ApiWebhooksGithubRouteImport } from './routes/api/webhooks/github'
@@ -165,6 +166,11 @@ const ProtectedSettingsShortcutsRoute =
     path: '/shortcuts',
     getParentRoute: () => ProtectedSettingsRoute,
   } as any)
+const ProtectedSettingsTeamsRoute = ProtectedSettingsTeamsRouteImport.update({
+  id: '/teams',
+  path: '/teams',
+  getParentRoute: () => ProtectedSettingsRoute,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -415,6 +421,7 @@ export interface FileRoutesByFullPath {
   '/settings/ai': typeof ProtectedSettingsAiRoute
   '/settings/connections': typeof ProtectedSettingsConnectionsRoute
   '/settings/shortcuts': typeof ProtectedSettingsShortcutsRoute
+  '/settings/teams': typeof ProtectedSettingsTeamsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/pulls/diff': typeof ApiPullsDiffRoute
   '/api/webhooks/github': typeof ApiWebhooksGithubRoute
@@ -474,6 +481,7 @@ export interface FileRoutesByTo {
   '/settings/ai': typeof ProtectedSettingsAiRoute
   '/settings/connections': typeof ProtectedSettingsConnectionsRoute
   '/settings/shortcuts': typeof ProtectedSettingsShortcutsRoute
+  '/settings/teams': typeof ProtectedSettingsTeamsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/pulls/diff': typeof ApiPullsDiffRoute
   '/api/webhooks/github': typeof ApiWebhooksGithubRoute
@@ -534,6 +542,7 @@ export interface FileRoutesById {
   '/_protected/settings/ai': typeof ProtectedSettingsAiRoute
   '/_protected/settings/connections': typeof ProtectedSettingsConnectionsRoute
   '/_protected/settings/shortcuts': typeof ProtectedSettingsShortcutsRoute
+  '/_protected/settings/teams': typeof ProtectedSettingsTeamsRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/pulls/diff': typeof ApiPullsDiffRoute
   '/api/webhooks/github': typeof ApiWebhooksGithubRoute
@@ -596,6 +605,7 @@ export interface FileRouteTypes {
     | '/settings/ai'
     | '/settings/connections'
     | '/settings/shortcuts'
+    | '/settings/teams'
     | '/api/auth/$'
     | '/api/pulls/diff'
     | '/api/webhooks/github'
@@ -655,6 +665,7 @@ export interface FileRouteTypes {
     | '/settings/ai'
     | '/settings/connections'
     | '/settings/shortcuts'
+    | '/settings/teams'
     | '/api/auth/$'
     | '/api/pulls/diff'
     | '/api/webhooks/github'
@@ -714,6 +725,7 @@ export interface FileRouteTypes {
     | '/_protected/settings/ai'
     | '/_protected/settings/connections'
     | '/_protected/settings/shortcuts'
+    | '/_protected/settings/teams'
     | '/api/auth/$'
     | '/api/pulls/diff'
     | '/api/webhooks/github'
@@ -906,6 +918,13 @@ declare module '@tanstack/react-router' {
       path: '/shortcuts'
       fullPath: '/settings/shortcuts'
       preLoaderRoute: typeof ProtectedSettingsShortcutsRouteImport
+      parentRoute: typeof ProtectedSettingsRoute
+    }
+    '/_protected/settings/teams': {
+      id: '/_protected/settings/teams'
+      path: '/teams'
+      fullPath: '/settings/teams'
+      preLoaderRoute: typeof ProtectedSettingsTeamsRouteImport
       parentRoute: typeof ProtectedSettingsRoute
     }
     '/api/auth/$': {
@@ -1195,6 +1214,7 @@ interface ProtectedSettingsRouteChildren {
   ProtectedSettingsAiRoute: typeof ProtectedSettingsAiRoute
   ProtectedSettingsConnectionsRoute: typeof ProtectedSettingsConnectionsRoute
   ProtectedSettingsShortcutsRoute: typeof ProtectedSettingsShortcutsRoute
+  ProtectedSettingsTeamsRoute: typeof ProtectedSettingsTeamsRoute
   ProtectedSettingsIndexRoute: typeof ProtectedSettingsIndexRoute
 }
 
@@ -1202,6 +1222,7 @@ const ProtectedSettingsRouteChildren: ProtectedSettingsRouteChildren = {
   ProtectedSettingsAiRoute: ProtectedSettingsAiRoute,
   ProtectedSettingsConnectionsRoute: ProtectedSettingsConnectionsRoute,
   ProtectedSettingsShortcutsRoute: ProtectedSettingsShortcutsRoute,
+  ProtectedSettingsTeamsRoute: ProtectedSettingsTeamsRoute,
   ProtectedSettingsIndexRoute: ProtectedSettingsIndexRoute,
 }
 
