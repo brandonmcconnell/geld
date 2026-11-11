@@ -6,11 +6,10 @@ import { accountItem } from '../../src/lib/account';
 import { formatDiagnostics, readDiagnostics } from '../../src/lib/diagnostics';
 import { installErrorCapture } from '../../src/lib/error-capture';
 import type { ContextChoice, ContextKey, FeedbackContext, FeedbackDraft } from '../../src/lib/feedback';
-import { draftIsEmpty, EMPTY_DRAFT, FEEDBACK_KINDS, FEEDBACK_REPO, feedbackIssue, namedPage, parseDraft } from '../../src/lib/feedback';
+import { draftIsEmpty, EMPTY_DRAFT, FEEDBACK_KINDS, FEEDBACK_REPO, feedbackIssue, parseDraft, reposNamedIn } from '../../src/lib/feedback';
 import type { FeedbackOpenMessage, FeedbackSubmitMessage } from '../../src/lib/messages';
 import { isFeedbackOpenMessage, isFeedbackSubmitResponse } from '../../src/lib/messages';
 import { collectTabPerf } from '../../src/lib/perf-report';
-import type { RepoVisibility } from '../../src/lib/repo-visibility';
 import { repoVisibility } from '../../src/lib/repo-visibility';
 import { settingsItem } from '../../src/lib/storage';
 import { mountAccountWidget } from '../../src/ui/account-widget';
@@ -18,7 +17,9 @@ import { polyfillCornerShape } from '../../src/ui/corner-shape';
 import { describeBrowser, whereWords } from '../../src/ui/feedback-link';
 import { requireElement } from '../../src/ui/switch';
 import { renderIssueMarkdown } from '../../src/ui/issue-markdown';
-import { providerLabel } from '../../src/lib/obfuscate-repos';
+import { providerLabel } from '../../src/lib/git-provider';
+import { svgFromString } from '../../src/github/dom';
+import { ICON_ALERT } from '../../src/github/ui/icons';
 
 installErrorCapture('options');
 polyfillCornerShape();
@@ -54,10 +55,13 @@ let showMarkdown = false;
 let previewFrame: number | null = null;
 const EMPTY_CONTEXT: FeedbackContext = { environment: null, where: null, page: null, diagnostics: null, provider: null };
 let context: FeedbackContext = EMPTY_CONTEXT;
-let visibility: RepoVisibility = 'unknown';
+/** Whether every repository the diagnostics name is public, as a stranger sees it (`repoVisibility`). */
+let everyRepoPublic = false;
 let loadingContext = true;
 let contextLoad = 0;
-const choice: Record<ContextKey, boolean> = { environment: true, where: true, page: false, diagnostics: true };
+const choice: Record<ContextKey, boolean> = { environment: true, where: true, diagnostics: false };
+/** Report with diagnostics asked for them outright, so they start ticked whatever the repositories. */
+let diagnosticsAsked = query.get('diagnostics') === '1';
 const tabParam = Number(query.get('tab') ?? NaN);
 let openingTab: number | null = Number.isInteger(tabParam) && tabParam >= 0 ? tabParam : null;
 
@@ -93,36 +97,27 @@ function renderKinds(): void {
 const CHOICE_LABELS: Readonly<Record<ContextKey, string>> = {
   environment: 'Geld and browser version',
   where: 'Page type',
-  page: 'Include page address',
   diagnostics: 'Diagnostics',
 };
 
-const PAGE_NOTES: Readonly<Record<RepoVisibility, string>> = {
-  public: 'This repository is public, so its address is included by default.',
-  private: 'This repository is private, so its address is left out by default.',
-  unknown: 'Geld could not tell whether this page is public, so its address is left out by default.',
-};
-
 function noteFor(key: ContextKey): string | null {
-  if (key === 'page') return PAGE_NOTES[visibility];
-  if (key === 'diagnostics')
-    return namedPage(context.page, true) === null
-      ? 'Diff fetches and timings for this session, with organizations, repositories and pull requests shown as [org], [repo] and [pr]. No page content or tokens.'
-      : 'Diff fetches and timings for this session, with organizations, repositories and pull requests shown as [org], [repo] and [pr]. Including the page address names this page\'s repository. No page content or tokens.';
-  return null;
+  if (key !== 'diagnostics') return null;
+  return everyRepoPublic
+    ? 'Diff fetches and timings for this session, and the page address. Every repository in it is public, so it is included by default. No page content or tokens.'
+    : 'Diff fetches and timings for this session, and the page address. Some repositories in it may be private, so it is left out by default. No page content or tokens.';
 }
 
-function shown(key: ContextKey): string | null {
+function shown(key: ContextKey): ReadonlyArray<Node | string> | null {
   const value = context[key];
   if (value === null) return null;
-  if (key !== 'diagnostics') return value;
+  if (key !== 'diagnostics') return [value];
   const lines = value.split('\n').length;
-  return `${lines} ${lines === 1 ? 'line' : 'lines'}`;
+  // The alert octicon rather than the ⚠ character, which some systems draw as a colour emoji.
+  return [`${lines} ${lines === 1 ? 'line' : 'lines'}, `, el('span', 'feedback__warning', [svgFromString(ICON_ALERT), 'includes the URL of every open Git tab'])];
 }
 
 function renderChoices(): void {
-  // Diagnostics before the page address here, though the issue lists the address first: the address decides how they read.
-  const keys: readonly ContextKey[] = ['environment', 'where', 'diagnostics', 'page'];
+  const keys: readonly ContextKey[] = ['environment', 'where', 'diagnostics'];
   choicesHost.replaceChildren(
     ...keys.flatMap((key) => {
       const value = shown(key);
@@ -135,7 +130,7 @@ function renderChoices(): void {
         renderPreview();
         renderSend();
       });
-      const words = el('span', 'feedback__choice-words', [el('span', 'feedback__choice-label', [CHOICE_LABELS[key]]), el('span', 'feedback__choice-value', [value])]);
+      const words = el('span', 'feedback__choice-words', [el('span', 'feedback__choice-label', [CHOICE_LABELS[key]]), el('span', 'feedback__choice-value', value)]);
       const note = noteFor(key);
       if (note !== null) words.append(el('span', 'geld-help', [note]));
       return [el('label', 'feedback__choice', [input, words])];
@@ -311,9 +306,9 @@ async function reopen(opening: FeedbackOpenMessage): Promise<void> {
   if (sending) return;
   // Opened from no GitHub tab (the options page, a non-GitHub page): the page it was opened from before says nothing now.
   openingTab = opening.tabId ?? null;
-  if (opening.diagnostics === true) choice.diagnostics = true;
-  // The page may be another one now, perhaps a private repository's: its address and the consent are asked for afresh.
-  choice.page = false;
+  if (opening.diagnostics === true) diagnosticsAsked = true;
+  // The page may be another one now, perhaps a private repository's: the diagnostics and the consent are asked for afresh.
+  choice.diagnostics = false;
   consent.checked = false;
   renderAccount();
   await loadContext();
@@ -339,7 +334,9 @@ async function pageOfTab(hosts: readonly string[]): Promise<URL | null> {
 }
 
 const PERF_WAIT_MS = 2000;
-const UNREAD_CONTEXT: FeedbackContext & { readonly visibility: RepoVisibility } = { ...EMPTY_CONTEXT, visibility: 'unknown' };
+const UNREAD_CONTEXT: FeedbackContext & { readonly everyRepoPublic: boolean } = { ...EMPTY_CONTEXT, everyRepoPublic: false };
+/** More repositories than this and the report is treated as holding a private one, rather than asking about each. */
+const MAX_VISIBILITY_CHECKS = 12;
 
 function within<T>(work: Promise<T>, ms: number, fallback: T): Promise<T> {
   return new Promise((resolve) => {
@@ -357,7 +354,7 @@ function within<T>(work: Promise<T>, ms: number, fallback: T): Promise<T> {
   });
 }
 
-async function gatherContext(): Promise<FeedbackContext & { readonly visibility: RepoVisibility }> {
+async function gatherContext(): Promise<FeedbackContext & { readonly everyRepoPublic: boolean }> {
   const manifest = browser.runtime.getManifest();
   const settings = await settingsItem.getValue();
   const hosts = allHosts(settings);
@@ -366,15 +363,18 @@ async function gatherContext(): Promise<FeedbackContext & { readonly visibility:
   const environment = [`${manifest.version}${named}`, browserWords].filter((part) => part !== '').join(' · ');
   // A frozen GitHub tab answers the timings request only when it wakes: the report goes without them after a short wait.
   const [page, events, perf] = await Promise.all([pageOfTab(hosts), readDiagnostics(), within(collectTabPerf(hosts), PERF_WAIT_MS, [])]);
-  const seen: RepoVisibility = page === null ? 'unknown' : await repoVisibility(page);
+  const diagnostics = [formatDiagnostics(events, manifest.version), ...perf].join('\n\n');
+  const repos = reposNamedIn(diagnostics);
+  const everyPublic =
+    repos.length <= MAX_VISIBILITY_CHECKS && (await Promise.all(repos.map((address) => repoVisibility(new URL(address))))).every((seen) => seen === 'public');
   return {
-    visibility: seen,
+    everyRepoPublic: everyPublic,
     environment,
     where: page === null ? null : whereWords(page),
     // The path alone: a public repository's search can still hold private words in its query.
     page: page === null ? null : `${page.origin}${page.pathname}`,
     provider: page === null ? null : providerLabel(page),
-    diagnostics: [formatDiagnostics(events, manifest.version), ...perf].join('\n\n'),
+    diagnostics,
   };
 }
 
@@ -395,7 +395,7 @@ async function start(): Promise<void> {
   await loadContext();
 }
 
-/** The page's context, with its address ticked by default only when its repository is public. */
+/** The page's context, with the diagnostics ticked by default only when every repository they name is public. */
 async function loadContext(): Promise<void> {
   // Consent waits for the context: what it agrees to may still change while the visibility check runs (up to 5 s).
   const load = ++contextLoad;
@@ -405,12 +405,12 @@ async function loadContext(): Promise<void> {
   for (const input of choicesHost.querySelectorAll('input')) input.disabled = true;
   renderAccount();
   // Nothing on this page may keep the form waiting: a context that cannot be read is an empty one.
-  const { visibility: seen, ...gathered } = await gatherContext().catch(() => UNREAD_CONTEXT);
+  const { everyRepoPublic: everyPublic, ...gathered } = await gatherContext().catch(() => UNREAD_CONTEXT);
   // A later opening started meanwhile: its page is the one shown, whichever answers first.
   if (load !== contextLoad) return;
   context = gathered;
-  visibility = seen;
-  choice.page = seen === 'public';
+  everyRepoPublic = everyPublic;
+  choice.diagnostics = everyPublic || diagnosticsAsked;
   loadingContext = false;
   renderChoices();
   renderPreview();

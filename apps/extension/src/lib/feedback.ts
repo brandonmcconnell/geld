@@ -1,6 +1,3 @@
-import { repoFromPathname } from '@geld/core';
-import type { NamedPage } from './obfuscate-repos';
-import { obfuscateRepos } from './obfuscate-repos';
 
 /** The repository feedback is opened on, as a public issue from the reader's own account. */
 export const FEEDBACK_REPO = 'brandonmcconnell/geld';
@@ -46,8 +43,8 @@ export interface FeedbackContext {
   readonly provider: string | null;
 }
 
-/** What the reader chooses to attach; the provider is not among them. */
-export type ContextKey = 'environment' | 'where' | 'page' | 'diagnostics';
+/** What the reader chooses to attach. The provider is not among them, and the page address goes with the diagnostics, which name it anyway. */
+export type ContextKey = 'environment' | 'where' | 'diagnostics';
 
 export type ContextChoice = Readonly<Record<ContextKey, boolean>>;
 
@@ -82,16 +79,22 @@ function diagnosticsBlock(report: string): string {
   return `<details><summary>Diagnostics</summary>\n\n${fence}text\n${report}\n${fence}\n\n</details>`;
 }
 
-/** The page whose address goes into the issue, as the report may name it; `null` when no address does. */
-export function namedPage(page: string | null, included: boolean): NamedPage | null {
-  if (!included || page === null) return null;
-  try {
-    const url = new URL(page);
-    const repo = repoFromPathname(url.pathname);
-    return repo === null ? null : { repo, host: url.hostname };
-  } catch {
-    return null;
+/** `host/owner/repo` as the log names a page (`tabSubject`), or `owner/repo` with no host in an older session's, then `#N` or `@sha`. */
+const NAMED_REPO = /(?<![\w./:#@-])(?:([A-Za-z0-9][A-Za-z0-9.-]*)\/)?([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)(?=#\d|@[0-9a-f]{7}|\s\(|\s|$)/gm;
+
+/**
+ * Every repository the report names, as its address on its host
+ * (`https://github.com/owner/repo`), each once: the form ticks the
+ * diagnostics by default only when all of them are public.
+ */
+export function reposNamedIn(report: string): readonly string[] {
+  const seen = new Set<string>();
+  for (const match of report.matchAll(NAMED_REPO)) {
+    const [, host, owner, repo] = match;
+    if (owner === undefined || repo === undefined) continue;
+    seen.add(`https://${(host ?? 'github.com').toLowerCase()}/${owner}/${repo}`);
   }
+  return [...seen];
 }
 
 const TRIM_NOTE = '(Trimmed to fit the issue. The oldest lines were dropped.)';
@@ -129,14 +132,13 @@ export function feedbackIssue(draft: FeedbackDraft, context: FeedbackContext, ch
   if (choice.environment && context.environment !== null) facts.push(`- **Geld:** ${inline(context.environment)}`);
   if (context.provider !== null) facts.push(`- **Git provider:** ${inline(context.provider)}`);
   if (choice.where && context.where !== null) facts.push(`- **Page type:** ${inline(context.where)}`);
-  if (choice.page && context.page !== null) facts.push(`- **Page address:** <${inline(context.page)}>`);
+  if (choice.diagnostics && context.page !== null) facts.push(`- **Page address:** <${inline(context.page)}>`);
   const footer = '<sub>Sent from the feedback form in the Geld extension.</sub>';
   const parts = draft.text.trim() === '' ? [] : [draft.text.trim()];
   if (facts.length > 0) parts.push(facts.join('\n'));
   const fixed = [...parts, footer].join('\n\n');
   if (choice.diagnostics && context.diagnostics !== null) {
-    const named = namedPage(context.page, choice.page);
-    const report = obfuscateRepos(context.diagnostics, named);
+    const report = context.diagnostics;
     const room = ISSUE_BODY_LIMIT - fixed.length - 4;
     const whole = diagnosticsBlock(report);
     const block = whole.length <= room ? whole : room > 200 ? diagnosticsBlock(trimReport(report, room)) : null;
