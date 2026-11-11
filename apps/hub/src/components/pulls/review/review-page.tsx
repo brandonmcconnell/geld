@@ -1,5 +1,9 @@
-import { defaultMatcher } from "#/lib/geld/file-category";
-import { hiddenLabel, pullSignalsFrom } from "#/lib/geld/pull-signals";
+import { useReaderMatcher } from "#/lib/geld/use-reader-settings";
+import {
+	hiddenLabel,
+	hiddenTotals,
+	pullSignalsFrom,
+} from "#/lib/geld/pull-signals";
 import { LayoutAlignBottomIcon, TextWrapIcon } from "@geld/hub-icons";
 import { LineCounts } from "@geld/hub-ui/components/detail-layout";
 import {
@@ -920,9 +924,10 @@ export const ReviewSidebar = memo(function ReviewSidebar({
 
 /** What Geld's categories leave to review, when they set anything aside. */
 function LeftToReview({ files }: { files: readonly PullFileSummary[] }) {
+	const matcher = useReaderMatcher();
 	const signals = useMemo(
-		() => pullSignalsFrom(files, defaultMatcher()),
-		[files],
+		() => pullSignalsFrom(files, matcher),
+		[files, matcher],
 	);
 	const label = hiddenLabel(signals);
 	if (!label) return null;
@@ -934,7 +939,12 @@ function LeftToReview({ files }: { files: readonly PullFileSummary[] }) {
 			<span>{signals.essential.files} to review</span>
 			<span className="text-added">+{signals.essential.additions}</span>
 			<span className="text-removed">−{signals.essential.deletions}</span>
-			<span className="ml-auto">{label} set aside</span>
+			<span className="ml-auto">
+				{signals.hidden.length === 1
+					? label
+					: `${hiddenTotals(signals).files} files`}{" "}
+				set aside
+			</span>
 		</div>
 	);
 }

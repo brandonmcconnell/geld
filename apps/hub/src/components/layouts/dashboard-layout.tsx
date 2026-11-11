@@ -14,6 +14,7 @@ import {
 } from "#/lib/github.query";
 import { useRecordRecentRepo } from "#/lib/shell/use-shell-actions";
 import { useShellShortcuts } from "#/lib/shell/use-shell-shortcuts";
+import { useLoadReaderSettings } from "#/lib/geld/use-reader-settings";
 import { useHasMounted } from "#/lib/use-has-mounted";
 import {
   surfaceForbiddenOrgWarnings,
@@ -49,6 +50,7 @@ export function DashboardLayout() {
   const { user } = routeApi.useRouteContext();
   const scope = { userId: user.id };
   const hasMounted = useHasMounted();
+  useLoadReaderSettings(hasMounted);
 
   const pullsQuery = useQuery({
     ...githubMyPullsQueryOptions(scope),

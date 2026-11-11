@@ -27,7 +27,7 @@ export const user = pgTable("users", {
 	image: text("image"),
 	createdAt: at("createdAt").notNull().defaultNow(),
 	updatedAt: at("updatedAt").notNull().defaultNow(),
-	/** The dashboard's per-user settings. The hub does not read them yet. */
+	/** The reader's Geld settings, saved by the dashboard and read by the hub. */
 	settings: jsonb("settings").notNull().default({}),
 });
 

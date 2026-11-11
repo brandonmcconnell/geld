@@ -1,4 +1,5 @@
-import { defaultFileCategory } from "#/lib/geld/file-category";
+import { fileCategory } from "#/lib/geld/file-category";
+import { useReaderSettings } from "#/lib/geld/use-reader-settings";
 import {
 	CheckIcon,
 	ChevronDownIcon,
@@ -74,7 +75,8 @@ export const DiffFileHeader = memo(function DiffFileHeader({
 	const { name, dir } = splitPath(file.path);
 	const moved = file.previousPath ? splitPath(file.previousPath) : null;
 	const change = CHANGE_LABEL[file.status];
-	const category = defaultFileCategory(file.path);
+	useReaderSettings();
+	const category = fileCategory(file.path);
 	const emptyLabel =
 		file.fileDiff.hunks.length > 0
 			? null

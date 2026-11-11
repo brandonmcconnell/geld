@@ -1,16 +1,17 @@
 import { createMatcher } from "@geld/core/matcher";
-import { DEFAULT_SETTINGS } from "@geld/core/settings";
+import type { GeldSettings } from "@geld/core/settings";
 import {
   type PullSignals,
   pullSignalsFrom,
   type SignalFile,
 } from "./pull-signals";
 
-/** The split under Geld's default categories, until the reader's settings are read here. */
-export function defaultPullSignals(
+/** The split under the reader's settings, scoped to the repository for their per-repository patterns. */
+export function readerPullSignals(
   files: readonly SignalFile[],
+  settings: GeldSettings,
   repo: string,
   partial: boolean
 ): PullSignals {
-  return pullSignalsFrom(files, createMatcher(DEFAULT_SETTINGS, repo), partial);
+  return pullSignalsFrom(files, createMatcher(settings, repo), partial);
 }
