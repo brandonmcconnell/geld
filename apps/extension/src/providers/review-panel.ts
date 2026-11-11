@@ -183,6 +183,7 @@ const GROUPS: readonly { readonly id: string; readonly label: string; readonly s
   { id: 'done', label: 'Reviewed on this device', statuses: ['done-manual'], open: false },
 ];
 
+const THREAD_GROUP_NOUN: Readonly<Record<string, string>> = { open: 'unresolved thread', addressed: 'addressed thread', outdated: 'outdated thread', resolved: 'resolved thread', done: 'thread reviewed on this device' };
 const ACCORDION_ROW = /^(?:item|comment|bot|automated):/;
 const DEPLOYMENT_STATE: Readonly<Record<ProviderDeployment['state'], string>> = { active: 'Deployed', deploying: 'Deploying', failed: 'Failed', waiting: 'Waiting', unknown: 'Unknown' };
 const REQUIREMENT_STATE: Readonly<Record<ProviderReviewRequirement['state'], string>> = { passed: 'Passed', failed: 'Failed', pending: 'Pending', unknown: 'Unknown' };
@@ -303,6 +304,19 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     if (focused instanceof HTMLElement && panel.contains(focused) && !availableFocus(focused)) focused.blur();
   }
 
+  // GitHub's three levels: a status row or a muted band at the top, white rows under them, small-caps labels inside an open row.
+  function assignLevels(top: readonly HTMLElement[]): void {
+    for (const child of top) {
+      if (!child.hasAttribute('data-geld-review-key')) continue;
+      child.dataset.geldLevel = child.hasAttribute('data-geld-status-row') ? 'status' : 'band';
+      for (const section of child.querySelectorAll<HTMLElement>('[data-geld-review-key]')) {
+        const parent = section.parentElement?.closest<HTMLElement>('[data-geld-review-key]')?.dataset.geldLevel;
+        const rowLike = section.classList.contains('geld-provider-review__item') || section.classList.contains('geld-provider-review__entry') || section.hasAttribute('data-geld-type-round') || section.hasAttribute('data-geld-review-round');
+        section.dataset.geldLevel = parent === 'band' || parent === 'status' || parent === 'label' || rowLike ? 'row' : 'label';
+      }
+    }
+  }
+
   function wrapSectionContent(child: HTMLElement): void {
     const sections = [child, ...child.querySelectorAll<HTMLElement>('[data-geld-review-key]')].filter(section => section.hasAttribute('data-geld-review-key'));
     for (const section of sections) {
@@ -341,7 +355,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const next = renderRow();
       const previous = panel.querySelector<HTMLElement>(`:scope > [data-geld-review-key="${key}"]`);
       if (next === null) { previous?.remove();continue; }
-      wrapSectionContent(next);
+      assignLevels([next]);wrapSectionContent(next);
       if (previous?.outerHTML === next.outerHTML) continue;
       if (previous !== null) previous.replaceWith(next);
       else if (key === 'bots') panel.querySelector(':scope > [data-geld-review-key="reviewers"]')?.after(next);
@@ -410,8 +424,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     toggle.id = `${id}-toggle`;
     toggle.setAttribute('aria-controls', `${id}-content`);
     toggle.append(node('span', label, 'geld-provider-review__section-label'));
-    const icons: Readonly<Record<string, DigestIcon>> = { reviewers: 'reviews', checks: 'check', bots: 'check', requirements: 'check', reports: 'report', 'agent-notes': 'report', previews: 'preview', comments: 'comment', activity: 'activity' };
-    const glyph = icons[key] ?? (key.startsWith('references:') ? 'link' : undefined);
+    const icons: Readonly<Record<string, DigestIcon>> = { reviewers: 'reviews', checks: 'check', bots: 'check', requirements: 'check', reports: 'report', 'agent-notes': 'report', previews: 'preview', comments: 'comment' };
+    const glyph = icons[key];
     if (glyph !== undefined) {
       section.dataset.geldStatusRow = '';
       toggle.prepend(digestIcon(glyph, doc));
@@ -676,15 +690,17 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     return source === undefined ? undefined : conversationComments().find(comment => comment.anchor === source.anchor)?.author;
   }
 
-  function threadGroups(selected: readonly ReviewItem[], key: string): readonly HTMLElement[] {
+  function threadGroups(selected: readonly ReviewItem[], key: string, allOpen = false): readonly HTMLElement[] {
     const comments = new Map(input.threads.flatMap(thread => thread.comments.map(comment => [comment.anchor, comment] as const)));
     return GROUPS.flatMap(group => {
       const members = selected.filter(item => group.statuses.includes(item.status));
       if (members.length === 0) return [];
       const groupKey = `${key}:group:${group.id}`;
       if (!touched.has(groupKey) && members.some(item => expanded.get(itemDisclosureKey(item)) === true)) expanded.set(groupKey, true);
-      const section = disclosure(groupKey, `${group.label.replace('items', 'threads')} · ${threadCounts(members).total}`, group.open);
+      const count = threadCounts(members).total;
+      const section = disclosure(groupKey, `${count} ${THREAD_GROUP_NOUN[group.id] ?? 'thread'}${count === 1 ? '' : 's'}`, allOpen || group.open);
       section.dataset.geldReviewGroup = group.id;
+      section.querySelector('[data-geld-review-toggle]')?.prepend(digestIcon(group.id === 'resolved' || group.id === 'done' ? 'check' : 'circle', doc));
       for (const item of members) section.append(itemSection(item, comments));
       return [section];
     });
@@ -1003,7 +1019,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         : health === 'warn' ? (verdict?.verdict === 'failed' ? 'skipped' : 'dot') : null;
       if (light !== null) compact.append(digestIcon(light, doc));
       preview.append(compact);
-      row.querySelector('[data-geld-review-toggle]')?.replaceChildren(digestIcon('reviews', doc), compact.querySelector('img')?.cloneNode(true) ?? node('span'), node('strong', registered?.title ?? id), node('span', verdict === undefined ? 'No result' : verdictLabel(verdict), 'geld-provider-review__entry-preview'));
+      // A bot line leads with its verdict's light in the glyph column, as GitHub's does.
+      const lineLight = light === null ? node('span') : digestIcon(light, doc);
+      row.querySelector('[data-geld-review-toggle]')?.replaceChildren(lineLight, compact.querySelector('img')?.cloneNode(true) ?? node('span'), node('strong', registered?.title ?? id), node('span', verdict === undefined ? 'No result' : verdictLabel(verdict), 'geld-provider-review__entry-preview'));
       row.dataset.geldBotHealth = health;
       const status = node('span', { good: 'Clear', warn: 'Needs attention', severe: 'Severe findings', bad: 'Review failed', pending: 'Pending' }[health], 'geld-provider-review__bot-health');
       status.dataset.health = health;row.append(status);
@@ -1042,13 +1060,17 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const label = [...authorPresentations.values()].find(value => value.authorId === author.id)?.displayName ?? author.login;
       const selected = items.filter(item => itemAuthor(item)?.id === author.id);
       const open = selected.filter(item => isOpenStatus(item.status)).length;
-      const standing = reviewer === undefined ? countLabel(open, 'open thread') : reviewerLabel(reviewer);
+      const standing = reviewer === undefined ? open === 0 ? '' : countLabel(open, 'open thread') : reviewerLabel(reviewer);
       const compact = node('span', '', 'geld-provider-review__status-chip');compact.dataset.state = reviewer?.state ?? 'commented';
       compact.toggleAttribute('data-geld-review-requested', reviewer !== undefined && reviewerRequested(reviewer));
-      compact.append(authorAvatar(author), node('span', label), node('span', standing, 'geld-provider-review__muted'));preview.append(compact);
+      const stateGlyph = reviewer?.state === 'approved' ? 'check' : reviewer?.state === 'changes_requested' ? 'changes' : open > 0 ? 'dot' : null;
+      compact.append(authorAvatar(author), node('span', label));
+      if (standing !== '') compact.append(node('span', standing, 'geld-provider-review__muted'));
+      if (stateGlyph !== null) compact.append(digestIcon(stateGlyph, doc));
+      preview.append(compact);
       const row = disclosure(`automated:${author.id}`, '', false);
-      row.dataset.geldAutomatedReviewer = author.id;row.classList.add('geld-provider-review__entry');
-      row.querySelector('[data-geld-review-toggle]')?.replaceChildren(digestIcon('reviews', doc), authorAvatar(author), node('strong', label), node('span', standing, 'geld-provider-review__entry-preview'));
+      row.dataset.geldAutomatedReviewer = author.id;row.dataset.state = reviewer?.state ?? (open > 0 ? 'open' : '');row.classList.add('geld-provider-review__entry');
+      row.querySelector('[data-geld-review-toggle]')?.replaceChildren(stateGlyph === null ? node('span') : digestIcon(stateGlyph, doc), authorAvatar(author), node('strong', label), node('span', standing, 'geld-provider-review__entry-preview'));
       row.append(node('p', reviewer === undefined ? 'No conversation recorded.' : reviewerLabel(reviewer), 'geld-provider-review__muted'));
       section.append(row);
     }
@@ -1068,11 +1090,19 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     details.dataset.state = item.status;
     const summary = details.querySelector('[data-geld-review-toggle]');
     if (summary !== null) {
+      // GitHub's thread row: the state's glyph, who wrote, the bold title, its path, people and comments, a pill, the time.
       const title = node('span', '', 'geld-provider-review__item-title');
       inline(title, item.title);
-      summary.append(title, node('span', STATUS[item.status], 'geld-provider-review__item-state'));
-      const metadata = [item.path === undefined ? '' : `${item.path}${item.line === undefined ? '' : `:${item.line}`}`, [...new Set(item.sources.map((source) => source.author))].join(', '), countLabel(item.sources.length, 'comment')].filter((value) => value !== '').join(' · ');
-      summary.append(node('span', metadata, 'geld-provider-review__muted'));
+      const posted = item.sources.flatMap((source) => { const comment = comments.get(source.anchor);return comment === undefined ? [] : [comment]; });
+      const avatars = node('span', '', 'geld-provider-review__posters');
+      for (const author of [...new Map(posted.map((comment) => [comment.author.id, comment.author])).values()].slice(0, 3)) avatars.append(authorAvatar(author));
+      const glyph = digestIcon(item.status === 'resolved' || item.status === 'done-manual' ? 'check' : 'circle', doc);
+      const metadata = [item.path === undefined ? '' : `${item.path}${item.line === undefined ? '' : `:${item.line}`}`, [...new Set(item.sources.map((source) => source.author))].join(', '), item.sources.length > 1 ? countLabel(item.sources.length, 'comment') : ''].filter((value) => value !== '').join(' · ');
+      const state = node('span', STATUS[item.status], 'geld-provider-review__item-state');
+      const latest = posted.map((comment) => comment.updatedAt ?? comment.createdAt).filter((at) => Number.isFinite(Date.parse(at))).sort().at(-1);
+      const time = latest === undefined ? null : timestamp(latest);
+      time?.classList.add('geld-provider-review__row-time');
+      summary.append(glyph, avatars, title, node('span', metadata, 'geld-provider-review__muted geld-provider-review__item-meta'), state, ...(time === null ? [] : [time]));
     }
     const originalItem = nativeItems.get(item.id);
     if (originalItem !== undefined) {
@@ -1331,7 +1361,14 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const roundAt = (at: number): Round => rounds[Number.isFinite(at) ? boundaries.filter((boundary) => boundary.at <= at).length : boundaries.length] ?? rounds[0]!;
     for (const item of items) roundAt(Math.min(...item.sources.map((source) => Date.parse(comments.get(source.anchor)?.createdAt ?? '')).filter(Number.isFinite))).items.push(item);
     for (const comment of ordinary) roundAt(Date.parse(comment.author.automated === true ? comment.updatedAt ?? comment.createdAt : comment.createdAt)).comments.push(comment);
-    const shown = rounds.filter((round, index) => index > 0 || round.items.length + round.comments.length > 0);
+    // A run of pushes with nothing posted between them is one round, as GitHub merges a run of commit rows.
+    const merged: Round[] = [];
+    for (const [index, round] of rounds.entries()) {
+      const previous = merged.at(-1);
+      if (index > 1 && previous !== undefined && previous.items.length + previous.comments.length === 0) merged[merged.length - 1] = { key: `${previous.key}:${round.key}`, items: round.items, comments: round.comments };
+      else merged.push(round);
+    }
+    const shown = merged.filter((round, index) => index > 0 || round.items.length + round.comments.length > 0);
     if (shown.every((round) => round.items.length + round.comments.length === 0)) return [];
     const width = String(shown.length).length;
     const latest = shown.at(-1);
@@ -1339,37 +1376,66 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const toReview = shown.filter((round) => round.items.some((item) => isOpenStatus(item.status)));
     const settled = shown.filter((round) => round !== current && !toReview.includes(round));
     const fill = (section: HTMLElement, round: Round): void => {
-      section.append(...threadGroups(round.items, `round:${round.key}`));
+      section.append(...threadGroups(round.items, `round:${round.key}`, true));
       if (round.comments.length > 0) {
         const group = disclosure(`round:${round.key}:comments`, countLabel(round.comments.length, 'comment'), true);
+        group.querySelector('[data-geld-review-toggle]')?.prepend(digestIcon('comment', doc));
         for (const comment of round.comments) group.append(commentRow(comment));
         section.append(group);
       }
       if (round.items.length + round.comments.length === 0) section.append(node('p', 'No conversation since this push.', 'geld-provider-review__muted'));
     };
+    // GitHub's round row: a progress glyph, who posted, "Round N", the resolved meter, a comment count and the time.
     const render = (round: Round, open: boolean): HTMLElement => {
       const threads = threadCounts(round.items);
-      const label = [`Round ${String(shown.indexOf(round) + 1).padStart(width, '0')}`, ...(threads.total === 0 ? [] : [`${threads.total - threads.open}/${threads.total} resolved`]), ...(round.comments.length === 0 ? [] : [countLabel(round.comments.length, 'comment')])].join(' · ');
+      const name = `Round ${String(shown.indexOf(round) + 1).padStart(width, '0')}`;
+      const label = [name, ...(threads.total === 0 ? [] : [`${threads.total - threads.open}/${threads.total} resolved`]), ...(round.comments.length === 0 ? [] : [countLabel(round.comments.length, 'comment')])].join(' · ');
       const section = disclosure(`round:${round.key}`, label, open);
       section.dataset.geldTypeRound = round.key;
+      const posted = [...round.items.flatMap((item) => item.sources.flatMap((source) => { const comment = comments.get(source.anchor);return comment === undefined ? [] : [comment]; })), ...round.comments];
+      const posters = [...new Map(posted.map((comment) => [comment.author.id, comment.author])).values()].slice(0, 4);
+      const latest = posted.map((comment) => comment.updatedAt ?? comment.createdAt).filter((at) => Number.isFinite(Date.parse(at))).sort().at(-1);
+      const toggle = section.querySelector<HTMLElement>(':scope > [data-geld-review-toggle]');
+      if (toggle !== null) {
+        toggle.setAttribute('aria-label', label);
+        const glyph = digestIcon(threads.total === 0 ? 'comment' : threads.open === 0 ? 'check' : 'circle', doc);
+        if (threads.total > 0 && threads.open === 0) glyph.dataset.geldRoundSettled = '';
+        const avatars = node('span', '', 'geld-provider-review__posters');
+        for (const author of posters) avatars.append(authorAvatar(author));
+        const parts: Node[] = [glyph, avatars, node('span', name, 'geld-provider-review__round-name')];
+        if (threads.total > 0) {
+          const meter = node('progress', '', 'geld-provider-review__meter');meter.max = threads.total;meter.value = threads.total - threads.open;
+          meter.setAttribute('aria-hidden', 'true');
+          parts.push(meter, node('span', `${threads.total - threads.open}/${threads.total} resolved`, 'geld-provider-review__muted'));
+        }
+        if (posted.length > 0) {
+          const chip = node('span', '', 'geld-provider-review__count-chip');
+          chip.setAttribute('aria-hidden', 'true');
+          chip.append(digestIcon('comment', doc), node('span', String(posted.length)));parts.push(chip);
+        }
+        const time = latest === undefined ? null : timestamp(latest);
+        if (time !== null) { time.classList.add('geld-provider-review__row-time');parts.push(time); }
+        toggle.replaceChildren(...parts);
+      }
       fill(section, round);
       return section;
     };
     const sections: HTMLElement[] = [];
     if (toReview.length === 0 && current !== null) {
       const group = disclosure('rounds:review', 'Current round', true);
-      group.dataset.geldRoundGroup = 'current';group.dataset.geldTypeRound = current.key;
-      fill(group, current);
+      group.dataset.geldRoundGroup = 'current';
+      group.append(render(current, false));
       sections.push(group);
     } else if (toReview.length > 0) {
       const open = current === null || toReview.includes(current) ? toReview : [...toReview, current];
-      const group = disclosure('rounds:review', `${countLabel(toReview.length, 'round')} to review`, true);
+      const group = disclosure('rounds:review', `${countLabel(toReview.length, 'round')} to review · ${countLabel(threadCounts(items).open, 'open thread')}`, true);
       group.dataset.geldRoundGroup = 'review';
       for (const round of [...open].reverse()) group.append(render(round, round === toReview.at(-1)));
       sections.push(group);
     }
     if (settled.length > 0) {
-      const group = disclosure('rounds:settled', countLabel(settled.length, 'settled round'), false);
+      const resolved = settled.flatMap((round) => round.items);
+      const group = disclosure('rounds:settled', resolved.length > 0 ? countLabel(threadCounts(resolved).total, 'resolved thread') : countLabel(settled.length, 'settled round'), false);
       group.dataset.geldRoundGroup = 'settled';
       for (const round of [...settled].reverse()) group.append(render(round, false));
       sections.push(group);
@@ -1853,16 +1919,10 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     if (items.length === 0) children.push(node('p', panel.dataset.state === 'partial' ? 'No review threads in the available data.' : 'No review threads.'));
     if (options.reviewGrouping === 'batch') children.push(...historySections(comments, ordinary));
     else children.push(...roundSections(comments, ordinary));
-    for (const direction of ['incoming', 'outgoing']) {
-      const entries = references().filter((reference) => reference.direction === direction);
-      if (entries.length === 0) continue;
-      const section = disclosure(`references:${direction}`, `${direction === 'incoming' ? 'Incoming' : 'Outgoing'} references · ${entries.length}`, false);
-      for (const reference of entries) section.append(referenceRow(reference));
-      children.push(section);
-    }
+    // GitHub's "Other activity": one band, a row per kind of event, and one mentions row holding both directions.
+    const other: HTMLElement[] = [];
     const events = activityEvents();
     if (options.reviewGrouping !== 'batch' && events.length > 0) {
-      const section = disclosure('activity', `Activity · ${events.length}`, false);
       const types = new Map<string, ProviderReviewPanelEvent[]>();
       for (const event of events) {
         const type = event.kind === 'push' || event.kind === 'commit' ? 'Commits' : event.kind === 'state' ? 'Status changes' : event.kind === 'task' ? 'Tasks'
@@ -1872,12 +1932,31 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         const group = types.get(type) ?? [];group.push(event);types.set(type, group);
       }
       for (const [type, entries] of types) {
-        const group = disclosure(`activity:${type}`, `${type} · ${entries.length}`, false);
+        const group = disclosure(`activity:${type}`, type === 'Commits' ? `${entries.length} push${entries.length === 1 ? '' : 'es'}` : `${type} · ${entries.length}`, false);
+        group.querySelector('[data-geld-review-toggle]')?.prepend(digestIcon(type === 'Commits' ? 'commit' : 'activity', doc));
         for (const event of entries) group.append(eventRow(event));
-        section.append(group);
+        other.push(group);
       }
-      children.push(section);
     }
+    const mentions = references();
+    if (mentions.length > 0) {
+      const row = disclosure('mentions', countLabel(mentions.length, 'mention'), false);
+      row.querySelector('[data-geld-review-toggle]')?.prepend(digestIcon('link', doc));
+      for (const direction of ['incoming', 'outgoing']) {
+        const entries = mentions.filter((reference) => reference.direction === direction);
+        if (entries.length === 0) continue;
+        const section = disclosure(`references:${direction}`, `${direction === 'incoming' ? 'Where this is mentioned' : 'What this mentions'} · ${entries.length}`, true);
+        for (const reference of entries) section.append(referenceRow(reference));
+        row.append(section);
+      }
+      other.push(row);
+    }
+    if (other.length > 0) {
+      const band = disclosure('other-activity', 'Other activity', true);
+      band.append(...other);
+      children.push(band);
+    }
+    assignLevels(children);
     for (const child of children) wrapSectionContent(child);
     panel.replaceChildren(...children);
     syncUpdating();

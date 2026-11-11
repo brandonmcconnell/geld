@@ -28,8 +28,8 @@ function host(): HTMLElement { const value = document.createElement('main');docu
 
 it('shows separate reference groups with canonical native labels, titles and source links without invented states/hooks', () => {
   const panel = renderProviderReviewPanel(host(), input, { references: [outgoing, incoming], events: [event], onRevealReference: () => true });
-  expect(panel.element.querySelector('[data-geld-review-key="references:incoming"] [data-geld-review-toggle]')?.textContent).toBe('Incoming references · 1');
-  expect(panel.element.querySelector('[data-geld-review-key="references:outgoing"] [data-geld-review-toggle]')?.textContent).toBe('Outgoing references · 1');
+  expect(panel.element.querySelector('[data-geld-review-key="references:incoming"] [data-geld-review-toggle]')?.textContent).toBe('Where this is mentioned · 1');
+  expect(panel.element.querySelector('[data-geld-review-key="references:outgoing"] [data-geld-review-toggle]')?.textContent).toBe('What this mentions · 1');
   expect(panel.element.querySelector('[data-geld-review-key="activity"]')).toBeNull();
   const links = [...panel.element.querySelectorAll<HTMLAnchorElement>('.geld-provider-review__reference-link')];
   expect(links.map((link) => link.href)).toEqual([target.url, target.url]);
@@ -52,10 +52,10 @@ it('retains independent disclosure state across refresh and removes wrong-review
   const panel = renderProviderReviewPanel(host(), input, { references: [outgoing, incoming] });
   const open = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-key="references:outgoing"]');
   if (open === null) throw new Error('Missing reference section.');
-  open.open = true;open.dispatchEvent(new Event('toggle'));
+  open.open = false;open.dispatchEvent(new Event('toggle'));
   panel.update(input, { references: [{ ...outgoing, title: 'Updated observed title' }, incoming] });
-  expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-key="references:outgoing"]')?.open).toBe(true);
-  expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-key="references:incoming"]')?.open).toBe(false);
+  expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-key="references:outgoing"]')?.open).toBe(false);
+  expect(panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-key="references:incoming"]')?.open).toBe(true);
   panel.update({ ...input, subject: { ...subject, id: '273' } });
   expect(panel.element.querySelector('[data-geld-reference]')).toBeNull();
 });
@@ -139,6 +139,7 @@ it('preserves reference keyboard focus across refresh without stealing focus fro
   const panel = renderProviderReviewPanel(host(), input, { references: [outgoing], onRevealReference: () => true, version: 1 });
   const section = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-key="references:outgoing"]');if (section === null) throw new Error('Missing section.');
   section.open = true;section.dispatchEvent(new Event('toggle'));
+  const mentions = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-key="mentions"]');if (mentions !== null) mentions.open = true;
   const target = panel.element.querySelector<HTMLAnchorElement>('.geld-provider-review__reference-link');target?.focus();
   panel.update(input, { references: [outgoing], onRevealReference: () => true, version: 2 });
   expect(document.activeElement?.getAttribute('data-geld-reference-role')).toBe('target');
@@ -153,6 +154,7 @@ it('does not carry a reference focus target into another review or head even whe
   const panel = renderProviderReviewPanel(host(), input, { references: [outgoing], version: 1 });
   const section = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-key="references:outgoing"]');if (section === null) throw new Error('Missing section.');
   section.open = true;section.dispatchEvent(new Event('toggle'));
+  const mentions = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-review-key="mentions"]');if (mentions !== null) mentions.open = true;
   panel.element.querySelector<HTMLAnchorElement>('.geld-provider-review__reference-link')?.focus();
   const nextSubject = { ...subject, id: '273' };
   const nextReference = { ...outgoing, source: { ...outgoing.source, reviewUrl: url.replace('/272', '/273') } };

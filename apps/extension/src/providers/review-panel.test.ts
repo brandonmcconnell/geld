@@ -1440,16 +1440,16 @@ it('groups threads and comments by type into rounds to review, a current round a
   ];
   const panel = renderProviderReviewPanel(host(), native, { events, comments: [{ ...comment('5', 'Looks better now.'), createdAt: '2026-11-01T13:30:00Z' }] });
   const review = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-round-group="review"]');
-  expect(review?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('1 round to review');
+  expect(review?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('1 round to review · 1 open thread');
   expect(review?.open).toBe(true);
   const rounds = [...(review?.querySelectorAll<HTMLElement>('[data-geld-type-round]') ?? [])];
   expect(rounds.map(round => round.dataset.geldTypeRound)).toEqual(['push-2', 'push-1']);
-  expect(rounds[0]?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('Round 3 · 1 comment');
-  expect(rounds[1]?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('Round 2 · 0/1 resolved');
+  expect(rounds[0]?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('Round 3 · 1 comment');
+  expect(rounds[1]?.querySelector('[data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('Round 2 · 0/1 resolved');
   const settled = panel.element.querySelector<HTMLElement & { open: boolean }>('[data-geld-round-group="settled"]');
-  expect(settled?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('1 settled round');
+  expect(settled?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('1 resolved thread');
   expect(settled?.open).toBe(false);
-  expect(settled?.querySelector('[data-geld-type-round="before"] [data-geld-review-toggle]')?.textContent).toBe('Round 1 · 1/1 resolved');
+  expect(settled?.querySelector('[data-geld-type-round="before"] [data-geld-review-toggle]')?.getAttribute('aria-label')).toBe('Round 1 · 1/1 resolved');
   expect(panel.element.querySelector('[data-geld-review-key="comments"]')).toBeNull();
 });
 
@@ -1460,7 +1460,7 @@ it('heads a latest round with no threads "Current round" when nothing is left to
   const current = panel.element.querySelector('[data-geld-round-group="current"]');
   expect(current?.querySelector('[data-geld-review-toggle]')?.textContent).toBe('Current round');
   expect(current?.textContent).toContain('No conversation since this push.');
-  expect(panel.element.querySelector('[data-geld-round-group="settled"] [data-geld-review-toggle]')?.textContent).toBe('1 settled round');
+  expect(panel.element.querySelector('[data-geld-round-group="settled"] [data-geld-review-toggle]')?.textContent).toBe('1 resolved thread');
 });
 
 it('keeps at most one row open, as the GitHub digest does, leaving groups alone', () => {

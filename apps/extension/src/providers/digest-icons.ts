@@ -16,6 +16,8 @@ const paths = {
   activity: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   report: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h7M7 16h4"/>',
   preview: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 8h18"/>',
+  commit: '<circle cx="12" cy="12" r="3"/><path d="M3 12h6m6 0h6"/>',
+  circle: '<circle cx="12" cy="12" r="9"/>',
   link: '<path d="m10 13 4-4m-6 7-1 1a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m0 12a4 4 0 0 0 6 0l5-5a4 4 0 0 0-6-6l-1 1"/>',
 } as const;
 
