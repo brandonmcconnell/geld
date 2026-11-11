@@ -78,6 +78,28 @@ function identityTokenSource(userId: string, accountId: string): TokenSource {
   };
 }
 
+/** A token for one of a person's connections, or null without one that works. */
+export async function providerTokenFor(
+  userId: string,
+  provider: ConnectableProvider
+): Promise<string | null> {
+  const identity = bestIdentity(provider, await identitiesOf(userId));
+  if (!identity) {
+    return null;
+  }
+  const access = await identityTokenSource(userId, identity.id).get();
+  return access.status === "ok" ? access.token : null;
+}
+
+export async function connectedProviders(
+  userId: string
+): Promise<ConnectableProvider[]> {
+  const identities = await identitiesOf(userId);
+  return CONNECTABLE_PROVIDERS.filter(
+    (provider) => bestIdentity(provider, identities) !== null
+  );
+}
+
 /** The shared provider client for one of a person's connections, or null without one. */
 export async function providerClientFor(
   userId: string,

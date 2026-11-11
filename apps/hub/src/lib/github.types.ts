@@ -52,6 +52,11 @@ export type UserRepoSummary = {
 };
 
 export type PullSummary = {
+	/**
+	 * Where the pull request lives when it is not GitHub. Such a row opens on
+	 * its provider: the hub's own pull request view reads GitHub only.
+	 */
+	provider?: "gitlab" | "bitbucket";
 	id: number;
 	number: number;
 	title: string;
@@ -144,6 +149,8 @@ export type MyPullsResult = {
 	forbiddenOrgs?: string[];
 	partial?: boolean;
 	timedOut?: boolean;
+	/** Connected providers whose pull requests could not be read this time. */
+	unreachableProviders?: Array<"gitlab" | "bitbucket">;
 };
 
 export type MyIssuesResult = {
