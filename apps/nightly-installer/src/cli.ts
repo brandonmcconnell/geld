@@ -186,7 +186,17 @@ function steps(profile: Found, dir: string, copied: boolean, opened: boolean, pl
     '  2. Click Load unpacked.',
     copied ? `  3. Pick this folder. Its path is on your clipboard, so ${pickHint}:` : '  3. Pick this folder:',
     `     ${dir}`,
-    ...(inDownloads ? [] : ['  4. Click the Geld Nightly toolbar icon, then Connect folder, and pick the same folder when the browser asks.']),
+    ...(inDownloads
+      ? []
+      : [
+          ...(profile.info.folderAccessFlag === undefined
+            ? []
+            : [
+                `  ${profile.info.label} turns off folder access, which updates need. Open ${profile.info.folderAccessFlag}, set it to Enabled and relaunch ${profile.info.label}`,
+                '  first, or run this again with --downloads, where updates need no folder access.',
+              ]),
+          '  4. Click the Geld Nightly toolbar icon, then Connect folder, and pick the same folder when the browser asks.',
+        ]),
     ...(last ? [] : ['']),
   ];
 }

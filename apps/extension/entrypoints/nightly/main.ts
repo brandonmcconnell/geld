@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import { installErrorCapture } from '../../src/lib/error-capture';
+import { connectErrorShown, folderAccessMissing, folderHelp } from '../../src/nightly/folder-access';
 import { loadFolderHandle, saveFolderHandle } from '../../src/nightly/handle-store';
 import { isNightlyInstallResult } from '../../src/nightly/messages';
 import type { NightlyCheckMessage, NightlyInstallMessage, NightlyRollbackMessage } from '../../src/nightly/messages';
@@ -19,13 +20,13 @@ function byId<T extends HTMLElement>(id: string, type: new () => T): T {
 
 const panel = byId('panel', HTMLDivElement);
 const folderLine = byId('folder', HTMLParagraphElement);
-const folderHelp = byId('folder-help', HTMLParagraphElement);
+const folderHelpLine = byId('folder-help', HTMLParagraphElement);
 const folderError = byId('folder-error', HTMLParagraphElement);
 const connectButton = byId('connect', HTMLButtonElement);
 
 /** Asks for the folder, then proves it is the one Geld runs from before keeping it. */
 async function connectFolder(): Promise<FileSystemDirectoryHandle> {
-  if (window.showDirectoryPicker === undefined) throw new Error('This browser cannot give Geld access to a folder.');
+  if (window.showDirectoryPicker === undefined) throw new Error(folderAccessMissing('brave' in navigator));
   const handle = await window.showDirectoryPicker({ id: 'geld-nightly', mode: 'readwrite' });
   if (!(await folderIsOurs(handle))) throw new Error(`${handle.name} is not the folder Geld runs from. Pick the folder you chose in Load unpacked.`);
   await saveFolderHandle(handle);
@@ -65,17 +66,11 @@ async function act(kind: NightlyAction): Promise<string | null> {
 }
 
 let installedIn: string | null = null;
+let installedInDownloads = false;
 
 function renderFolder(folder: NightlyFolder | null): void {
   folderLine.textContent = folder === null ? 'No folder connected.' : folder.downloads === true ? `Downloads/${folder.name}` : folder.name;
-  folderHelp.textContent =
-    folder === null
-      ? installedIn === null
-        ? 'Pick the unzipped folder you loaded with Load unpacked.'
-        : `The installer put Geld in ${installedIn}. Pick that folder.`
-      : folder.downloads === true
-        ? 'This folder is in your download folder, so Geld can install builds on its own.'
-        : 'When Chrome asks to let Geld edit files, choose Allow on every visit. Installs then run on their own, even after Chrome restarts. With Allow this time, each install asks again.';
+  folderHelpLine.textContent = folderHelp({ folder, installedIn, installedInDownloads, hasPicker: window.showDirectoryPicker !== undefined, isBrave: 'brave' in navigator });
   connectButton.textContent = folder === null ? 'Connect folder' : 'Connect another folder';
 }
 
@@ -85,6 +80,7 @@ connectButton.addEventListener('click', () => {
   void connectFolder()
     .catch((error: unknown) => {
       if (error instanceof DOMException && error.name === 'AbortError') return;
+      if (error instanceof Error && !connectErrorShown(error.message, folderHelpLine.textContent ?? '')) return;
       folderError.textContent = error instanceof Error ? error.message : String(error);
       folderError.hidden = false;
     })
@@ -97,5 +93,6 @@ mountNightlyPanel(panel, act);
 nightlyFolderItem.watch(renderFolder);
 void readInstallRecord().then(async (record) => {
   installedIn = record?.folder ?? null;
+  installedInDownloads = record !== null && record.downloadsName !== null;
   renderFolder(await nightlyFolderItem.getValue());
 });
