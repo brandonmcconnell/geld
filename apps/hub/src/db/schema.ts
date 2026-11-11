@@ -2,75 +2,99 @@ import {
 	bigint,
 	boolean,
 	index,
+	integer,
+	jsonb,
 	pgTable,
 	primaryKey,
 	text,
 	timestamp,
+	unique,
 } from "drizzle-orm/pg-core";
 
 const at = (name: string) => timestamp(name, { withTimezone: true });
 
-export const user = pgTable("user", {
+/**
+ * Geld's account tables. The dashboard reads and writes the same four, so
+ * their names, quoted camelCase columns, defaults and constraints must stay
+ * exactly as `apps/dashboard/db/migrations/0001_auth.sql` declares them
+ * (`shared-accounts.test.ts` compares the two).
+ */
+export const user = pgTable("users", {
 	id: text("id").primaryKey(),
 	name: text("name").notNull(),
-	email: text("email").notNull().unique(),
-	emailVerified: boolean("email_verified").notNull(),
+	email: text("email").notNull().unique("users_email_key"),
+	emailVerified: boolean("emailVerified").notNull().default(false),
 	image: text("image"),
-	createdAt: at("created_at").notNull(),
-	updatedAt: at("updated_at").notNull(),
+	createdAt: at("createdAt").notNull().defaultNow(),
+	updatedAt: at("updatedAt").notNull().defaultNow(),
+	/** The dashboard's per-user settings. The hub does not read them yet. */
+	settings: jsonb("settings").notNull().default({}),
 });
 
 export const session = pgTable(
-	"session",
+	"sessions",
 	{
 		id: text("id").primaryKey(),
-		expiresAt: at("expires_at").notNull(),
-		token: text("token").notNull().unique(),
-		ipAddress: text("ip_address"),
-		userAgent: text("user_agent"),
-		userId: text("user_id")
+		token: text("token").notNull().unique("sessions_token_key"),
+		expiresAt: at("expiresAt").notNull(),
+		createdAt: at("createdAt").notNull().defaultNow(),
+		updatedAt: at("updatedAt").notNull().defaultNow(),
+		ipAddress: text("ipAddress"),
+		userAgent: text("userAgent"),
+		userId: text("userId")
 			.notNull()
 			.references(() => user.id, { onDelete: "cascade" }),
-		createdAt: at("created_at").notNull(),
-		updatedAt: at("updated_at").notNull(),
 	},
-	(table) => [index("session_user_id_idx").on(table.userId)],
+	(table) => [index("sessions_user").on(table.userId)],
 );
 
 export const account = pgTable(
-	"account",
+	"identities",
 	{
 		id: text("id").primaryKey(),
-		accountId: text("account_id").notNull(),
-		providerId: text("provider_id").notNull(),
-		userId: text("user_id")
+		accountId: text("accountId").notNull(),
+		providerId: text("providerId").notNull(),
+		userId: text("userId")
 			.notNull()
 			.references(() => user.id, { onDelete: "cascade" }),
-		accessToken: text("access_token"),
-		refreshToken: text("refresh_token"),
-		idToken: text("id_token"),
-		accessTokenExpiresAt: at("access_token_expires_at"),
-		refreshTokenExpiresAt: at("refresh_token_expires_at"),
+		accessToken: text("accessToken"),
+		refreshToken: text("refreshToken"),
+		idToken: text("idToken"),
+		accessTokenExpiresAt: at("accessTokenExpiresAt"),
+		refreshTokenExpiresAt: at("refreshTokenExpiresAt"),
 		scope: text("scope"),
 		password: text("password"),
-		createdAt: at("created_at").notNull(),
-		updatedAt: at("updated_at").notNull(),
+		createdAt: at("createdAt").notNull().defaultNow(),
+		updatedAt: at("updatedAt").notNull().defaultNow(),
 	},
-	(table) => [index("account_user_id_idx").on(table.userId)],
+	(table) => [
+		unique("identities_providerId_accountId_key").on(
+			table.providerId,
+			table.accountId,
+		),
+		index("identities_user").on(table.userId),
+	],
 );
 
 export const verification = pgTable(
-	"verification",
+	"verifications",
 	{
 		id: text("id").primaryKey(),
 		identifier: text("identifier").notNull(),
 		value: text("value").notNull(),
-		expiresAt: at("expires_at").notNull(),
-		createdAt: at("created_at"),
-		updatedAt: at("updated_at"),
+		expiresAt: at("expiresAt").notNull(),
+		createdAt: at("createdAt").notNull().defaultNow(),
+		updatedAt: at("updatedAt").notNull().defaultNow(),
 	},
-	(table) => [index("verification_identifier_idx").on(table.identifier)],
+	(table) => [index("verifications_identifier").on(table.identifier)],
 );
+
+export const rateLimit = pgTable("rateLimit", {
+	id: text("id").primaryKey(),
+	key: text("key").notNull().unique("rateLimit_key_key"),
+	count: integer("count").notNull(),
+	lastRequest: bigint("lastRequest", { mode: "number" }).notNull(),
+});
 
 /**
  * Orgs that returned an OAuth App access restriction error during a previous
@@ -80,7 +104,7 @@ export const verification = pgTable(
  * GitHub App on the org (detected in `getMySearchSources`).
  */
 export const userForbiddenOrg = pgTable(
-	"user_forbidden_org",
+	"hub_user_forbidden_org",
 	{
 		userId: text("user_id")
 			.notNull()
@@ -99,7 +123,7 @@ export const userForbiddenOrg = pgTable(
  * never goes backwards.
  */
 export const githubChange = pgTable(
-	"github_change",
+	"hub_github_change",
 	{
 		/** Lowercased `owner/repo`. */
 		repo: text("repo").notNull(),
@@ -111,7 +135,7 @@ export const githubChange = pgTable(
 	},
 	(table) => [
 		primaryKey({ columns: [table.repo, table.entityKey] }),
-		index("github_change_version_idx").on(table.version),
-		index("github_change_changed_at_idx").on(table.changedAt),
+		index("hub_github_change_version_idx").on(table.version),
+		index("hub_github_change_changed_at_idx").on(table.changedAt),
 	],
 );

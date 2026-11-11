@@ -27,7 +27,7 @@ Running against github.com needs both a GitHub OAuth App and a GitHub App.
 
 OAuth App:
 
-- Callback URL: `http://localhost:3200/api/auth/callback/github`
+- Callback URL: `http://localhost:3200/api/auth/callback/github-oauth`
 - Environment variables: `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`
 - Used for sign-in and public or external repository reads.
 

@@ -58,6 +58,8 @@ test("a failed GitHub sign-in returns to the landing page with a message, and re
 
 	await page.unrouteAll();
 	await (await whenInteractive(continueButton)).click();
+	// The landing page has a control named after nova too.
+	await expect(page).toHaveURL(new RegExp(`^${emulatorUrl}/login/oauth/`));
 	await page.getByRole("button", { name: /nova\b/ }).click();
 	await page.getByRole("button", { name: "Got it" }).click();
 	await expect(page).toHaveURL(/\/pulls$/);

@@ -258,6 +258,7 @@ export {
 export type { SerializedInstallationAccessIndex } from "./github/viewer";
 export {
 	checkSetupComplete,
+	hasGitHubConnection,
 	getGitHubAppAccessState,
 	getGitHubViewer,
 	getInstallationAccess,

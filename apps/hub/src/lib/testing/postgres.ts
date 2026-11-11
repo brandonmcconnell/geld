@@ -35,7 +35,7 @@ export async function createTestDatabase(): Promise<{
 	shared ??= start();
 	const { client, db } = await shared;
 	await client.exec(
-		'TRUNCATE "account", "session", "verification", "user_forbidden_org", "github_change", "user" CASCADE',
+		'TRUNCATE "identities", "sessions", "verifications", "rateLimit", "hub_user_forbidden_org", "hub_github_change", "users" CASCADE',
 	);
 	return { db, client };
 }

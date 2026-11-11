@@ -3,6 +3,9 @@ import { normalizeAuthRedirect } from "./auth-redirect";
 import { buildGitHubAppAuthorizePath } from "./github-access";
 import { buildSignInErrorURL } from "./sign-in-error";
 
+/** Mirrors `GITHUB_OAUTH_PROVIDER_ID` on the server. */
+const GITHUB_SIGN_IN_PROVIDER = "github-oauth";
+
 export type GitHubSignInMode = "social" | "emulator";
 
 export const signInWithGitHub = createClientOnlyFn(
@@ -21,34 +24,16 @@ export const signInWithGitHub = createClientOnlyFn(
 
 		const callbackURL = normalizeAuthRedirect(redirect);
 		const errorCallbackURL = buildSignInErrorURL(callbackURL);
-		if (mode === "emulator") {
-			// Demo mode: chain straight into the GitHub App authorization so the
-			// app-user token exists before the setup gate. The emulator skips its
-			// account picker on that second hop.
-			const response = await fetch("/api/auth/sign-in/oauth2", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					providerId: "github",
-					callbackURL: buildGitHubAppAuthorizePath(callbackURL),
-					errorCallbackURL,
-				}),
-			});
-			const { url } = (await response.json().catch(() => ({}))) as {
-				url?: string;
-			};
-			if (!response.ok || !url) {
-				throw new Error(
-					"Demo sign-in failed: is the GitHub emulator running (pnpm dev:hub:demo)?",
-				);
-			}
-			window.location.href = url;
-			return;
-		}
 		const { signIn } = await import("./auth.client");
 		return signIn.social({
-			provider: "github",
-			callbackURL,
+			provider: GITHUB_SIGN_IN_PROVIDER,
+			// Demo mode chains straight into the GitHub App authorization so the
+			// app-user token exists before the setup gate. The emulator skips its
+			// account picker on that second hop.
+			callbackURL:
+				mode === "emulator"
+					? buildGitHubAppAuthorizePath(callbackURL)
+					: callbackURL,
 			errorCallbackURL,
 		});
 	},
@@ -65,4 +50,14 @@ export const signOutToLogin = createClientOnlyFn(async () => {
 	await signOut();
 	await clearLocalSession(userId);
 	window.location.href = "/login";
+});
+
+/** For someone signed in to Geld another way: adds GitHub to their account. */
+export const connectGitHub = createClientOnlyFn(async (returnTo: string) => {
+	const { authClient } = await import("./auth.client");
+	return authClient.linkSocial({
+		provider: GITHUB_SIGN_IN_PROVIDER,
+		callbackURL: buildGitHubAppAuthorizePath(returnTo),
+		errorCallbackURL: returnTo,
+	});
 });

@@ -25,6 +25,10 @@ if (!connectionString) {
 const pool = new pg.Pool({ connectionString, max: 1 });
 try {
   if (process.argv.includes("--reset")) {
+    // The schema may be shared with the dashboard, so only a local database is ever emptied.
+    if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(connectionString).hostname)) {
+      throw new Error("--reset only runs against a database on this machine");
+    }
     await pool.query("DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS drizzle CASCADE");
   }
   await migrate(drizzle(pool), { migrationsFolder: fileURLToPath(new URL("db/migrations", appDir)) });

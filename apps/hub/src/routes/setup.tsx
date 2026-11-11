@@ -1,9 +1,15 @@
 import { Button } from "@geld/hub-ui/components/button";
 import { Logo } from "@geld/hub-ui/components/logo";
 import { Spinner } from "@geld/hub-ui/components/spinner";
+import { GitHubLogo } from "@geld/hub-icons";
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { useState } from "react";
 import { getSession } from "#/lib/auth.functions";
-import { getGitHubAppAccessState } from "#/lib/github.functions";
+import { connectGitHub } from "#/lib/auth-actions";
+import {
+	getGitHubAppAccessState,
+	hasGitHubConnection,
+} from "#/lib/github.functions";
 import {
 	buildGitHubAppAuthorizePath,
 	findInstallationForOwner,
@@ -36,8 +42,11 @@ export const Route = createFileRoute("/setup")({
 		return { user: session.user };
 	},
 	loader: async () => {
-		const accessState = await getGitHubAppAccessState().catch(() => null);
-		return { accessState };
+		const connected = await hasGitHubConnection();
+		const accessState = connected
+			? await getGitHubAppAccessState().catch(() => null)
+			: null;
+		return { connected, accessState };
 	},
 	headers: () => PRIVATE_ROUTE_HEADERS,
 	head: ({ match }) =>
@@ -51,8 +60,13 @@ export const Route = createFileRoute("/setup")({
 });
 
 function SetupPage() {
-	const { accessState: state } = Route.useLoaderData();
+	const { accessState: state, connected } = Route.useLoaderData();
+	const { user } = Route.useRouteContext();
 	useRefreshOnReturn();
+
+	if (!connected) {
+		return <ConnectGitHub email={user.email} />;
+	}
 
 	const hasInstallations =
 		state?.installationsAvailable === true &&
@@ -126,6 +140,73 @@ function SetupPage() {
 								</Button>
 							) : null}
 						</div>
+					</div>
+				</div>
+			</div>
+		</main>
+	);
+}
+
+function ConnectGitHub({ email }: { email: string }) {
+	const [pending, setPending] = useState(false);
+	const [failed, setFailed] = useState(false);
+
+	const connect = () => {
+		setPending(true);
+		setFailed(false);
+		connectGitHub("/setup")
+			.then((result) => {
+				if (result?.error) {
+					setFailed(true);
+					setPending(false);
+				}
+			})
+			.catch(() => {
+				setFailed(true);
+				setPending(false);
+			});
+	};
+
+	return (
+		<main className="isolate min-h-dvh bg-background">
+			<div className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center px-6 py-12">
+				<div className="flex w-full flex-col gap-8">
+					<div className="flex flex-col items-center gap-3">
+						<Logo
+							className="size-10 text-foreground"
+							variant={import.meta.env.DEV ? "dev" : "default"}
+						/>
+						<div className="text-center">
+							<h1 className="text-xl font-semibold tracking-tight text-foreground">
+								Connect your GitHub
+							</h1>
+							<p className="mt-1.5 text-sm text-muted-foreground">
+								You are signed in to Geld as{" "}
+								<span className="font-medium text-foreground">{email}</span>.
+								Add GitHub to this account to see your pull requests.
+							</p>
+						</div>
+					</div>
+					<div className="flex w-full flex-col gap-3">
+						<Button
+							size="default"
+							className="w-full"
+							disabled={pending}
+							onClick={connect}
+						>
+							{pending ? <Spinner size={14} /> : <GitHubLogo className="size-3.5" />}
+							Connect GitHub
+						</Button>
+						{failed ? (
+							<p role="alert" className="text-center text-sm text-destructive">
+								GitHub could not be connected. Try again.
+							</p>
+						) : (
+							<p className="text-center text-xs text-muted-foreground">
+								Your GitHub account must have a verified email that matches
+								this Geld account.
+							</p>
+						)}
 					</div>
 				</div>
 			</div>

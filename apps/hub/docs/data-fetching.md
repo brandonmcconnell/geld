@@ -94,7 +94,7 @@ The aim is to replace "every query polls GitHub on its own" with "one cheap
 request tells the client what changed".
 
 ```
-GitHub webhook ──► /api/webhooks/github ──► github_change (Postgres, 15 min TTL)
+GitHub webhook ──► /api/webhooks/github ──► hub_github_change (Postgres, 15 min TTL)
                                                   │
 client (visible tab) ── every 15 s + on focus ──► /api/changes?since=<cursor>
         │                                          returns entity keys for
@@ -117,7 +117,7 @@ queryClient.invalidateQueries(keysFor(entity))   → only active, affected
   intersects that with the user's installation repo access. The server already
   computes that access as `installationAccess`.
 - **Storage is bounded by design.**
-  - `github_change(repo, entity_key, is_private, version, changed_at)` keeps
+  - `hub_github_change(repo, entity_key, is_private, version, changed_at)` keeps
     one row per entity, keyed by `(repo, entity_key)`, with an index on
     `version`. A repeat change updates the row instead of adding one: CI sends
     dozens of `check_run` and `workflow_job` deliveries per commit, and on
@@ -170,7 +170,7 @@ incident:
    non-blocking loaders, `pendingMs`, the client-side filter cookie, list→detail
    seeding and optimistic auth. This is the biggest UX win and needs no server
    storage.
-2. **Change feed.** Covers L2: `github_change` with its cron sweeper,
+2. **Change feed.** Covers L2: `hub_github_change` with its cron sweeper,
    `/api/changes`, the entity→query registry, mutation invalidation through the
    registry, and removing fixed polling. Also adds the migration that drops the
    four legacy cache tables, once the production purge from the incident is done.
@@ -300,7 +300,7 @@ run:
  "databaseSizeBytes":8133655,"changeRows":37}
 ```
 
-Database size is Postgres's `pg_database_size`. When `github_change` exceeds
+Database size is Postgres's `pg_database_size`. When `hub_github_change` exceeds
 50k rows (a stuck sweeper), it also logs
 `{"level":"warn","alert":"change_table_growth", …}`.
 

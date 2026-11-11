@@ -18,6 +18,7 @@ vi.mock("./github-emulator.server", () => ({
 
 const { getGitHubAppUserAccessTokenByUserId, verifyGitHubWebhookSignature } =
 	await import("./github-app.server");
+const { openToken } = await import("./account-tokens.server");
 const { normalizeGitHubAppPrivateKey } = await import("./github-private-key");
 
 function orm(): Database {
@@ -148,7 +149,7 @@ describe("GitHub App user tokens", () => {
 		await db.insert(schema.account).values({
 			id: "oauth-1",
 			accountId: "12345",
-			providerId: "github",
+			providerId: "github-oauth",
 			userId: "u1",
 			accessToken: "gho_oauth_token",
 			createdAt: at,
@@ -158,7 +159,7 @@ describe("GitHub App user tokens", () => {
 			await db.insert(schema.account).values({
 				id: "app-1",
 				accountId: "12345",
-				providerId: "github-app",
+				providerId: "github-repository",
 				userId: "u1",
 				accessToken: "ghu_old",
 				refreshToken: "ghr_old",
@@ -175,8 +176,14 @@ describe("GitHub App user tokens", () => {
 		const [row] = await orm()
 			.select()
 			.from(schema.account)
-			.where(eq(schema.account.providerId, "github-app"));
-		return row;
+			.where(eq(schema.account.providerId, "github-repository"));
+		if (!row) throw new Error("No app row");
+		return {
+			...row,
+			sealedAccessToken: row.accessToken,
+			accessToken: await openToken(row.accessToken),
+			refreshToken: await openToken(row.refreshToken),
+		};
 	}
 
 	function tokenResponse(body: unknown, init: ResponseInit = { status: 200 }) {
@@ -231,6 +238,7 @@ describe("GitHub App user tokens", () => {
 		});
 		const row = await appRow();
 		expect(row.accessToken).toBe("ghu_new");
+		expect(row.sealedAccessToken).not.toContain("ghu_new");
 		expect(row.refreshToken).toBe("ghr_new");
 		expect(row.accessTokenExpiresAt?.getTime()).toBeGreaterThan(Date.now());
 	});
