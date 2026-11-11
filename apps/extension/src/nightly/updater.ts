@@ -335,8 +335,11 @@ async function install(explicit: boolean): Promise<NightlyInstallResult> {
   // The manifest is written last, so a folder already naming this build holds all of it: no lock or target needed.
   if ((await versionOnDisk()) === latest.version) return sharedInstall(current, latest.version, trigger);
   const target = await installTarget();
-  if ('ok' in target) return target;
-  await patchStatus({ installing: latest.version, failure: null });
+  if ('ok' in target) {
+    if (target.need !== undefined) await patchStatus({ blocked: { version: latest.version, need: target.need, reason: target.reason, at: new Date().toISOString() } });
+    return target;
+  }
+  await patchStatus({ installing: latest.version, failure: null, blocked: null });
   const failed = (reason: string): NightlyFailure => ({ version: latest.version, stillOn: current, reason, at: new Date().toISOString() });
   let entries: ZipEntry[];
   try {
@@ -477,6 +480,10 @@ export function startNightly(): void {
   browser.runtime.onStartup.addListener(() => void checkForUpdate());
   browser.runtime.onInstalled.addListener(() => void checkForUpdate());
   nightlyPrefsItem.watch(() => void checkForUpdate());
+  // Connecting happens on the nightly page, whose tab holds Chrome's grant, so Automatic can install right away.
+  nightlyFolderItem.watch((next, previous) => {
+    if (next !== null && next.connectedAt !== previous?.connectedAt) void checkForUpdate();
+  });
   // This worker has only just started, so no install of its own is under way: one marked is left from a worker Chrome stopped mid-install.
   void settleInterrupted().then(showBadge);
   void adoptInstallerFolder();

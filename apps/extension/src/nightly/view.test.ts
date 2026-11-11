@@ -29,6 +29,7 @@ const status = (patch: Partial<NightlyStatus>): NightlyStatus => ({
   etag: null,
   limitedUntil: null,
   writing: null,
+  blocked: null,
   ...patch,
 });
 
@@ -52,6 +53,24 @@ describe('nightlyView', () => {
     const view = nightlyView(status({ latest: release(3305) }), null, '0.1.2.3301', NOW);
     expect(view.action?.kind).toBe('connect');
     expect(nightlyView(status({}), null, '0.1.2.3301', NOW, null, '/Users/me/Geld Nightly/Work').detail).toBe('Connect /Users/me/Geld Nightly/Work so Geld can install builds. Pick it when Chrome asks.');
+  });
+
+  it('says why a build Automatic found did not install on its own', () => {
+    const blocked = (need: 'folder' | 'permission', at: string): Partial<NightlyStatus> => ({
+      latest: release(3305),
+      blocked: { version: '0.1.2.3305', need, reason: 'The connected folder is not the one Geld runs from. Connect it again.', at },
+    });
+    expect(nightlyView(status(blocked('permission', minutesAgo(1))), folder, '0.1.2.3301', NOW)).toEqual({
+      headline: 'Build 3305 is ready',
+      detail: 'Chrome needs your OK before Geld can write to its folder. Choose Allow on every visit and later builds install on their own.',
+      tone: 'ready',
+      action: { kind: 'install', label: 'Allow and install' },
+    });
+    const wrongFolder = nightlyView(status(blocked('folder', minutesAgo(1))), folder, '0.1.2.3301', NOW);
+    expect(wrongFolder.detail).toBe('The connected folder is not the one Geld runs from. Connect it again.');
+    expect(wrongFolder.action).toEqual({ kind: 'connect', label: 'Connect folder' });
+    expect(nightlyView(status(blocked('folder', minutesAgo(601))), folder, '0.1.2.3301', NOW).action?.kind).toBe('install');
+    expect(nightlyView(status({ ...blocked('permission', minutesAgo(1)), latest: release(3306) }), folder, '0.1.2.3301', NOW).action?.label).toBe('Install');
   });
 
   it('shows an install under way', () => {

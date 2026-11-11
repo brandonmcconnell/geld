@@ -82,6 +82,20 @@ export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null,
       action: { kind: 'connect', label: 'Connect folder' },
     };
   }
+  const blocked = status.blocked;
+  if (newer !== null && blocked !== null && blocked.version === newer.version && newer.version !== status.skipped) {
+    if (blocked.need === 'permission') {
+      return {
+        headline: `${capital(buildLabel(newer.version))} is ready`,
+        detail: 'Chrome needs your OK before Geld can write to its folder. Choose Allow on every visit and later builds install on their own.',
+        tone: 'ready',
+        action: { kind: 'install', label: 'Allow and install' },
+      };
+    }
+    if (Date.parse(blocked.at) >= Date.parse(folder.connectedAt)) {
+      return { headline: `${capital(buildLabel(newer.version))} is ready`, detail: blocked.reason, tone: 'ready', action: { kind: 'connect', label: 'Connect folder' } };
+    }
+  }
   if (newer !== null) {
     return {
       headline: `${capital(buildLabel(newer.version))} is ready`,

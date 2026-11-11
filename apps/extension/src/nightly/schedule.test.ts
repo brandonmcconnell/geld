@@ -17,6 +17,7 @@ const status = (patch: Partial<NightlyStatus>): NightlyStatus => ({
   etag: null,
   limitedUntil: null,
   writing: null,
+  blocked: null,
   ...patch,
 });
 const release = (tag: string): NightlyStatus['latest'] => ({ tag, version: '0.1.2.1', build: 1, assetName: '', assetUrl: '', checksumUrl: '', size: 0, publishedAt: '', htmlUrl: '' });
