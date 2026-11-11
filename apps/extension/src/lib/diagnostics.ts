@@ -62,19 +62,30 @@ export async function readDiagnostics(): Promise<readonly DiagnosticEvent[]> {
  * people, and the log may name repositories and nothing more.
  */
 export function tabSubject(url: string): string {
-  let pathname: string;
+  let parsed: URL;
   try {
-    pathname = new URL(url).pathname;
+    parsed = new URL(url);
   } catch {
     return 'other page';
   }
+  const { pathname } = parsed;
+  const host = hostPrefix(parsed);
   const pull = /^\/([^/]+\/[^/]+)\/pull\/(\d+)(\/(?:files|changes|commits|checks))?/.exec(pathname);
-  if (pull !== null) return `${pull[1]}#${pull[2]}${pull[3] ?? ''}`;
+  if (pull !== null) return `${host}${pull[1]}#${pull[2]}${pull[3] ?? ''}`;
   const commit = /^\/([^/]+\/[^/]+)\/commit\/([0-9a-f]+)/i.exec(pathname);
-  if (commit !== null) return `${commit[1]}@${(commit[2] ?? '').slice(0, 7)}`;
+  if (commit !== null) return `${host}${commit[1]}@${(commit[2] ?? '').slice(0, 7)}`;
   const repoPage = /^\/([^/]+\/[^/]+)\/(pulls|compare|commits)(?:\/|$)/.exec(pathname);
-  if (repoPage !== null) return `${repoPage[1]} (${repoPage[2]})`;
+  if (repoPage !== null) return `${host}${repoPage[1]} (${repoPage[2]})`;
   return 'other page';
+}
+
+/**
+ * `ghe.example.com/` before a repository on any host but github.com: the same
+ * `owner/repo` on two hosts is two repositories, and the feedback form names
+ * only the one on the page's own host (`anonymizeDiagnostics`).
+ */
+function hostPrefix(url: URL): string {
+  return url.hostname === 'github.com' ? '' : `${url.hostname}/`;
 }
 
 /** `owner/repo#N` for a pull request diff, `owner/repo@sha7` for a commit's; null for anything else. */
@@ -85,10 +96,11 @@ export function diagnosticSubject(diffUrl: string): string | null {
   } catch {
     return null;
   }
+  const host = hostPrefix(url);
   const pull = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\.diff$/.exec(url.pathname);
-  if (pull !== null) return `${pull[1]}/${pull[2]}#${pull[3]}`;
+  if (pull !== null) return `${host}${pull[1]}/${pull[2]}#${pull[3]}`;
   const commit = /^\/([^/]+)\/([^/]+)\/commit\/([0-9a-f]+)\.diff$/i.exec(url.pathname);
-  if (commit !== null) return `${commit[1]}/${commit[2]}@${(commit[3] ?? '').slice(0, 7)}`;
+  if (commit !== null) return `${host}${commit[1]}/${commit[2]}@${(commit[3] ?? '').slice(0, 7)}`;
   return null;
 }
 

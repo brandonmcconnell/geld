@@ -89,6 +89,8 @@ export const OBFUSCATED = '[obfuscated]';
 const REPO_REFERENCE = /(?<![\w./-])([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)(?:(#)\d+|(@)[0-9a-f]{7,40})?(?![\w-])/g;
 /** A repository's page on a host: `https://host/owner/repo`, then `/pull/N`, `/issues/N`, `/discussions/N` and the like. */
 const REPO_URL = /\bhttps?:\/\/([A-Za-z0-9.-]+)\/([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)(?:\/(pull|pulls|issues|discussions|commit|commits|compare|tree|blob|actions|releases)(?:\/([^\s/?#]+))?)?/g;
+/** A reference the log prefixes with its host, for any host but github.com (`tabSubject`): `ghe.example.com/owner/repo#N`. */
+const HOSTED_REFERENCE = /(?<![\w./:-])([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)\/([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9._-]+)(?:(#)\d+|(@)[0-9a-f]{7,40})?(?![\w-])/g;
 const HOST_FIELD = /\bfrom=([^\s]+)/g;
 
 function isGitHubHost(host: string): boolean {
@@ -101,8 +103,8 @@ function isGitHubHost(host: string): boolean {
  * `[obfuscated]`: `[obfuscated]/[obfuscated]#[obfuscated]`, and
  * `https://github.com/[obfuscated]/[obfuscated]/pull/[obfuscated]` for an
  * address. The report covers every open GitHub tab, so even with the page's
- * address in the issue only that page's own repository and host keep their
- * names.
+ * address in the issue only that page's own repository on its own host keeps
+ * its name: the same `owner/repo` on another host is another repository.
  */
 export function anonymizeDiagnostics(report: string, named: NamedPage | null): string {
   const kept = named?.repo.toLowerCase() ?? null;
@@ -114,8 +116,13 @@ export function anonymizeDiagnostics(report: string, named: NamedPage | null): s
       const path = kind === undefined ? '' : `/${kind}${item === undefined ? '' : `/${OBFUSCATED}`}`;
       return `${whole.startsWith('http://') ? 'http' : 'https'}://${hostShown(host)}/${OBFUSCATED}/${OBFUSCATED}${path}`;
     })
+    .replace(HOSTED_REFERENCE, (whole: string, host: string, owner: string, repo: string, pull: string | undefined, sha: string | undefined) => {
+      if (`${owner}/${repo}`.toLowerCase() === kept && host.toLowerCase() === keptHost) return whole;
+      return `${hostShown(host)}/${OBFUSCATED}/${OBFUSCATED}${pull !== undefined ? `#${OBFUSCATED}` : sha !== undefined ? `@${OBFUSCATED}` : ''}`;
+    })
+    // A reference with no host is github.com's: the page's repository keeps its name only when the page is on github.com too.
     .replace(REPO_REFERENCE, (whole: string, owner: string, repo: string, pull: string | undefined, sha: string | undefined) => {
-      if (`${owner}/${repo}`.toLowerCase() === kept) return whole;
+      if (`${owner}/${repo}`.toLowerCase() === kept && keptHost === 'github.com') return whole;
       return `${OBFUSCATED}/${OBFUSCATED}${pull !== undefined ? `#${OBFUSCATED}` : sha !== undefined ? `@${OBFUSCATED}` : ''}`;
     })
     .replace(HOST_FIELD, (_whole: string, host: string) => `from=${hostShown(host)}`);

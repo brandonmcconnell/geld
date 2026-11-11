@@ -12,6 +12,8 @@ describe('tabSubject', () => {
     expect(tabSubject('https://github.com/wxt-dev/wxt/pulls?q=is%3Aopen')).toBe('wxt-dev/wxt (pulls)');
     expect(tabSubject('https://github.com/wxt-dev/wxt/compare/main...feat')).toBe('wxt-dev/wxt (compare)');
     // A profile, an organisation, a search, a settings page: nothing of the path is kept.
+    expect(tabSubject('https://ghe.example.com/acme/widgets/pull/77/files')).toBe('ghe.example.com/acme/widgets#77/files');
+    expect(tabSubject('https://ghe.example.com/acme/widgets/commit/0a1b2c3d4e')).toBe('ghe.example.com/acme/widgets@0a1b2c3');
     expect(tabSubject('https://github.com/someone')).toBe('other page');
     expect(tabSubject('https://github.com/orgs/acme/people')).toBe('other page');
     expect(tabSubject('https://github.com/search?q=secret+project')).toBe('other page');

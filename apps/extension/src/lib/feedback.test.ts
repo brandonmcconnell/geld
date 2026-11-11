@@ -131,7 +131,20 @@ describe('anonymizeDiagnostics', () => {
 
   it('keeps the page\'s own repository and Enterprise host, in references and addresses alike', () => {
     expect(
-      anonymizeDiagnostics('fetch acme/secret#1 ok from=ghe.acme.internal at https://ghe.acme.internal/acme/secret/pull/1', { repo: 'acme/secret', host: 'ghe.acme.internal' }),
-    ).toBe('fetch acme/secret#1 ok from=ghe.acme.internal at https://ghe.acme.internal/acme/secret/pull/1');
+      anonymizeDiagnostics('fetch ghe.acme.internal/acme/secret#1 ok from=ghe.acme.internal at https://ghe.acme.internal/acme/secret/pull/1', {
+        repo: 'acme/secret',
+        host: 'ghe.acme.internal',
+      }),
+    ).toBe('fetch ghe.acme.internal/acme/secret#1 ok from=ghe.acme.internal at https://ghe.acme.internal/acme/secret/pull/1');
+  });
+
+  it('never names the same owner/repo on another host', () => {
+    const report = 'fetch acme/widgets#3 ok\ninject ghe.example.com/acme/widgets#77 present\nghe.example.com/acme/widgets@0a1b2c3 (hidden): up 1s';
+    expect(anonymizeDiagnostics(report, { repo: 'acme/widgets', host: 'github.com' })).toBe(
+      'fetch acme/widgets#3 ok\ninject [obfuscated]/[obfuscated]/[obfuscated]#[obfuscated] present\n[obfuscated]/[obfuscated]/[obfuscated]@[obfuscated] (hidden): up 1s',
+    );
+    expect(anonymizeDiagnostics(report, { repo: 'acme/widgets', host: 'ghe.example.com' })).toBe(
+      'fetch [obfuscated]/[obfuscated]#[obfuscated] ok\ninject ghe.example.com/acme/widgets#77 present\nghe.example.com/acme/widgets@0a1b2c3 (hidden): up 1s',
+    );
   });
 });
