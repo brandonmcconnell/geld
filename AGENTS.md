@@ -2347,6 +2347,8 @@ The browser imports `@geld/core` and `@geld/review` by module (`@geld/review/bui
 Commits, people's comments, reviews and state changes always show.
 **In the files view a file in one of Geld's categories starts collapsed and names its category** (`fileCategory`, `src/lib/geld/file-category.ts`, read in `diff-code-view.tsx` and `DiffFileHeader`), and the sidebar's foot says what is left to review (`LeftToReview`).
 Such a file is never removed or moved: the diff is a stream shown in its order.
+**The files sidebar has a Guide beside its tree** (`reviewGuide`, `nextInGuide`, `src/lib/geld/review-guide.ts`, `ReviewGuideList` in `review-page.tsx`): the files in the order to read them, in steps (shapes and contracts, the change with its largest file first, docs, then each category Geld sets aside, to skim), each step counting its viewed files, with a Next button for the first file not yet ticked as viewed.
+The order comes from paths and counts alone, with no AI and nothing fetched.
 Not done yet: GitHub's screens still read through the app's own GitHub client, another provider's pull request cannot be opened in the hub, and the hub knows nothing of Geld's teams.
 Each of those arrives as its own change.
 

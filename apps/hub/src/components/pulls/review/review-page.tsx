@@ -1,3 +1,5 @@
+import { cn } from "@geld/hub-ui/lib/utils";
+import { nextInGuide, reviewGuide } from "#/lib/geld/review-guide";
 import { useReaderMatcher } from "#/lib/geld/use-reader-settings";
 import {
 	hiddenLabel,
@@ -864,6 +866,8 @@ export const ReviewSidebar = memo(function ReviewSidebar({
 		activeFileStore.get,
 	);
 
+	const [mode, setMode] = useState<"tree" | "guide">("tree");
+
 	const revealFile = useCallback(
 		(path: string) => {
 			onFileClick(path);
@@ -889,11 +893,40 @@ export const ReviewSidebar = memo(function ReviewSidebar({
 				shortcutKey="f"
 			/>
 
-			<ReviewFileTree
-				files={sidebarFiles}
-				activeFileStore={activeFileStore}
-				onFileClick={revealFile}
-			/>
+			<div className="flex shrink-0 gap-1 px-3 pb-2">
+				{(["tree", "guide"] as const).map((value) => (
+					<button
+						key={value}
+						type="button"
+						aria-pressed={mode === value}
+						data-testid={`review-mode-${value}`}
+						onClick={() => setMode(value)}
+						className={cn(
+							"rounded-md px-2 py-0.5 text-xs font-[450] transition-colors",
+							mode === value
+								? "bg-surface-1 text-foreground"
+								: "text-muted-foreground hover:text-foreground",
+						)}
+					>
+						{value === "tree" ? "Tree" : "Guide"}
+					</button>
+				))}
+			</div>
+
+			{mode === "guide" && viewedFiles ? (
+				<ReviewGuideList
+					files={sidebarFiles}
+					viewedFiles={viewedFiles}
+					activeFile={activeFile}
+					onFileClick={revealFile}
+				/>
+			) : (
+				<ReviewFileTree
+					files={sidebarFiles}
+					activeFileStore={activeFileStore}
+					onFileClick={revealFile}
+				/>
+			)}
 
 			{isStreamingSummaries ? null : <LeftToReview files={sidebarFiles} />}
 
@@ -921,6 +954,109 @@ export const ReviewSidebar = memo(function ReviewSidebar({
 		</div>
 	);
 });
+
+/** The pull request's files in the order to read them, with what is next. */
+function ReviewGuideList({
+	files,
+	viewedFiles,
+	activeFile,
+	onFileClick,
+}: {
+	files: readonly PullFileSummary[];
+	viewedFiles: ViewedFilesStore;
+	activeFile: string | null;
+	onFileClick: (path: string) => void;
+}) {
+	const matcher = useReaderMatcher();
+	const steps = useMemo(() => reviewGuide(files, matcher), [files, matcher]);
+	useSyncExternalStore(viewedFiles.subscribe, viewedFiles.count, () => 0);
+	const next = nextInGuide(steps, viewedFiles.has);
+	return (
+		<div
+			data-testid="review-guide"
+			className="min-h-0 flex-1 overflow-y-auto px-3 pb-3"
+		>
+			{next === null ? (
+				<p className="px-1 pb-2 text-xs text-muted-foreground">
+					Every file is viewed.
+				</p>
+			) : (
+				<button
+					type="button"
+					data-testid="review-guide-next"
+					onClick={() => onFileClick(next)}
+					className="mb-2 flex w-full items-center gap-2 rounded-md border-[0.5px] border-border bg-surface-1 px-2 py-1.5 text-left text-xs transition-colors hover:bg-ghost-hover"
+				>
+					<span className="shrink-0 font-medium text-foreground">Next</span>
+					<span className="min-w-0 truncate font-mono text-muted-foreground [direction:rtl]">
+						<bdi>{next}</bdi>
+					</span>
+				</button>
+			)}
+			<ol className="flex flex-col gap-3">
+				{steps.map((step, index) => {
+					const viewed = step.files.filter((file) =>
+						viewedFiles.has(file.path),
+					).length;
+					return (
+						<li key={step.id} className={cn(step.skim && "opacity-80")}>
+							<div className="flex items-baseline gap-2 px-1">
+								<span className="text-xs tabular-nums text-muted-foreground">
+									{index + 1}
+								</span>
+								<span className="text-xs font-medium text-foreground">
+									{step.title}
+								</span>
+								<span className="ml-auto text-xs tabular-nums text-muted-foreground">
+									{viewed}/{step.files.length}
+								</span>
+							</div>
+							<p className="px-1 pb-1 pl-5 text-xs text-muted-foreground">
+								{step.note}
+							</p>
+							<ul>
+								{step.files.map((file) => {
+									const done = viewedFiles.has(file.path);
+									return (
+										<li key={file.path}>
+											<button
+												type="button"
+												onClick={() => onFileClick(file.path)}
+												aria-current={file.path === activeFile}
+												className={cn(
+													"flex w-full items-center gap-2 rounded-md py-1 pr-1 pl-5 text-left text-xs transition-colors hover:bg-ghost-hover",
+													file.path === activeFile && "bg-surface-1",
+													file.path === next && "font-medium",
+												)}
+											>
+												<span
+													className={cn(
+														"min-w-0 flex-1 truncate font-mono [direction:rtl]",
+														done
+															? "text-muted-foreground line-through"
+															: "text-foreground",
+													)}
+												>
+													<bdi>{file.path}</bdi>
+												</span>
+												<span className="shrink-0 tabular-nums text-added">
+													+{file.additions}
+												</span>
+												<span className="shrink-0 tabular-nums text-removed">
+													−{file.deletions}
+												</span>
+											</button>
+										</li>
+									);
+								})}
+							</ul>
+						</li>
+					);
+				})}
+			</ol>
+		</div>
+	);
+}
 
 /** What Geld's categories leave to review, when they set anything aside. */
 function LeftToReview({ files }: { files: readonly PullFileSummary[] }) {
