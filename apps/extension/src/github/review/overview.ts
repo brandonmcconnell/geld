@@ -31,11 +31,12 @@ import { deploymentEntries, deploymentOf, deploymentsOfPreview, environmentLabel
 import { threadFragmentOf } from './thread-fragment';
 import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, loadMoreStalled, loadMoreStanding, sourceAnchorFromHash } from './deeplink';
 import { commitDate, commitTimes, isRewritten } from './commit-dates';
+import { embeddedPullRequestCreated } from '../merge-actions';
 import { editedAt, editsVersion, editTimesOf, refreshEditTimes, resetEditTimes, revisionAsOf, revisionTimesOf } from './edit-times';
 import type { SameRunCandidate } from './revisions';
 import { RUN_SETTLE_MS, threadHeadOf } from './thread-head';
 import { headChecks, nextCheckRefresh, resetHeadChecks } from './check-source';
-import { absoluteTimeText, relativeTimeText } from './time';
+import { absoluteTimeText, earliestMoment, relativeTimeText } from './time';
 import { stickyHeaderBottomAt } from './sticky';
 import { fetchReviewerCandidates, hasReviewActions, pressReviewAction, requestReviewers, reviewRequestForm } from './reviewers';
 import type { ReviewerCandidate } from './reviewers';
@@ -1038,14 +1039,10 @@ function clockOf(node: Element): string | null {
   return datetime === '' || Number.isNaN(Date.parse(datetime)) ? null : datetime;
 }
 
-function earliestMoment(moments: readonly (string | null | undefined)[]): string | null {
-  let best: { readonly at: string; readonly time: number } | null = null;
-  for (const at of moments) {
-    const time = at === null || at === undefined ? Number.NaN : Date.parse(at);
-    if (at === null || at === undefined || Number.isNaN(time)) continue;
-    if (best === null || time < best.time) best = { at, time };
-  }
-  return best?.at ?? null;
+/** When the description was written: the pull request's opening, from the React page's payload, else the classic card's clock. */
+function descriptionMoment(): string | null {
+  const card = descriptionCard();
+  return embeddedPullRequestCreated(location.pathname) ?? (card === null ? null : clockOf(card));
 }
 
 /**
@@ -1064,8 +1061,7 @@ function foldMoment(group: FoldGroup, headlineNode: HTMLElement | null): string 
     );
   }
   if (group.key === 'mentions') {
-    const described = descriptionMentions().length > 0 ? descriptionCard() : null;
-    return earliestMoment([...group.nodes.map(clockOf), ...conversationMentions().map((line) => line.at), ...incomingReadMentions().map((line) => line.at), described === null ? null : clockOf(described)]);
+    return earliestMoment([...group.nodes.map(clockOf), ...conversationMentions().map((line) => line.at), ...incomingReadMentions().map((line) => line.at), descriptionMentions().length > 0 ? descriptionMoment() : null]);
   }
   const first = group.nodes[0];
   return first === undefined ? null : clockOf(first);

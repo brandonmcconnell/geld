@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { relativeTimeText } from './time';
+import { earliestMoment, relativeTimeText } from './time';
 
 const NOW = Date.parse('2026-11-07T03:32:00Z');
 const ago = (ms: number): string => new Date(NOW - ms).toISOString();
@@ -27,5 +27,16 @@ describe('relativeTimeText', () => {
 
   it('says nothing for a time it cannot read', () => {
     expect(relativeTimeText('not a date', NOW)).toBe('');
+  });
+});
+
+describe('earliestMoment', () => {
+  it('takes the description’s moment when the description holds the only mention', () => {
+    expect(earliestMoment([undefined, null, '2026-11-07T07:16:57Z'])).toBe('2026-11-07T07:16:57Z');
+  });
+
+  it('takes the earliest known moment and skips what cannot be read', () => {
+    expect(earliestMoment(['2026-11-09T10:27:00Z', 'soon', '2026-11-07T07:16:57Z', '2026-11-08T00:00:00Z'])).toBe('2026-11-07T07:16:57Z');
+    expect(earliestMoment([null, undefined])).toBeNull();
   });
 });

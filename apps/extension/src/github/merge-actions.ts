@@ -381,6 +381,25 @@ export function embeddedStack(pullPath: string, root: ParentNode = document): re
   return members !== null && members.every((member) => member.path.toLowerCase().startsWith(repoPrefix)) ? members : null;
 }
 
+/**
+ * When the pull request was opened (`pullRequest.createdTime`), from the payload the React page embeds, or null when the
+ * payload is missing or another pull request's: the Overview's description box carries no clock of its own.
+ */
+export function embeddedPullRequestCreated(pullPath: string, root: ParentNode = document): string | null {
+  const page = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(pullPath);
+  if (page === null) return null;
+  const [, owner = '', repo = '', number = ''] = page;
+  for (const script of root.querySelectorAll('script[type="application/json"][data-target="react-app.embeddedData"]')) {
+    const layout = layoutRouteOf(script);
+    if (layout === null || !isRecord(layout.pullRequest) || layout.pullRequest.number !== Number(number)) continue;
+    const repository = layout.repository;
+    if (!isRecord(repository) || stringOf(repository.ownerLogin).toLowerCase() !== owner.toLowerCase() || stringOf(repository.name).toLowerCase() !== repo.toLowerCase()) continue;
+    const created = stringOf(layout.pullRequest.createdTime);
+    return created === '' || Number.isNaN(Date.parse(created)) ? null : created;
+  }
+  return null;
+}
+
 /** GitHub's `page_data/stacks` for a pull request, as it answered, or null when it did not. */
 export async function fetchStackPayload(pullPath: string): Promise<unknown> {
   try {
