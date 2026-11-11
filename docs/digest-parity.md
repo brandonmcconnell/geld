@@ -106,7 +106,7 @@ Paths are under `apps/extension/src/` unless they start with `packages/`.
 | GitHub feature | GitLab | Bitbucket | Source (GL / BB) | Slot |
 | --- | --- | --- | --- | --- |
 | Rows only when they have something to say | partial: `review-panel.ts` `render()` | partial: same | — | — |
-| Order: Reviews, Review bots, Agent notes, Reports, CI, Previews, Deployments | partial: Reviews, Merge checks, Review bots, Agent notes, Reports, CI, Previews | partial: same | — | — |
+| Order: Reviews, Review bots, Agent notes, Reports, CI, Previews, Deployments | partial: the same order with the merge checks inside Checks, Deployments missing | partial: same | — | — |
 | Merge checks / requirements | match: inside the Checks row, above CI (`mergeChecksList`, `gitlab/merge-checks.ts`) | match: same (`bitbucket/requirements.ts`) | DOM: merge widget rows / sidebar | should be a slot, today a copy |
 | Deployments row | missing | missing | GL: `/deployments`, environments API · BB: `/deployments` (Pipelines) | data |
 
@@ -132,7 +132,7 @@ Decision needed: keep Merge checks as a provider row, or fold it into CI and the
 
 | GitHub feature | GitLab | Bitbucket | Source | Slot |
 | --- | --- | --- | --- | --- |
-| Pills per reviewer by latest verdict, grouped approved, changes requested, commented, awaiting | partial: a flat disclosure per reviewer with a verdict label (`reviewStandings`) | partial: same | GL `/approvals`, `/reviewers`, MR `reviewers` · BB `participants` | data |
+| Pills per reviewer by latest verdict, grouped approved, changes requested, commented, awaiting | match: one pill per person in that order, each verdict as its glyph, awaiting dashed with the amber dot (`reviewStandings`) | match: same | GL `/approvals`, `/reviewers`, MR `reviewers` · BB `participants` | data |
 | Required approvals fraction | partial: from `approvals_required`/`approvals_left`, no rules (§2.1) | missing: recorded as unavailable, merge checks read from the sidebar | GL `/approval_state` · BB branch restrictions (needs admin), sidebar DOM | — |
 | Index of reviews leading to their round | partial: threads and comments nested under each reviewer | partial: same | — | — |
 | ⋯ Request reviewers menu | partial: "Reviewer controls" focuses GitLab's sidebar widget | missing | native sidebar | slot (the sidebar widget) |

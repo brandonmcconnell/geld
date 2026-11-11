@@ -769,6 +769,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     }
     const list = node('div', '', 'geld-provider-review__reviewers');
     list.setAttribute('role', 'list');
+    // GitHub's order: who approved, who asked for changes, who commented, then who is only awaited.
+    const rank = (reviewer: ProviderReviewReviewer): number => ['approved', 'changes_requested', 'commented', 'pending'].indexOf(reviewer.state);
+    reviewers.sort((a, b) => rank(a) - rank(b));
     for (const reviewer of reviewers) {
       const row = disclosure(`reviewer:${reviewer.author.id}`, '', false);
       row.classList.add('geld-provider-review__standing', 'geld-provider-review__entry');
@@ -807,8 +810,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       compact.toggleAttribute('data-geld-review-requested', reviewerRequested(reviewer));
       compact.title = `${reviewer.author.login}: ${reviewerLabel(reviewer)}`;
       compact.append(mark.cloneNode(true), node('span', presentation?.displayName ?? reviewer.author.login));
-      if (reviewer.state === 'approved') compact.append(digestIcon('check', doc));
-      else compact.append(node('span', reviewerLabel(reviewer), 'geld-provider-review__muted'));
+      const glyph = reviewer.state === 'approved' ? 'check' : reviewer.state === 'changes_requested' ? 'changes' : reviewer.state === 'commented' ? 'comment' : null;
+      if (glyph !== null) compact.append(digestIcon(glyph, doc));
+      else if (!reviewerRequested(reviewer)) compact.append(node('span', reviewerLabel(reviewer), 'geld-provider-review__muted'));
       preview.append(compact);
       if (reviewer.author.automated === true) chip.append(node('span', 'Automated account', 'geld-provider-review__muted'));
       const comments = new Map<string, ProviderReviewComment>();

@@ -685,6 +685,19 @@ describe('provider conversation digest', () => {
     expect(panel.element.querySelector('[data-state="approved"] .geld-provider-review__reviewer')?.getAttribute('aria-label')).toBe('alice: Approved');
   });
 
+  it('heads the Reviews row with one pill per person in GitHub order, each verdict as its glyph', () => {
+    const panel = renderProviderReviewPanel(host(), { ...input(), reviewers: [
+      { author: { id: '4', login: 'dana' }, state: 'pending', reviewRequest: 'pending' },
+      { author: { id: '3', login: 'carol' }, state: 'commented' },
+      { author: { id: '2', login: 'bob' }, state: 'changes_requested' },
+      { author: { id: '1', login: 'alice' }, state: 'approved' },
+    ] }, {});
+    const chips = [...panel.element.querySelectorAll('[data-geld-review-key="reviewers"] .geld-provider-review__status-chip')];
+    expect(chips.map(chip => chip.getAttribute('data-state'))).toEqual(['approved', 'changes_requested', 'commented', 'pending']);
+    expect(chips.map(chip => chip.querySelector('svg') !== null)).toEqual([true, true, true, false]);
+    expect(chips[3]?.hasAttribute('data-geld-review-requested')).toBe(true);
+  });
+
   it('retains state-only legacy presentation while explicit unknown never invents a request', () => {
     const native: ProviderReviewInput = { ...input(), reviewers: [
       { author: { id: '1', login: 'legacy' }, state: 'pending' },
@@ -694,9 +707,8 @@ describe('provider conversation digest', () => {
     const panel = renderProviderReviewPanel(host(), native, {});
     const section = panel.element.querySelector('[data-geld-review-key="reviewers"]');
     expect(section?.querySelector('.geld-provider-review__reviewer-summary')?.textContent).toBe('Reviews · 1 approval · 1 pending review');
-    expect(section?.querySelectorAll('.geld-provider-review__reviewer')[0]?.getAttribute('aria-label')).toBe('legacy: Review requested');
-    expect(section?.querySelectorAll('.geld-provider-review__reviewer')[1]?.getAttribute('aria-label')).toBe('assigned: Reviewer');
-    expect(section?.querySelectorAll('.geld-provider-review__reviewer')[2]?.getAttribute('aria-label')).toBe('approver: Approved');
+    expect([...section?.querySelectorAll('.geld-provider-review__reviewer') ?? []].map(chip => chip.getAttribute('aria-label'))).toEqual(['approver: Approved', 'legacy: Review requested', 'assigned: Reviewer']);
+    expect([...section?.querySelectorAll('.geld-provider-review__status-chip') ?? []].map(chip => chip.getAttribute('data-state'))).toEqual(['approved', 'pending', 'pending']);
   });
 
   it('copies native source links and leaves navigation to the provider callback', async () => {
