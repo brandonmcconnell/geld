@@ -8,13 +8,13 @@ import {
   listRowHoverClassName,
   RepoChip,
   RowAvatar,
-  RowDiffStat,
   RowLabels,
   RowNumber,
   RowStateIcon,
   RowTime,
   rowAccessibleName,
 } from "#/components/shared/list-row";
+import { PullSignalsStat } from "#/components/pulls/pull-signals-stat";
 import { SelectableRow } from "#/components/shared/list-selection";
 import { HighlightedText } from "#/components/shared/search-highlight";
 import { useIsSkeletonSample } from "#/components/shared/skeleton-sample";
@@ -70,7 +70,7 @@ export const PullRequestRow = memo(function PullRequestRow({
         >
           <HighlightedText text={pr.title} />
         </p>
-        <RowDiffStat additions={pr.additions} deletions={pr.deletions} />
+        <PullSignalsStat pr={pr} />
         <p className="flex min-w-0 items-center gap-1 truncate text-xs text-muted-foreground md:hidden">
           <span className="truncate">{pr.repository.fullName}</span>
           <span className="tabular-nums">#{pr.number}</span>

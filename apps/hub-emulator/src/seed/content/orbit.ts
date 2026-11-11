@@ -144,6 +144,23 @@ const focusRing = buttonV1.replace(
 	'"inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors",\n\t\t\t\t"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-400 focus-visible:ring-offset-2",',
 );
 
+const buttonLoadingTest = `import { render, screen } from "@testing-library/react";
+import { expect, it } from "vitest";
+import { Button } from "./button";
+
+it("is busy and disabled while loading", () => {
+	render(<Button loading>Save</Button>);
+	const button = screen.getByRole("button", { name: "Save" });
+	expect(button).toBeDisabled();
+	expect(button).toHaveAttribute("aria-busy", "true");
+});
+
+it("is enabled once loading ends", () => {
+	render(<Button>Save</Button>);
+	expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+});
+`;
+
 const spinner = `import { cn } from "./cn";
 
 export function Spinner({ className }: { className?: string }) {
@@ -341,6 +358,12 @@ export const orbit: RepoSpec = {
 					author: "priya-rao",
 					at: { d: 1, h: 9 },
 					files: { "packages/ui/src/button.tsx": buttonLoading },
+				},
+				{
+					message: "Test the loading state",
+					author: "priya-rao",
+					at: { d: 1, h: 8, m: 30 },
+					files: { "packages/ui/src/button.test.tsx": buttonLoadingTest },
 				},
 			],
 		},

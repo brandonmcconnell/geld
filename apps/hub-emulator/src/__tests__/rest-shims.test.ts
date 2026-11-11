@@ -119,6 +119,7 @@ describe("REST shims", () => {
 		});
 		expect(files.data.map((file) => file.filename).sort()).toEqual([
 			"README.md",
+			"src/__tests__/sse.test.ts",
 			"src/transport/sse.ts",
 		]);
 		const commits = await octokit.rest.pulls.listCommits({
@@ -126,7 +127,7 @@ describe("REST shims", () => {
 			repo: "beacon",
 			pull_number: number,
 		});
-		expect(commits.data).toHaveLength(2);
+		expect(commits.data).toHaveLength(3);
 	});
 
 	it("serves PR diffs in git format and refuses ones past 300 files", async () => {

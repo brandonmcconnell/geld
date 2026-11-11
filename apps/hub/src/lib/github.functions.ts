@@ -119,6 +119,7 @@ export {
 	getPullComments,
 	getPullFileSummaries,
 	getPullFiles,
+	getPullSignals,
 	getPullFromRepo,
 	getPullPageData,
 	getPullStatus,
