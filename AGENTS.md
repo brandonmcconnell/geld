@@ -2302,7 +2302,7 @@ The ports are the hub's own: 3000 is the site's and 3001 the old dashboard's.
 Each hub package's `check` is typecheck and unit tests, so root `pnpm check` and CI cover them on Node 22;
 the build and the Playwright suite (`pnpm test:hub:e2e`) need Node 24.22 and run in CI's `Hub` job, the suite advisory for now.
 Biome is available per package as `biome:check` and `biome:lint` and is not part of `check`: the code is not clean under its preset yet.
-Direct dependencies are pinned to exact versions, since the app misbehaves on newer ones (a newer Better Auth serves the demo sign-in on another route).
+Direct dependencies are pinned to exact versions, since the app misbehaves on newer ones.
 `pnpm-workspace.yaml` overrides two Octokit type packages for the same reason.
 **Icons come only from the Geld Font Awesome kit** (`packages/hub-icons`, `createIcon` over Sharp Regular), under the names the app imports, so a glyph is changed in one place.
 Do not add another icon library: check a package's own licence file, not only its manifest, before taking it.
@@ -2321,7 +2321,15 @@ Tests mock `#/platform` with `createTestPlatform()` (`src/platform/testing.ts`) 
 Local development, demo mode and the end-to-end suite need a Postgres: `docker compose -f apps/hub/compose.yaml up -d` starts one on port 5433, and `GELD_HUB_DEMO_DATABASE_URL` names another for demo mode and the tests.
 Postgres refuses to touch a row twice in one upsert, which SQLite allowed, so `recordGitHubChanges` folds repeats of an entity first.
 No queue is bound yet and nothing in the app uses the queue, live rooms or the rate limiter: they are there for the features that need them.
-Not done yet: it signs in with GitHub alone and knows nothing of Geld's accounts, teams, Digest or categories.
+**The hub has no accounts of its own: it signs people in to the Geld account the dashboard and the extension use** (`apps/hub/docs/accounts.md`).
+The five Better Auth tables (`users`, `sessions`, `identities`, `verifications`, `rateLimit`) are the dashboard's, created by its migrations in a shared database and declared again in the hub's schema only for a database it has to itself, where every statement on them is a no-op when they exist.
+`shared-accounts.test.ts` applies both sets of migrations and fails when the two declarations differ, so a dashboard migration that touches those tables needs the same change in `apps/hub/src/db/schema.ts`.
+`sharedAccountOptions` (`apps/hub/src/lib/auth.server.ts`) mirrors `apps/dashboard/lib/auth.ts`: the `geld` cookie on `.geld.sh`, encrypted provider tokens, linking by verified email, the same `BETTER_AUTH_SECRET` and the same Better Auth version.
+Change either side only with the other.
+Rows the hub writes to `identities` itself go through `sealToken`, since the dashboard reads them encrypted.
+The hub's own tables are prefixed `hub_`, and `db:migrate -- --reset` refuses a database that is not on this machine.
+Sign-in is the dashboard's `github-oauth` identity and the GitHub App authorization its `github-repository` one, so the hub must be given the same two GitHub apps as the dashboard.
+Not done yet: it signs in with GitHub alone and knows nothing of Geld's teams, Digest or categories.
 Each of those arrives as its own change.
 
 ## Diff syntax highlighting

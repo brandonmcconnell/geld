@@ -40,6 +40,22 @@ export const getGitHubViewer = createServerFn({ method: "GET" }).handler(
 	},
 );
 
+/**
+ * Whether the signed-in Geld account has GitHub on it. Someone who signed in
+ * to Geld another way (email, another provider) has a session and no GitHub.
+ */
+export const hasGitHubConnection = createServerFn({
+	method: "GET",
+}).handler(async (): Promise<boolean> => {
+	const { getRequestSession } = await import("../auth-runtime");
+	const session = await getRequestSession();
+	if (!session) {
+		return false;
+	}
+	const { hasGitHubOAuthAccount } = await import("../github-app.server");
+	return hasGitHubOAuthAccount(session.user.id);
+});
+
 export const checkSetupComplete = createServerFn({
 	method: "GET",
 }).handler(async (): Promise<boolean> => {
@@ -49,8 +65,13 @@ export const checkSetupComplete = createServerFn({
 		return false;
 	}
 
-	const { hasGitHubAppUserAccount } = await import("../github-app.server");
-	if (!(await hasGitHubAppUserAccount(session.user.id))) {
+	const { hasGitHubAppUserAccount, hasGitHubOAuthAccount } = await import(
+		"../github-app.server"
+	);
+	if (
+		!(await hasGitHubOAuthAccount(session.user.id)) ||
+		!(await hasGitHubAppUserAccount(session.user.id))
+	) {
 		return false;
 	}
 

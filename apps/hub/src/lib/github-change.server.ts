@@ -260,7 +260,7 @@ export async function sweepGitHubChanges(
 				and(
 					lt(githubChange.changedAt, cutoff),
 					// The newest row stays, so the cursor never goes backwards.
-					lt(githubChange.version, sql`(SELECT MAX(version) FROM github_change)`),
+					lt(githubChange.version, sql`(SELECT MAX(version) FROM hub_github_change)`),
 				),
 			)
 			.orderBy(githubChange.version)

@@ -3,14 +3,16 @@ import { platform } from "#/platform";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "../db";
 import { account } from "../db/schema";
+import { openToken, sealToken } from "./account-tokens.server";
 import { debug } from "./debug";
 import { getGitHubOAuthOrigin } from "./github-emulator.server";
 import { normalizeGitHubAppPrivateKey } from "./github-private-key";
 import { GITHUB_REQUEST_TIMEOUT_MS } from "./github-request-policy";
 import { describeError } from "./route-safety.server";
 
-export const GITHUB_OAUTH_PROVIDER_ID = "github";
-const GITHUB_APP_USER_PROVIDER_ID = "github-app";
+// The dashboard's ids for the same two grants, so one row serves both apps.
+export const GITHUB_OAUTH_PROVIDER_ID = "github-oauth";
+const GITHUB_APP_USER_PROVIDER_ID = "github-repository";
 
 type StoredAccount = typeof account.$inferSelect;
 
@@ -124,7 +126,19 @@ async function getAccountByProvider(userId: string, providerId: string) {
 		.from(account)
 		.where(and(eq(account.userId, userId), eq(account.providerId, providerId)))
 		.limit(1);
-	return row;
+	if (!row) {
+		return undefined;
+	}
+	return {
+		...row,
+		accessToken: await openToken(row.accessToken),
+		refreshToken: await openToken(row.refreshToken),
+	};
+}
+
+export async function hasGitHubOAuthAccount(userId: string) {
+	const row = await getGitHubOAuthAccountByUserId(userId);
+	return Boolean(row?.accessToken);
 }
 
 export async function hasGitHubAppUserAccount(userId: string) {
@@ -302,6 +316,10 @@ async function saveGitHubAppUserToken(userId: string, token: AppUserToken) {
 	const oauthAccount = await getGitHubOAuthAccountByUserId(userId);
 	const values = {
 		...token,
+		accessToken: await sealToken(token.accessToken),
+		refreshToken: token.refreshToken
+			? await sealToken(token.refreshToken)
+			: null,
 		accountId: oauthAccount?.accountId ?? userId,
 		providerId: GITHUB_APP_USER_PROVIDER_ID,
 		userId,
