@@ -1,5 +1,5 @@
 import { browser } from 'wxt/browser';
-import { PDF_CLOSE_MESSAGE, pdfSourceOf } from '../../src/github/pdf-links';
+import { framedByGitHub, PDF_CLOSE_MESSAGE, pdfSourceOf } from '../../src/github/pdf-links';
 import type { PdfSource } from '../../src/github/pdf-links';
 
 const GITHUB = 'https://github.com';
@@ -58,6 +58,11 @@ async function show(source: PdfSource): Promise<void> {
 }
 
 async function start(): Promise<void> {
+  const ancestors = window.location.ancestorOrigins === undefined ? undefined : [...window.location.ancestorOrigins];
+  if (!framedByGitHub(window.parent !== window, ancestors, document.referrer)) {
+    message(['Geld shows PDFs here only for github.com.']);
+    return;
+  }
   const source = pdfSourceOf(new URLSearchParams(window.location.search).get('src') ?? '', GITHUB);
   if (source === null) {
     message(['This is not a PDF Geld can show.']);

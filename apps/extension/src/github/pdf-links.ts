@@ -49,3 +49,17 @@ export function pdfViewerUrl(base: string, source: PdfSource): string {
 }
 
 export const PDF_CLOSE_MESSAGE = 'geld:pdf-close';
+
+/**
+ * Whether the viewer page is framed by github.com, checked before it reads anything with the reader's session:
+ * every ancestor where the browser lists them, else the referrer. The manifest's limit is a second guard only.
+ */
+export function framedByGitHub(framed: boolean, ancestors: readonly string[] | undefined, referrer: string): boolean {
+  if (!framed) return false;
+  if (ancestors !== undefined && ancestors.length > 0) return ancestors.every((origin) => origin === GITHUB);
+  try {
+    return referrer !== '' && new URL(referrer).origin === GITHUB;
+  } catch {
+    return false;
+  }
+}

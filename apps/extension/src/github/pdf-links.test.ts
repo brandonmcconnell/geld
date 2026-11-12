@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PDF_STORAGE_ORIGINS, pdfSourceOf, pdfViewerUrl } from './pdf-links';
+import { framedByGitHub, PDF_STORAGE_ORIGINS, pdfSourceOf, pdfViewerUrl } from './pdf-links';
 
 const GITHUB = 'https://github.com';
 
@@ -50,5 +50,21 @@ describe('pdfSourceOf', () => {
     if (source === null) throw new Error('expected a PDF');
     const url = new URL(pdfViewerUrl('chrome-extension://geld/pdf-viewer.html', source));
     expect(url.searchParams.get('src')).toBe(source.url);
+  });
+});
+
+describe('framedByGitHub', () => {
+  it('lets github.com frame the viewer, by its ancestors or else its referrer', () => {
+    expect(framedByGitHub(true, ['https://github.com'], '')).toBe(true);
+    expect(framedByGitHub(true, undefined, 'https://github.com/')).toBe(true);
+    expect(framedByGitHub(true, [], 'https://github.com/owner/repo/issues/1')).toBe(true);
+  });
+
+  it('refuses any other framer, a page nesting github.com, an unknown framer and an unframed page', () => {
+    expect(framedByGitHub(true, ['https://example.com'], 'https://github.com/')).toBe(false);
+    expect(framedByGitHub(true, ['https://github.com', 'https://example.com'], '')).toBe(false);
+    expect(framedByGitHub(true, undefined, 'https://example.com/')).toBe(false);
+    expect(framedByGitHub(true, undefined, '')).toBe(false);
+    expect(framedByGitHub(false, ['https://github.com'], 'https://github.com/')).toBe(false);
   });
 });

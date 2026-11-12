@@ -1692,6 +1692,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   a `raw.githubusercontent.com` link needs nothing, since that host answers anyone.
   Escape inside the frame never reaches the dialog, so the page posts `geld:pdf-close` to the parent.
   Enterprise hosts are not covered: the page is exposed to github.com alone.
+  Before it reads anything with the reader's session the page checks it is framed by github.com (`framedByGitHub`: every `location.ancestorOrigins`, else the referrer), the manifest's limit being only a second guard.
+  Firefox has no PDF viewer yet (`manifest.exclude` on the page, `import.meta.env.FIREFOX` in the click): its MV2 web-accessible list cannot be limited to github.com, and the frame never left `about:blank` on github.com in Firefox 160 (Nov 2026), so PDF links download there as before.
 - **GitHub's own file filter is mirrored, not fought.**
   `DiffView.filteredPaths` (`filteredPathsOf` in `model.ts`) collects files whose tree item or diff root carries `hidden` — GitHub toggles that client-side for its extension / viewed / CODEOWNERS filters and leaves its header alone.
   Those files become `Classified.filtered` → `HiddenBreakdown.filtered`, subtracted from the visible numbers (header, chips, tooltip row "Filtered by GitHub") but never counted as Geld-hidden.

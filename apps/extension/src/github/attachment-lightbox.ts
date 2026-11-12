@@ -99,7 +99,7 @@ function onClick(event: MouseEvent): void {
   const target = event.target;
   if (!(target instanceof Element)) return;
   const pdfLink = target.closest('.markdown-body a[href]');
-  const pdf = pdfLink instanceof HTMLAnchorElement && !pdfLink.hasAttribute('download') ? pdfSourceOf(pdfLink.href, window.location.origin) : null;
+  const pdf = !import.meta.env.FIREFOX && pdfLink instanceof HTMLAnchorElement && !pdfLink.hasAttribute('download') ? pdfSourceOf(pdfLink.href, window.location.origin) : null;
   if (pdfLink instanceof HTMLAnchorElement && pdf !== null) {
     show(createPdfViewer(pdf, () => closeDialog?.()), pdf.name, pdf.url, pdfLink, 'Download');
     event.preventDefault();
