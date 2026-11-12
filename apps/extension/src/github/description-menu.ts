@@ -242,6 +242,13 @@ export function menuPlacement(button: { readonly top: number; readonly bottom: n
   return { top: button.top - MENU_GAP - shown, maxHeight: above };
 }
 
+/** The menu's scroll offset that shows an item, moving as little as possible: focus never scrolls a capped menu by itself, since `preventScroll` keeps the page still. */
+export function scrollToShow(scrollTop: number, viewHeight: number, itemTop: number, itemHeight: number): number {
+  if (itemTop < scrollTop) return itemTop;
+  if (itemTop + itemHeight > scrollTop + viewHeight) return itemTop + itemHeight - viewHeight;
+  return scrollTop;
+}
+
 function openMenu(button: HTMLButtonElement): void {
   closeMenu();
   if (current === null) return;
@@ -281,7 +288,12 @@ function openMenu(button: HTMLButtonElement): void {
     element.style.maxHeight = `${Math.floor(maxHeight)}px`;
   };
   place();
-  items[0]?.focus({ preventScroll: true });
+  const focusItem = (item: HTMLElement | undefined): void => {
+    if (item === undefined) return;
+    item.focus({ preventScroll: true });
+    element.scrollTop = scrollToShow(element.scrollTop, element.clientHeight, item.offsetTop, item.offsetHeight);
+  };
+  focusItem(items[0]);
   element.addEventListener(
     'keydown',
     (event) => {
@@ -292,7 +304,7 @@ function openMenu(button: HTMLButtonElement): void {
       } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault();
         const at = items.findIndex((item) => item === document.activeElement);
-        items[(at + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus({ preventScroll: true });
+        focusItem(items[(at + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]);
       }
     },
     { signal: keys.signal },

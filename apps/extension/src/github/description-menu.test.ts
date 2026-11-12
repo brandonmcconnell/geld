@@ -4,7 +4,7 @@ import type { DescriptionMenuContext } from './description-menu';
 
 const fetched = vi.hoisted(() => ({ response: new Response('{}', { status: 200 }) }));
 vi.mock('./page-fetch', () => ({ pageFetch: async () => fetched.response }));
-import { blockRequest, descriptionActions, menuPlacement, removeDescriptionMenu, reportContentUrl, syncDescriptionMenu, unblockRequest } from './description-menu';
+import { blockRequest, descriptionActions, menuPlacement, scrollToShow, removeDescriptionMenu, reportContentUrl, syncDescriptionMenu, unblockRequest } from './description-menu';
 
 const base: DescriptionMenuContext = { viewer: 'brandon', author: 'spammer', owner: 'mintlify', blocksKnown: true, blocked: null, mayBlockFromOrg: false };
 
@@ -51,6 +51,20 @@ describe('menuPlacement', () => {
 
   it('caps an upward menu to the room above', () => {
     expect(menuPlacement({ top: 300, bottom: 328 }, 900, 400)).toEqual({ top: 8, maxHeight: 288 });
+  });
+});
+
+describe('scrollToShow', () => {
+  it('leaves an item in view where it is', () => {
+    expect(scrollToShow(0, 100, 40, 33)).toBe(0);
+  });
+
+  it('scrolls down just enough for an item below the view', () => {
+    expect(scrollToShow(0, 100, 140, 33)).toBe(73);
+  });
+
+  it('scrolls up to an item above the view', () => {
+    expect(scrollToShow(120, 100, 8, 33)).toBe(8);
   });
 });
 
