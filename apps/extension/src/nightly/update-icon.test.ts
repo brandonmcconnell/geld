@@ -128,4 +128,31 @@ describe('showUpdateIcon', () => {
     await settle();
     expect(setIcon).toHaveBeenCalledTimes(2);
   });
+
+  it('paints a state asked for while the paint before it failed', async () => {
+    vi.stubGlobal(
+      'ImageData',
+      class {
+        constructor(
+          readonly data: Uint8ClampedArray,
+          readonly width: number,
+          readonly height: number,
+        ) {}
+      },
+    );
+    setIcon.mockClear();
+    let reject: (error: Error) => void = () => undefined;
+    setIcon.mockImplementationOnce(() => new Promise((_resolve, fail) => (reject = fail))).mockResolvedValue(undefined);
+    showUpdateIcon({ kind: 'ready' });
+    await settle();
+    showUpdateIcon({ kind: 'progress', share: 0.5 });
+    reject(new Error('No icon'));
+    await settle();
+    expect(setIcon).toHaveBeenCalledTimes(2);
+    expect(setIcon.mock.calls[1]?.[0]).toHaveProperty('imageData');
+    showUpdateIcon({ kind: 'progress', share: 0.5 });
+    await settle();
+    expect(setIcon).toHaveBeenCalledTimes(2);
+    vi.unstubAllGlobals();
+  });
 });

@@ -217,8 +217,8 @@ async function paint(icon: UpdateIcon): Promise<void> {
 
 /**
  * Paints run one at a time and only the latest asked for is painted next, so a fast download never queues up
- * frames. A paint that fails ends the run unrecorded, so the next request for that state tries again rather than
- * this one looping.
+ * frames. A paint that fails is left unrecorded: a newer state asked for meanwhile is painted next, and a failure
+ * of the latest ends the run, so the next request for it tries again rather than this one looping.
  */
 export function showUpdateIcon(icon: UpdateIcon): void {
   wanted = icon;
@@ -229,7 +229,14 @@ export function showUpdateIcon(icon: UpdateIcon): void {
 
 async function drain(): Promise<void> {
   try {
-    while (iconKey(wanted) !== painted) await paint(wanted);
+    while (iconKey(wanted) !== painted) {
+      const asked = wanted;
+      try {
+        await paint(asked);
+      } catch (error) {
+        if (iconKey(wanted) === iconKey(asked)) throw error;
+      }
+    }
   } finally {
     draining = false;
   }
