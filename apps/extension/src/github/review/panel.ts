@@ -584,11 +584,12 @@ export interface TriageSuggestionView {
 export interface TriageAgent {
   readonly id: string;
   readonly name: string;
-  readonly command: string;
+  /** What starts it in a comment on the pull request; null for an agent started from its own app only (T3 Code). */
+  readonly command: string | null;
   readonly iconSrc: string | null;
   readonly note: string | null;
-  /** It opens a task in its own app too (Cursor's prompt link). */
-  readonly opens: boolean;
+  /** What opening the task in its own app is called ("Open in Cursor desktop"), or null where it has no app link. */
+  readonly openLabel: string | null;
   /** The pull request's links show its author used it. */
   readonly used: boolean;
 }
@@ -1542,13 +1543,18 @@ function menuItem(content: readonly (Node | string)[], close: () => void, onSele
   return node;
 }
 
-/** "Fix with Cursor", "Open in Cursor" and "Copy the task", for one finding, the recommended agent first. */
+/**
+ * "Fix with" each agent a comment starts, then each app the task opens in ("Open in Cursor desktop", "Open in T3
+ * Code", with the agent's mark), then "Copy the task", for one finding, the recommended agent first.
+ */
 function agentItems(list: HTMLElement, key: string, triage: TriageView, handlers: PanelHandlers, close: () => void, skip: string | null): void {
   for (const agent of triage.agents) {
-    if (agent.id !== skip) list.append(menuItem([agentMark(agent), `Fix with ${agent.name}`], close, () => handlers.onHandOff(agent.id, 'comment', key)));
+    if (agent.id !== skip && agent.command !== null) list.append(menuItem([agentMark(agent), `Fix with ${agent.name}`], close, () => handlers.onHandOff(agent.id, 'comment', key)));
   }
   for (const agent of triage.agents) {
-    if (agent.opens) list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_LINK_EXTERNAL)]), `Open in ${agent.name}`], close, () => handlers.onHandOff(agent.id, 'open', key)));
+    if (agent.openLabel === null || (agent.id === skip && agent.command === null)) continue;
+    const mark = agent.command === null ? agentMark(agent) : createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_LINK_EXTERNAL)]);
+    list.append(menuItem([mark, agent.openLabel], close, () => handlers.onHandOff(agent.id, 'open', key)));
   }
   list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_COPY)]), 'Copy the task'], close, () => handlers.onHandOff('', 'copy', key)));
 }
@@ -1583,11 +1589,12 @@ function agentControl(key: string, triage: TriageView, handlers: PanelHandlers):
     return control;
   }
   const why = triage.recommended?.reason === 'used' ? `${lead.name} worked on this pull request` : 'Your coding agent in Geld settings';
-  const main = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__split-agent`, title: `Post ${lead.command} on the pull request with this finding. ${why}.`, [ATTR_FOCUS]: `fix-agent:${key}` }, [
+  const what = lead.command === null ? `Open this finding in ${lead.name} as a draft on this pull request` : `Post ${lead.command} on the pull request with this finding`;
+  const main = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__split-agent`, title: `${what}. ${why}.`, [ATTR_FOCUS]: `fix-agent:${key}` }, [
     agentMark(lead),
     createElement('span', { class: `${PANEL_CLASS}__split-label` }, [`Fix with ${lead.name}`]),
   ]);
-  main.addEventListener('click', () => handlers.onHandOff(lead.id, 'comment', key));
+  main.addEventListener('click', () => handlers.onHandOff(lead.id, lead.command === null ? 'open' : 'comment', key));
   return splitButton(main, 'Other coding agents', `fix-agent-more:${key}`, (list, close) => agentItems(list, key, triage, handlers, close, lead.id));
 }
 

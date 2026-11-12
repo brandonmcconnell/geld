@@ -93,7 +93,7 @@ export default defineConfig({
       // redirects to; it is fetched from the background script only.
       // api.github.com serves the optional GitHub sign-in (gist sync) and the
       // signed pattern catalog (catalog/patterns.json via the contents API).
-      web_accessible_resources:[{resources:['tracker-icons/*.svg'],matches:['https://*/*']}],
+      web_accessible_resources:[{resources:['tracker-icons/*.svg','agent-icons/*.png'],matches:['https://*/*']}],
       host_permissions: [
         'https://github.com/*',
         'https://patch-diff.githubusercontent.com/*',

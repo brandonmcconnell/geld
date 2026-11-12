@@ -1,33 +1,47 @@
 /**
- * Coding agents the triage can hand open findings to. Each starts from a comment on the pull request (verified in
- * their docs in Nov 2026): Cursor, Copilot, Claude and Codex answer a mention at the start of a comment, Devin a
- * `/devin` command, each pushing to the pull request's branch. Cursor also opens a prompt in its desktop app. Which
- * agent leads is the reader's choice (`codingAgent`), unless the pull request's own links show its author used
- * another and the reader is that author.
+ * Coding agents the triage can hand open findings to (verified in their docs in Nov 2026). Cursor, Copilot, Claude
+ * and Codex answer a mention at the start of a comment on the pull request, Devin a `/devin` command, each pushing to
+ * the pull request's branch. Some also open the task in their own app as a draft the reader sends: Cursor's desktop
+ * app, and T3 Code, which has no comment command. Which agent leads is the reader's choice (`codingAgent`), unless the
+ * pull request's own links show its author used another and the reader is that author.
  */
 
 import type { CodingAgentId } from '@geld/core';
 
 export type AgentId = Exclude<CodingAgentId, 'auto'>;
 
+/** The pull request a task is about, for an app that opens it there. */
+export interface PullRef {
+  readonly owner: string;
+  readonly repo: string;
+  readonly number: number;
+}
+
 export interface CodingAgent {
   readonly id: AgentId;
   readonly name: string;
-  /** What starts it, at the start of a comment on the pull request. */
-  readonly command: string;
+  /** What starts it, at the start of a comment on the pull request; absent for an agent that only opens in its own app. */
+  readonly command?: string;
   /** The review bot whose registry mark stands for it, or a GitHub App id of its own. */
   readonly bot?: string;
   readonly appId?: number;
+  /** A mark the extension bundles (`public/agent-icons/<name>.png`), for an agent with no GitHub App to borrow one from. */
+  readonly icon?: 't3code';
   /** Related-link services (`related-links.ts` spec ids) that show it worked on a pull request. */
   readonly relatedIds: readonly string[];
-  /** A link that opens the task in the agent's own app, where it has one. */
-  readonly openUrl?: (task: string) => string;
+  /** A link that opens the task in the agent's own app as a draft, where it has one, and what following it is called. */
+  readonly openUrl?: (task: string, pull: PullRef) => string;
+  readonly openLabel?: string;
   /** What to know before asking it. */
   readonly note?: string;
 }
 
 /** Deep links carry the task in the URL, so a long one is cut before it would trip a URL limit. */
 const DEEPLINK_TASK_CHARS = 6000;
+/** T3 Code takes a prompt of at most 8,000 characters (its `docs/user/prompt-links.md`). */
+const T3_PROMPT_CHARS = 8000;
+
+const cut = (task: string, max: number): string => (task.length > max ? `${task.slice(0, max - 1)}…` : task);
 
 export const CODING_AGENTS: readonly CodingAgent[] = [
   {
@@ -36,16 +50,34 @@ export const CODING_AGENTS: readonly CodingAgent[] = [
     command: '@cursor',
     bot: 'bugbot',
     relatedIds: ['cursor', 'cursor-automation'],
+    // The web form of Cursor's prompt deeplink: it hands the prompt to the desktop app, not to Cursor on the web.
     openUrl: (task) => {
       const url = new URL('https://cursor.com/link/prompt');
-      url.searchParams.set('text', task.length > DEEPLINK_TASK_CHARS ? `${task.slice(0, DEEPLINK_TASK_CHARS - 1)}…` : task);
+      url.searchParams.set('text', cut(task, DEEPLINK_TASK_CHARS));
       return url.toString();
     },
+    openLabel: 'Open in Cursor desktop',
   },
   { id: 'copilot', name: 'Copilot', command: '@copilot', appId: 1143301, relatedIds: ['copilot'], note: 'Not on pull requests from forks' },
   { id: 'claude', name: 'Claude', command: '@claude', bot: 'claude', relatedIds: ['claude-code'], note: 'Needs the Claude Code GitHub Action' },
   { id: 'codex', name: 'Codex', command: '@codex', bot: 'codex', relatedIds: ['codex'] },
   { id: 'devin', name: 'Devin', command: '/devin', bot: 'devin', relatedIds: ['devin'], note: 'Open pull requests only' },
+  {
+    // A prompt link: app.t3.codes asks once where to open it (desktop, mobile, or a connected browser), and `pr` puts the
+    // draft in the pull request's thread, or on its branch in a new worktree after the reader confirms.
+    id: 't3code',
+    name: 'T3 Code',
+    icon: 't3code',
+    relatedIds: ['t3code'],
+    openUrl: (task, pull) => {
+      const url = new URL('https://app.t3.codes/new');
+      url.searchParams.set('prompt', cut(task, T3_PROMPT_CHARS));
+      url.searchParams.set('repo', `${pull.owner}/${pull.repo}`);
+      url.searchParams.set('pr', `${pull.owner}/${pull.repo}/${pull.number}`);
+      return url.toString();
+    },
+    openLabel: 'Open in T3 Code',
+  },
 ];
 
 export function codingAgentById(id: string): CodingAgent | undefined {
@@ -116,7 +148,7 @@ export function agentTask(findings: readonly AgentFinding[], pullUrl: string): s
   return lines.join('\n');
 }
 
-/** The comment that hands `task` to `agent`: its mention or command first, which every one of them requires. */
-export function agentComment(agent: CodingAgent, task: string): string {
-  return `${agent.command} ${task}`;
+/** The comment that hands `task` to `agent`: its mention or command first, which every one of them requires. Null for an agent started from its own app only. */
+export function agentComment(agent: CodingAgent, task: string): string | null {
+  return agent.command === undefined ? null : `${agent.command} ${task}`;
 }

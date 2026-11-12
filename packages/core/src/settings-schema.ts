@@ -627,6 +627,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
           { value: 'claude', label: 'Claude', description: 'Mentions `@claude` on the pull request.' },
           { value: 'codex', label: 'Codex', description: 'Mentions `@codex` on the pull request.' },
           { value: 'devin', label: 'Devin', description: 'Starts a Devin session with `/devin` on the pull request.' },
+          { value: 't3code', label: 'T3 Code', description: 'Opens the finding in T3 Code as a draft on this pull request’s branch, for you to send.' },
         ],
       },
       {

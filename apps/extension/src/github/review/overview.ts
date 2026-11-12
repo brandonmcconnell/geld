@@ -2597,6 +2597,7 @@ function suggestionTarget(item: ReviewItem, comments: readonly RawComment[], hea
 }
 
 function agentIcon(agent: CodingAgent): string | null {
+  if (agent.icon !== undefined) return browser.runtime.getURL(`/agent-icons/${agent.icon}.png`);
   if (agent.appId !== undefined) return `https://avatars.githubusercontent.com/in/${agent.appId}?s=32&v=4`;
   const bot = agent.bot === undefined ? null : botById(agent.bot);
   return bot === null ? null : botAppAvatar(bot, 32);
@@ -2629,7 +2630,7 @@ function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, pr
   }));
   return {
     suggestions,
-    agents: pick.order.map((agent) => ({ id: agent.id, name: agent.name, command: agent.command, iconSrc: agentIcon(agent), note: agent.note ?? null, opens: agent.openUrl !== undefined, used: used.includes(agent.id) })),
+    agents: pick.order.map((agent) => ({ id: agent.id, name: agent.name, command: agent.command ?? null, iconSrc: agentIcon(agent), note: agent.note ?? null, openLabel: agent.openUrl === undefined ? null : (agent.openLabel ?? `Open in ${agent.name}`), used: used.includes(agent.id) })),
     recommended: pick.recommended === null || pick.reason === null ? null : { id: pick.recommended.id, reason: pick.reason },
     openKey: visit.triage.openKey,
     collapsed: visit.triage.collapsed,
@@ -4226,16 +4227,17 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       const agent = codingAgentById(agentId) ?? CODING_AGENTS[0];
       if (agent === undefined) return;
       countUsage('agent_handoff');
-      if (how === 'open') {
-        const url = agent.openUrl?.(task);
-        if (url !== undefined) window.open(url, '_blank', 'noopener');
+      const comment = agentComment(agent, task);
+      if (how === 'open' || comment === null) {
+        const url = agent.openUrl?.(task, { owner: subject.owner, repo: subject.repo, number: subject.number });
+        if (url === undefined) return;
+        window.open(url, '_blank', 'noopener');
         said(`Opened in ${agent.name}`);
         return;
       }
-      const comment = agentComment(agent, task);
       const preview = comment.length > 600 ? `${comment.slice(0, 600)}…` : comment;
       if (!window.confirm(`Post this comment on the pull request to start ${agent.name}?\n\n${preview}`)) return;
-      void postTopLevelComments([comment]).then((posted) => said(posted > 0 ? `Posted ${agent.command} on the pull request` : `GitHub did not take the comment for ${agent.name}`));
+      void postTopLevelComments([comment]).then((posted) => said(posted > 0 ? `Posted ${agent.command ?? agent.name} on the pull request` : `GitHub did not take the comment for ${agent.name}`));
     },
     onReact: (anchor) => {
       // Open the row that holds the comment, then GitHub's own picker inside it.
