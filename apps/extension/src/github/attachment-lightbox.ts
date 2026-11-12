@@ -1,6 +1,7 @@
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { attachmentVideoUrl, createAttachmentVideo } from './attachment-video';
-import { createAttachmentViewer } from './attachment-viewer';
+import { openAttachmentGallery } from './attachment-gallery';
+import type { GalleryImage } from './attachment-gallery';
 import { ICON_LINK_EXTERNAL, ICON_X } from './ui/icons';
 
 const IMAGE_ATTRIBUTE = 'data-geld-lightbox-image';
@@ -8,6 +9,8 @@ const IMAGE_PATH = /\.(?:avif|gif|jpe?g|png|svg|webp)$/i;
 let activePath: string | null = null;
 let closeDialog: (() => void) | null = null;
 const videoButtons = new Map<HTMLVideoElement, HTMLButtonElement>();
+const imageIds = new WeakMap<HTMLImageElement, string>();
+let nextImageId = 0;
 
 function attachmentLink(image: HTMLImageElement): HTMLAnchorElement | null {
   if (image.closest('.markdown-body') === null) return null;
@@ -36,14 +39,13 @@ function titleFor(image: HTMLImageElement): string {
   return alt === '' || /^image$/i.test(alt) ? 'Image' : alt;
 }
 
-interface LightboxViewer {
+interface VideoViewer {
   readonly stage: HTMLElement;
-  readonly controls?: HTMLElement;
   readonly mount?: () => void;
   readonly dispose: () => void;
 }
 
-function show(viewer: LightboxViewer, title: string, href: string, trigger: HTMLElement): void {
+function showVideo(viewer: VideoViewer, title: string, href: string, trigger: HTMLElement): void {
   closeDialog?.();
   const titleId = `geld-lightbox-title-${Date.now()}`;
   const dialog = createElement('dialog', {
@@ -60,14 +62,11 @@ function show(viewer: LightboxViewer, title: string, href: string, trigger: HTML
   dialog.append(
     createElement('header', { class: 'geld-lightbox__header' }, [
       createElement('h1', { class: 'geld-lightbox__title', id: titleId }, [title]),
-      ...(viewer.controls === undefined ? [original] : []),
+      original,
       close,
     ]),
     createElement('div', { class: 'geld-lightbox__body' }, [viewer.stage]),
   );
-  if (viewer.controls) {
-    dialog.append(createElement('footer', { class: 'geld-lightbox__footer' }, [viewer.controls, original]));
-  }
   const dismiss = (): void => {
     if (closeDialog !== dismiss) return;
     closeDialog = null;
@@ -92,6 +91,33 @@ function show(viewer: LightboxViewer, title: string, href: string, trigger: HTML
   close.focus();
 }
 
+function galleryImage(image: HTMLImageElement): GalleryImage | null {
+  const link = attachmentLink(image);
+  if (link === null) return null;
+  let id = imageIds.get(image);
+  if (id === undefined) {
+    id = `geld-lightbox-image-${++nextImageId}`;
+    imageIds.set(image, id);
+  }
+  return { id, image, link, title: titleFor(image) };
+}
+
+/** Each rendered body is its own gallery, so one comment's screenshots never mix with another's. */
+function openGallery(image: HTMLImageElement): void {
+  const body = image.closest('.markdown-body');
+  const items = [...(body?.querySelectorAll('img') ?? [])].flatMap((candidate) => {
+    const item = candidate instanceof HTMLImageElement ? galleryImage(candidate) : null;
+    return item === null ? [] : [item];
+  });
+  const index = items.findIndex((item) => item.image === image);
+  if (index < 0) return;
+  closeDialog?.();
+  const dismiss = openAttachmentGallery(items, index, () => {
+    if (closeDialog === dismiss) closeDialog = null;
+  });
+  closeDialog = dismiss;
+}
+
 function onClick(event: MouseEvent): void {
   if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
   const target = event.target;
@@ -100,7 +126,7 @@ function onClick(event: MouseEvent): void {
   if (!(image instanceof HTMLImageElement)) return;
   const link = attachmentLink(image);
   if (link === null) return;
-  show(createAttachmentViewer(image), titleFor(image), link.href, link);
+  openGallery(image);
   event.preventDefault();
   event.stopImmediatePropagation();
 }
@@ -125,7 +151,7 @@ function enhanceVideos(): void {
         ? video.parentElement.querySelector(':scope > summary')?.textContent?.trim()
         : undefined;
       const title = video.getAttribute('aria-label')?.trim() || summary || 'Video';
-      show(createAttachmentVideo(video, url), title, url, button);
+      showVideo(createAttachmentVideo(video, url), title, url, button);
     });
     video.after(button);
     videoButtons.set(video, button);
