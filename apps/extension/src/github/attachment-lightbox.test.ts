@@ -131,6 +131,22 @@ describe('attachment lightbox', () => {
     expect(document.querySelector('dialog a')?.getAttribute('href')).toBe(href);
   });
 
+  it('opens external images GitHub proxies through camo and links to themselves', () => {
+    const camo = 'https://camo.githubusercontent.com/f052ee90/68747470733a2f2f6173736574732e74656d626f2e696f2f612e706e67';
+    const image = mount(camo, camo);
+    const elsewhere = mount('https://example.com/build', camo);
+    const other = mount(`${camo.slice(0, -2)}00`, camo);
+    applyAttachmentLightbox();
+    expect(image.hasAttribute('data-geld-lightbox-image')).toBe(true);
+    for (const kept of [elsewhere, other]) {
+      expect(kept.hasAttribute('data-geld-lightbox-image')).toBe(false);
+      expect(click(kept).defaultPrevented).toBe(false);
+    }
+    expect(click(image).defaultPrevented).toBe(true);
+    expect(document.querySelector('dialog img')?.getAttribute('src')).toBe(camo);
+    expect(document.querySelector('dialog a')?.getAttribute('href')).toBe(camo);
+  });
+
   it('does not intercept links to non-image repository files', () => {
     const image = mount('https://raw.githubusercontent.com/owner/repo/main/README.md');
     applyAttachmentLightbox();
