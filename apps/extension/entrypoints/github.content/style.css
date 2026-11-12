@@ -2980,10 +2980,13 @@ html[data-geld-top-card] section[aria-label='Description']:has(+ .geld-review) {
  * Comments and Approvals repeat the digest's threads meter and Reviews row, and Checks is the CI row's. Hidden by the
  * grid, and also, whatever card holds them, by GitHub's own marks on the three blocks (`data-testid="mini-status"`)
  * and their "Merge status" wrapper anywhere above the description, so they stay hidden if GitHub re-renders the card
- * into another shape or renames its classes. Nowhere else: the same blocks may serve GitHub elsewhere.
+ * into another shape or renames its classes. Nowhere else: the same blocks may serve GitHub elsewhere. Whatever wraps
+ * them goes too, short of the status row's holder: the card borders every child after its first (`> * + *`), so a
+ * wrapper left standing is a 1px box of border, a second line under the status row.
  */
 html[data-geld-top-card='folded'] [class*='CondensedForYouContainer'] > [class*='MiniStatusGrid'],
-html[data-geld-top-card='folded'] :has(~ section[aria-label='Description']) :is([class*='MiniStatusGrid'], section:has(> [data-testid='mini-status']), [data-testid='mini-status']) {
+html[data-geld-top-card='folded'] :has(~ section[aria-label='Description']) :is([class*='MiniStatusGrid'], [data-testid='mini-status']),
+html[data-geld-top-card='folded'] :has(~ section[aria-label='Description']) :has([class*='MiniStatusGrid'], [data-testid='mini-status']):not(:has(section[aria-label='Recommended action'])) {
   display: none !important;
 }
 
