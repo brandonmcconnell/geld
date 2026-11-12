@@ -10516,6 +10516,11 @@ dialog.geld-flow .geld-flow__actions .Overlay-closeButton {
   cursor: zoom-in;
 }
 
+/* Ramka hides the image it morphs from while the gallery is open; its sheet is adopted after ours, hence !important. */
+.markdown-body img[data-geld-lightbox-image][data-morph-target] {
+  opacity: 1 !important;
+}
+
 :is(dialog.geld-lightbox, .geld-lightbox--gallery) {
   position: fixed;
   inset: 0;
