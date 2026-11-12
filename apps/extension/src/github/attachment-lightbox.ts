@@ -9,10 +9,6 @@ let activePath: string | null = null;
 let closeDialog: (() => void) | null = null;
 const videoButtons = new Map<HTMLVideoElement, HTMLButtonElement>();
 
-function isConversation(): boolean {
-  return /^\/[^/]+\/[^/]+\/(?:issues|pull)\/\d+(?:\/|$)/.test(window.location.pathname);
-}
-
 function attachmentLink(image: HTMLImageElement): HTMLAnchorElement | null {
   if (image.closest('.markdown-body') === null) return null;
   const link = image.closest('a');
@@ -96,7 +92,7 @@ function show(viewer: LightboxViewer, title: string, href: string, trigger: HTML
 }
 
 function onClick(event: MouseEvent): void {
-  if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || !isConversation()) return;
+  if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
   const target = event.target;
   if (!(target instanceof Element)) return;
   const image = target.closest('img') ?? target.closest('a')?.querySelector('img');
@@ -136,7 +132,7 @@ function enhanceVideos(): void {
 }
 
 export function applyAttachmentLightbox(enabled = true): void {
-  if (!enabled || !isConversation()) {
+  if (!enabled) {
     removeAttachmentLightbox();
     return;
   }
