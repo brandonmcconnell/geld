@@ -155,4 +155,30 @@ describe('showUpdateIcon', () => {
     expect(setIcon).toHaveBeenCalledTimes(2);
     vi.unstubAllGlobals();
   });
+
+  it('draws a share that rounds to 100% all green, so 100% after it needs no paint of its own', async () => {
+    vi.stubGlobal(
+      'ImageData',
+      class {
+        constructor(
+          readonly data: Uint8ClampedArray,
+          readonly width: number,
+          readonly height: number,
+        ) {}
+      },
+    );
+    setIcon.mockClear();
+    setIcon.mockResolvedValue(undefined);
+    showUpdateIcon({ kind: 'progress', share: 0.996 });
+    await settle();
+    showUpdateIcon({ kind: 'progress', share: 1 });
+    await settle();
+    expect(setIcon).toHaveBeenCalledTimes(1);
+    const details: unknown = setIcon.mock.calls[0]?.[0];
+    const icon = typeof details === 'object' && details !== null && 'imageData' in details ? details.imageData : null;
+    const pixels = typeof icon === 'object' && icon !== null && '32' in icon && typeof icon['32'] === 'object' && icon['32'] !== null && 'data' in icon['32'] ? icon['32'].data : null;
+    expect(pixels).toBeInstanceOf(Uint8ClampedArray);
+    expect(pixels).toEqual(renderUpdateIcon(32, 1));
+    vi.unstubAllGlobals();
+  });
 });

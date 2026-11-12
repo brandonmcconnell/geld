@@ -192,9 +192,13 @@ export function renderUpdateIcon(size: number, share: number): Uint8ClampedArray
   return pixels;
 }
 
+function percent(share: number): number {
+  return Math.round(Math.min(1, Math.max(0, share)) * 100);
+}
+
 /** Whole percents, so a download reporting every chunk repaints the icon at most a hundred times. */
 export function iconKey(icon: UpdateIcon): string {
-  return icon.kind === 'progress' ? `progress:${Math.round(Math.min(1, Math.max(0, icon.share)) * 100)}` : icon.kind;
+  return icon.kind === 'progress' ? `progress:${percent(icon.share)}` : icon.kind;
 }
 
 let painted: string | null = null;
@@ -207,7 +211,8 @@ async function paint(icon: UpdateIcon): Promise<void> {
   if (icon.kind === 'plain') {
     await browser.action.setIcon({ path: actionIconPaths('framed') });
   } else {
-    const share = icon.kind === 'ready' ? 0 : icon.share;
+    // The share its key stands for: two shares that round alike draw alike, so 99.6% followed by 100% is all green.
+    const share = icon.kind === 'ready' ? 0 : percent(icon.share) / 100;
     const imageData: Record<string, ImageData> = {};
     for (const size of SIZES) imageData[String(size)] = new ImageData(renderUpdateIcon(size, share), size, size);
     await browser.action.setIcon({ imageData });

@@ -65,12 +65,15 @@ type Mark = '' | '!' | 'OFF';
 let mark: Mark = '';
 /** The share of the update under way, null while none is. */
 let progress: number | null = null;
+/** An update written and the reload under way: nothing repaints the icon until the reload puts the plain one back. */
+let reloading = false;
 
 function markOf(status: NightlyStatus, paused: boolean): Mark {
   return paused ? 'OFF' : status.failure?.broken === true || status.writing !== null ? '!' : '';
 }
 
 function iconOf(status: NightlyStatus, paused: boolean): UpdateIcon {
+  if (reloading) return { kind: 'progress', share: 1 };
   if (paused) return { kind: 'plain' };
   if (status.installing !== null) return { kind: 'progress', share: progress ?? 0 };
   return markOf(status, paused) === '' && isNewer(status) ? { kind: 'ready' } : { kind: 'plain' };
@@ -355,6 +358,7 @@ async function sharedInstall(from: string, to: string, trigger: UpdateMode): Pro
 
 /** The mark stands all green until the reload puts the plain icon back. */
 function reloadSoon(): void {
+  reloading = true;
   showProgress(1);
   setTimeout(() => browser.runtime.reload(), RELOAD_DELAY_MS);
 }
