@@ -1153,20 +1153,19 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `local:debugScopes` (set from the harness, never the UI) runs the full pass after every scoped one and logs `[geld] scope disagreement`.
   Numbers at the end of this work (vitest#10554): the review pass 149 ms → 36 ms mean (`checksSection()` used to scan the whole page's text on every call on a merged PR), the crawl 7.4 → 2.9 ms, main-thread time in the first 30 s of the conversation page 4.5 s → 2.85 s, a 14-row `/pulls` page 14 + 12 storage writes → 3 + 4;
   the largest item left is the files adapters' DOM read (`read`, ~13 ms a pass on a 124-file diff).
-- **A pull request GitHub's compare form failed to open gets "Try again", or for a reader signed in to Geld a "Trigger via API" split button** (`src/github/create-pull-retry.ts`, `src/lib/create-pull.ts`, Nov 2026, after GitHub refused one on pingdotgg/t3code as "was submitted too quickly").
+- **A pull request GitHub's compare form failed to open gets "Try again" and, for a reader signed in to Geld, "Trigger via API"** (`src/github/create-pull-retry.ts`, `src/lib/create-pull.ts`, Nov 2026, after GitHub refused one on pingdotgg/t3code as "was submitted too quickly").
   GitHub's form carries the moment it was rendered (`timestamp`, `timestamp_secret`) and refuses one sent sooner than its threshold, which a form opened prefilled (`?expand=1&title=…`, as agent tools open it) and sent at once meets.
   After a refusal GitHub renders the form again at `/owner/repo/pull/create`, title and body kept, under a `.flash-error` whose `.js-flash-alert` begins with "Pull request creation failed."
-  The control stands on the flash's right, floated after GitHub's close button in the DOM so it stands 16px to that button's left, with Geld's own tooltip (`attachTooltipMessage`, the line counts' `.geld-tooltip`, which hangs below or flips above and renders `code` spans).
-  Below 544px it goes to the flash's foot, under the command (`PHONE`, a `matchMedia` mirrored in the stylesheet, moves the node, since a float cannot be pushed under later content), where it has the width that floated beside the message it took from the words.
-  With only that way open (signed out, or no Geld App) it is one button, "Try again", with no caret.
-  Signed in as the page's account it is a Primer button group as the Overview's merge is: "Trigger via API" is the default, and its caret opens a menu with "Try again via GitHub Web" (`openWebMenu`), as the owner asked (Nov 2026).
-  Either way the main button shows the work (spinner and words) so the control keeps its place.
-  Trying again via the web sends the form itself again through the reader's session (`pageFetch`, urlencoded, with the submit button GitHub would send), held until the form is `MIN_FORM_AGE_MS` (5 s) old by its own `timestamp`.
+  The buttons stand on the flash's right, floated after GitHub's close button in the DOM so they stand 16px to that button's left, each led by Geld's emblem, with Geld's own tooltip (`attachTooltipMessage`, the line counts' `.geld-tooltip`, which hangs below or flips above and renders `code` spans).
+  The tooltips carry the help (what each does and through what): the owner tried a split button with the web retry in a caret menu (Nov 2026) and found the menu far too big for one item.
+  Message tooltips wrap at 280px, so a sentence or two of help is a short block rather than one line across the page.
+  Below 544px they go to the flash's foot, under the command (`PHONE`, a `matchMedia` mirrored in the stylesheet, moves the node, since a float cannot be pushed under later content), where they have the width that floated beside the message they took from the words.
+  The pressed button shows the work (spinner and words) and the other is disabled until it is done.
+  "Try again" is always there: it sends the form itself again through the reader's session (`pageFetch`, urlencoded, with the submit button GitHub would send), held until the form is `MIN_FORM_AGE_MS` (5 s) old by its own `timestamp`.
   That is what GitHub's own button does after a wait, so it is named plainly.
-  Its button leads with Geld's emblem either way, so the control reads as Geld's beside GitHub's close button.
   The threshold is a guess: GitHub does not publish it.
-  The API is offered only to a reader signed in to Geld with the GitHub App as the same account the page is signed in as (`geld:api-signed-in` with the page's `meta[name="user-login"]`, answered by the background with a boolean, so the page never holds the account).
-  Signing in happens in Geld's popup or another tab, so the answer is asked again when the page regains focus or becomes visible, and the control is rebuilt when it changed (not while it runs).
+  "Trigger via API" is only for a reader signed in to Geld with the GitHub App as the same account the page is signed in as (`geld:api-signed-in` with the page's `meta[name="user-login"]`, answered by the background with a boolean, so the page never holds the account).
+  Signing in happens in Geld's popup or another tab, so the answer is asked again when the page regains focus or becomes visible, and the buttons are rebuilt when it changed (not while one runs).
   Geld can stay connected to one account after the browser switches to another, and a token of the first must never open a pull request for the second: `createPullRequest` checks the login again.
   Sidebar choices (reviewers, assignees, labels, a milestone, projects) have no field in the API's create request, so when the form carries any (`sidebarChoices`, by field name) the API asks first, naming them.
   It makes the request `gh pr create` makes, `POST /repos/{owner}/{repo}/pulls`, from the background with that App's token (`createPullRequest` in `account-service.ts`, through `withToken`), on github.com only, and no form check sees it.
