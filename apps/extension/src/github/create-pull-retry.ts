@@ -7,6 +7,7 @@ import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { pageFetch } from './page-fetch';
 import { brandMark } from './review/brand';
 import { ICON_CHECK, ICON_COPY, ICON_SPINNER } from './ui/icons';
+import { attachTooltipMessage } from './ui/tooltip';
 
 /**
  * GitHub's compare form refuses a pull request with a flash ("Pull request creation failed. Validation failed: was
@@ -17,7 +18,7 @@ import { ICON_CHECK, ICON_COPY, ICON_SPINNER } from './ui/icons';
  */
 
 const ROOT_CLASS = 'geld-pull-retry';
-const TOOLTIP = 'Geld can reattempt this failed operation, as the gh CLI would';
+const TOOLTIP = 'Geld can reattempt this failed operation, as the `gh` CLI would';
 /** GitHub's forms carry the moment they were rendered, and a submission sooner than this after it is refused as too quick. */
 const MIN_FORM_AGE_MS = 5000;
 const MAX_WAIT_MS = 10_000;
@@ -159,6 +160,9 @@ function sentence(text: string): string {
 
 interface Mounted {
   readonly flash: HTMLElement;
+  /** The button, floated into the flash's right side beside GitHub's close button. */
+  readonly side: HTMLElement;
+  /** The outcome and the `gh` line, under GitHub's message. */
   readonly root: HTMLElement;
   readonly message: string;
   readonly listeners: AbortController;
@@ -166,33 +170,21 @@ interface Mounted {
 }
 
 let mounted: Mounted | null = null;
-let ids = 0;
-
-function tooltipFor(button: HTMLButtonElement, words: string): Node | null {
-  if (document.querySelector('tool-tip') === null) {
-    button.title = words;
-    return null;
-  }
-  const tip = document.createElement('tool-tip');
-  for (const [name, value] of Object.entries({ for: button.id, popover: 'manual', 'data-direction': 'e', 'data-type': 'description', class: 'sr-only position-absolute' })) tip.setAttribute(name, value);
-  tip.textContent = words;
-  return tip;
-}
 
 function mount(failure: CreateFailure, form: HTMLFormElement): Mounted {
-  ids += 1;
   const listeners = new AbortController();
   const { signal } = listeners;
   const mark = brandMark('geld-pull-retry__mark');
   const label = createElement('span', {}, ['Try with Geld']);
-  const button = createElement('button', { type: 'button', class: 'btn btn-sm geld-pull-retry__try', id: `geld-pull-retry-${ids}` }, [mark, label]);
-  const status = createElement('span', { class: 'geld-pull-retry__status', role: 'status' });
-  const tip = tooltipFor(button, TOOLTIP);
+  const button = createElement('button', { type: 'button', class: 'btn btn-sm geld-pull-retry__try' }, [mark, label]);
+  attachTooltipMessage(button, TOOLTIP, signal);
+  const side = createElement('div', { class: 'geld-pull-retry__side', [OWN_UI_ATTRIBUTE]: '' }, [button]);
+  const status = createElement('div', { class: 'geld-pull-retry__status', role: 'status' });
   const code = createElement('code', { class: 'geld-pull-retry__command' });
   const copy = createElement('button', { type: 'button', class: 'btn-octicon geld-pull-retry__copy', 'aria-label': 'Copy command' }, [svgFromString(ICON_COPY)]);
-  const local = createElement('div', { class: 'geld-pull-retry__row geld-pull-retry__local' }, [createElement('span', {}, ['To run it yourself:']), code, copy]);
-  const root = createElement('div', { class: ROOT_CLASS, [OWN_UI_ATTRIBUTE]: '' }, [createElement('div', { class: 'geld-pull-retry__row' }, [button, ...(tip === null ? [] : [tip]), status]), local]);
-  const state: Mounted = { flash: failure.flash, root, message: failure.message, listeners, busy: false };
+  const local = createElement('div', { class: 'geld-pull-retry__local' }, [createElement('span', {}, ['To run it yourself:']), code, copy]);
+  const root = createElement('div', { class: ROOT_CLASS, [OWN_UI_ATTRIBUTE]: '' }, [status, local]);
+  const state: Mounted = { flash: failure.flash, side, root, message: failure.message, listeners, busy: false };
 
   const command = (): string | null => {
     const attempt = attemptFromPage(form);
@@ -242,21 +234,25 @@ function mount(failure: CreateFailure, form: HTMLFormElement): Mounted {
         state.busy = false;
         button.removeAttribute('aria-busy');
         button.replaceChildren(mark, label);
-        status.textContent = `Still failed. ${sentence(outcome.message)}`;
+        status.textContent = `Geld's attempt failed too. ${sentence(outcome.message)}`;
       });
     },
     { signal },
   );
 
+  // GitHub's close button floats right, so a float after it stands on its left. Without one the button leads the flash.
+  const close = failure.flash.querySelector('.js-flash-close, .flash-close');
+  if (close !== null) close.after(side);
+  else failure.alert.before(side);
   failure.alert.after(root);
   return state;
 }
 
 /** Puts "Try with Geld" under GitHub's flash while the compare page says opening the pull request failed. */
 export function applyCreatePullRetry(): void {
-  if (mounted?.busy === true && mounted.root.isConnected) return;
+  if (mounted?.busy === true && mounted.root.isConnected && mounted.side.isConnected) return;
   const failure = findCreateFailure();
-  if (failure !== null && mounted !== null && mounted.flash === failure.flash && mounted.message === failure.message && mounted.root.isConnected) return;
+  if (failure !== null && mounted !== null && mounted.flash === failure.flash && mounted.message === failure.message && mounted.root.isConnected && mounted.side.isConnected) return;
   removeCreatePullRetry();
   const form = failure === null || !isRetryableFailure(failure.message) ? null : findCreateForm();
   if (failure === null || form === null || attemptFromPage(form) === null) return;
@@ -265,6 +261,7 @@ export function applyCreatePullRetry(): void {
 
 export function removeCreatePullRetry(): void {
   mounted?.listeners.abort();
+  mounted?.side.remove();
   mounted?.root.remove();
   mounted = null;
 }

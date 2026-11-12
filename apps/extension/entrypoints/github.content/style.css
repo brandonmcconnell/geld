@@ -11084,31 +11084,23 @@ html[data-geld-on] [class*='ReactionsMenuOption'] [data-component='ActionList.It
 }
 
 /*
- * "Try with Geld" under the compare page's "Pull request creation failed" flash, and the same request as a `gh` command.
- * The flash is GitHub's danger surface, so the button keeps GitHub's default look. GitHub's `.btn` rules load after these, hence the doubled class.
+ * "Try with Geld" on the compare page's "Pull request creation failed" flash: the button floats right, after GitHub's
+ * close button in the DOM so it stands on that button's left, and the outcome and the `gh` line follow the message.
+ * GitHub's `.btn` rules load after these, hence the doubled class. The close button's 16px padding hangs over the gap
+ * by the same 16px it gives back in margin, so the margin here clears it.
  */
-.geld-pull-retry {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
+.geld-pull-retry__side {
+  float: right;
+  margin: -4px 16px -4px 0;
 }
 
-.geld-pull-retry__row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.geld-pull-retry .geld-pull-retry__try {
+.geld-pull-retry__side .geld-pull-retry__try {
   display: inline-flex;
-  flex: 0 0 auto;
   align-items: center;
   gap: 6px;
 }
 
-.geld-pull-retry .geld-pull-retry__try[aria-busy='true'] {
+.geld-pull-retry__side .geld-pull-retry__try[aria-busy='true'] {
   cursor: progress;
 }
 
@@ -11126,11 +11118,22 @@ html[data-geld-on] [class*='ReactionsMenuOption'] [data-component='ActionList.It
   fill: currentColor;
 }
 
+.geld-pull-retry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
 .geld-pull-retry__status:empty {
   display: none;
 }
 
 .geld-pull-retry__local {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   font-size: 12px;
   color: var(--fgColor-muted, #59636e);
 }
@@ -11144,9 +11147,11 @@ html[data-geld-on] [class*='ReactionsMenuOption'] [data-component='ActionList.It
 }
 
 .geld-pull-retry__command {
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 640px;
   overflow: hidden;
-  padding: 2px 6px;
+  padding: 1px 6px;
   border-radius: 6px;
   background: var(--bgColor-neutral-muted, rgba(129, 139, 152, 0.12));
   color: var(--fgColor-default, #1f2328);
@@ -11158,5 +11163,23 @@ html[data-geld-on] [class*='ReactionsMenuOption'] [data-component='ActionList.It
 .geld-pull-retry .geld-pull-retry__copy {
   display: inline-flex;
   flex: 0 0 auto;
-  padding: 4px;
+  padding: 2px;
+}
+
+/* GitHub colours every octicon in an error flash red (`.flash-error:not(.Banner) .octicon`). */
+.flash-error .geld-pull-retry .geld-pull-retry__copy svg {
+  color: var(--fgColor-muted, #59636e);
+}
+
+.flash-error .geld-pull-retry .geld-pull-retry__copy:hover svg {
+  color: var(--fgColor-accent, #0969da);
+}
+
+.geld-tooltip__message code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--bgColor-neutral-muted, rgba(129, 139, 152, 0.12));
+  color: var(--fgColor-default, #1f2328);
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, monospace);
+  font-size: 11px;
 }

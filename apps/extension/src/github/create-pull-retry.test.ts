@@ -87,9 +87,15 @@ describe('applyCreatePullRetry', () => {
     page(FLASH('Pull request creation failed. Validation failed: was submitted too quickly') + FORM('Fix the nav'));
     applyCreatePullRetry();
     const root = document.querySelector('.flash-error .geld-pull-retry');
-    expect(root?.querySelector('.geld-pull-retry__try')?.textContent?.trim()).toBe('Try with Geld');
-    expect(root?.querySelector('.geld-pull-retry__try [data-geld-brand]')).not.toBeNull();
-    expect(root?.querySelector('.geld-pull-retry__try')?.getAttribute('title')).toBe('Geld can reattempt this failed operation, as the gh CLI would');
+    const button = document.querySelector<HTMLElement>('.flash-error .geld-pull-retry__try');
+    expect(button?.textContent?.trim()).toBe('Try with Geld');
+    expect(button?.querySelector('[data-geld-brand]')).not.toBeNull();
+    expect(button?.parentElement?.previousElementSibling?.classList.contains('js-flash-close')).toBe(true);
+    button?.dispatchEvent(new MouseEvent('mouseenter'));
+    const tip = document.querySelector('.geld-tooltip');
+    expect(tip?.textContent).toBe('Geld can reattempt this failed operation, as the gh CLI would');
+    expect(tip?.querySelector('code')?.textContent).toBe('gh');
+    button?.dispatchEvent(new MouseEvent('mouseleave'));
     expect(root?.querySelector('.geld-pull-retry__command')?.textContent).toBe(
       "gh pr create --repo pingdotgg/t3code --base main --head theo:fix-nav --title 'Fix the nav' --body 'It broke.'",
     );
