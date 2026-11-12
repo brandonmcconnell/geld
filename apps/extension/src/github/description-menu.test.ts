@@ -22,8 +22,8 @@ describe('descriptionActions', () => {
     expect(descriptionActions({ ...base, mayBlockFromOrg: true })).toEqual(['copy-link', 'copy-markdown', 'report', 'block', 'block-org']);
   });
 
-  it('offers unblock, and the organization’s blocks, for someone already blocked', () => {
-    expect(descriptionActions({ ...base, mayBlockFromOrg: true, blocked: { org: true, personal: true } })).toEqual(['copy-link', 'copy-markdown', 'report', 'unblock', 'org-blocks']);
+  it('offers both unblocks for someone already blocked', () => {
+    expect(descriptionActions({ ...base, mayBlockFromOrg: true, blocked: { org: true, personal: true } })).toEqual(['copy-link', 'copy-markdown', 'report', 'unblock', 'unblock-org']);
   });
 
   it('never offers to block an App or an author whose blocks are unknown', () => {
@@ -52,10 +52,11 @@ describe('requests', () => {
     expect(request.init.headers).toEqual({ 'GitHub-Verified-Fetch': 'true', 'X-Requested-With': 'XMLHttpRequest' });
   });
 
-  it('unblocks with a DELETE of the person’s entry', () => {
-    const request = unblockRequest('spammer', '');
-    expect(request.url).toBe('/settings/blocked_users/spammer');
-    expect(request.init.method).toBe('DELETE');
+  it('unblocks with a DELETE of the person’s entry, in the reader’s list or the organization’s', () => {
+    const personal = unblockRequest('personal', 'spammer', 'mintlify', '');
+    expect(personal.url).toBe('/settings/blocked_users/spammer');
+    expect(personal.init.method).toBe('DELETE');
+    expect(unblockRequest('org', 'spammer', 'mintlify', '').url).toBe('/organizations/mintlify/settings/blocked_users/spammer');
   });
 });
 

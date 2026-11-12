@@ -1,19 +1,18 @@
 import type { BlockedBy } from './blocked-list';
-import { blockedUsersUrl } from './blocked-list';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { pageFetch } from './page-fetch';
 import { subtreeSettled } from './react-hydration';
 import { pullRequestNodeId } from './review/edit-times';
 import { OVERVIEW_DESCRIPTION } from './review/overview-page';
 import { fetchNonce, pullPathOf } from './timeline-comment';
-import { ICON_BLOCKED, ICON_COPY, ICON_KEBAB_HORIZONTAL, ICON_LINK, ICON_LINK_EXTERNAL, ICON_REPORT } from './ui/icons';
+import { ICON_COPY, ICON_KEBAB_HORIZONTAL, ICON_LINK, ICON_OCTAGON_BLOCKED, ICON_REPORT } from './ui/icons';
 
 /**
  * The Overview's description box has an Edit pencil and no ⋯, where the conversation's description has GitHub's menu
  * and every Overview comment has one with Report and Block user: so a reader could not block the person who opened
  * the pull request from it. Geld's ⋯ stands beside the pencil with what the conversation's offers (Copy link, Copy
  * Markdown) and what GitHub's Overview comment menus offer about the author (Report content, Block user, Block user
- * from the organization), sending the requests GitHub's own dialogs send (read from its bundles, Nov 2026).
+ * from the organization, and unblocking), sending the requests GitHub's own dialogs and settings pages send.
  */
 
 export interface DescriptionMenuContext {
@@ -30,7 +29,7 @@ export interface DescriptionMenuContext {
   readonly mayBlockFromOrg: boolean;
 }
 
-export type DescriptionAction = 'copy-link' | 'copy-markdown' | 'report' | 'block' | 'unblock' | 'block-org' | 'org-blocks';
+export type DescriptionAction = 'copy-link' | 'copy-markdown' | 'report' | 'block' | 'unblock' | 'block-org' | 'unblock-org';
 
 /** What the menu offers, in GitHub's order: copying first, then what is about the author. */
 export function descriptionActions(context: DescriptionMenuContext): readonly DescriptionAction[] {
@@ -41,7 +40,7 @@ export function descriptionActions(context: DescriptionMenuContext): readonly De
   // An App's account is no person to block, and Copilot's never is in GitHub's own menus either.
   if (!context.blocksKnown || author.toLowerCase().endsWith('[bot]') || author.toLowerCase() === 'copilot') return actions;
   actions.push(context.blocked?.personal === true ? 'unblock' : 'block');
-  if (context.mayBlockFromOrg) actions.push(context.blocked?.org === true ? 'org-blocks' : 'block-org');
+  if (context.mayBlockFromOrg) actions.push(context.blocked?.org === true ? 'unblock-org' : 'block-org');
   return actions;
 }
 
@@ -76,9 +75,10 @@ export function blockRequest(scope: 'personal' | 'org', login: string, owner: st
   return { url, init: { method: 'POST', credentials: 'same-origin', headers: verifiedHeaders(nonce), body, redirect: 'follow' } };
 }
 
-/** GitHub's personal unblock: a DELETE of the person's entry in the reader's Blocked users. */
-export function unblockRequest(login: string, nonce: string): PageRequest {
-  return { url: `/settings/blocked_users/${encodeURIComponent(login)}`, init: { method: 'DELETE', credentials: 'same-origin', headers: verifiedHeaders(nonce), redirect: 'follow' } };
+/** GitHub's unblock, as its Blocked users settings pages send it: a DELETE of the person's entry (their `actionUrl`). */
+export function unblockRequest(scope: 'personal' | 'org', login: string, owner: string, nonce: string): PageRequest {
+  const list = scope === 'personal' ? '/settings/blocked_users' : `/organizations/${encodeURIComponent(owner)}/settings/blocked_users`;
+  return { url: `${list}/${encodeURIComponent(login)}`, init: { method: 'DELETE', credentials: 'same-origin', headers: { Accept: 'application/json', ...verifiedHeaders(nonce) }, redirect: 'follow' } };
 }
 
 const ATTR_MENU = 'data-geld-desc-menu';
@@ -133,7 +133,6 @@ function createButton(): HTMLElement {
 interface Item {
   readonly label: string;
   readonly icon: string;
-  readonly danger?: boolean;
   readonly href?: string;
   readonly run?: () => void;
 }
@@ -162,16 +161,16 @@ function itemsFor(context: DescriptionMenuContext): readonly (Item | 'divider')[
         items.push({ label: 'Report content', icon: ICON_REPORT, href: reportContentUrl(location.origin, pullUrl(), author) });
         break;
       case 'block':
-        items.push({ label: 'Block user', icon: ICON_BLOCKED, danger: true, run: () => void block('personal', context) });
+        items.push({ label: 'Block user', icon: ICON_OCTAGON_BLOCKED, run: () => void block('personal', context) });
         break;
       case 'unblock':
-        items.push({ label: 'Unblock user', icon: ICON_BLOCKED, run: () => void unblock(author) });
+        items.push({ label: 'Unblock user', icon: ICON_OCTAGON_BLOCKED, run: () => void unblock('personal', context) });
         break;
       case 'block-org':
-        items.push({ label: 'Block user from organization', icon: ICON_BLOCKED, danger: true, run: () => void block('org', context) });
+        items.push({ label: 'Block user from organization', icon: ICON_OCTAGON_BLOCKED, run: () => void block('org', context) });
         break;
-      case 'org-blocks':
-        items.push({ label: 'Manage organization blocks', icon: ICON_LINK_EXTERNAL, href: blockedUsersUrl('org', context.owner) });
+      case 'unblock-org':
+        items.push({ label: 'Unblock user from organization', icon: ICON_OCTAGON_BLOCKED, run: () => void unblock('org', context) });
         break;
     }
   }
@@ -209,9 +208,10 @@ async function block(scope: 'personal' | 'org', context: DescriptionMenuContext)
   else window.alert(`GitHub did not block ${login}${response === null ? '' : ` (${response.status})`}. Try again from their profile or your Blocked users settings.`);
 }
 
-async function unblock(login: string): Promise<void> {
-  if (login === '' || !window.confirm(`Unblock ${login}?`)) return;
-  const request = unblockRequest(login, fetchNonce());
+async function unblock(scope: 'personal' | 'org', context: DescriptionMenuContext): Promise<void> {
+  const login = context.author;
+  if (login === null || !window.confirm(scope === 'personal' ? `Unblock ${login}?` : `Unblock ${login} from ${context.owner}?`)) return;
+  const request = unblockRequest(scope, login, context.owner, fetchNonce());
   const response = await pageFetch(request.url, request.init).catch(() => null);
   if (response?.ok === true) location.reload();
   else window.alert(`GitHub did not unblock ${login}${response === null ? '' : ` (${response.status})`}. Try again from your Blocked users settings.`);
@@ -220,15 +220,15 @@ async function unblock(login: string): Promise<void> {
 function openMenu(button: HTMLButtonElement): void {
   closeMenu();
   if (current === null) return;
-  const element = createElement('div', { class: 'geld-quick-review__menu geld-desc-menu', [OWN_UI_ATTRIBUTE]: '', role: 'menu', 'aria-label': LABEL, tabindex: '-1' });
+  const element = createElement('div', { class: 'geld-desc-menu', [OWN_UI_ATTRIBUTE]: '', role: 'menu', 'aria-label': LABEL, tabindex: '-1' });
   const items: HTMLElement[] = [];
   for (const entry of itemsFor(current)) {
     if (entry === 'divider') {
       element.append(createElement('div', { class: 'geld-desc-menu__divider', role: 'separator' }));
       continue;
     }
-    const content = [createElement('span', { class: 'geld-quick-review__menu-visual', 'aria-hidden': 'true' }, [svgFromString(entry.icon)]), createElement('span', { class: 'geld-quick-review__menu-label' }, [entry.label])];
-    const attributes = { class: 'geld-quick-review__menu-item', role: 'menuitem', ...(entry.danger === true ? { 'data-danger': '' } : {}) };
+    const content = [createElement('span', { class: 'geld-desc-menu__visual', 'aria-hidden': 'true' }, [svgFromString(entry.icon)]), createElement('span', { class: 'geld-desc-menu__label' }, [entry.label])];
+    const attributes = { class: 'geld-desc-menu__item', role: 'menuitem' };
     const node = entry.href !== undefined ? createElement('a', { ...attributes, href: entry.href, target: '_blank', rel: 'noopener' }, content) : createElement('button', { ...attributes, type: 'button' }, content);
     node.addEventListener('click', () => {
       closeMenu();

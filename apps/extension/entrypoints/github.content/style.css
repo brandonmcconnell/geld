@@ -1690,32 +1690,76 @@ html[data-geld-tab-counts] [data-component='PageHeader']:has([class*='branchGrou
   outline-offset: -2px;
 }
 
-.geld-desc-menu {
-  min-width: 220px;
+.geld-desc-menu__wrap:has(> [aria-expanded='true']) > tool-tip {
+  display: none !important;
 }
 
-.geld-desc-menu .geld-quick-review__menu-item {
-  align-items: center;
+/* Its menu is drawn as GitHub's Overview menus are (Primer's inset ActionList in an AnchoredOverlay, measured Nov 2026): no
+   border but a ring in the shadow, 8px above and below, items inset 8px and 33px tall, full-width dividers. */
+.geld-desc-menu {
+  position: fixed;
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+  min-width: 192px;
+  padding: 8px 0;
+  border-radius: 12px;
+  background: var(--overlay-bgColor, var(--bgColor-default, #ffffff));
+  box-shadow: var(--shadow-floating-small, 0 0 0 1px rgba(209, 217, 224, 0.25), 0 6px 12px -3px rgba(37, 41, 46, 0.04), 0 6px 18px 0 rgba(37, 41, 46, 0.12));
+}
+
+.geld-desc-menu__item {
+  display: flex;
+  align-items: flex-start;
+  min-height: 33px;
+  margin: 0 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fgColor-default, #1f2328);
+  font: inherit;
+  font-size: 14px;
+  line-height: 21px;
+  text-align: left;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.geld-desc-menu__item:hover {
+  background: var(--control-transparent-bgColor-hover, rgba(129, 139, 152, 0.15));
+  color: var(--fgColor-default, #1f2328);
   text-decoration: none;
 }
 
-.geld-desc-menu .geld-quick-review__menu-visual {
-  padding-top: 0;
+.geld-desc-menu__item:active {
+  background: var(--control-transparent-bgColor-active, rgba(129, 139, 152, 0.23));
 }
 
-.geld-desc-menu .geld-quick-review__menu-item[data-danger],
-.geld-desc-menu .geld-quick-review__menu-item[data-danger] .geld-quick-review__menu-visual {
-  color: var(--fgColor-danger, #d1242f);
+.geld-desc-menu__item:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, #0969da);
+  outline-offset: -2px;
 }
 
-.geld-desc-menu .geld-quick-review__menu-item[data-danger]:is(:hover, :focus-visible) {
-  background: var(--control-danger-bgColor-hover, rgba(255, 235, 233, 0.64));
+.geld-desc-menu__visual {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  height: 20px;
+  margin-right: 8px;
+  color: var(--fgColor-muted, #59636e);
+}
+
+.geld-desc-menu__label {
+  line-height: 20px;
 }
 
 .geld-desc-menu__divider {
+  flex: 0 0 auto;
   height: 1px;
-  margin: 4px -6px;
-  background: var(--borderColor-muted, #d1d9e0b3);
+  margin: 7px 0 8px;
+  background: var(--borderColor-muted, rgba(209, 217, 224, 0.7));
 }
 
 /* The merge box: the method, the commit GitHub would write (editable), and GitHub's bypass checkbox when that is the only way. */
