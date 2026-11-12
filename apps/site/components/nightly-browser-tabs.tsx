@@ -3,7 +3,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 
 import { Tabs, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs';
-import { createTabMemory, isNightlyTab, nightlyTabFor } from '@/lib/nightly-tabs';
+import { createTabMemory, isNightlyTab, nightlyTabFor, orderTabs } from '@/lib/nightly-tabs';
 import type { NightlyTab } from '@/lib/nightly-tabs';
 
 export interface BrowserTab {
@@ -29,16 +29,22 @@ function subscribe(onChange: () => void): () => void {
   };
 }
 
+const detectedTab = (): NightlyTab => nightlyTabFor(navigator.userAgent, 'brave' in navigator);
 const tabFor = createTabMemory();
-const clientTab = (): NightlyTab => tabFor(window.location.hash, () => nightlyTabFor(navigator.userAgent, 'brave' in navigator));
+const clientTab = (): NightlyTab => tabFor(window.location.hash, detectedTab);
 const serverTab = (): NightlyTab => 'chrome';
+/** The browser never changes during a page's life, so there is nothing to subscribe to. */
+const subscribeNever = (): (() => void) => () => {};
+const serverDetected = (): NightlyTab | null => null;
 
 /**
- * One tab per browser, opening on the reader's own. The tab lives in the address (`/nightly#brave`), so a link
+ * One tab per browser, opening on the reader's own and with it first. The tab lives in the address (`/nightly#brave`), so a link
  * can open someone straight on their browser, and a link to `#brave` elsewhere on the page switches to it.
  */
 export function NightlyBrowserTabs({ tabs, sectionId }: { readonly tabs: readonly BrowserTab[]; readonly sectionId: string }) {
   const value = useSyncExternalStore(subscribe, clientTab, serverTab);
+  const detected = useSyncExternalStore(subscribeNever, detectedTab, serverDetected);
+  const ordered = orderTabs(tabs, detected);
 
   useEffect(() => {
     const reveal = (behavior: ScrollBehavior): void => {
@@ -59,7 +65,7 @@ export function NightlyBrowserTabs({ tabs, sectionId }: { readonly tabs: readonl
   return (
     <Tabs value={value} onValueChange={select}>
       <TabsList aria-label="Browser">
-        {tabs.map((tab) => (
+        {ordered.map((tab) => (
           <TabsTab key={tab.id} value={tab.id}>
             {tab.label}
           </TabsTab>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createTabMemory, isNightlyTab, nightlyTabFor } from './nightly-tabs';
+import { createTabMemory, isNightlyTab, nightlyTabFor, orderTabs } from './nightly-tabs';
 
 const CHROME = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36';
 
@@ -41,5 +41,18 @@ describe('createTabMemory', () => {
 
   it('guesses until a tab is chosen, including on a section anchor', () => {
     expect(createTabMemory()('#updates', () => 'safari')).toBe('safari');
+  });
+});
+
+describe('orderTabs', () => {
+  const tabs = [{ id: 'chrome' }, { id: 'brave' }, { id: 'chromium' }, { id: 'firefox' }, { id: 'safari' }] as const;
+
+  it("puts the reader's browser first and keeps the rest in order", () => {
+    expect(orderTabs(tabs, 'firefox').map((tab) => tab.id)).toEqual(['firefox', 'chrome', 'brave', 'chromium', 'safari']);
+    expect(orderTabs(tabs, 'chrome').map((tab) => tab.id)).toEqual(['chrome', 'brave', 'chromium', 'firefox', 'safari']);
+  });
+
+  it('keeps the usual order before the browser is known (server rendering)', () => {
+    expect(orderTabs(tabs, null)).toBe(tabs);
   });
 });

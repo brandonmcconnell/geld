@@ -8,6 +8,12 @@ export function isNightlyTab(value: unknown): value is NightlyTab {
   return typeof value === 'string' && NIGHTLY_TABS.some((id) => id === value);
 }
 
+/** The reader's own browser first, the rest in their usual order, as the home page orders its install buttons. */
+export function orderTabs<T extends { readonly id: NightlyTab }>(tabs: readonly T[], first: NightlyTab | null): readonly T[] {
+  if (first === null) return tabs;
+  return [...tabs.filter((tab) => tab.id === first), ...tabs.filter((tab) => tab.id !== first)];
+}
+
 /**
  * The tab to show for an address. A tab id in the hash wins and is remembered, so moving to a section anchor
  * (`#updates`), by a click or by Back and Forward, keeps the browser the reader chose. With nothing chosen yet,
