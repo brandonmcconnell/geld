@@ -32,9 +32,10 @@ jobs:
       github.event.issue.pull_request != null &&
       startsWith(github.event.comment.body, '/geld run')
     runs-on: ubuntu-latest
+    # Reacting to a comment on a pull request needs pull-requests: write; with issues: write alone GitHub answers 403.
     permissions:
       issues: write
-      pull-requests: read
+      pull-requests: write
       contents: read
     steps:
       - name: Start the requested review bots
@@ -49,8 +50,11 @@ jobs:
             const comment = context.payload.comment;
             const pr = context.payload.issue;
             const prUrl = pr.pull_request.html_url;
+            // The reaction is how the Geld extension learns the answer, so a failed one is worth a warning, not silence.
             const react = (content) =>
-              github.rest.reactions.createForIssueComment({ owner, repo, comment_id: comment.id, content }).catch(() => {});
+              github.rest.reactions
+                .createForIssueComment({ owner, repo, comment_id: comment.id, content })
+                .catch((error) => core.warning(`Could not react ${content} to the comment (${error.status ?? error.message}). The Geld extension reads this reaction to know the request was answered.`));
 
             // Secrets are readable by any comment's workflow, so only people trusted with the repository may spend the bots' credits.
             if (comment.user.type === 'Bot') return core.notice('Ignored: trigger comments from bots are not run.');
