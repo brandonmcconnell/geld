@@ -6660,6 +6660,27 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   display: none !important;
 }
 
+/* The body's top border parted it from that header: under the chat's head or the pinned strip, which each end in a border, it doubled the line. */
+.geld-review__chat-body > article[data-geld-teleported] > :first-child:has(h2 a[href*='/changes']) + * {
+  border-top: 0 !important;
+}
+
+/*
+ * A pinned Overview review or comment is its own box at home, rounded: in the strip its corners are the strip's
+ * edges, and rounded they bent its body's top border away before the edges. Its reactions holder with no pills (GitHub's
+ * row in it is hidden then) only added the strip's grey under the words.
+ */
+.geld-review__chat-context-body > article[data-geld-teleported] {
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.geld-review__chat .geld-review__chat-context-body .geld-review__msg-reactions--overview:not(:has(button)) {
+  display: none !important;
+}
+
 /* GitHub's own thread header (chevron, path, "Show resolved") and its collapsed-thread controls: the chat's head says it. */
 .geld-review__chat-body review-thread-collapsible > .d-flex:first-child,
 .geld-review__chat-body review-thread-collapsible > [class*='bgColor-muted']:first-child,
