@@ -30,6 +30,9 @@ on:
   check_run:
     types: [completed]
 
+# Each job asks for what it needs; anything added later starts with nothing.
+permissions: {}
+
 env:
   # Names of repository secrets, never the keys themselves.
   # Settings > Secrets and variables > Actions holds the keys. Empty keeps that bot's usual tag comment.
