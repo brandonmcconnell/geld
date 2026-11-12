@@ -58,6 +58,11 @@ export function blockedFor(owner: string, viewer: string, onLanded: () => void):
   return blocked;
 }
 
+/** Whether the reader's own Blocked users list was read, so someone absent from it is truly not blocked. Asked after `blockedFor`. */
+export function personalBlocksRead(): boolean {
+  return readable.has(blockedUsersUrl('personal'));
+}
+
 /** Whether the reader may block people from `owner`'s organisation: GitHub showed them its Blocked users page. Asked after `blockedFor`. */
 export function mayBlockFromOrg(owner: string): boolean {
   return owner !== '' && readable.has(blockedUsersUrl('org', owner));

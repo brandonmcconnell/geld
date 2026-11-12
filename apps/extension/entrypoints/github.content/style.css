@@ -1703,6 +1703,8 @@ html[data-geld-tab-counts] [data-component='PageHeader']:has([class*='branchGrou
   flex-direction: column;
   min-width: 192px;
   padding: 8px 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border-radius: 12px;
   background: var(--overlay-bgColor, var(--bgColor-default, #ffffff));
   box-shadow: var(--shadow-floating-small, 0 0 0 1px rgba(209, 217, 224, 0.25), 0 6px 12px -3px rgba(37, 41, 46, 0.04), 0 6px 18px 0 rgba(37, 41, 46, 0.12));
@@ -1710,6 +1712,7 @@ html[data-geld-tab-counts] [data-component='PageHeader']:has([class*='branchGrou
 
 .geld-desc-menu__item {
   display: flex;
+  flex: 0 0 auto;
   align-items: flex-start;
   min-height: 33px;
   margin: 0 8px;

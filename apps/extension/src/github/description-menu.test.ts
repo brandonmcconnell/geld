@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DescriptionMenuContext } from './description-menu';
-import { blockRequest, descriptionActions, removeDescriptionMenu, reportContentUrl, syncDescriptionMenu, unblockRequest } from './description-menu';
+
+const fetched = vi.hoisted(() => ({ response: new Response('{}', { status: 200 }) }));
+vi.mock('./page-fetch', () => ({ pageFetch: async () => fetched.response }));
+import { blockRequest, descriptionActions, menuPlacement, removeDescriptionMenu, reportContentUrl, syncDescriptionMenu, unblockRequest } from './description-menu';
 
 const base: DescriptionMenuContext = { viewer: 'brandon', author: 'spammer', owner: 'mintlify', blocksKnown: true, blocked: null, mayBlockFromOrg: false };
 
@@ -26,9 +29,28 @@ describe('descriptionActions', () => {
     expect(descriptionActions({ ...base, mayBlockFromOrg: true, blocked: { org: true, personal: true } })).toEqual(['copy-link', 'copy-markdown', 'report', 'unblock', 'unblock-org']);
   });
 
-  it('never offers to block an App or an author whose blocks are unknown', () => {
-    expect(descriptionActions({ ...base, author: 'dependabot[bot]' })).toEqual(['copy-link', 'copy-markdown', 'report']);
+  it('never offers to block an App, nor a personal block before the reader’s list is read', () => {
+    expect(descriptionActions({ ...base, author: 'dependabot[bot]', mayBlockFromOrg: true })).toEqual(['copy-link', 'copy-markdown', 'report']);
     expect(descriptionActions({ ...base, blocksKnown: false })).toEqual(['copy-link', 'copy-markdown', 'report']);
+    expect(descriptionActions({ ...base, blocksKnown: false, mayBlockFromOrg: true })).toEqual(['copy-link', 'copy-markdown', 'report', 'block-org']);
+  });
+});
+
+describe('menuPlacement', () => {
+  it('opens under the button when the menu fits there', () => {
+    expect(menuPlacement({ top: 100, bottom: 128 }, 200, 1000)).toEqual({ top: 132, maxHeight: 860 });
+  });
+
+  it('opens above the button when only above has the room', () => {
+    expect(menuPlacement({ top: 700, bottom: 728 }, 200, 800)).toEqual({ top: 496, maxHeight: 688 });
+  });
+
+  it('stays below, capped to the room, when below has more of it', () => {
+    expect(menuPlacement({ top: 100, bottom: 128 }, 900, 800)).toEqual({ top: 132, maxHeight: 660 });
+  });
+
+  it('caps an upward menu to the room above', () => {
+    expect(menuPlacement({ top: 300, bottom: 328 }, 900, 400)).toEqual({ top: 8, maxHeight: 288 });
   });
 });
 
@@ -84,6 +106,24 @@ describe('syncDescriptionMenu', () => {
     const labels = [...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map((item) => item.textContent);
     expect(labels).toEqual(['Copy link', 'Copy Markdown', 'Report content', 'Block user']);
     expect(buttons[0]?.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('leaves the clipboard alone when GitHub does not send the Markdown', async () => {
+    history.replaceState(null, '', '/o/r/pull/7');
+    fetched.response = new Response('oops', { status: 502 });
+    const writeText = vi.fn(async () => undefined);
+    // A browser's write rejects when the text it was handed rejects.
+    const write = vi.fn(async () => Promise.reject(new Error('text rejected')));
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText, write } });
+    const alert = vi.fn();
+    Object.defineProperty(window, 'alert', { configurable: true, value: alert });
+    page();
+    syncDescriptionMenu(base);
+    document.querySelector('[data-geld-desc-menu] button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const copy = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === 'Copy Markdown');
+    copy?.click();
+    await vi.waitFor(() => expect(alert).toHaveBeenCalled());
+    expect(writeText).not.toHaveBeenCalled();
   });
 
   it('goes when the page is no longer one it dresses', () => {

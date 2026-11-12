@@ -22,7 +22,7 @@ export interface DescriptionMenuContext {
   readonly author: string | null;
   /** The repository's owner, the organisation an org block is from. */
   readonly owner: string;
-  /** Whether the reader's Blocked users lists were read (github.com only), so a block can be told from none. */
+  /** Whether the reader's own Blocked users list was read (github.com only), so a block can be told from none. */
   readonly blocksKnown: boolean;
   readonly blocked: BlockedBy | null;
   /** GitHub showed the reader the organisation's Blocked users page: they own or moderate it. */
@@ -38,8 +38,8 @@ export function descriptionActions(context: DescriptionMenuContext): readonly De
   if (viewer === '' || author === null || author === '' || author.toLowerCase() === viewer.toLowerCase()) return actions;
   actions.push('report');
   // An App's account is no person to block, and Copilot's never is in GitHub's own menus either.
-  if (!context.blocksKnown || author.toLowerCase().endsWith('[bot]') || author.toLowerCase() === 'copilot') return actions;
-  actions.push(context.blocked?.personal === true ? 'unblock' : 'block');
+  if (author.toLowerCase().endsWith('[bot]') || author.toLowerCase() === 'copilot') return actions;
+  if (context.blocksKnown) actions.push(context.blocked?.personal === true ? 'unblock' : 'block');
   if (context.mayBlockFromOrg) actions.push(context.blocked?.org === true ? 'unblock-org' : 'block-org');
   return actions;
 }
@@ -167,10 +167,10 @@ function itemsFor(context: DescriptionMenuContext): readonly (Item | 'divider')[
         items.push({ label: 'Unblock user', icon: ICON_OCTAGON_BLOCKED, run: () => void unblock('personal', context) });
         break;
       case 'block-org':
-        items.push({ label: 'Block user from organization', icon: ICON_OCTAGON_BLOCKED, run: () => void block('org', context) });
+        items.push({ label: 'Block user from org', icon: ICON_OCTAGON_BLOCKED, run: () => void block('org', context) });
         break;
       case 'unblock-org':
-        items.push({ label: 'Unblock user from organization', icon: ICON_OCTAGON_BLOCKED, run: () => void unblock('org', context) });
+        items.push({ label: 'Unblock user from org', icon: ICON_OCTAGON_BLOCKED, run: () => void unblock('org', context) });
         break;
     }
   }
@@ -183,15 +183,25 @@ async function copyMarkdown(): Promise<void> {
   if (pull === null) return;
   const text = (async (): Promise<string> => {
     const response = await pageFetch(`${pull}/page_data/description`, { credentials: 'same-origin', headers: { Accept: 'application/json', ...verifiedHeaders(fetchNonce()) } });
-    if (!response.ok) return '';
+    if (!response.ok) throw new Error(`http-${response.status}`);
     const data: unknown = JSON.parse(await response.text());
-    return typeof data === 'object' && data !== null && 'body' in data && typeof data.body === 'string' ? data.body : '';
+    if (typeof data !== 'object' || data === null || !('body' in data) || typeof data.body !== 'string') throw new Error('no-body');
+    return data.body;
   })();
-  // Chrome lets a write that waits on the answer through only when it is handed the promise inside the click.
-  const blob = text.then((body) => new Blob([body], { type: 'text/plain' }));
-  if (typeof ClipboardItem === 'function') {
-    await navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]).catch(async () => navigator.clipboard.writeText(await text));
-  } else await navigator.clipboard.writeText(await text);
+  try {
+    if (typeof ClipboardItem === 'function') {
+      // Chrome lets a write that waits on the answer through only when it is handed the promise inside the click.
+      const written = await navigator.clipboard.write([new ClipboardItem({ 'text/plain': text.then((body) => new Blob([body], { type: 'text/plain' })) })]).then(
+        () => true,
+        () => false,
+      );
+      if (written) return;
+    }
+    // A text that never came rejects here, before anything is written: the reader's clipboard keeps what it had.
+    await navigator.clipboard.writeText(await text);
+  } catch {
+    window.alert('GitHub did not send the description’s Markdown, so nothing was copied. Try again.');
+  }
 }
 
 async function block(scope: 'personal' | 'org', context: DescriptionMenuContext): Promise<void> {
@@ -215,6 +225,18 @@ async function unblock(scope: 'personal' | 'org', context: DescriptionMenuContex
   const response = await pageFetch(request.url, request.init).catch(() => null);
   if (response?.ok === true) location.reload();
   else window.alert(`GitHub did not unblock ${login}${response === null ? '' : ` (${response.status})`}. Try again from your Blocked users settings.`);
+}
+
+const MENU_GAP = 4;
+const VIEWPORT_MARGIN = 8;
+
+/** Where the menu opens: under its button as GitHub's do, above it when only above has the room, and never past the window. */
+export function menuPlacement(button: { readonly top: number; readonly bottom: number }, height: number, viewport: number): { readonly top: number; readonly maxHeight: number } {
+  const below = Math.max(0, viewport - button.bottom - MENU_GAP - VIEWPORT_MARGIN);
+  const above = Math.max(0, button.top - MENU_GAP - VIEWPORT_MARGIN);
+  if (height <= below || below >= above) return { top: button.bottom + MENU_GAP, maxHeight: below };
+  const shown = Math.min(height, above);
+  return { top: button.top - MENU_GAP - shown, maxHeight: above };
 }
 
 function openMenu(button: HTMLButtonElement): void {
@@ -250,7 +272,10 @@ function openMenu(button: HTMLButtonElement): void {
     const rect = button.getBoundingClientRect();
     const left = Math.max(8, Math.min(rect.right - element.offsetWidth, document.documentElement.clientWidth - element.offsetWidth - 8));
     element.style.left = `${Math.round(left)}px`;
-    element.style.top = `${Math.round(rect.bottom + 4)}px`;
+    element.style.maxHeight = '';
+    const { top, maxHeight } = menuPlacement(rect, element.offsetHeight, document.documentElement.clientHeight);
+    element.style.top = `${Math.round(top)}px`;
+    element.style.maxHeight = `${Math.floor(maxHeight)}px`;
   };
   place();
   items[0]?.focus({ preventScroll: true });

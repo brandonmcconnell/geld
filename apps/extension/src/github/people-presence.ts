@@ -1,6 +1,6 @@
 import { compileAuthorRules } from '@geld/core';
 import type { BlockedBy } from './blocked-list';
-import { blockedFor, mayBlockFromOrg } from './blocked-users';
+import { blockedFor, mayBlockFromOrg, personalBlocksRead } from './blocked-users';
 import { removeDescriptionMenu, syncDescriptionMenu } from './description-menu';
 import { createElement, OWN_UI_ATTRIBUTE } from './dom';
 import { isMinimizedWrapper } from './review/edit-times';
@@ -298,7 +298,7 @@ export function applyPeoplePresence(options: PresenceOptions): void {
     viewer,
     author,
     owner,
-    blocksKnown: location.hostname === 'github.com' && viewer !== '',
+    blocksKnown: personalBlocksRead(),
     blocked: author === null ? null : (blocked.get(author.toLowerCase()) ?? null),
     mayBlockFromOrg: mayBlockFromOrg(owner),
   });
