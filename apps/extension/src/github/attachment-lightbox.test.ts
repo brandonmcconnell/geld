@@ -1,21 +1,43 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { GalleryImage } from './attachment-gallery';
 import { applyAttachmentLightbox, removeAttachmentLightbox } from './attachment-lightbox';
 import { blockText } from './review/crawler';
 
+vi.mock('wxt/browser', () => ({ browser: { runtime: { getURL: (path: string) => `chrome-extension://geld${path}` } } }));
+
+interface Opened {
+  readonly items: readonly GalleryImage[];
+  readonly index: number;
+  closed: boolean;
+}
+
+const gallery = vi.hoisted((): { opened: Opened[] } => ({ opened: [] }));
+
+vi.mock('./attachment-gallery', () => ({
+  openAttachmentGallery: (items: readonly GalleryImage[], index: number, onClosed: () => void): (() => void) => {
+    const opened: Opened = { items, index, closed: false };
+    gallery.opened.push(opened);
+    return () => {
+      opened.closed = true;
+      onClosed();
+    };
+  },
+}));
+
 const ATTACHMENT = 'https://github.com/user-attachments/assets/abc-123';
 
-function mount(href = ATTACHMENT, src = ATTACHMENT): HTMLImageElement {
-  const body = document.createElement('div');
-  body.className = 'markdown-body';
+function mount(href = ATTACHMENT, src = ATTACHMENT, body?: HTMLElement): HTMLImageElement {
+  const markdown = body ?? document.createElement('div');
+  markdown.className = 'markdown-body';
   const link = document.createElement('a');
   link.href = href;
   const image = document.createElement('img');
   image.src = src;
   image.alt = 'Screenshot of the review';
   link.append(image);
-  body.append(link);
-  document.body.append(body);
+  markdown.append(link);
+  if (!markdown.isConnected) document.body.append(markdown);
   return image;
 }
 
@@ -25,6 +47,10 @@ function click(image: HTMLImageElement, options: MouseEventInit = {}): MouseEven
   return event;
 }
 
+function open(): Opened | undefined {
+  return gallery.opened.filter((entry) => !entry.closed).at(-1);
+}
+
 beforeEach(() => {
   vi.stubGlobal('location', new URL('https://github.com/owner/repo/issues/42'));
 });
@@ -32,6 +58,7 @@ beforeEach(() => {
 afterEach(() => {
   removeAttachmentLightbox();
   document.body.replaceChildren();
+  gallery.opened.length = 0;
   vi.unstubAllGlobals();
 });
 
@@ -40,14 +67,15 @@ describe('attachment lightbox', () => {
     const image = mount();
     applyAttachmentLightbox(true);
     click(image);
-    expect(document.querySelector('dialog')?.open).toBe(true);
+    expect(open()).toBeDefined();
     applyAttachmentLightbox(false);
-    expect(document.querySelector('dialog')).toBeNull();
+    expect(open()).toBeUndefined();
     expect(image.hasAttribute('data-geld-lightbox-image')).toBe(false);
+    expect(image.closest('a')?.hasAttribute('aria-haspopup')).toBe(false);
     expect(click(image).defaultPrevented).toBe(false);
     applyAttachmentLightbox(true);
     expect(click(image).defaultPrevented).toBe(true);
-    expect(document.querySelector('dialog')?.open).toBe(true);
+    expect(open()).toBeDefined();
   });
 
   it.each([
@@ -59,35 +87,40 @@ describe('attachment lightbox', () => {
     const image = mount();
     applyAttachmentLightbox();
     expect(image.hasAttribute('data-geld-lightbox-image')).toBe(true);
+    expect(image.closest('a')?.getAttribute('aria-haspopup')).toBe('dialog');
     expect(click(image).defaultPrevented).toBe(true);
-    const dialog = document.querySelector('dialog');
-    expect(dialog?.open).toBe(true);
-    expect(dialog?.querySelector('[data-geld-brand]')).toBeNull();
-    const title = document.getElementById(dialog?.getAttribute('aria-labelledby') ?? '');
-    expect(title?.textContent).toBe('Screenshot of the review');
-    expect(dialog?.querySelector('header')?.contains(dialog.querySelector('button[aria-label="Close"]'))).toBe(true);
-    expect(dialog?.querySelector('img')?.src).toBe(ATTACHMENT);
-    expect(dialog?.querySelector('img')?.alt).toBe(image.alt);
-    expect(dialog?.querySelector('a')?.href).toBe(ATTACHMENT);
-    expect(dialog?.querySelector('a')?.target).toBe('_blank');
-    expect(document.activeElement).toBe(dialog?.querySelector('button'));
+    const item = open()?.items[open()?.index ?? -1];
+    expect(item?.image).toBe(image);
+    expect(item?.title).toBe('Screenshot of the review');
+    expect(item?.link.href).toBe(ATTACHMENT);
+  });
+
+  it('opens every image of the clicked body as one gallery, and never another body\'s', () => {
+    const body = document.createElement('div');
+    const first = mount(ATTACHMENT, ATTACHMENT, body);
+    mount('https://example.com/build', 'https://img.shields.io/badge/build-passing-green', body);
+    const second = mount('https://github.com/user-attachments/assets/def-456', 'https://github.com/user-attachments/assets/def-456', body);
+    mount('https://github.com/user-attachments/assets/other', 'https://github.com/user-attachments/assets/other');
+    applyAttachmentLightbox();
+    click(second);
+    expect(open()?.items.map((item) => item.image)).toEqual([first, second]);
+    expect(open()?.index).toBe(1);
+    expect(new Set(open()?.items.map((item) => item.id)).size).toBe(2);
   });
 
   it.each(['image', 'Image', ''])('titles an upload whose alt text is %j as "Image"', (alt) => {
-    vi.stubGlobal('location', new URL('https://github.com/owner/repo/issues/42'));
     const image = mount();
     image.alt = alt;
     applyAttachmentLightbox();
     click(image);
-    const dialog = document.querySelector('dialog');
-    expect(document.getElementById(dialog?.getAttribute('aria-labelledby') ?? '')?.textContent).toBe('Image');
+    expect(open()?.items[0]?.title).toBe('Image');
   });
 
   it.each([{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }])('preserves native navigation for %o', (options) => {
     const image = mount();
     applyAttachmentLightbox();
     expect(click(image, options).defaultPrevented).toBe(false);
-    expect(document.querySelector('dialog')).toBeNull();
+    expect(open()).toBeUndefined();
   });
 
   it.each([
@@ -100,7 +133,7 @@ describe('attachment lightbox', () => {
     const image = mount(href);
     applyAttachmentLightbox();
     expect(click(image).defaultPrevented).toBe(true);
-    expect(document.querySelector('dialog a')?.getAttribute('href')).toBe(href);
+    expect(open()?.items[0]?.link.getAttribute('href')).toBe(href);
   });
 
   it('leaves linked badges, unrelated links, and images outside markdown alone', () => {
@@ -112,11 +145,15 @@ describe('attachment lightbox', () => {
     const pdf = mount('https://github.com/owner/repo/files/123/manual.pdf', 'https://img.shields.io/badge/manual-pdf-blue');
     const upload = mount('https://github.com/user-attachments/files/123/report.zip', 'https://img.shields.io/badge/report-zip-blue');
     applyAttachmentLightbox();
-    for (const image of [badge, unrelated, outside, unsafe, pdf, upload]) {
+    for (const image of [badge, unrelated, outside, unsafe, upload]) {
       expect(image.hasAttribute('data-geld-lightbox-image')).toBe(false);
+      expect(image.closest('a')?.hasAttribute('aria-haspopup')).toBe(false);
       expect(click(image).defaultPrevented).toBe(false);
     }
-    expect(document.querySelector('dialog')).toBeNull();
+    expect(open()).toBeUndefined();
+    expect(pdf.hasAttribute('data-geld-lightbox-image')).toBe(false);
+    click(pdf);
+    expect(document.querySelector('dialog iframe')).not.toBeNull();
   });
 
   it.each([
@@ -130,11 +167,10 @@ describe('attachment lightbox', () => {
     applyAttachmentLightbox();
     expect(image.hasAttribute('data-geld-lightbox-image')).toBe(true);
     expect(click(image, { ctrlKey: true }).defaultPrevented).toBe(false);
-    expect(document.querySelector('dialog')).toBeNull();
+    expect(open()).toBeUndefined();
     expect(click(image).defaultPrevented).toBe(true);
-    expect(document.querySelector('dialog')?.open).toBe(true);
-    expect(document.querySelector('dialog img')?.getAttribute('src')).toBe(href);
-    expect(document.querySelector('dialog a')?.getAttribute('href')).toBe(href);
+    expect(open()?.items[0]?.image.getAttribute('src')).toBe(href);
+    expect(open()?.items[0]?.link.getAttribute('href')).toBe(href);
   });
 
   it('opens external images GitHub proxies through camo and links to themselves', () => {
@@ -149,8 +185,7 @@ describe('attachment lightbox', () => {
       expect(click(kept).defaultPrevented).toBe(false);
     }
     expect(click(image).defaultPrevented).toBe(true);
-    expect(document.querySelector('dialog img')?.getAttribute('src')).toBe(camo);
-    expect(document.querySelector('dialog a')?.getAttribute('href')).toBe(camo);
+    expect(open()?.items[0]?.link.getAttribute('href')).toBe(camo);
   });
 
   it('does not intercept links to non-image repository files', () => {
@@ -158,16 +193,17 @@ describe('attachment lightbox', () => {
     applyAttachmentLightbox();
     expect(image.hasAttribute('data-geld-lightbox-image')).toBe(false);
     expect(click(image).defaultPrevented).toBe(false);
-    expect(document.querySelector('dialog')).toBeNull();
+    expect(open()).toBeUndefined();
   });
 
-  it('handles comments arriving later and repeated enhancement without duplicate dialogs', () => {
+  it('handles comments arriving later and repeated enhancement without duplicate galleries', () => {
     applyAttachmentLightbox();
     const image = mount();
     applyAttachmentLightbox();
     applyAttachmentLightbox();
     click(image);
-    expect(document.querySelectorAll('dialog')).toHaveLength(1);
+    click(image);
+    expect(gallery.opened.filter((entry) => !entry.closed)).toHaveLength(1);
     expect(image.hasAttribute('data-geld-lightbox-image')).toBe(true);
   });
 
@@ -175,31 +211,63 @@ describe('attachment lightbox', () => {
     const image = mount();
     applyAttachmentLightbox();
     image.closest('a')?.click();
-    expect(document.querySelector('dialog')?.open).toBe(true);
+    expect(open()).toBeDefined();
   });
 
-  it.each(['close', 'cancel', 'backdrop'])('dismisses with %s', (action) => {
-    const image = mount();
+  it('opens a PDF GitHub would download in the PDF viewer, and leaves GitHub\'s own PDF pages alone', () => {
+    const body = document.createElement('div');
+    body.className = 'markdown-body';
+    const upload = document.createElement('a');
+    upload.href = 'https://github.com/user-attachments/files/1/report.pdf';
+    upload.textContent = 'report.pdf';
+    const blob = document.createElement('a');
+    blob.href = 'https://github.com/owner/repo/blob/main/report.pdf';
+    body.append(upload, blob);
+    document.body.append(body);
     applyAttachmentLightbox();
-    click(image);
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    upload.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
     const dialog = document.querySelector('dialog');
-    if (action === 'close') dialog?.querySelector('button')?.click();
-    if (action === 'cancel') dialog?.dispatchEvent(new Event('cancel', { cancelable: true }));
-    if (action === 'backdrop') dialog?.click();
+    expect(dialog?.querySelector('.geld-lightbox__title')?.textContent).toBe('report.pdf');
+    expect(dialog?.querySelector('.geld-lightbox__original')?.textContent).toBe('Download');
+    const download = dialog?.querySelector<HTMLAnchorElement>('.geld-lightbox__original');
+    expect(download?.getAttribute('href')).toBe(upload.href);
+    expect(download?.hasAttribute('target')).toBe(false);
+    expect(download?.getAttribute('download')).toBe('report.pdf');
+    expect(download?.querySelector('.octicon-download')).not.toBeNull();
+    const frame = dialog?.querySelector('iframe');
+    const before = new MouseEvent('click', { bubbles: true, cancelable: true });
+    download?.dispatchEvent(before);
+    expect(before.defaultPrevented).toBe(false);
+    if (!frame) throw new Error('expected the PDF frame');
+    // happy-dom loads no frame, so the frame's window is a stand-in that records what the dialog sends it.
+    const post = vi.fn();
+    const framed = new EventTarget();
+    Object.defineProperty(framed, 'postMessage', { value: post });
+    Object.defineProperty(frame, 'contentWindow', { value: framed, configurable: true });
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'geld:pdf-ready' }, source: null }));
+    const stray = new MouseEvent('click', { bubbles: true, cancelable: true });
+    download?.dispatchEvent(stray);
+    expect(stray.defaultPrevented).toBe(false);
+    const ready = new MessageEvent('message', { data: { type: 'geld:pdf-ready' } });
+    Object.defineProperty(ready, 'source', { value: framed });
+    window.dispatchEvent(ready);
+    const after = new MouseEvent('click', { bubbles: true, cancelable: true });
+    download?.dispatchEvent(after);
+    expect(after.defaultPrevented).toBe(true);
+    expect(post).toHaveBeenCalledWith({ type: 'geld:pdf-download' }, 'chrome-extension://geld');
+    expect(new URL(frame?.getAttribute('src') ?? '').searchParams.get('src')).toBe(upload.href);
+    const closing = new MessageEvent('message', { data: { type: 'geld:pdf-close' } });
+    Object.defineProperty(closing, 'source', { value: framed });
+    window.dispatchEvent(closing);
     expect(document.querySelector('dialog')).toBeNull();
-  });
-
-  it('keeps image clicks inside the lightbox open and offers a fallback when loading fails', () => {
-    const image = mount();
-    applyAttachmentLightbox();
-    click(image);
-    const preview = document.querySelector('dialog img');
-    preview?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    expect(document.querySelector('dialog')?.open).toBe(true);
-    preview?.dispatchEvent(new Event('error'));
-    expect(preview?.hasAttribute('hidden')).toBe(true);
-    expect(document.querySelector('[role="status"]')?.textContent).toContain('could not be loaded');
-    expect(document.querySelector('dialog a')?.getAttribute('href')).toBe(ATTACHMENT);
+    const native = new MouseEvent('click', { bubbles: true, cancelable: true });
+    blob.dispatchEvent(native);
+    expect(native.defaultPrevented).toBe(false);
+    const modified = new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true });
+    upload.dispatchEvent(modified);
+    expect(modified.defaultPrevented).toBe(false);
   });
 
   it('cleans up on navigation and teardown', () => {
@@ -208,10 +276,10 @@ describe('attachment lightbox', () => {
     click(image);
     vi.stubGlobal('location', new URL('https://github.com/owner/repo/pull/43'));
     applyAttachmentLightbox();
-    expect(document.querySelector('dialog')).toBeNull();
+    expect(open()).toBeUndefined();
     click(image);
     removeAttachmentLightbox();
-    expect(document.querySelector('dialog')).toBeNull();
+    expect(open()).toBeUndefined();
     expect(image.hasAttribute('data-geld-lightbox-image')).toBe(false);
     expect(click(image).defaultPrevented).toBe(false);
   });

@@ -5730,10 +5730,22 @@ html [data-geld-person-fold-part][data-geld-person-fold-part] {
 .geld-review__avatar,
 .geld-review__bot-icon,
 .geld-review-hovercard__avatar,
-.geld-review__head-slot .avatar {
+.geld-review__head-slot .avatar,
+.geld-review__push-avatar,
+.geld-review__qv .AvatarStack-body .avatar img {
   /* A faint ring so an avatar never blends into the surface, in either scheme. */
   outline: 1px solid rgb(128 128 128 / 15%);
   outline-offset: -1px;
+}
+
+/* GitHub's commit-row stack on loan: its own outer ring gives way to ours, and each avatar masks the one under it
+ * as Geld's stacks do. GitHub lays the first avatar on top, so the mask is on every one but the last. */
+.geld-review__qv .AvatarStack-body .avatar {
+  box-shadow: none;
+}
+
+.geld-review__qv .AvatarStack-body .avatar:not(:last-child) {
+  box-shadow: 0 0 0 2px var(--geld-review-bg);
 }
 
 .geld-review__avatar[data-kind='bot'] {
@@ -10504,7 +10516,7 @@ dialog.geld-flow .geld-flow__actions .Overlay-closeButton {
   cursor: zoom-in;
 }
 
-dialog.geld-lightbox {
+:is(dialog.geld-lightbox, .geld-lightbox--gallery) {
   position: fixed;
   inset: 0;
   display: flex;
@@ -10525,8 +10537,29 @@ dialog.geld-lightbox {
   font: 14px/1.5 var(--fontStack-system, sans-serif);
 }
 
-.geld-lightbox::backdrop {
+.geld-lightbox::backdrop,
+.geld-lightbox__backdrop {
   background: var(--overlay-backdrop-bgColor, rgb(31 35 40 / 50%));
+}
+
+/* The gallery's host is a popover only to reach the top layer: no box of its own, its content fixed to the viewport. */
+.geld-lightbox-host {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  color: inherit;
+  background: none;
+  border: 0;
+}
+
+.geld-lightbox__backdrop {
+  position: fixed;
+  inset: 0;
 }
 
 .geld-lightbox__header {
@@ -10552,7 +10585,7 @@ dialog.geld-lightbox {
   text-overflow: ellipsis;
 }
 
-dialog.geld-lightbox[open]:has(.geld-lightbox__stage--large) {
+:is(dialog.geld-lightbox[open]:has(.geld-lightbox__stage--large), .geld-lightbox--gallery) {
   box-sizing: border-box;
   width: min(1120px, 84vw);
   min-width: 0;
@@ -10561,17 +10594,17 @@ dialog.geld-lightbox[open]:has(.geld-lightbox__stage--large) {
   max-height: none;
 }
 
-.geld-lightbox:has(.geld-lightbox__stage--large) .geld-lightbox__body {
+.geld-lightbox:is(:has(.geld-lightbox__stage--large), .geld-lightbox--gallery) .geld-lightbox__body {
   flex: 1;
   grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   place-items: stretch;
 }
 
-.geld-lightbox:has(.geld-lightbox__stage--large) :is(.geld-lightbox__header, .geld-lightbox__footer) {
+.geld-lightbox:is(:has(.geld-lightbox__stage--large), .geld-lightbox--gallery) :is(.geld-lightbox__header, .geld-lightbox__footer) {
   flex: none;
 }
 
-.geld-lightbox:has(.geld-lightbox__stage--large) .geld-lightbox__footer {
+.geld-lightbox:is(:has(.geld-lightbox__stage--large), .geld-lightbox--gallery) .geld-lightbox__footer {
   padding: 8px;
 }
 
@@ -10599,7 +10632,7 @@ dialog.geld-lightbox[open]:has(.geld-lightbox__stage--large) {
   background: var(--control-transparent-bgColor-hover, var(--bgColor-neutral-muted, #818b981f));
 }
 
-.geld-lightbox__close svg {
+:is(.geld-lightbox__close, .geld-lightbox__nav, .geld-lightbox__glyph) svg {
   display: block;
   width: 16px;
   height: 16px;
@@ -10621,24 +10654,113 @@ dialog.geld-lightbox[open]:has(.geld-lightbox__stage--large) {
   touch-action: none;
 }
 
+.geld-lightbox__counter {
+  flex: none;
+  color: var(--fgColor-muted, #59636e);
+  font-variant-numeric: tabular-nums;
+}
+
+.geld-lightbox--gallery .geld-lightbox__body {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+}
+
+.geld-lightbox__slides {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  scrollbar-width: none;
+}
+
+.geld-lightbox__slides::-webkit-scrollbar {
+  display: none;
+}
+
+.geld-lightbox__slide {
+  box-sizing: border-box;
+  flex: 0 0 100%;
+  min-width: 100%;
+  height: 100%;
+  padding: 24px;
+}
+
 .geld-lightbox__image {
-  position: absolute;
-  inset: 0;
   display: block;
+  width: 100%;
+  height: 100%;
   max-width: none;
-  max-height: none;
-  margin: auto;
-  transform-origin: center;
   user-select: none;
   cursor: zoom-in;
 }
 
-.geld-lightbox__stage[data-zoomed] .geld-lightbox__image {
+[data-ramka-zoom][data-zoom] .geld-lightbox__image {
   cursor: grab;
 }
 
-.geld-lightbox__stage[data-dragging] .geld-lightbox__image {
+[data-ramka-zoom][data-dragging] .geld-lightbox__image {
   cursor: grabbing;
+}
+
+.geld-lightbox__slide .geld-lightbox__status {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  height: 100%;
+  align-content: center;
+  margin: auto;
+}
+
+.geld-lightbox__slide .geld-lightbox__status p {
+  margin: 0;
+}
+
+.geld-lightbox__nav {
+  position: absolute;
+  top: 50%;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--fgColor-default, #1f2328);
+  background: var(--button-default-bgColor-rest, #f6f8fa);
+  border: var(--borderWidth-thin, 1px) solid var(--button-default-borderColor-rest, #d1d9e0);
+  border-radius: 50%;
+  box-shadow: var(--shadow-resting-small, 0 1px 1px 0 #1f23280f);
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.geld-lightbox__nav:hover {
+  background: var(--button-default-bgColor-hover, #eff2f5);
+}
+
+.geld-lightbox__nav[data-disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.geld-lightbox__nav--previous {
+  inset-inline-start: 12px;
+}
+
+.geld-lightbox__nav--next {
+  inset-inline-end: 12px;
+}
+
+.geld-lightbox__nav--previous svg,
+.geld-lightbox__nav--next:dir(rtl) svg {
+  transform: scaleX(-1);
+}
+
+.geld-lightbox__nav--previous:dir(rtl) svg {
+  transform: none;
+}
+
+.geld-lightbox__glyph {
+  display: contents;
 }
 
 .geld-lightbox__status {
@@ -10693,6 +10815,14 @@ dialog.geld-lightbox[open]:has(.geld-lightbox__stage--large) {
 .geld-lightbox :focus-visible {
   outline: 2px solid var(--focus-outlineColor, #0969da);
   outline-offset: -2px;
+}
+
+.geld-lightbox__pdf {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
 }
 
 button.geld-lightbox-trigger {

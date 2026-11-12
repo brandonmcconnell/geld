@@ -35,6 +35,8 @@
   },
   "devDependencies": {
     "@types/node": "^26.4.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
     "dom-accessibility-api": "^0.7.1",
     "happy-dom": "^21.0.1",
     "typescript": "^5.9.3",
@@ -47,10 +49,13 @@
     "@geld/core": "workspace:*",
     "@geld/github": "workspace:*",
     "@geld/review": "workspace:*",
+    "@ramka/react": "0.0.2",
     "dompurify": "^3.4.17",
     "highlight.js": "^11.12.0",
     "hyperellipse": "^1.0.5",
     "marked": "^18.2.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "video.js": "8.24.2"
   }
 }
