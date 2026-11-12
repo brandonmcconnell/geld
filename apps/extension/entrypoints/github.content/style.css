@@ -4399,43 +4399,78 @@ html [data-geld-person-fold-part][data-geld-person-fold-part] {
   padding: 2px 8px 0;
 }
 
-.geld-review__request-footer > .geld-review__help {
-  margin-right: auto;
-  padding: 0;
+.geld-review__request-footer > .geld-review__help-wrap {
+  /* The 24px target's glyph stands where the checkboxes do. */
+  margin: 0 auto 0 -5px;
 }
 
-/* "Request a bot" / "Request an agent" at the foot of the bot and agent menus: glyph and words, one button. */
-.geld-review__help {
+/* The help icon at the foot of the bot and agent menus; its tip holds the words and the link (help-tip.ts). */
+.geld-review__help-wrap {
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-height: 28px;
+}
+
+.geld-review__split-list > .geld-review__help-wrap {
+  padding: 0 2px;
+}
+
+.geld-review__help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   margin: 0;
-  padding: 0 8px;
+  padding: 0;
   border: 0;
+  border-radius: 4px;
   background: none;
   color: var(--geld-review-muted);
-  font: inherit;
-  font-size: 12px;
-  white-space: nowrap;
   cursor: pointer;
 }
 
 .geld-review__help-glyph {
   display: inline-flex;
-  flex: 0 0 auto;
 }
 
 .geld-review__help-glyph > .octicon {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
 }
 
-.geld-review__help:is(:hover, :focus-visible) {
+.geld-review__help:is(:hover, :focus-visible, [aria-expanded='true']) {
   color: var(--geld-review-accent);
 }
 
-.geld-review__help:is(:hover, :focus-visible) .geld-review__help-link {
+/* A popover in the top layer: the UA's centring, frame and colours give way to the panel's overlay, placed from the icon. */
+.geld-review__help-tip {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  max-width: 280px;
+  padding: 6px 10px;
+  border: 1px solid var(--borderColor-default, var(--color-border-default, #d1d9e0));
+  border-radius: 6px;
+  background: var(--overlay-bgColor, var(--bgColor-default, #fff));
+  box-shadow: var(--shadow-floating-small, 0 8px 24px rgba(31, 35, 40, 0.12));
+  color: var(--fgColor-default, var(--color-fg-default));
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: visible;
+}
+
+.geld-review__help-link {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fgColor-accent, var(--color-accent-fg, #0969da));
+  font: inherit;
+  cursor: pointer;
+}
+
+.geld-review__help-link:is(:hover, :focus-visible) {
   text-decoration: underline;
 }
 
