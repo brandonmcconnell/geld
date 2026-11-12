@@ -183,10 +183,9 @@ export default function NightlyPage() {
           </p>
         </Prose>
         <section id="browser" aria-labelledby="browser-heading" className="mt-12 max-w-2xl scroll-mt-36">
-          <h2 id="browser-heading" className="mb-2 text-xl font-semibold tracking-tight">
+          <h2 id="browser-heading" className="mb-4 text-xl font-semibold tracking-tight">
             Your browser
           </h2>
-          <p className="mb-6 text-[0.95rem] leading-7 text-foreground/90">Pick yours. The page starts on the browser you are using now.</p>
           <NightlyBrowserTabs sectionId="browser" tabs={BROWSER_TABS} />
         </section>
         <Prose>
