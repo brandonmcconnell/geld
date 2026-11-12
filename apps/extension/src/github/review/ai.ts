@@ -218,6 +218,23 @@ function wantFix(settings: GeldSettings): boolean {
 }
 
 /**
+ * Whether the triage proposes fixes. They are what the reader asked for by running it, so only `off` stops them:
+ * `bots` and `ai` choose which fixes stand on an item (`fixVisible`), as the setting's copy says.
+ */
+export function triageFixesOn(settings: GeldSettings): boolean {
+  return settings.suggestedFixes !== 'off';
+}
+
+const anchorsOf = (items: readonly ReviewItem[]): readonly string[] => items.flatMap((item) => item.sources.map((source) => source.anchor));
+
+/** The fix was written from every comment its threads hold now: no reply arrived since that it has not read. */
+function writtenFrom(entry: StoredSuggestion, items: readonly ReviewItem[]): boolean {
+  if (entry.sources === undefined) return true;
+  const read = new Set(entry.sources);
+  return anchorsOf(items).every((anchor) => read.has(anchor));
+}
+
+/**
  * What a run now would ask the model about, if anything: comments it has not been shown, a TL;DR behind the open
  * items, or findings whose fix was written for an earlier commit. Null when a run would change nothing, so the panel
  * offers no run that would only cost a request.
@@ -228,10 +245,13 @@ function workFor(meta: GeldPrMeta, comments: readonly RawComment[], settings: Ge
   if (plan.pending.length > 0) return 'comments';
   const input = summaryInput(known.items);
   if (input.length > 0 && !summaryIsCurrent(known.summary ?? summary, known.items)) return 'comments';
+  if (!triageFixesOn(settings)) return null;
   for (const item of suggestionCandidates(meta.items)) {
     const existing = suggestionFor(threadKeyOf(item));
     if (existing === undefined) return 'comments';
-    if (existing.state === 'open' && existing.headSha !== meta.headSha) return 'commits';
+    if (existing.state !== 'open') continue;
+    if (!writtenFrom(existing, [item])) return 'comments';
+    if (existing.headSha !== meta.headSha) return 'commits';
   }
   return null;
 }
@@ -381,7 +401,7 @@ export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], s
   const plan = planConsolidation(known, meta.items, { comments, wantFix: wantFix(settings), seen });
   const pending = plan.pending;
   const needsTldr = summaryInput(known.items).length > 0 && !summaryIsCurrent(known.summary ?? summary, known.items);
-  const needsFixes = source !== null && workFor(meta, comments, settings) !== null;
+  const needsFixes = source !== null && triageFixesOn(settings) && workFor(meta, comments, settings) !== null;
   const ranAt = new Date().toISOString();
   if (pending.length === 0 && !needsTldr && !needsFixes) return { changed: false };
   countUsage('ai_triage_run');
@@ -439,14 +459,17 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
   for (const item of suggestionCandidates(items)) {
     const key = threadKeyOf(item);
     const existing = suggestionFor(key);
-    if (existing !== undefined && (existing.headSha === headSha || existing.state !== 'open')) continue;
+    if (existing !== undefined && existing.state !== 'open') continue;
+    const fresh = existing !== undefined && writtenFrom(existing, [item]);
+    if (existing !== undefined && fresh && existing.headSha === headSha) continue;
     const target = await source.target(item);
     if (target === null) {
-      if (existing === undefined) suggestions.set(key, { key, threads: [key], headSha, path: item.path ?? '', start: 0, end: 0, original: [], replacement: null, summary: '', state: 'open' });
+      // Unreadable or outdated here: a placeholder for this commit, so the next run does not count it as behind.
+      suggestions.set(existing?.key ?? key, { key: existing?.key ?? key, threads: existing?.threads ?? [key], headSha, path: item.path ?? '', start: 0, end: 0, original: [], replacement: null, summary: existing?.replacement === null ? existing.summary : '', state: 'open', sources: [...anchorsOf([item])] });
       continue;
     }
     const original = target.lines.slice(target.start - 1, target.end);
-    if (existing !== undefined && existing.key === key && existing.start === target.start && existing.end === target.end && existing.original.join('\n') === original.join('\n')) {
+    if (existing !== undefined && fresh && existing.key === key && existing.start === target.start && existing.end === target.end && existing.original.join('\n') === original.join('\n')) {
       suggestions.set(key, { ...existing, headSha });
       continue;
     }
@@ -475,6 +498,7 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
     const parsed = parseSuggestOutput(result.text, inputs);
     if (parsed === null) return 'The model answered in a shape Geld could not read.';
     const targets = new Map(batch.map(({ item, target }) => [threadKeyOf(item), target]));
+    const asked = new Map(batch.map(({ item }) => [threadKeyOf(item), item]));
     const paths = items.flatMap((item) => (item.path === undefined ? [] : [item.path]));
     for (const entry of parsed) {
       const key = entry.ids[0] ?? '';
@@ -492,6 +516,7 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
         replacement: entry.replacement,
         summary: codeSpans(entry.summary, paths),
         state: 'open',
+        sources: [...anchorsOf(entry.ids.flatMap((id) => asked.get(id) ?? []))],
       });
     }
   }
@@ -505,6 +530,7 @@ export interface TriageSuggestion {
   readonly item: ReviewItem;
   /** The other findings it settles with the same change. */
   readonly partners: readonly ReviewItem[];
+  /** Written at the head commit from every comment its threads hold: an earlier commit or a reply since makes it stale. */
   readonly current: boolean;
 }
 
@@ -512,7 +538,8 @@ export interface TriageSuggestion {
  * The triage's rows: a fix for each finding still open (or a note that it needs an agent, where no fix fits its lines),
  * and fixes applied while their finding stands.
  */
-export function triageSuggestions(meta: GeldPrMeta): readonly TriageSuggestion[] {
+export function triageSuggestions(meta: GeldPrMeta, settings: GeldSettings): readonly TriageSuggestion[] {
+  if (!triageFixesOn(settings)) return [];
   const byThread = new Map(meta.items.map((item) => [threadKeyOf(item), item]));
   const out: TriageSuggestion[] = [];
   for (const entry of suggestions.values()) {
@@ -524,7 +551,7 @@ export function triageSuggestions(meta: GeldPrMeta): readonly TriageSuggestion[]
       const partner = byThread.get(key);
       return partner === undefined ? [] : [partner];
     });
-    out.push({ entry, item, partners, current: entry.headSha === meta.headSha });
+    out.push({ entry, item, partners, current: entry.headSha === meta.headSha && writtenFrom(entry, [item, ...partners]) });
   }
   return out;
 }
@@ -538,7 +565,7 @@ export function triageNoteFor(item: ReviewItem): string | null {
 async function settle(key: string, state: StoredSuggestion['state'], anchors: readonly string[] = []): Promise<void> {
   const entry = suggestions.get(key);
   if (entry === undefined) return;
-  suggestions.set(key, { ...entry, state });
+  suggestions.set(key, { ...entry, state, ...(entry.sources === undefined ? {} : { sources: [...entry.sources, ...anchors] }) });
   // Geld's own reply in the thread is not news for the model.
   for (const anchor of anchors) seen.add(anchor);
   if (lastRun !== null) {

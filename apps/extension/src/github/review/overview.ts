@@ -18,7 +18,7 @@ import { count, mark, phase, phaseSince } from '../../lib/perf';
 import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
 import type { OpenSettingsMessage } from '../../lib/messages';
-import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
+import { clickResolve, copyText, focusReply, resolveIfOpen, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
 import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, commitsInRow, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, revisionMarker, THREAD_SELECTOR, TIMELINE_ROW } from './crawler';
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
@@ -2611,7 +2611,7 @@ function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, pr
     .map((link) => link.key.split(':')[0] ?? '');
   const used = agentsInRelatedLinks(services);
   const pick = recommendAgents(settings.codingAgent, used, viewer !== '' && prAuthor !== null && viewer.toLowerCase() === prAuthor.toLowerCase());
-  const suggestions = triageSuggestions(meta).map(({ entry, item, partners, current }) => ({
+  const suggestions = triageSuggestions(meta, settings).map(({ entry, item, partners, current }) => ({
     key: entry.key,
     title: item.title,
     path: entry.path,
@@ -4172,7 +4172,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       void discardSuggestion(key).then(reapply);
     },
     onApplySuggestion: (key, resolve) => {
-      const found = triageSuggestions(meta).find((entry) => entry.entry.key === key);
+      const found = triageSuggestions(meta, settings).find((entry) => entry.entry.key === key);
       if (found === undefined || found.entry.replacement === null || !found.current || visit.triage.busy.has(key)) return;
       const replacement = found.entry.replacement;
       const triage = visit.triage;
@@ -4189,7 +4189,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         }
         countUsage('ai_fix_applied');
         await markSuggestionApplied(key, result.replyAnchor);
-        if (resolve) for (const each of [found.item, ...found.partners]) clickResolve(threadKeyOf(each));
+        // Only Resolve: a partner thread someone resolved meanwhile wears Unresolve, which must not be pressed.
+        if (resolve) for (const each of [found.item, ...found.partners]) if (isOpenStatus(each.status)) resolveIfOpen(threadKeyOf(each));
         await catchUpAfterPost();
         reapplySoon();
       });
@@ -4199,7 +4200,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       if (subject === null) return;
       const pullUrl = `${subject.origin}/${subject.owner}/${subject.repo}/pull/${subject.number}`;
       // The row's finding and the others its fix answers: an agent is asked about one problem at a time.
-      const row = triageSuggestions(meta).find((entry) => entry.entry.key === key);
+      const row = triageSuggestions(meta, settings).find((entry) => entry.entry.key === key);
       const findings = (row === undefined ? [] : [row.item, ...row.partners]).map((item) => {
         const anchor = item.sources[0]?.anchor;
         const note = triageNoteFor(item);

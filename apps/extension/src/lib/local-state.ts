@@ -94,6 +94,8 @@ export interface StoredSuggestion {
   readonly replacement: readonly string[] | null;
   readonly summary: string;
   readonly state: 'open' | 'discarded' | 'applied';
+  /** Every comment anchor of its threads the fix was written from: a reply since makes it stale. Absent in records from before. */
+  readonly sources?: readonly string[];
 }
 export const aiRunsItem = storage.defineItem<Readonly<Record<string, AiRunRecord>>>('local:aiRuns', { fallback: {} });
 export const AI_RUNS_CAP = 40;

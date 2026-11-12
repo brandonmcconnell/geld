@@ -603,13 +603,13 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         kind: 'choice',
         key: 'suggestedFixes',
         label: 'Suggested fixes',
-        description: 'Review bots often attach a fix; with AI on, Geld can propose one too. Choose which appear on an item.',
+        description: 'Review bots often attach a fix, and with AI on, Geld can propose one too. Choose which appear on an item. The AI triage proposes fixes to apply whenever you run it, unless this is `Off`.',
         popup: false,
         options: [
           { value: 'bots', label: 'From bots', description: 'Show the fix a review bot attached to its comment.' },
           { value: 'ai', label: 'From AI', description: 'Only fixes the consolidation model proposes (needs a gateway key).' },
           { value: 'all', label: 'Both', description: 'Bot fixes and, with AI on, proposed ones.' },
-          { value: 'off', label: 'Off', description: 'Never show a suggested fix; the finding alone.' },
+          { value: 'off', label: 'Off', description: 'Never show or propose a fix, the AI triage included. The finding alone.' },
         ],
       },
       {

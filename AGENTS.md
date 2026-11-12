@@ -1535,6 +1535,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   **Each open bot finding gets a proposed fix** (`proposeFixes` in ai.ts, `SUGGEST_SYSTEM` and `parseSuggestOutput` in triage.ts): a replacement for exactly the lines its thread is on (`threadLinesOf`, the file at the head through `wholeFileLines`), or a sentence saying what is needed where nothing fits there.
   Findings reporting one problem share one fix (`StoredSuggestion.threads`), keyed by each thread's first anchor (`threadKeyOf`), which stays when replies join.
   A fix written for an earlier commit whose lines read the same at the new head is carried over with no request, and the rest are asked again only when the reader triages again.
+  A fix also remembers every comment its threads held when it was written (`StoredSuggestion.sources`): a reply since makes it stale (no Apply, and the card offers another run), as a new commit does, so a bot's correction is read before its old fix can be committed.
+  A thread whose lines cannot be read (outdated, or the file unreadable) leaves a placeholder for the commit it was checked at, so it never keeps the triage stale after a push.
+  Only `suggestedFixes: off` stops the triage's fixes (`triageFixesOn`): `bots` and `ai` choose which fixes stand on an item, while the triage's are what the reader asked for by running it, as the setting's copy says.
+  Apply and resolve presses only Resolve (`resolveIfOpen`), so a partner thread someone resolved meanwhile is never unresolved.
   A row opens to its diff (`lineDiff`, folded as GitHub folds a hunk by `diffHunks`: three lines of context either side of a change, a longer unchanged stretch one gap row) with Apply, Apply and resolve, and Discard, a muted link that turns accent on hover.
   Open or closed, the row carries the trash (Discard) and a split "Apply" whose menu offers Apply and resolve, then "Fix with" each agent, Open in Cursor and Copy the task (`applyControl`).
   A finding no fix fits gets a row too, marked "Needs an agent", with "Fix with" the recommended agent and the others in its menu (`agentControl`).
