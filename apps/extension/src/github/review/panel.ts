@@ -1592,7 +1592,8 @@ function agentControl(key: string, triage: TriageView, handlers: PanelHandlers):
   const what = lead.command === null ? `Open this finding in ${lead.name} as a draft on this pull request` : `Post ${lead.command} on the pull request with this finding`;
   const main = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__split-agent`, title: `${what}. ${why}.`, [ATTR_FOCUS]: `fix-agent:${key}` }, [
     agentMark(lead),
-    createElement('span', { class: `${PANEL_CLASS}__split-label` }, [`Fix with ${lead.name}`]),
+    // "Fix with" starts an agent from a comment; an agent that only opens a draft in its app says so, as its menu item does.
+    createElement('span', { class: `${PANEL_CLASS}__split-label` }, [lead.command === null ? (lead.openLabel ?? `Open in ${lead.name}`) : `Fix with ${lead.name}`]),
   ]);
   main.addEventListener('click', () => handlers.onHandOff(lead.id, lead.command === null ? 'open' : 'comment', key));
   return splitButton(main, 'Other coding agents', `fix-agent-more:${key}`, (list, close) => agentItems(list, key, triage, handlers, close, lead.id));
