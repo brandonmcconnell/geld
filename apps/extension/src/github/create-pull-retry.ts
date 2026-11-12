@@ -270,9 +270,9 @@ function mount(failure: CreateFailure, form: HTMLFormElement): Mounted {
   return state;
 }
 
-/** A button that may lead with Geld's emblem: the API one does, since only Geld can make that request for the reader. */
-function retryButton(label: string, tooltip: string, signal: AbortSignal, mark: HTMLElement | null): HTMLButtonElement {
-  const button = createElement('button', { type: 'button', class: 'btn btn-sm geld-pull-retry__try' }, [...(mark === null ? [] : [mark]), createElement('span', {}, [label])]);
+/** A button led by Geld's emblem, so both read as Geld's beside GitHub's close button. */
+function retryButton(label: string, tooltip: string, signal: AbortSignal): HTMLButtonElement {
+  const button = createElement('button', { type: 'button', class: 'btn btn-sm geld-pull-retry__try' }, [brandMark('geld-pull-retry__mark'), createElement('span', {}, [label])]);
   attachTooltipMessage(button, tooltip, signal);
   return button;
 }
@@ -280,8 +280,8 @@ function retryButton(label: string, tooltip: string, signal: AbortSignal, mark: 
 /** "Try again" always, and "Trigger via API" for a reader whose Geld App sign-in can make the request `gh` makes. */
 function mountButtons(failure: CreateFailure, form: HTMLFormElement, state: Mounted, status: HTMLElement, signedIn: boolean): HTMLElement {
   const { signal } = state.listeners;
-  const again = retryButton('Try again', RETRY_TOOLTIP, signal, null);
-  const api = signedIn ? retryButton('Trigger via API', API_TOOLTIP, signal, brandMark('geld-pull-retry__mark')) : null;
+  const again = retryButton('Try again', RETRY_TOOLTIP, signal);
+  const api = signedIn ? retryButton('Trigger via API', API_TOOLTIP, signal) : null;
   const buttons = api === null ? [again] : [again, api];
   const side = createElement('div', { class: 'geld-pull-retry__side', [OWN_UI_ATTRIBUTE]: '' }, buttons);
 

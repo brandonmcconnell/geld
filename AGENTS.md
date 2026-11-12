@@ -1154,9 +1154,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The buttons stand on the flash's right, floated after GitHub's close button in the DOM so they stand 16px to that button's left, each with Geld's own tooltip (`attachTooltipMessage`, the line counts' `.geld-tooltip`, which hangs below or flips above and renders `code` spans).
   Below 544px they take the close button's row above the message instead, since floated they squeezed it into a sliver.
   "Try again" is always there: it sends the form itself again through the reader's session (`pageFetch`, urlencoded, with the submit button GitHub would send), held until the form is `MIN_FORM_AGE_MS` (5 s) old by its own `timestamp`.
-  That is what GitHub's own button does after a wait, so it is named plainly, with no emblem.
+  That is what GitHub's own button does after a wait, so it is named plainly.
+  Both buttons lead with Geld's emblem, so they read as Geld's beside GitHub's close button.
   The threshold is a guess: GitHub does not publish it.
-  "Trigger via API", led by Geld's emblem, is only for a reader signed in to Geld with the GitHub App as the same account the page is signed in as (`geld:api-signed-in` with the page's `meta[name="user-login"]`, answered by the background with a boolean, so the page never holds the account).
+  "Trigger via API" is only for a reader signed in to Geld with the GitHub App as the same account the page is signed in as (`geld:api-signed-in` with the page's `meta[name="user-login"]`, answered by the background with a boolean, so the page never holds the account).
   Signing in happens in Geld's popup or another tab, so the answer is asked again when the page regains focus or becomes visible, and the buttons are rebuilt when it changed (not while one runs).
   Geld can stay connected to one account after the browser switches to another, and a token of the first must never open a pull request for the second: `createPullRequest` checks the login again.
   Sidebar choices (reviewers, assignees, labels, a milestone, projects) have no field in the API's create request, so when the form carries any (`sidebarChoices`, by field name) the API button asks first, naming them.

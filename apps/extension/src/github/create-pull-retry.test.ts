@@ -114,7 +114,7 @@ describe('applyCreatePullRetry', () => {
     const root = document.querySelector('.flash-error .geld-pull-retry');
     const buttons = [...document.querySelectorAll<HTMLElement>('.flash-error .geld-pull-retry__try')];
     expect(buttons.map((button) => button.textContent?.trim())).toEqual(['Try again', 'Trigger via API']);
-    expect(buttons[0]?.querySelector('[data-geld-brand]')).toBeNull();
+    expect(buttons[0]?.querySelector('[data-geld-brand]')).not.toBeNull();
     expect(buttons[1]?.querySelector('[data-geld-brand]')).not.toBeNull();
     expect(buttons[0]?.parentElement?.previousElementSibling?.classList.contains('js-flash-close')).toBe(true);
     buttons[1]?.dispatchEvent(new MouseEvent('mouseenter'));

@@ -11152,15 +11152,21 @@ html[data-geld-on] [class*='ReactionsMenuOption'] [data-component='ActionList.It
   display: none;
 }
 
-/* The whole command, wrapped, never cut short: it is meant to be read and copied as it stands. */
+/*
+ * The whole command, wrapped, never cut short: it is meant to be read and copied as it stands. The copy button sits in
+ * the box's top-right corner, and the box's right padding is the button's inset, its size and an 8px gap, so no line of
+ * the command runs up to it. GitHub's `.btn-octicon` padding made the button wider than that padding allowed.
+ */
 .geld-pull-retry__block {
+  --geld-copy-inset: 4px;
+  --geld-copy-size: 28px;
   position: relative;
   min-width: 0;
 }
 
 .geld-pull-retry .geld-pull-retry__command {
   margin: 0;
-  padding: 8px 40px 8px 12px;
+  padding: 8px calc(var(--geld-copy-inset) + var(--geld-copy-size) + 8px) 8px 12px;
   border-radius: 6px;
   background: var(--bgColor-neutral-muted, rgba(129, 139, 152, 0.12));
   color: var(--fgColor-default, #1f2328);
@@ -11173,14 +11179,21 @@ html[data-geld-on] [class*='ReactionsMenuOption'] [data-component='ActionList.It
 
 .geld-pull-retry .geld-pull-retry__copy {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: var(--geld-copy-inset);
+  right: var(--geld-copy-inset);
   display: inline-flex;
-  padding: 4px;
+  box-sizing: border-box;
+  width: var(--geld-copy-size);
+  height: var(--geld-copy-size);
+  margin: 0;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
 }
 
-/* GitHub colours every octicon in an error flash red (`.flash-error:not(.Banner) .octicon`). */
+/* GitHub colours every octicon in an error flash red (`.flash-error:not(.Banner) .octicon`) and gives it a right margin. */
 .flash-error .geld-pull-retry .geld-pull-retry__copy svg {
+  margin: 0;
   color: var(--fgColor-muted, #59636e);
 }
 
