@@ -5,6 +5,7 @@ import type { GalleryImage } from './attachment-gallery';
 import { ICON_LINK_EXTERNAL, ICON_X } from './ui/icons';
 
 const IMAGE_ATTRIBUTE = 'data-geld-lightbox-image';
+const LINK_ATTRIBUTE = 'data-geld-lightbox-link';
 const IMAGE_PATH = /\.(?:avif|gif|jpe?g|png|svg|webp)$/i;
 let activePath: string | null = null;
 let closeDialog: (() => void) | null = null;
@@ -167,12 +168,28 @@ export function applyAttachmentLightbox(enabled = true): void {
   activePath = window.location.pathname;
   document.addEventListener('click', onClick, true);
   enhanceVideos();
+  const links = new Set<HTMLAnchorElement>();
   for (const image of document.querySelectorAll('.markdown-body img')) {
     if (image instanceof HTMLImageElement) {
-      const eligible = attachmentLink(image) !== null;
-      if (eligible !== image.hasAttribute(IMAGE_ATTRIBUTE)) image.toggleAttribute(IMAGE_ATTRIBUTE, eligible);
+      const link = attachmentLink(image);
+      if ((link !== null) !== image.hasAttribute(IMAGE_ATTRIBUTE)) image.toggleAttribute(IMAGE_ATTRIBUTE, link !== null);
+      if (link !== null) links.add(link);
     }
   }
+  for (const link of document.querySelectorAll<HTMLAnchorElement>(`a[${LINK_ATTRIBUTE}]`)) {
+    if (!links.has(link)) releaseLink(link);
+  }
+  for (const link of links) {
+    if (link.hasAttribute(LINK_ATTRIBUTE) || link.hasAttribute('aria-haspopup')) continue;
+    link.setAttribute(LINK_ATTRIBUTE, '');
+    link.setAttribute('aria-haspopup', 'dialog');
+  }
+}
+
+/** Only the `aria-haspopup` Geld added comes off: a link GitHub gave one keeps it. */
+function releaseLink(link: HTMLAnchorElement): void {
+  link.removeAttribute(LINK_ATTRIBUTE);
+  link.removeAttribute('aria-haspopup');
 }
 
 export function removeAttachmentLightbox(): void {
@@ -182,4 +199,5 @@ export function removeAttachmentLightbox(): void {
   videoButtons.clear();
   activePath = null;
   for (const image of document.querySelectorAll(`[${IMAGE_ATTRIBUTE}]`)) image.removeAttribute(IMAGE_ATTRIBUTE);
+  for (const link of document.querySelectorAll<HTMLAnchorElement>(`a[${LINK_ATTRIBUTE}]`)) releaseLink(link);
 }

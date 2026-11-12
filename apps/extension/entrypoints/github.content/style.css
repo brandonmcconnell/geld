@@ -10264,7 +10264,7 @@ dialog.geld-flow .geld-flow__actions .Overlay-closeButton {
   cursor: zoom-in;
 }
 
-[data-ramka-zoom]:not([data-zoom='1']) .geld-lightbox__image {
+[data-ramka-zoom][data-zoom] .geld-lightbox__image {
   cursor: grab;
 }
 

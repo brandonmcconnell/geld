@@ -10,7 +10,7 @@ interface Opened {
   closed: boolean;
 }
 
-const gallery = vi.hoisted(() => ({ opened: [] as Opened[] }));
+const gallery = vi.hoisted((): { opened: Opened[] } => ({ opened: [] }));
 
 vi.mock('./attachment-gallery', () => ({
   openAttachmentGallery: (items: readonly GalleryImage[], index: number, onClosed: () => void): (() => void) => {
@@ -69,6 +69,7 @@ describe('attachment lightbox', () => {
     applyAttachmentLightbox(false);
     expect(open()).toBeUndefined();
     expect(image.hasAttribute('data-geld-lightbox-image')).toBe(false);
+    expect(image.closest('a')?.hasAttribute('aria-haspopup')).toBe(false);
     expect(click(image).defaultPrevented).toBe(false);
     applyAttachmentLightbox(true);
     expect(click(image).defaultPrevented).toBe(true);
@@ -84,6 +85,7 @@ describe('attachment lightbox', () => {
     const image = mount();
     applyAttachmentLightbox();
     expect(image.hasAttribute('data-geld-lightbox-image')).toBe(true);
+    expect(image.closest('a')?.getAttribute('aria-haspopup')).toBe('dialog');
     expect(click(image).defaultPrevented).toBe(true);
     const item = open()?.items[open()?.index ?? -1];
     expect(item?.image).toBe(image);
@@ -143,6 +145,7 @@ describe('attachment lightbox', () => {
     applyAttachmentLightbox();
     for (const image of [badge, unrelated, outside, unsafe, pdf, upload]) {
       expect(image.hasAttribute('data-geld-lightbox-image')).toBe(false);
+      expect(image.closest('a')?.hasAttribute('aria-haspopup')).toBe(false);
       expect(click(image).defaultPrevented).toBe(false);
     }
     expect(open()).toBeUndefined();
