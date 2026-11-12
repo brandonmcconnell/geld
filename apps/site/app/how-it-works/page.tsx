@@ -380,7 +380,7 @@ reviewBots:                     # offered in Request a review on every PR
                 each bot to review it, in parallel. Each bot keeps its usual tag comment until you store its key as a repository secret and put that secret&apos;s name in
                 the workflow: <code>GELD_GREPTILE_SECRET_NAME</code>, <code>GELD_BUGBOT_SECRET_NAME</code> or <code>GELD_DEVIN_SECRET_NAME</code>, the
                 name only, never the key (the workflow refuses anything shaped like a key). Only people with
-                write access to the repository can start a bot this way, and the run&apos;s log names who asked, since the bots see only the key. The workflow reacts to the
+                write access to the repository can start a bot this way (or only admins, with <code>GELD_TRIGGER_PERMISSION: admin</code>), and the run&apos;s log names who asked, since the bots see only the key. The workflow reacts to the
                 comment with 🚀 when every bot was queued and 👎 when one was not, and the run&apos;s log says why. Wherever the workflow names a
                 bot&apos;s secret, Geld&apos;s Rerun posts the command for you instead of the bot&apos;s usual comment, with nothing to turn on. Geld
                 reads only the secret&apos;s name from the workflow, never the key.
