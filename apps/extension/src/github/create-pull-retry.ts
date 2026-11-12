@@ -11,15 +11,15 @@ import { attachTooltipMessage } from './ui/tooltip';
 
 /**
  * GitHub's compare form refuses a pull request with a flash ("Pull request creation failed. Validation failed: was
- * submitted too quickly") and renders the form again with the title and body kept. "Try with Geld" sends it again:
- * first the form itself through the reader's session, once it is old enough for GitHub's timing check, then the API
- * request `gh pr create` makes, with the reader's Geld App token where the App is installed. The resend alone is what
- * GitHub's own button does after a wait, so the button is offered only to a reader signed in to Geld, whose click can
- * reach the API; the `gh` command shows for everyone. Nothing runs until the reader asks, so it never races GitHub.
+ * submitted too quickly") and renders the form again with the title and body kept. "Try again" sends the form itself
+ * again through the reader's session, once it is old enough for GitHub's timing check. "Trigger via API", for a reader
+ * signed in to Geld with the GitHub App, makes the request `gh pr create` makes with that App's token, which no form
+ * check sees. The `gh` command shows for everyone. Nothing runs until the reader asks, so it never races GitHub.
  */
 
 const ROOT_CLASS = 'geld-pull-retry';
-const TOOLTIP = 'Geld can reattempt this failed operation, as the `gh` CLI would';
+const RETRY_TOOLTIP = "Send the form again once GitHub's timing check allows it";
+const API_TOOLTIP = "Geld opens it through GitHub's API, as the `gh` CLI does";
 /** GitHub's forms carry the moment they were rendered, and a submission sooner than this after it is refused as too quick. */
 const MIN_FORM_AGE_MS = 5000;
 const MAX_WAIT_MS = 10_000;
@@ -91,7 +91,7 @@ export function waitBeforeResubmit(form: HTMLFormElement, now = Date.now(), page
   return Math.min(MAX_WAIT_MS, Math.max(0, MIN_FORM_AGE_MS - age));
 }
 
-type PageOutcome = { readonly ok: true; readonly url: string } | { readonly ok: false; readonly message: string };
+type Outcome = { readonly ok: true; readonly url: string } | { readonly ok: false; readonly message: string };
 
 const PULL_PATH = /^\/[^/]+\/[^/]+\/pull\/\d+\/?$/;
 
@@ -111,7 +111,7 @@ export function createdPullUrl(answerUrl: string, html: string, base: string): s
   return null;
 }
 
-async function resubmit(form: HTMLFormElement): Promise<PageOutcome> {
+async function resubmit(form: HTMLFormElement): Promise<Outcome> {
   const wait = waitBeforeResubmit(form);
   if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
   const action = actionOf(form);
@@ -143,15 +143,6 @@ async function throughApi(attempt: PullAttempt): Promise<CreatePullOutcome> {
   }
 }
 
-/** The page's form first, then the API. A final refusal (the pull request exists) ends it, whichever said so. */
-async function retry(attempt: PullAttempt, form: HTMLFormElement): Promise<PageOutcome> {
-  const page = await resubmit(form);
-  if (page.ok || !isRetryableFailure(page.message)) return page;
-  const api = await throughApi(attempt);
-  if (api.ok) return { ok: true, url: api.url };
-  return { ok: false, message: api.reason === 'unavailable' ? `${sentence(page.message)} ${api.message}` : api.message };
-}
-
 function sentence(text: string): string {
   const trimmed = text.trim();
   if (trimmed === '') return trimmed;
@@ -161,7 +152,7 @@ function sentence(text: string): string {
 
 interface Mounted {
   readonly flash: HTMLElement;
-  /** The button, floated into the flash's right side beside GitHub's close button, once the reader is known to be signed in. */
+  /** The buttons, floated into the flash's right side beside GitHub's close button, once Geld knows whether the reader is signed in. */
   side: HTMLElement | null;
   /** The outcome and the `gh` command, under GitHub's message. */
   readonly root: HTMLElement;
@@ -172,7 +163,7 @@ interface Mounted {
 
 let mounted: Mounted | null = null;
 
-/** The button retries through the API, which needs the reader's Geld App sign-in: without it the button is not offered. */
+/** "Trigger via API" needs the reader's Geld App sign-in: without it only "Try again" is offered. */
 async function apiSignedIn(): Promise<boolean> {
   if (location.origin !== 'https://github.com') return false;
   const request: ApiSignedInMessage = { type: 'geld:api-signed-in' };
@@ -222,55 +213,69 @@ function mount(failure: CreateFailure, form: HTMLFormElement): Mounted {
 
   failure.alert.after(root);
   void apiSignedIn().then((signedIn) => {
-    if (signedIn && !signal.aborted) state.side = mountButton(failure, form, state, status);
+    if (!signal.aborted) state.side = mountButtons(failure, form, state, status, signedIn);
   });
   return state;
 }
 
-function mountButton(failure: CreateFailure, form: HTMLFormElement, state: Mounted, status: HTMLElement): HTMLElement {
-  const { signal } = state.listeners;
-  const mark = brandMark('geld-pull-retry__mark');
-  const label = createElement('span', {}, ['Try with Geld']);
-  const button = createElement('button', { type: 'button', class: 'btn btn-sm geld-pull-retry__try' }, [mark, label]);
-  attachTooltipMessage(button, TOOLTIP, signal);
-  const side = createElement('div', { class: 'geld-pull-retry__side', [OWN_UI_ATTRIBUTE]: '' }, [button]);
+/** A button that may lead with Geld's emblem: the API one does, since only Geld can make that request for the reader. */
+function retryButton(label: string, tooltip: string, signal: AbortSignal, mark: HTMLElement | null): HTMLButtonElement {
+  const button = createElement('button', { type: 'button', class: 'btn btn-sm geld-pull-retry__try' }, [...(mark === null ? [] : [mark]), createElement('span', {}, [label])]);
+  attachTooltipMessage(button, tooltip, signal);
+  return button;
+}
 
-  button.addEventListener(
-    'click',
-    () => {
-      if (state.busy) return;
-      const attempt = attemptFromPage(form);
-      if (attempt === null) {
-        status.textContent = 'Add a title first.';
+/** "Try again" always, and "Trigger via API" for a reader whose Geld App sign-in can make the request `gh` makes. */
+function mountButtons(failure: CreateFailure, form: HTMLFormElement, state: Mounted, status: HTMLElement, signedIn: boolean): HTMLElement {
+  const { signal } = state.listeners;
+  const again = retryButton('Try again', RETRY_TOOLTIP, signal, null);
+  const api = signedIn ? retryButton('Trigger via API', API_TOOLTIP, signal, brandMark('geld-pull-retry__mark')) : null;
+  const buttons = api === null ? [again] : [again, api];
+  const side = createElement('div', { class: 'geld-pull-retry__side', [OWN_UI_ATTRIBUTE]: '' }, buttons);
+
+  const run = (button: HTMLButtonElement, working: string, work: (attempt: PullAttempt) => Promise<Outcome>, failed: string): void => {
+    if (state.busy) return;
+    const attempt = attemptFromPage(form);
+    if (attempt === null) {
+      status.textContent = 'Add a title first.';
+      return;
+    }
+    state.busy = true;
+    const face = [...button.childNodes];
+    for (const other of buttons) other.disabled = other !== button;
+    button.setAttribute('aria-busy', 'true');
+    button.replaceChildren(svgFromString(ICON_SPINNER), createElement('span', {}, [working]));
+    status.textContent = '';
+    void work(attempt).then((outcome) => {
+      if (outcome.ok) {
+        status.textContent = 'Pull request opened.';
+        location.assign(outcome.url);
         return;
       }
-      state.busy = true;
-      button.setAttribute('aria-busy', 'true');
-      button.replaceChildren(svgFromString(ICON_SPINNER), createElement('span', {}, ['Trying again…']));
-      status.textContent = '';
-      void retry(attempt, form).then((outcome) => {
-        if (outcome.ok) {
-          status.textContent = 'Pull request opened.';
-          location.assign(outcome.url);
-          return;
-        }
-        state.busy = false;
-        button.removeAttribute('aria-busy');
-        button.replaceChildren(mark, label);
-        status.textContent = `Geld's attempt failed too. ${sentence(outcome.message)}`;
-      });
-    },
-    { signal },
-  );
+      state.busy = false;
+      for (const other of buttons) other.disabled = false;
+      button.removeAttribute('aria-busy');
+      button.replaceChildren(...face);
+      status.textContent = `${failed} ${sentence(outcome.message)}`;
+    });
+  };
+  again.addEventListener('click', () => run(again, 'Trying again…', () => resubmit(form), 'Still failed.'), { signal });
+  if (api !== null) {
+    const viaApi = async (attempt: PullAttempt): Promise<Outcome> => {
+      const answer = await throughApi(attempt);
+      return answer.ok ? { ok: true, url: answer.url } : { ok: false, message: answer.message };
+    };
+    api.addEventListener('click', () => run(api, 'Opening…', viaApi, 'The API did not open it either.'), { signal });
+  }
 
-  // GitHub's close button floats right, so a float after it stands on its left. Without one the button leads the flash.
+  // GitHub's close button floats right, so a float after it stands on its left. Without one the buttons lead the flash.
   const close = failure.flash.querySelector('.js-flash-close, .flash-close');
   if (close !== null) close.after(side);
   else failure.alert.before(side);
   return side;
 }
 
-/** Puts the `gh` command, and "Try with Geld" for a signed-in reader, under GitHub's flash while the compare page says opening the pull request failed. */
+/** Puts "Try again", "Trigger via API" for a signed-in reader and the `gh` command under GitHub's flash while the compare page says opening the pull request failed. */
 export function applyCreatePullRetry(): void {
   const intact = mounted !== null && mounted.root.isConnected && (mounted.side === null || mounted.side.isConnected);
   if (mounted?.busy === true && intact) return;

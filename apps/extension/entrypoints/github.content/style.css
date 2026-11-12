@@ -11090,8 +11090,18 @@ html[data-geld-on] [class*='ReactionsMenuOption'] [data-component='ActionList.It
  * by the same 16px it gives back in margin, so the margin here clears it.
  */
 .geld-pull-retry__side {
+  display: flex;
+  gap: 8px;
   float: right;
   margin: -4px 16px -4px 0;
+}
+
+/* On a phone, floated buttons squeezed GitHub's message into a sliver: they take the close button's row instead. */
+@media (max-width: 543.98px) {
+  .geld-pull-retry__side {
+    float: none;
+    margin: -4px 0 12px;
+  }
 }
 
 .geld-pull-retry__side .geld-pull-retry__try {

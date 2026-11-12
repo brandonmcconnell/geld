@@ -92,33 +92,34 @@ describe('applyCreatePullRetry', () => {
   const COMMAND = "gh pr create --repo pingdotgg/t3code --base main --head theo:fix-nav --title 'Fix the nav' --body 'It broke.'";
   const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
-  it('offers the retry beside the close button and the gh command under the message, signed in', async () => {
+  it('offers Try again and Trigger via API beside the close button, and the gh command under the message, signed in', async () => {
     background.signedIn = true;
     page(FLASH('Pull request creation failed. Validation failed: was submitted too quickly') + FORM('Fix the nav'));
     applyCreatePullRetry();
     await settle();
     const root = document.querySelector('.flash-error .geld-pull-retry');
-    const button = document.querySelector<HTMLElement>('.flash-error .geld-pull-retry__try');
-    expect(button?.textContent?.trim()).toBe('Try with Geld');
-    expect(button?.querySelector('[data-geld-brand]')).not.toBeNull();
-    expect(button?.parentElement?.previousElementSibling?.classList.contains('js-flash-close')).toBe(true);
-    button?.dispatchEvent(new MouseEvent('mouseenter'));
+    const buttons = [...document.querySelectorAll<HTMLElement>('.flash-error .geld-pull-retry__try')];
+    expect(buttons.map((button) => button.textContent?.trim())).toEqual(['Try again', 'Trigger via API']);
+    expect(buttons[0]?.querySelector('[data-geld-brand]')).toBeNull();
+    expect(buttons[1]?.querySelector('[data-geld-brand]')).not.toBeNull();
+    expect(buttons[0]?.parentElement?.previousElementSibling?.classList.contains('js-flash-close')).toBe(true);
+    buttons[1]?.dispatchEvent(new MouseEvent('mouseenter'));
     const tip = document.querySelector('.geld-tooltip');
-    expect(tip?.textContent).toBe('Geld can reattempt this failed operation, as the gh CLI would');
+    expect(tip?.textContent).toBe("Geld opens it through GitHub's API, as the gh CLI does");
     expect(tip?.querySelector('code')?.textContent).toBe('gh');
-    button?.dispatchEvent(new MouseEvent('mouseleave'));
+    buttons[1]?.dispatchEvent(new MouseEvent('mouseleave'));
     expect(root?.querySelector('pre.geld-pull-retry__command')?.textContent).toBe(COMMAND);
     applyCreatePullRetry();
     expect(document.querySelectorAll('.geld-pull-retry')).toHaveLength(1);
-    expect(document.querySelectorAll('.geld-pull-retry__try')).toHaveLength(1);
+    expect(document.querySelectorAll('.geld-pull-retry__side')).toHaveLength(1);
   });
 
-  it('shows only the gh command to a reader not signed in to Geld, whose retry could not reach the API', async () => {
+  it('offers only Try again to a reader not signed in to Geld, who cannot use the API', async () => {
     background.signedIn = false;
     page(FLASH('Pull request creation failed. Validation failed: was submitted too quickly') + FORM('Fix the nav'));
     applyCreatePullRetry();
     await settle();
-    expect(document.querySelector('.geld-pull-retry__try')).toBeNull();
+    expect([...document.querySelectorAll('.geld-pull-retry__try')].map((button) => button.textContent?.trim())).toEqual(['Try again']);
     expect(document.querySelector('.geld-pull-retry__command')?.textContent).toBe(COMMAND);
     applyCreatePullRetry();
     expect(document.querySelectorAll('.geld-pull-retry')).toHaveLength(1);
