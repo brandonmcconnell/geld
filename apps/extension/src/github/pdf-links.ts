@@ -49,6 +49,9 @@ export function pdfViewerUrl(base: string, source: PdfSource): string {
 }
 
 export const PDF_CLOSE_MESSAGE = 'geld:pdf-close';
+/** The page has the PDF in memory, so the dialog's Download can save that copy rather than fetch it again. */
+export const PDF_READY_MESSAGE = 'geld:pdf-ready';
+export const PDF_DOWNLOAD_MESSAGE = 'geld:pdf-download';
 
 /**
  * Whether the viewer page is framed by github.com, checked before it reads anything with the reader's session:

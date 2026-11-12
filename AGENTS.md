@@ -1731,6 +1731,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   So the page asks for `objects.githubusercontent.com` and `raw.githubusercontent.com` (within the optional `https://*/*`) the first time a PDF needs them, with an Allow button inside the frame, which Chrome accepts as the gesture;
   a `raw.githubusercontent.com` link needs nothing, since that host answers anyone.
   Escape inside the frame never reaches the dialog, so the page posts `geld:pdf-close` to the parent.
+  The dialog's Download (the `download` octicon, no new tab) saves the copy the page already holds once it posts `geld:pdf-ready`, under the dialog's file name, and until then is a plain same-tab link, which downloads since GitHub serves both kinds as a download.
+  Chrome's own toolbar names the PDF by its Title metadata, else by the `blob:` URL's random id (a `File` name does not help), and its own download button saves `<id>.pdf`, which is why the dialog keeps its own Download.
   Enterprise hosts are not covered: the page is exposed to github.com alone.
   Before it reads anything with the reader's session the page checks it is framed by github.com (`framedByGitHub`: every `location.ancestorOrigins`, else the referrer), the manifest's limit being only a second guard.
   Firefox has no PDF viewer yet (`manifest.exclude` on the page, `import.meta.env.FIREFOX` in the click): its MV2 web-accessible list cannot be limited to github.com, and the frame never left `about:blank` on github.com in Firefox 160 (Nov 2026), so PDF links download there as before.

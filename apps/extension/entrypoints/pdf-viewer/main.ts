@@ -1,10 +1,11 @@
 import { browser } from 'wxt/browser';
-import { framedByGitHub, PDF_CLOSE_MESSAGE, pdfSourceOf } from '../../src/github/pdf-links';
+import { framedByGitHub, PDF_CLOSE_MESSAGE, PDF_DOWNLOAD_MESSAGE, PDF_READY_MESSAGE, pdfSourceOf } from '../../src/github/pdf-links';
 import type { PdfSource } from '../../src/github/pdf-links';
 
 const GITHUB = 'https://github.com';
 const root = document.getElementById('pdf');
 let objectUrl: string | null = null;
+let shown: PdfSource | null = null;
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -50,11 +51,21 @@ async function show(source: PdfSource): Promise<void> {
     return;
   }
   if (objectUrl !== null) URL.revokeObjectURL(objectUrl);
-  objectUrl = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+  objectUrl = URL.createObjectURL(new File([blob], source.name, { type: 'application/pdf' }));
+  shown = source;
   const frame = element('iframe', 'pdf__frame');
   frame.title = source.name;
   frame.src = objectUrl + new URL(source.url).hash;
   root?.replaceChildren(frame);
+  window.parent.postMessage({ type: PDF_READY_MESSAGE }, GITHUB);
+}
+
+function saveShown(): void {
+  if (objectUrl === null || shown === null) return;
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = shown.name;
+  link.click();
 }
 
 async function start(): Promise<void> {
@@ -88,6 +99,11 @@ async function start(): Promise<void> {
   ], allow);
 }
 
+window.addEventListener('message', (event) => {
+  if (event.source !== window.parent || event.origin !== GITHUB) return;
+  const data: unknown = event.data;
+  if (typeof data === 'object' && data !== null && 'type' in data && data.type === PDF_DOWNLOAD_MESSAGE) saveShown();
+});
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') window.parent.postMessage({ type: PDF_CLOSE_MESSAGE }, GITHUB);
 });

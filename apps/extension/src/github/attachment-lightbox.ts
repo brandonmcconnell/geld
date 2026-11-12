@@ -44,11 +44,13 @@ function titleFor(image: HTMLImageElement): string {
 
 interface DialogViewer {
   readonly stage: HTMLElement;
+  /** The header's control in place of Open original. */
+  readonly action?: HTMLElement;
   readonly mount?: () => void;
   readonly dispose: () => void;
 }
 
-function showDialog(viewer: DialogViewer, title: string, href: string, trigger: HTMLElement, linkText = 'Open original'): void {
+function showDialog(viewer: DialogViewer, title: string, href: string, trigger: HTMLElement): void {
   closeDialog?.();
   const titleId = `geld-lightbox-title-${Date.now()}`;
   const dialog = createElement('dialog', {
@@ -59,9 +61,9 @@ function showDialog(viewer: DialogViewer, title: string, href: string, trigger: 
   const close = createElement('button', {
     type: 'button', class: 'geld-lightbox__close', 'aria-label': 'Close', title: 'Close (Esc)',
   }, [svgFromString(ICON_X)]);
-  const original = createElement('a', {
+  const original = viewer.action ?? createElement('a', {
     class: 'btn btn-sm geld-lightbox__original', href, target: '_blank', rel: 'noopener noreferrer',
-  }, [linkText, svgFromString(ICON_LINK_EXTERNAL)]);
+  }, ['Open original', svgFromString(ICON_LINK_EXTERNAL)]);
   dialog.append(
     createElement('header', { class: 'geld-lightbox__header' }, [
       createElement('h1', { class: 'geld-lightbox__title', id: titleId }, [title]),
@@ -128,7 +130,7 @@ function onClick(event: MouseEvent): void {
   const pdfLink = target.closest('.markdown-body a[href]');
   const pdf = !import.meta.env.FIREFOX && pdfLink instanceof HTMLAnchorElement && !pdfLink.hasAttribute('download') ? pdfSourceOf(pdfLink.href, window.location.origin) : null;
   if (pdfLink instanceof HTMLAnchorElement && pdf !== null) {
-    showDialog(createPdfViewer(pdf, () => closeDialog?.()), pdf.name, pdf.url, pdfLink, 'Download');
+    showDialog(createPdfViewer(pdf, () => closeDialog?.()), pdf.name, pdf.url, pdfLink);
     event.preventDefault();
     event.stopImmediatePropagation();
     return;
