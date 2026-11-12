@@ -50,6 +50,12 @@ export interface PlanOptions {
   readonly wantFix?: boolean;
   /** Raw comments (for excerpts); pass what `clusterComments` was given. */
   readonly comments: readonly RawComment[];
+  /**
+   * Comment anchors an earlier run already showed the model. An item made only of these is not asked again even when
+   * the model left it as reported (no partner to merge with, or an id it skipped): asking would cost a request and
+   * change nothing. A reply in its thread is a new anchor, so the item is asked again then.
+   */
+  readonly seen?: ReadonlySet<string>;
 }
 
 export function planConsolidation(previous: GeldPrMeta | null, items: readonly ReviewItem[], options: PlanOptions): ConsolidationPlan {
@@ -71,6 +77,8 @@ export function planConsolidation(previous: GeldPrMeta | null, items: readonly R
       carried.set(item.id, carriedFrom(same));
       continue;
     }
+    const seen = options.seen;
+    if (seen !== undefined && item.sources.length > 0 && item.sources.every((source) => seen.has(source.anchor))) continue;
     // Grew: some earlier item shares a source with this one; start from its wording.
     const grownFrom = item.sources.map((source) => previousByAnchor.get(source.anchor)).find((candidate) => candidate !== undefined);
     const input: ConsolidateInputItem = {
@@ -136,6 +144,7 @@ export function summaryInput(items: readonly ReviewItem[]): readonly SummaryInpu
       severity: item.severity,
       status: item.status,
       ...(item.path === undefined ? {} : { path: item.path }),
+      ...(item.context === undefined ? {} : { context: item.context }),
     }));
 }
 
