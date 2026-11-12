@@ -544,8 +544,8 @@ export class GeldController {
     if (this.settings.quickReview && this.mayDressPage()) reassertStatusPills();
     // With the parts and the pill in place, the bar's left side slides as one block to where it now stands.
     if (this.mayDressPage()) animateBarGroup();
-    // The description GitHub just rendered (a switch back to the conversation tab) is folded in its first frame.
-    if (this.mayDressPage()) foldDescriptionNow(this.settings);
+    // The description GitHub just rendered (a switch back to the conversation tab, a saved edit) is folded in its first frame.
+    if (this.mayDressPage()) foldDescriptionNow(this.settings, records);
     // The Overview's top card, which GitHub draws and re-renders between passes, dressed in its first frame, and the
     // digest back after a re-render of the column took it.
     dressOverviewNow(this.settings, this.mayDressPage());
