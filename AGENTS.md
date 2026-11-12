@@ -1678,8 +1678,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The images are a gallery per rendered body (`.markdown-body`), so one comment's screenshots never mix with another's.
   The gallery is [Ramka](https://ramka.dev) (`attachment-gallery.tsx`, `@ramka/react`, React 19), the extension's only React: zoom, pan, swipe, pinch and the morph from the inline image are Ramka's, the card, header and footer are Geld's own classes, shared with the video player's `<dialog>`.
   GitHub's link is handed to Ramka as the trigger (`TriggerBridge`), never rendered again by React, so the page's node stays where it is.
-  Ramka adds its CSS as constructed stylesheets (`document.adoptedStyleSheets`) whenever the browser has them, which Firefox content scripts have refused in the past;
-  check the morph and zoom in Firefox after updating Ramka.
+  The gallery's host is a manual popover, appended to the open `<dialog>` holding the image when there is one (note history): a modal dialog leaves everything outside it inert, and the top layer puts the gallery above it.
+  Ramka adds its CSS as constructed stylesheets (`document.adoptedStyleSheets`) whenever the browser has them, which Firefox content scripts once refused;
+  Firefox 160 takes them (gallery, zoom and arrows checked in Nov 2026), so check again there after updating Ramka.
 - **Comment-only lines** (`@geld/core/comment-lines.ts`, `src/github/ui/comment-rows.ts`).
   `parseUnifiedDiff` also records, per file, the changed lines that hold no code outside comments (language by file name;
   unknown languages are skipped;

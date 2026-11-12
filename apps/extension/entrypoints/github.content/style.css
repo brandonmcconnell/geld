@@ -10112,10 +10112,19 @@ dialog.geld-flow .geld-flow__actions .Overlay-closeButton {
   background: var(--overlay-backdrop-bgColor, rgb(31 35 40 / 50%));
 }
 
-/* Ramka's portal is a plain element in the page, not the top layer, so it stacks above GitHub's own overlays. */
+/* The gallery's host is a popover only to reach the top layer: no box of its own, its content fixed to the viewport. */
 .geld-lightbox-host {
-  position: relative;
+  position: fixed;
+  inset: 0;
   z-index: 2147483000;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  color: inherit;
+  background: none;
+  border: 0;
 }
 
 .geld-lightbox__backdrop {

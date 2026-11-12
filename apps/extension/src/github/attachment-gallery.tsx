@@ -152,7 +152,12 @@ export function openAttachmentGallery(items: readonly GalleryImage[], index: num
   const host = document.createElement('div');
   host.setAttribute(OWN_UI_ATTRIBUTE, '');
   host.className = 'geld-lightbox-host';
-  document.body.append(host);
+  // A modal dialog (note history) leaves everything outside it inert, so the gallery opens inside it, in the top layer.
+  (items[index]?.image.closest('dialog[open]') ?? document.body).append(host);
+  if (typeof host.showPopover === 'function') {
+    host.popover = 'manual';
+    host.showPopover();
+  }
   const root = createRoot(host);
   let disposed = false;
   const dispose = (closedByReader: boolean): void => {
