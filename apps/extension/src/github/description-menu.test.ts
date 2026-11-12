@@ -153,7 +153,12 @@ describe('syncDescriptionMenu', () => {
     syncDescriptionMenu(base);
     document.querySelector('[data-geld-desc-menu] button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(document.querySelector('.geld-desc-menu')).not.toBeNull();
-    page();
+    // Only the section is drawn anew, as GitHub does: the menu stays in the body until the pass closes it.
+    const fresh = document.createElement('section');
+    fresh.setAttribute('aria-label', 'Description');
+    fresh.innerHTML = '<div class="body__x"><div class="editMetadata__y"><button aria-label="Edit description">✎</button></div></div>';
+    document.querySelector('section[aria-label="Description"]')?.replaceWith(fresh);
+    expect(document.querySelector('.geld-desc-menu')).not.toBeNull();
     syncDescriptionMenu({ ...base, author: 'someone-else' });
     expect(document.querySelector('.geld-desc-menu')).toBeNull();
     expect(document.querySelectorAll('[data-geld-desc-menu]')).toHaveLength(1);
