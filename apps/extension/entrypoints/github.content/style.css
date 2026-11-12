@@ -10817,6 +10817,11 @@ dialog.geld-flow .geld-flow__actions .Overlay-closeButton {
   outline-offset: -2px;
 }
 
+/* The card holds focus so the viewer's keys work, and an arrow key makes that focus visible. It is not a control, so no ring. */
+.geld-lightbox.geld-lightbox:is(:focus, :focus-visible) {
+  outline: none;
+}
+
 .geld-lightbox__pdf {
   position: absolute;
   inset: 0;
