@@ -22,7 +22,15 @@ import { clickResolve, copyText, focusReply, isResolvable, openReactions, postTo
 import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, commitsInRow, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, revisionMarker, THREAD_SELECTOR, TIMELINE_ROW } from './crawler';
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
-import { aiPending, aiStateFor, clearAiForPage, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, withAi, withJevDone } from './ai';
+import { aiPending, aiStateFor, clearAiForPage, discardSuggestion, jevDecisionsFor, loadAiForPage, markSuggestionApplied, previewDecisionKey, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi, withJevDone } from './ai';
+import type { AiState, SuggestionSource, SuggestionTarget } from './ai';
+import { applyFix } from './apply-suggestion';
+import { agentComment, agentsInRelatedLinks, agentTask, CODING_AGENTS, codingAgentById, lineDiff, recommendAgents } from '@geld/review';
+import type { CodingAgent } from '@geld/review';
+import { relatedLinksOnPage } from '../related-links';
+import { wholeFileLines } from '../whole-file';
+import { catchUpAfterPost } from './timeline-catchup';
+import { descriptionBody } from './description';
 import type { CommentMention } from './crawler';
 import { byMentionTime } from './references';
 import { crawlConversation } from './crawler';
@@ -62,7 +70,7 @@ import { hideHoverCard, setHoverProvider, setNoteProvider, setReportProvider, se
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
 import { knownMarkShape } from './mark-shape';
 import { loginOfLink, showLogins } from './login';
-import { allResolved, isSevere, checkCountsFrom, checkCountsOfRuns, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, standingReviewers } from './panel-model';
+import { allResolved, authorLabels, isSevere, checkCountsFrom, checkCountsOfRuns, checksSummary, digestMarkdown, isCurrent, itemMarkdown, newerSummaryAnchor, requiredReviewsFrom, standingReviewers } from './panel-model';
 import { exactRulesFor, HiddenPeople, markedOnGitHub, lookUpUnhideForms, refreshUnhidden, sendUnhide } from './hidden-people';
 import { blockedFor } from '../blocked-users';
 import type { BlockedBy } from '../blocked-list';
@@ -70,13 +78,13 @@ import { blockedUsersUrl } from '../blocked-list';
 import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
-import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel } from './panel';
+import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel, TriageView } from './panel';
 import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots, triggerFor } from './panel-model';
 import { commitShaOf, outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
 import { timelineMentionsFor } from './timeline-mentions';
 import type { MentionLine } from './quick-view';
-import { botCommentControls, chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf, parkChats, releaseParkedChats } from './chat';
+import { botCommentControls, chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf, threadLinesOf, parkChats, releaseParkedChats } from './chat';
 import type { ChatByline, ChatLink, ChatRerun, ChatThreadLink } from './chat';
 import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
@@ -197,6 +205,20 @@ interface VisitState {
    * (`botRequestStates`).
    */
   requests: Map<string, BotRequestClick>;
+  /** The AI triage card: the fix open in it, whether it is hidden, fixes being applied or refused, and the last hand-off. */
+  triage: TriageVisit;
+}
+
+interface TriageVisit {
+  openKey: string | null;
+  collapsed: boolean;
+  readonly busy: Map<string, 'apply' | 'resolve'>;
+  readonly errors: Map<string, string>;
+  handedOff: string | null;
+}
+
+function freshTriage(): TriageVisit {
+  return { openKey: null, collapsed: false, busy: new Map(), errors: new Map(), handedOff: null };
 }
 
 /** Each bot's trigger comments as the last pass read them: what a request recorded at a click was already there. */
@@ -234,6 +256,7 @@ const visit: VisitState = {
   settling: null,
   pinnedEntry: null,
   requests: new Map(),
+  triage: freshTriage(),
 };
 
 /** The open comment line wears the words it opened with (see `VisitState.pinnedEntry`). */
@@ -2548,6 +2571,73 @@ function botAvatarByLogin(botId: string): string | null {
   return null;
 }
 
+/** What the pull request sets out to do, for the triage's fixes: its title and the start of its description. */
+function pullIntent(): SuggestionSource['pull'] {
+  const heading = document.querySelector('.js-issue-title, [data-component="PH_Title"] .markdown-title, h1 bdi.markdown-title, h1 .markdown-title');
+  const title = (heading?.textContent ?? document.title.split(' by ')[0] ?? '').replace(/\s+/g, ' ').trim();
+  const body = (descriptionBody()?.innerText ?? '').replace(/\n{3,}/g, '\n\n').trim();
+  return { title, description: body.length > 3000 ? `${body.slice(0, 2999)}…` : body };
+}
+
+/**
+ * The lines a finding's thread is on, and its file at the head, for a suggestion in that thread: GitHub names the
+ * lines in the thread's heading or snippet (`threadLinesOf`), else the line the comment is on. An outdated thread
+ * takes no suggestion.
+ */
+function suggestionTarget(item: ReviewItem, comments: readonly RawComment[], headSha: string): Promise<SuggestionTarget | null> {
+  const key = threadKeyOf(item);
+  const subject = subjectOf();
+  const path = item.path;
+  if (subject === null || path === undefined || key === '' || comments.some((comment) => comment.anchor === key && comment.isOutdated === true)) return Promise.resolve(null);
+  const root = threadRootOf(key);
+  const lines = root === null ? null : threadLinesOf(root);
+  const range = lines ?? (item.line === undefined ? null : { start: item.line, end: item.line });
+  if (range === null) return Promise.resolve(null);
+  return wholeFileLines(subject.origin, `${subject.owner}/${subject.repo}`, headSha, path).then((file) => (file === null || range.end > file.length || range.start < 1 ? null : { path, start: range.start, end: range.end, lines: file }));
+}
+
+function agentIcon(agent: CodingAgent): string | null {
+  if (agent.appId !== undefined) return `https://avatars.githubusercontent.com/in/${agent.appId}?s=32&v=4`;
+  const bot = agent.bot === undefined ? null : botById(agent.bot);
+  return bot === null ? null : botAppAvatar(bot, 32);
+}
+
+/** The triage card's reading: the fixes to show, who to hand the rest to, and what this visit did with them. */
+function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, prAuthor: string | null): TriageView | null {
+  if (ai.kind !== 'current' && ai.kind !== 'stale' && ai.kind !== 'failed' && ai.kind !== 'running') return null;
+  const viewer = document.querySelector('meta[name="user-login"]')?.getAttribute('content') ?? '';
+  const services = relatedLinksOnPage(reapplySoon)
+    .filter((link) => link.kind === 'agent')
+    .map((link) => link.key.split(':')[0] ?? '');
+  const used = agentsInRelatedLinks(services);
+  const pick = recommendAgents(settings.codingAgent, used, viewer !== '' && prAuthor !== null && viewer.toLowerCase() === prAuthor.toLowerCase());
+  const suggestions = triageSuggestions(meta).map(({ entry, item, partners, current }) => ({
+    key: entry.key,
+    title: item.title,
+    path: entry.path,
+    start: entry.start,
+    end: entry.end,
+    summary: entry.summary,
+    diff: lineDiff(entry.original, entry.replacement ?? [], entry.start),
+    reporters: [...new Set([item, ...partners].flatMap((each) => authorLabels(each)))],
+    threads: 1 + partners.length,
+    state: entry.state === 'applied' ? ('applied' as const) : ('open' as const),
+    current,
+    busy: visit.triage.busy.get(entry.key) ?? null,
+    error: visit.triage.errors.get(entry.key) ?? null,
+  }));
+  return {
+    suggestions,
+    agents: pick.order.map((agent) => ({ id: agent.id, name: agent.name, command: agent.command, iconSrc: agentIcon(agent), note: agent.note ?? null, opens: agent.openUrl !== undefined, used: used.includes(agent.id) })),
+    recommended: pick.recommended === null || pick.reason === null ? null : { id: pick.recommended.id, reason: pick.reason },
+    openKey: visit.triage.openKey,
+    collapsed: visit.triage.collapsed,
+    findings: meta.items.filter((item) => isOpenStatus(item.status)).length,
+    writing: aiPending().has('suggest'),
+    handedOff: visit.triage.handedOff,
+  };
+}
+
 /** The pull request's author, from the page header (the description card when the header is not there). */
 function prAuthorLogin(): string | null {
   const header = document.querySelector('.gh-header-meta a.author, [data-testid="issue-metadata-author"] a, .gh-header-meta a[data-hovercard-type="user"], [data-component="PageHeader"] a[data-hovercard-type="user"]');
@@ -3395,6 +3485,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     botLineMemo.clear();
     visit.manualDone = new Set();
     visit.requests = new Map();
+    visit.triage = freshTriage();
     triggersOnPage = new Map();
     checksSectionEl = null;
     mergeHomeEl = null;
@@ -3725,6 +3816,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
             .map((bot) => bot.id),
         );
   const iconByBot = new Map(requestable.map((bot) => [bot.id, bot.iconSrc]));
+  const aiState = aiStateFor(meta, rawComments, settings);
+  const prAuthor = prAuthorLogin();
 
   const model: PanelModel = {
     meta,
@@ -3769,10 +3862,11 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     intro: settings.digestViewChosenAt === '',
     openCommits: visit.openCommits,
     openPreviews: visit.openPreviews,
-    ai: aiStateFor(meta, rawComments, settings),
+    ai: aiState,
+    triage: triageViewFor(meta, aiState, settings, prAuthor),
     archivedPreviewsOpen: visit.archivedPreviewsOpen,
     deployments,
-    prAuthor: prAuthorLogin(),
+    prAuthor,
     avatarForAnchor: (anchor) => crawledDom.comments.find((entry) => entry.comment.anchor === anchor)?.avatarSrc ?? avatarSrcFor(anchor),
     checkAvatarFor: (reporterId, name) => checkAvatarOf(reporterId, name),
     checksRing,
@@ -4052,12 +4146,94 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       window.setTimeout(reapplySoon, 800);
     },
     onRunAi: () => {
-      void runAi(meta, rawComments, settings, reapply).then((run) => {
+      visit.triage.collapsed = false;
+      const headSha = meta.headSha;
+      const source: SuggestionSource = { pull: pullIntent(), target: (item) => suggestionTarget(item, rawComments, headSha) };
+      void runAi(meta, rawComments, settings, reapply, source).then((run) => {
         if (run.changed) reapply();
       });
     },
     onClearAi: () => {
       void clearAiForPage().then(reapply);
+    },
+    onToggleTriage: () => {
+      visit.triage.collapsed = !visit.triage.collapsed;
+      reapply();
+    },
+    onToggleSuggestion: (key) => {
+      keepInPlace(`fix:${key}`, () => {
+        visit.triage.openKey = visit.triage.openKey === key ? null : key;
+        reapply();
+      });
+    },
+    onDiscardSuggestion: (key) => {
+      countUsage('ai_fix_discarded');
+      if (visit.triage.openKey === key) visit.triage.openKey = null;
+      void discardSuggestion(key).then(reapply);
+    },
+    onApplySuggestion: (key, resolve) => {
+      const found = triageSuggestions(meta).find((entry) => entry.entry.key === key);
+      if (found === undefined || found.entry.replacement === null || !found.current || visit.triage.busy.has(key)) return;
+      const replacement = found.entry.replacement;
+      const triage = visit.triage;
+      triage.busy.set(key, resolve ? 'resolve' : 'apply');
+      triage.errors.delete(key);
+      reapply();
+      void applyFix({ threadAnchors: found.item.sources.map((source) => source.anchor), path: found.entry.path, replacement, summary: found.entry.summary, title: found.item.title, headSha: meta.headSha }).then(async (result) => {
+        triage.busy.delete(key);
+        if (!result.ok) {
+          triage.errors.set(key, result.reason);
+          if (result.posted) void catchUpAfterPost().then(reapplySoon);
+          reapplySoon();
+          return;
+        }
+        countUsage('ai_fix_applied');
+        await markSuggestionApplied(key, result.replyAnchor);
+        if (resolve) for (const each of [found.item, ...found.partners]) clickResolve(threadKeyOf(each));
+        await catchUpAfterPost();
+        reapplySoon();
+      });
+    },
+    onHandOff: (agentId, how) => {
+      const subject = subjectOf();
+      if (subject === null) return;
+      const pullUrl = `${subject.origin}/${subject.owner}/${subject.repo}/pull/${subject.number}`;
+      const findings = meta.items
+        .filter((item) => isOpenStatus(item.status))
+        .map((item) => {
+          const note = triageNoteFor(item);
+          const anchor = item.sources[0]?.anchor;
+          return {
+            title: item.title,
+            ...(item.path === undefined ? {} : { path: item.path }),
+            ...(item.line === undefined ? {} : { line: item.line }),
+            ...(item.context === undefined ? {} : { context: item.context }),
+            ...(note === null ? {} : { suggestion: note }),
+            ...(anchor === undefined ? {} : { url: `${pullUrl}#${anchor}` }),
+          };
+        });
+      const task = agentTask(findings, pullUrl);
+      const said = (text: string): void => {
+        visit.triage.handedOff = text;
+        reapply();
+      };
+      if (how === 'copy') {
+        void copyText(task).then(() => said('Copied the task'));
+        return;
+      }
+      const agent = codingAgentById(agentId) ?? CODING_AGENTS[0];
+      if (agent === undefined) return;
+      countUsage('agent_handoff');
+      if (how === 'open') {
+        const url = agent.openUrl?.(task);
+        if (url !== undefined) window.open(url, '_blank', 'noopener');
+        said(`Opened in ${agent.name}`);
+        return;
+      }
+      const comment = agentComment(agent, task);
+      const preview = comment.length > 600 ? `${comment.slice(0, 600)}…` : comment;
+      if (!window.confirm(`Post this comment on the pull request to start ${agent.name}?\n\n${preview}`)) return;
+      void postTopLevelComments([comment]).then((posted) => said(posted > 0 ? `Posted ${agent.command} on the pull request` : `GitHub did not take the comment for ${agent.name}`));
     },
     onReact: (anchor) => {
       // Open the row that holds the comment, then GitHub's own picker inside it.

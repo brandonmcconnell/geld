@@ -72,6 +72,28 @@ export interface AiRunRecord {
   readonly rewrites: readonly ConsolidateOutputItem[];
   readonly summary?: ReviewSummary;
   readonly error?: string;
+  /** Comment anchors the model has been shown, so a finding it left as reported is not asked about (and paid for) again. */
+  readonly seen?: readonly string[];
+  readonly suggestions?: readonly StoredSuggestion[];
+}
+
+/**
+ * A fix the triage proposed for a finding's thread: a replacement for the lines the thread is on, at one head commit.
+ * `replacement` is null when no fix fits those lines (the summary then says what is needed), so it is not asked again.
+ */
+export interface StoredSuggestion {
+  /** The first comment's anchor of the thread the replacement is for. */
+  readonly key: string;
+  /** Every thread it answers (the first is `key`): findings that report the same problem share one fix. */
+  readonly threads: readonly string[];
+  readonly headSha: string;
+  readonly path: string;
+  readonly start: number;
+  readonly end: number;
+  readonly original: readonly string[];
+  readonly replacement: readonly string[] | null;
+  readonly summary: string;
+  readonly state: 'open' | 'discarded' | 'applied';
 }
 export const aiRunsItem = storage.defineItem<Readonly<Record<string, AiRunRecord>>>('local:aiRuns', { fallback: {} });
 export const AI_RUNS_CAP = 40;
