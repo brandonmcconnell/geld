@@ -1659,6 +1659,92 @@ html[data-geld-tab-counts] [data-component='PageHeader']:has([class*='branchGrou
   white-space: nowrap;
 }
 
+/* The block dialogs: GitHub's own options, drawn with Primer's Overlay and form classes. */
+dialog.geld-block-dialog {
+  width: min(640px, calc(100vw - 32px));
+  height: fit-content;
+  max-height: calc(100vh - 64px);
+}
+
+.geld-block-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.geld-block-dialog__text {
+  margin: 0;
+  color: var(--fgColor-default, #1f2328);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.geld-block-dialog .geld-block-dialog__field {
+  margin: 0;
+}
+
+.geld-block-dialog__label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Primer's `.form-group textarea.form-control` is 200px tall, loaded after this sheet at the same weight. */
+.geld-block-dialog .form-group textarea.geld-block-dialog__note {
+  width: 100%;
+  height: 80px;
+  min-height: 80px;
+  resize: vertical;
+}
+
+.geld-block-dialog__field .note,
+.geld-block-dialog__check .note {
+  margin: 4px 0 0;
+  color: var(--fgColor-muted, #59636e);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.geld-block-dialog__heading {
+  margin: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--borderColor-muted, rgba(209, 217, 224, 0.7));
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.geld-block-dialog .geld-block-dialog__check {
+  margin: 0;
+}
+
+.geld-block-dialog__check label {
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.geld-block-dialog__quote {
+  margin: 8px 0 0;
+  padding: 0 12px;
+  border-left: 0.25em solid var(--borderColor-default, #d1d9e0);
+  color: var(--fgColor-muted, #59636e);
+}
+
+.geld-block-dialog__reason {
+  align-self: flex-start;
+  margin: -8px 0 0 20px;
+}
+
+.geld-block-dialog__error {
+  margin: 0;
+  color: var(--fgColor-danger, #d1242f);
+  font-size: 14px;
+}
+
+.geld-block-dialog__error[hidden] {
+  display: none;
+}
+
 /* The Overview description's ⋯, beside GitHub's Edit pencil, in the shape of Primer's small invisible icon button. */
 .geld-desc-menu__wrap {
   display: inline-flex;

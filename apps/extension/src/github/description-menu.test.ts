@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_BLOCK_CHOICES } from './block-dialog';
 import type { DescriptionMenuContext } from './description-menu';
 
 const fetched = vi.hoisted(() => ({ response: new Response('{}', { status: 200 }) }));
@@ -82,18 +83,28 @@ describe('requests', () => {
   });
 
   it('sends a personal block as GitHub’s dialog does', () => {
-    const request = blockRequest('personal', 'spammer', 'mintlify', 'PR_kw123', 'https://github.com/o/r/pull/7', 'nonce');
+    const request = blockRequest('personal', 'spammer', 'mintlify', 'PR_kw123', 'https://github.com/o/r/pull/7', DEFAULT_BLOCK_CHOICES, 'nonce');
     expect(request.url).toBe('/settings/blocked_users');
     expect(request.init.method).toBe('POST');
     expect(String(request.init.body)).toBe('content_id=PR_kw123&login=spammer&return_to=https%3A%2F%2Fgithub.com%2Fo%2Fr%2Fpull%2F7');
     expect(request.init.headers).toEqual({ 'GitHub-Verified-Fetch': 'true', 'X-Requested-With': 'XMLHttpRequest', 'X-Fetch-Nonce': 'nonce' });
   });
 
-  it('sends an organization block until unblocked, with no content id when the page names none', () => {
-    const request = blockRequest('org', 'spammer', 'mintlify', null, 'https://github.com/o/r/pull/7', '');
+  it('sends a personal block’s note and closing of their content when chosen', () => {
+    const request = blockRequest('personal', 'spammer', 'mintlify', 'PR_kw123', 'https://github.com/o/r/pull/7', { ...DEFAULT_BLOCK_CHOICES, note: 'spam run', closeContent: true }, '');
+    expect(String(request.init.body)).toBe('content_id=PR_kw123&login=spammer&return_to=https%3A%2F%2Fgithub.com%2Fo%2Fr%2Fpull%2F7&note=spam+run&close_content=1');
+  });
+
+  it('sends an organization block with GitHub’s defaults: until unblocked, notified, comments shown', () => {
+    const request = blockRequest('org', 'spammer', 'mintlify', null, 'https://github.com/o/r/pull/7', DEFAULT_BLOCK_CHOICES, '');
     expect(request.url).toBe('/organizations/mintlify/settings/blocked_users');
-    expect(String(request.init.body)).toBe('duration=0&login=spammer');
+    expect(String(request.init.body)).toBe('duration=0&login=spammer&send_notification=on');
     expect(request.init.headers).toEqual({ 'GitHub-Verified-Fetch': 'true', 'X-Requested-With': 'XMLHttpRequest' });
+  });
+
+  it('sends every organization option in GitHub’s order', () => {
+    const request = blockRequest('org', 'spammer', 'mintlify', 'PR_kw123', '', { duration: 'SEVEN_DAYS', note: 'n', closeContent: true, notify: false, hideReason: 'SPAM' }, '');
+    expect(String(request.init.body)).toBe('duration=7&content_id=PR_kw123&login=spammer&hide_comments=on&hidden_reason=SPAM&note=n&close_content=1');
   });
 
   it('unblocks with a DELETE of the person’s entry, in the reader’s list or the organization’s', () => {
@@ -126,7 +137,7 @@ describe('syncDescriptionMenu', () => {
     expect(meta.lastElementChild?.contains(buttons[0] ?? null)).toBe(true);
     buttons[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     const labels = [...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map((item) => item.textContent);
-    expect(labels).toEqual(['Copy link', 'Copy Markdown', 'Report content', 'Block user']);
+    expect(labels).toEqual(['Copy link', 'Copy Markdown', 'Report content', 'Block user for you']);
     expect(buttons[0]?.getAttribute('aria-expanded')).toBe('true');
   });
 

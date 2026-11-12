@@ -1,3 +1,5 @@
+import type { BlockChoices, BlockScope } from './block-dialog';
+import { BLOCK_DURATIONS, openBlockDialog, openUnblockDialog } from './block-dialog';
 import type { BlockedBy } from './blocked-list';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { pageFetch } from './page-fetch';
@@ -61,22 +63,30 @@ function verifiedHeaders(nonce: string): Record<string, string> {
 }
 
 /**
- * What GitHub's block dialogs send: a personal block to `/settings/blocked_users` (login, the content it came from and
- * where to return), an organisation's to `/organizations/<org>/settings/blocked_users` with a duration ("0": until
- * unblocked), its comments left shown and no notification, as the dialog's defaults leave them.
+ * What GitHub's block dialogs send, in their order: a personal block to `/settings/blocked_users` (login, the content it
+ * came from, where to return, the note, whether to close their content), an organisation's to
+ * `/organizations/<org>/settings/blocked_users` with the duration ("0": until unblocked), whether to hide their comments
+ * and why, the note, whether to notify them and whether to close their content.
  */
-export function blockRequest(scope: 'personal' | 'org', login: string, owner: string, contentId: string | null, returnTo: string, nonce: string): PageRequest {
+export function blockRequest(scope: BlockScope, login: string, owner: string, contentId: string | null, returnTo: string, choices: BlockChoices, nonce: string): PageRequest {
   const body = new URLSearchParams();
-  if (scope === 'org') body.append('duration', '0');
+  if (scope === 'org') body.append('duration', BLOCK_DURATIONS[choices.duration].value);
   if (contentId !== null) body.append('content_id', contentId);
   body.append('login', login);
   if (scope === 'personal') body.append('return_to', returnTo);
+  if (scope === 'org' && choices.hideReason !== null) {
+    body.append('hide_comments', 'on');
+    body.append('hidden_reason', choices.hideReason);
+  }
+  if (choices.note.trim() !== '') body.append('note', choices.note);
+  if (scope === 'org' && choices.notify) body.append('send_notification', 'on');
+  if (choices.closeContent) body.append('close_content', '1');
   const url = scope === 'personal' ? '/settings/blocked_users' : `/organizations/${encodeURIComponent(owner)}/settings/blocked_users`;
   return { url, init: { method: 'POST', credentials: 'same-origin', headers: verifiedHeaders(nonce), body, redirect: 'follow' } };
 }
 
 /** GitHub's unblock, as its Blocked users settings pages send it: a DELETE of the person's entry (their `actionUrl`). */
-export function unblockRequest(scope: 'personal' | 'org', login: string, owner: string, nonce: string): PageRequest {
+export function unblockRequest(scope: BlockScope, login: string, owner: string, nonce: string): PageRequest {
   const list = scope === 'personal' ? '/settings/blocked_users' : `/organizations/${encodeURIComponent(owner)}/settings/blocked_users`;
   return { url: `${list}/${encodeURIComponent(login)}`, init: { method: 'DELETE', credentials: 'same-origin', headers: { Accept: 'application/json', ...verifiedHeaders(nonce) }, redirect: 'follow' } };
 }
@@ -137,6 +147,8 @@ interface Item {
   readonly icon: string;
   readonly href?: string;
   readonly run?: () => void;
+  /** Opens a dialog, which takes focus. */
+  readonly dialog?: boolean;
 }
 
 function pullUrl(): string {
@@ -163,16 +175,16 @@ function itemsFor(context: DescriptionMenuContext): readonly (Item | 'divider')[
         items.push({ label: 'Report content', icon: ICON_REPORT, href: reportContentUrl(location.origin, pullUrl(), author) });
         break;
       case 'block':
-        items.push({ label: 'Block user', icon: ICON_OCTAGON_BLOCKED, run: () => void block('personal', context) });
+        items.push({ label: 'Block user for you', icon: ICON_OCTAGON_BLOCKED, dialog: true, run: () => block('personal', context) });
         break;
       case 'unblock':
-        items.push({ label: 'Unblock user', icon: ICON_OCTAGON_BLOCKED, run: () => void unblock('personal', context) });
+        items.push({ label: 'Unblock user for you', icon: ICON_OCTAGON_BLOCKED, dialog: true, run: () => unblock('personal', context) });
         break;
       case 'block-org':
-        items.push({ label: 'Block user from org', icon: ICON_OCTAGON_BLOCKED, run: () => void block('org', context) });
+        items.push({ label: 'Block user for org', icon: ICON_OCTAGON_BLOCKED, dialog: true, run: () => block('org', context) });
         break;
       case 'unblock-org':
-        items.push({ label: 'Unblock user from org', icon: ICON_OCTAGON_BLOCKED, run: () => void unblock('org', context) });
+        items.push({ label: 'Unblock user for org', icon: ICON_OCTAGON_BLOCKED, dialog: true, run: () => unblock('org', context) });
         break;
     }
   }
@@ -213,27 +225,50 @@ async function copyMarkdown(): Promise<void> {
   }
 }
 
-async function block(scope: 'personal' | 'org', context: DescriptionMenuContext): Promise<void> {
-  const login = context.author;
-  if (login === null) return;
-  const words =
-    scope === 'personal'
-      ? `Block ${login}?\n\nBlocking ${login} prevents them from interacting with your repositories, such as opening or commenting on pull requests or issues, starring, forking, or watching.`
-      : `Block ${login} from the ${context.owner} organization?\n\nBlocking a user prevents them from interacting with repositories of this organization, such as opening or commenting on pull requests or issues. The block lasts until you unblock them, and their comments stay shown.`;
-  if (!window.confirm(words)) return;
-  const request = blockRequest(scope, login, context.owner, pullRequestNodeId(), pullUrl(), fetchNonce());
-  const response = await pageFetch(request.url, request.init).catch(() => null);
-  if (response?.ok === true) location.reload();
-  else window.alert(`GitHub did not block ${login}${response === null ? '' : ` (${response.status})`}. Try again from their profile or your Blocked users settings.`);
+/** What a failed block or unblock request says in its dialog. */
+function failureWords(verb: string, response: Response | null): string {
+  return `GitHub did not ${verb} this user${response === null ? '' : ` (${response.status})`}. Please try again.`;
 }
 
-async function unblock(scope: 'personal' | 'org', context: DescriptionMenuContext): Promise<void> {
+function block(scope: BlockScope, context: DescriptionMenuContext): void {
   const login = context.author;
-  if (login === null || !window.confirm(scope === 'personal' ? `Unblock ${login}?` : `Unblock ${login} from ${context.owner}?`)) return;
-  const request = unblockRequest(scope, login, context.owner, fetchNonce());
-  const response = await pageFetch(request.url, request.init).catch(() => null);
-  if (response?.ok === true) location.reload();
-  else window.alert(`GitHub did not unblock ${login}${response === null ? '' : ` (${response.status})`}. Try again from your Blocked users settings.`);
+  if (login === null) return;
+  openBlockDialog({
+    scope,
+    login,
+    org: context.owner,
+    contentUrl: pullUrl(),
+    returnFocus: menuButton(),
+    onBlock: async (choices) => {
+      const request = blockRequest(scope, login, context.owner, pullRequestNodeId(), pullUrl(), choices, fetchNonce());
+      const response = await pageFetch(request.url, request.init).catch(() => null);
+      if (response?.ok !== true) return failureWords('block', response);
+      location.reload();
+      return null;
+    },
+  });
+}
+
+function unblock(scope: BlockScope, context: DescriptionMenuContext): void {
+  const login = context.author;
+  if (login === null) return;
+  openUnblockDialog({
+    scope,
+    login,
+    org: context.owner,
+    returnFocus: menuButton(),
+    onUnblock: async () => {
+      const request = unblockRequest(scope, login, context.owner, fetchNonce());
+      const response = await pageFetch(request.url, request.init).catch(() => null);
+      if (response?.ok !== true) return failureWords('unblock', response);
+      location.reload();
+      return null;
+    },
+  });
+}
+
+function menuButton(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`[${ATTR_MENU}] button`);
 }
 
 const MENU_GAP = 4;
@@ -275,7 +310,8 @@ function openMenu(button: HTMLButtonElement): void {
     const node = entry.href !== undefined ? createElement('a', { ...attributes, href: entry.href, target: '_blank', rel: 'noopener' }, content) : createElement('button', { ...attributes, type: 'button' }, content);
     node.addEventListener('click', () => {
       closeMenu();
-      button.focus({ preventScroll: true });
+      // A dialog takes focus and gives it back on close: focused now, the button's tooltip would show over the dialog.
+      if (entry.dialog !== true) button.focus({ preventScroll: true });
       entry.run?.();
     });
     items.push(node);
