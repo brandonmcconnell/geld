@@ -1368,6 +1368,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   It deletes only files a build of Geld's owned (`stalePaths` over the replaced build's file list, and an unfinished write's), never what the reader keeps beside it (a zip, notes), which no backup holds.
   Data URLs of 8 MB downloaded fine, and `github.js` is about 1.2 MB.
   **The popup carries the updates** (`src/nightly/panel.ts`, `popup.ts`): the panel, its styles injected from the module so the store popup's CSS is untouched, shows the build, the Manual/Automatic toggle and one status line with its action (`nightlyView` in `view.ts`, pure and tested).
+  **The status line ends in "Check for updates"** (`NightlyView.check`, the sync glyph, "Checking…" with the glyph turning while the background's look runs), in Manual and Automatic alike and beside whatever action the line has, except while a build installs or Nightly is paused, so a reader never has to wait for the next page load or the 30-minute alarm.
   A folder picker or Chrome's permission prompt would close the popup, so connecting the folder and an install that needs Chrome's OK continue on the nightly page, which shows the same panel and the folder.
   The reload fires `onInstalled`, which puts Geld back into open GitHub tabs as after any update.
   **One folder, one writer** (`claimLock` in `@geld/core/nightly.ts`, `nightly-update.lock`): anyone may load one folder into several profiles by hand, and two profiles writing a build into it at once would interleave files.

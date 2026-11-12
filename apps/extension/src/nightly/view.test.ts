@@ -38,7 +38,8 @@ describe('nightlyView', () => {
       headline: 'Up to date',
       detail: 'Checked 5 minutes ago.',
       tone: 'ok',
-      action: { kind: 'check', label: 'Check now' },
+      action: null,
+      check: true,
     });
   });
 
@@ -71,7 +72,15 @@ describe('nightlyView', () => {
       detail: 'Still on build 3301. The browser stopped the download (FILE_NO_SPACE).',
       tone: 'error',
       action: { kind: 'retry', label: 'Try again' },
+      check: true,
     });
+  });
+
+  it('offers Check for updates beside any action, but not while a build installs or Nightly is paused', () => {
+    expect(nightlyView(status({ latest: release(3305) }), folder, '0.1.2.3301', NOW).check).toBe(true);
+    expect(nightlyView(status({ latest: release(3301) }), null, '0.1.2.3301', NOW).check).toBe(true);
+    expect(nightlyView(status({ latest: release(3305), installing: '0.1.2.3305' }), folder, '0.1.2.3301', NOW).check).toBe(false);
+    expect(nightlyView(status({ latest: release(3301) }), folder, '0.1.2.3301', NOW, { kind: 'stable', id: 'x' }).check).toBe(false);
   });
 
   it('offers to restore when the old build could not be put back', () => {
@@ -101,8 +110,9 @@ describe('nightlyView', () => {
       detail: 'Updated from build 3301 10 minutes ago.',
       tone: 'ok',
       action: { kind: 'rollback', label: 'Roll back' },
+      check: true,
     });
-    expect(nightlyView(updated, folder, '0.1.2.3305', NOW + 25 * 3_600_000).action?.kind).toBe('check');
+    expect(nightlyView(updated, folder, '0.1.2.3305', NOW + 25 * 3_600_000).action).toBeNull();
   });
 
   it('says a rolled-back build waits for the reader', () => {

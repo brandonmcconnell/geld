@@ -1,4 +1,5 @@
 import { browser } from 'wxt/browser';
+import { ICON_SYNC } from '../github/ui/icons';
 import { buildLabel, nightlyView } from './view';
 import type { NightlyAction } from './view';
 import { manageUrl } from './conflicts';
@@ -28,6 +29,12 @@ const CSS = `
 .geld-nightly__status[data-tone='paused'] { align-items: flex-start; flex-direction: column; padding: 10px 12px; border: 1px solid var(--destructive); }
 .geld-nightly__status[data-tone='paused'] .geld-nightly__headline { color: var(--destructive); font-weight: 600; }
 .geld-nightly__status .geld-button { flex-shrink: 0; }
+.geld-nightly__check { display: inline-flex; align-items: center; gap: 4px; vertical-align: baseline; font-size: 12px; color: var(--muted-foreground); white-space: nowrap; }
+.geld-nightly__check:hover { color: var(--foreground); }
+.geld-nightly__check svg { width: 12px; height: 12px; vertical-align: -1px !important; }
+.geld-nightly__check[aria-busy='true'] svg { animation: geld-nightly-spin 0.9s linear infinite; }
+@keyframes geld-nightly-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .geld-nightly__check[aria-busy='true'] svg { animation: none; } }
 `;
 
 const MODES: ReadonlyArray<{ readonly mode: UpdateMode; readonly label: string; readonly title: string }> = [
@@ -68,6 +75,14 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
   const headline = element('p', 'geld-nightly__headline');
   headline.setAttribute('aria-live', 'polite');
   const detail = element('p', 'geld-nightly__detail');
+  const detailText = element('span', '');
+  const check = element('button', 'geld-button geld-button--link geld-nightly__check');
+  check.type = 'button';
+  const checkIcon = document.createElement('template');
+  checkIcon.innerHTML = ICON_SYNC;
+  const checkLabel = element('span', '', 'Check for updates');
+  check.append(...checkIcon.content.childNodes, checkLabel);
+  detail.append(detailText, ' ', check);
   const text = element('div', 'geld-nightly__text');
   text.append(headline, detail);
   const action = element('button', 'geld-button geld-button--small');
@@ -81,6 +96,7 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
 
   let localError: string | null = null;
   let busy = false;
+  let checking = false;
   let current: NightlyAction | null = null;
   let blocker: string | null = null;
   let installedIn: string | null = null;
@@ -97,8 +113,13 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
     }
     const view = nightlyView(state, folder, version, Date.now(), conflict, installedIn);
     headline.textContent = view.headline;
-    detail.textContent = localError ?? view.detail ?? '';
-    detail.hidden = detail.textContent === '';
+    detailText.textContent = localError ?? view.detail ?? '';
+    detailText.hidden = detailText.textContent === '';
+    check.hidden = !view.check;
+    check.disabled = checking || busy;
+    check.setAttribute('aria-busy', String(checking));
+    checkLabel.textContent = checking ? 'Checking…' : 'Check for updates';
+    detail.hidden = detailText.hidden && check.hidden;
     status.dataset['tone'] = localError === null ? view.tone : 'error';
     current = view.action?.kind ?? null;
     action.hidden = view.action === null;
@@ -126,6 +147,20 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
     }).then((problem) => {
         localError = problem;
         busy = false;
+        return render();
+      });
+  });
+
+  check.addEventListener('click', () => {
+    if (checking || busy) return;
+    checking = true;
+    localError = null;
+    void render()
+      .then(() => act('check'))
+      .catch((error: unknown) => (error instanceof Error ? error.message : String(error)))
+      .then((problem) => {
+        localError = problem;
+        checking = false;
         return render();
       });
   });

@@ -12,7 +12,11 @@ export interface NightlyView {
   readonly detail: string | null;
   readonly tone: NightlyTone;
   readonly action: { readonly kind: NightlyAction; readonly label: string } | null;
+  /** Whether "Check for updates" ends the detail line: always, except while a build installs or Nightly is paused. */
+  readonly check: boolean;
 }
+
+type ViewText = Omit<NightlyView, 'check'>;
 
 export function buildLabel(version: string): string {
   const build = buildOf(version);
@@ -32,7 +36,7 @@ export function ago(iso: string, now: number): string {
 /** A change the reader may want to undo is offered for a day. */
 const RECENT_MS = 24 * 60 * 60 * 1000;
 
-export function pausedView(conflict: Conflict): NightlyView {
+export function pausedView(conflict: Conflict): ViewText {
   return conflict.kind === 'stable'
     ? {
         headline: 'Geld Nightly is paused',
@@ -50,7 +54,11 @@ export function pausedView(conflict: Conflict): NightlyView {
 
 /** `installedIn`: the folder the installer wrote, named so the reader knows what to pick when Chrome asks. */
 export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null, version: string, now: number, conflict: Conflict | null = null, installedIn: string | null = null): NightlyView {
-  if (conflict !== null) return pausedView(conflict);
+  const view = conflict === null ? viewText(status, folder, version, now, installedIn) : pausedView(conflict);
+  return { ...view, check: view.tone !== 'busy' && view.tone !== 'paused' };
+}
+
+function viewText(status: NightlyStatus, folder: NightlyFolder | null, version: string, now: number, installedIn: string | null): ViewText {
   const latest = status.latest;
   const newer = latest !== null && compareVersions(latest.version, version) > 0 ? latest : null;
   if (status.installing !== null) {
@@ -106,7 +114,7 @@ export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null,
     headline: 'Up to date',
     detail: status.checkError ?? (status.checkedAt === null ? 'Not checked yet.' : `Checked ${ago(status.checkedAt, now)}.`),
     tone: status.checkError === null ? 'ok' : 'error',
-    action: { kind: 'check', label: 'Check now' },
+    action: null,
   };
 }
 
