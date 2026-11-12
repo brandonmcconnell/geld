@@ -25,8 +25,8 @@ import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassi
 import { aiPending, aiStateFor, clearAiForPage, discardSuggestion, jevDecisionsFor, loadAiForPage, markSuggestionApplied, previewDecisionKey, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi, withJevDone } from './ai';
 import type { AiState, SuggestionSource, SuggestionTarget } from './ai';
 import { applyFix } from './apply-suggestion';
-import { agentComment, agentLikely, agentsInRelatedLinks, agentTask, CODING_AGENTS, codingAgentById, diffHunks, lineDiff, recommendAgents } from '@geld/review';
-import type { CodingAgent } from '@geld/review';
+import { agentComment, agentLikely, agentsInRelatedLinks, agentTask, CODING_AGENTS, codingAgentById, diffHunks, lineDiff, OPEN_TARGETS, openTargetById, openTargetLikely, recommendAgents } from '@geld/review';
+import type { CodingAgent, OpenTarget } from '@geld/review';
 import { relatedLinksOnPage } from '../related-links';
 import { wholeFileLines } from '../whole-file';
 import { catchUpAfterPost } from './timeline-catchup';
@@ -214,7 +214,13 @@ interface TriageVisit {
   collapsed: boolean;
   readonly busy: Map<string, 'apply' | 'resolve'>;
   readonly errors: Map<string, string>;
-  handedOff: string | null;
+  handedOff: HandedOff | null;
+}
+
+/** What the last hand-off did, said under the card, and the finding whose task to offer copying again when a copy failed. */
+interface HandedOff {
+  readonly text: string;
+  readonly copyAgain: string | null;
 }
 
 function freshTriage(): TriageVisit {
@@ -2603,6 +2609,13 @@ function agentIcon(agent: CodingAgent): string | null {
   return bot === null ? null : botAppAvatar(bot, 32);
 }
 
+/** An open target's mark: its agent's, else its service's GitHub App. */
+function targetIcon(target: OpenTarget): string | null {
+  const agent = target.agent === undefined ? undefined : codingAgentById(target.agent);
+  if (agent !== undefined) return agentIcon(agent);
+  return target.appId === undefined ? null : `https://avatars.githubusercontent.com/in/${target.appId}?s=32&v=4`;
+}
+
 /** The triage card's reading: the fixes to show, who to hand the rest to, and what this visit did with them. */
 function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, prAuthor: string | null, knownBots: ReadonlySet<string>): TriageView | null {
   if (ai.kind !== 'current' && ai.kind !== 'stale' && ai.kind !== 'failed' && ai.kind !== 'running') return null;
@@ -2612,6 +2625,10 @@ function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, pr
     .map((link) => link.key.split(':')[0] ?? '');
   const used = agentsInRelatedLinks(services);
   const pick = recommendAgents(settings.codingAgent, used, viewer !== '' && prAuthor !== null && viewer.toLowerCase() === prAuthor.toLowerCase());
+  const likely = (id: string): boolean => {
+    const agent = codingAgentById(id);
+    return agent !== undefined && agentLikely(agent, settings.codingAgent, used, knownBots);
+  };
   const suggestions = triageSuggestions(meta, settings).map(({ entry, item, partners, current }) => ({
     key: entry.key,
     title: item.title,
@@ -2636,10 +2653,11 @@ function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, pr
       command: agent.command ?? null,
       iconSrc: agentIcon(agent),
       note: agent.note ?? null,
-      openLabel: agent.openUrl === undefined ? null : (agent.openLabel ?? `Open in ${agent.name}`),
+      opens: agent.opens ?? null,
       used: used.includes(agent.id),
-      likely: agentLikely(agent, settings.codingAgent, used, knownBots),
+      likely: likely(agent.id),
     })),
+    openTargets: OPEN_TARGETS.map((target) => ({ id: target.id, service: target.service, variant: target.variant, iconSrc: targetIcon(target), likely: openTargetLikely(target, likely, services), copiesTask: target.copiesTask === true })),
     recommended: pick.recommended === null || pick.reason === null ? null : { id: pick.recommended.id, reason: pick.reason },
     openKey: visit.triage.openKey,
     collapsed: visit.triage.collapsed,
@@ -4225,25 +4243,38 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       });
       if (findings.length === 0) return;
       const task = agentTask(findings, pullUrl);
-      const said = (text: string): void => {
-        visit.triage.handedOff = text;
+      // A copy or a post settles later: what it says belongs to the visit it started on, never to the next one's card.
+      const triage = visit.triage;
+      const said = (text: string, copyAgain: string | null = null): void => {
+        if (visit.triage !== triage) return;
+        triage.handedOff = { text, copyAgain };
         reapply();
       };
+      const notCopied = (lead: string): void => said(`${lead} The browser did not take the task on the clipboard.`, key);
       if (how === 'copy') {
-        void copyText(task).then(() => said('Copied the task'));
+        void copyText(task).then((copied) => (copied ? said('Copied the task') : notCopied('Could not copy the task.')));
+        return;
+      }
+      if (how === 'open') {
+        const target = openTargetById(agentId);
+        if (target === undefined) return;
+        countUsage('agent_handoff');
+        const url = target.url(task, { owner: subject.owner, repo: subject.repo, number: subject.number });
+        // The copy starts while this page still has focus, and the tab opens in the click's own turn, which the
+        // browser's popup blocker requires; what is said waits for the copy to settle.
+        const copying = target.copiesTask === true ? copyText(task) : null;
+        // A web link opens in a tab; an app's own scheme is handed to the system from this page, leaving no blank tab.
+        if (/^https?:/i.test(url)) window.open(url, '_blank', 'noopener');
+        else createElement('a', { href: url }).click();
+        if (copying === null) said(`Opened in ${target.service}`);
+        else void copying.then((copied) => (copied ? said(`Copied the task and opened ${target.service}. Paste it there to start`) : notCopied(`Opened ${target.service}, but the task is not copied.`)));
         return;
       }
       const agent = codingAgentById(agentId) ?? CODING_AGENTS[0];
       if (agent === undefined) return;
       countUsage('agent_handoff');
       const comment = agentComment(agent, task);
-      if (how === 'open' || comment === null) {
-        const url = agent.openUrl?.(task, { owner: subject.owner, repo: subject.repo, number: subject.number });
-        if (url === undefined) return;
-        window.open(url, '_blank', 'noopener');
-        said(`Opened in ${agent.name}`);
-        return;
-      }
+      if (comment === null) return;
       const preview = comment.length > 600 ? `${comment.slice(0, 600)}…` : comment;
       if (!window.confirm(`Post this comment on the pull request to start ${agent.name}?\n\n${preview}`)) return;
       void postTopLevelComments([comment]).then((posted) => said(posted > 0 ? `Posted ${agent.command ?? agent.name} on the pull request` : `GitHub did not take the comment for ${agent.name}`));
