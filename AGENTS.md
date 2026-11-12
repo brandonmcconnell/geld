@@ -1375,6 +1375,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Its words are in a tooltip of the panel's own, drawn like the popup's, since the panel also runs on the nightly page, and the icon stands outside the headline's live region so the tooltip is not announced.
   While the background's look runs the tooltip reads "Checking…" and the glyph turns.
   After an update the line under the headline says only when ("Updated 19 minutes ago", no period, short enough not to wrap beside Roll back), and the build Roll back returns to is in that button's tooltip.
+  After a rollback the line says it worked and ends in "Leave feedback?" (`NightlyView.rollbackFeedback`), and the link opens the feedback page with a draft titled with both builds (`rollbackDraft`, the `rollback` opening and its `rollback-from`/`rollback-to` query), never over words already in the draft.
+  How many people roll back is counted already (an update's `rollback` with `trigger: manual` in the usage ping), and the link's clicks are counted too, so the dashboard can say how many say why.
   With no folder connected nothing can install, so the line is about that alone (tone `needs-folder`): "Folder not connected", no build named, Connect folder as its action, the panel tinted amber (`--geld-nightly-amber`, local to the panel since the popup and site share their tokens).
   A folder picker or Chrome's permission prompt would close the popup, so connecting the folder and an install that needs Chrome's OK continue on the nightly page, which shows the same panel and the folder.
   The reload fires `onInstalled`, which puts Geld back into open GitHub tabs as after any update.
@@ -2071,7 +2073,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   **The day's ping carries feature counts and the week's first a settings summary** (`@geld/core/usage-settings.ts`).
   `countUsage(counter)` (`src/lib/usage-count.ts`, any page) sends `geld:usage-count` to the background, which adds it to `local:usageState.counts` while the setting is on and hands the lot to the next ping (`addUsageCount`), so a ping's counts cover the time since the install's ping before.
   Counters are a fixed list (`USAGE_COUNTERS`, a new one is added there first): diff pages read and those hiding files, `hid_<category>` once per visit to a diff page per category that hid something (`hid_custom` for every custom one;
-  a visit ends with a pass on another path, so the Files tab after the conversation counts again, `usageVisit` in the controller), hidden files shown and one opened, the digest shown (once per conversation visit), copied, its view changed, Flow, AI triage, bot reviews requested, the review group's reviews and comments, and each status-pill action.
+  a visit ends with a pass on another path, so the Files tab after the conversation counts again, `usageVisit` in the controller), hidden files shown and one opened, the digest shown (once per conversation visit), copied, its view changed, Flow, AI triage, bot reviews requested, the review group's reviews and comments, each status-pill action, and Leave feedback after a Geld Nightly rollback (`rollback_feedback`).
   Settings go only on the week's first ping: sent daily, an unusual combination would act as an id linking an install's pings.
   `usageSettingsOf` names only what Geld offers (every boolean switch but `usageStats`, `USAGE_TOGGLES` with a test that it covers them all;
   the built-in categories by id;

@@ -15,9 +15,11 @@ export interface NightlyView {
   readonly action: { readonly kind: NightlyAction; readonly label: string; readonly title?: string } | null;
   /** Whether "Check for updates" sits under the action: once a folder is connected, except while a build installs or Nightly is paused. */
   readonly check: boolean;
+  /** After a rollback, "Leave feedback?" ends the detail line, its draft naming both builds. */
+  readonly rollbackFeedback: { readonly from: string; readonly to: string } | null;
 }
 
-type ViewText = Omit<NightlyView, 'check'>;
+type ViewText = Omit<NightlyView, 'check' | 'rollbackFeedback'> & { readonly rollbackFeedback?: NightlyView['rollbackFeedback'] };
 
 export function buildLabel(version: string): string {
   const build = buildOf(version);
@@ -67,7 +69,7 @@ export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null,
   // A failed check is said in every state that offers one, beside whatever the line already says and does.
   const failed = check ? status.checkError : null;
   const detail = failed === null || view.detail?.includes(failed) === true ? view.detail : view.detail === null ? failed : `${/[.!?]$/.test(view.detail) ? view.detail : `${view.detail}.`} ${failed}`;
-  return { ...view, detail, check };
+  return { ...view, detail, check, rollbackFeedback: view.rollbackFeedback ?? null };
 }
 
 /** Why the waiting build did not install, when that is still the case and newer than any failure of the same build. */
@@ -136,7 +138,13 @@ function viewText(status: NightlyStatus, folder: NightlyFolder | null, version: 
   const install = status.lastInstall;
   if (install !== null && install.to === version && now - new Date(install.at).getTime() < RECENT_MS) {
     if (install.rollback === true) {
-      return { headline: `Back on ${buildLabel(version)}`, detail: `Went back ${ago(install.at, now)}`, tone: 'ok', action: null };
+      return {
+        headline: `Back on ${buildLabel(version)}`,
+        detail: 'Successfully rolled back.',
+        tone: 'ok',
+        action: null,
+        rollbackFeedback: { from: buildLabel(install.from), to: buildLabel(version) },
+      };
     }
     return {
       headline: 'Up to date',

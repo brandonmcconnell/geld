@@ -6,7 +6,7 @@ import { accountItem } from '../../src/lib/account';
 import { formatDiagnostics, readDiagnostics } from '../../src/lib/diagnostics';
 import { installErrorCapture } from '../../src/lib/error-capture';
 import type { ContextChoice, ContextKey, FeedbackContext, FeedbackDraft } from '../../src/lib/feedback';
-import { draftIsEmpty, EMPTY_DRAFT, FEEDBACK_KINDS, FEEDBACK_REPO, feedbackIssue, parseDraft, reposNamedIn } from '../../src/lib/feedback';
+import { draftIsEmpty, EMPTY_DRAFT, FEEDBACK_KINDS, FEEDBACK_REPO, feedbackIssue, parseDraft, reposNamedIn, rollbackDraft } from '../../src/lib/feedback';
 import type { FeedbackOpenMessage, FeedbackSubmitMessage } from '../../src/lib/messages';
 import { isFeedbackOpenMessage, isFeedbackSubmitResponse } from '../../src/lib/messages';
 import { collectTabPerf } from '../../src/lib/perf-report';
@@ -307,6 +307,14 @@ async function reopen(opening: FeedbackOpenMessage): Promise<void> {
   // Opened from no GitHub tab (the options page, a non-GitHub page): the page it was opened from before says nothing now.
   openingTab = opening.tabId ?? null;
   if (opening.diagnostics === true) diagnosticsAsked = true;
+  const rolled = withRollback(draft, opening.rollback?.from ?? null, opening.rollback?.to ?? null);
+  if (rolled !== draft) {
+    update(rolled);
+    titleInput.value = draft.title;
+    textInput.value = draft.text;
+    renderKinds();
+    textInput.focus();
+  }
   // The page may be another one now, perhaps a private repository's: the diagnostics and the consent are asked for afresh.
   choice.diagnostics = false;
   consent.checked = false;
@@ -378,9 +386,14 @@ async function gatherContext(): Promise<FeedbackContext & { readonly everyRepoPu
   };
 }
 
+/** A rollback's draft when the page was opened about one, unless the reader already has words of their own. */
+function withRollback(current: FeedbackDraft, from: string | null, to: string | null): FeedbackDraft {
+  return from === null || to === null || !draftIsEmpty(current) ? current : rollbackDraft(from, to);
+}
+
 async function start(): Promise<void> {
   const [stored, signedIn] = await Promise.all([draftItem.getValue(), accountItem.getValue()]);
-  draft = parseDraft(stored) ?? EMPTY_DRAFT;
+  draft = withRollback(parseDraft(stored) ?? EMPTY_DRAFT, query.get('rollback-from'), query.get('rollback-to'));
   account = signedIn;
   titleInput.value = draft.title;
   textInput.value = draft.text;

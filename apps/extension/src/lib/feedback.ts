@@ -29,6 +29,11 @@ export interface FeedbackDraft {
 
 export const EMPTY_DRAFT: FeedbackDraft = { kind: 'bug', title: '', text: '' };
 
+/** The draft a Geld Nightly rollback opens with, so the reader only has to say what went wrong. */
+export function rollbackDraft(from: string, to: string): FeedbackDraft {
+  return { kind: 'bug', title: `Rolled back Geld Nightly from ${from} to ${to}`, text: '' };
+}
+
 /** Each piece of context the reader may attach; `null` when this device has none to offer. */
 export interface FeedbackContext {
   /** Geld's version and the browser, in words. */

@@ -1,7 +1,7 @@
 import { browser } from 'wxt/browser';
 import type { PageKind } from '../github/page';
 import { describePage } from '../github/page';
-import type { FeedbackOpenMessage } from '../lib/messages';
+import type { FeedbackOpenMessage, FeedbackRollback } from '../lib/messages';
 
 /** "Chrome 148 on macOS", from the user agent, for the form's Browser field; blank when it cannot be told. */
 export function describeBrowser(userAgent: string, platform: string): string {
@@ -39,6 +39,8 @@ export interface FeedbackOpening {
   readonly tabId?: number;
   /** Tick the diagnostics report from the start (the options page's Report with diagnostics). */
   readonly diagnostics?: boolean;
+  /** Start the draft about a Geld Nightly rollback (the panel's Leave feedback after Roll back). */
+  readonly rollback?: FeedbackRollback;
 }
 
 /** The extension's own feedback page, which opens the issue from the reader's account without leaving the extension. */
@@ -46,6 +48,10 @@ export function feedbackPageUrl(opening: FeedbackOpening = {}): string {
   const url = new URL(browser.runtime.getURL('/feedback.html'));
   if (opening.tabId !== undefined) url.searchParams.set('tab', String(opening.tabId));
   if (opening.diagnostics === true) url.searchParams.set('diagnostics', '1');
+  if (opening.rollback !== undefined) {
+    url.searchParams.set('rollback-from', opening.rollback.from);
+    url.searchParams.set('rollback-to', opening.rollback.to);
+  }
   return url.toString();
 }
 

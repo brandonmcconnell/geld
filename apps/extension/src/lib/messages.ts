@@ -204,6 +204,17 @@ export interface FeedbackOpenMessage {
   readonly type: 'geld:feedback-open';
   readonly tabId?: number;
   readonly diagnostics?: boolean;
+  /** A Geld Nightly rollback the reader is saying why about, its builds in words ("build 4179"). */
+  readonly rollback?: FeedbackRollback;
+}
+
+export interface FeedbackRollback {
+  readonly from: string;
+  readonly to: string;
+}
+
+function isFeedbackRollback(value: unknown): value is FeedbackRollback {
+  return isRecord(value) && typeof value.from === 'string' && typeof value.to === 'string';
 }
 
 export type FeedbackSubmitResponse =
@@ -355,7 +366,8 @@ export function isFeedbackOpenMessage(value: unknown): value is FeedbackOpenMess
     isRecord(value) &&
     value.type === 'geld:feedback-open' &&
     (value.tabId === undefined || typeof value.tabId === 'number') &&
-    (value.diagnostics === undefined || typeof value.diagnostics === 'boolean')
+    (value.diagnostics === undefined || typeof value.diagnostics === 'boolean') &&
+    (value.rollback === undefined || isFeedbackRollback(value.rollback))
   );
 }
 
