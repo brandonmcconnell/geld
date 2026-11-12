@@ -161,6 +161,22 @@ describe('syncDescriptionMenu', () => {
     expect(document.querySelector('[data-geld-desc-menu]')).toBeNull();
   });
 
+  it('adds no ⋯ before paint and opens no menu on another pull request until a pass has read its author', () => {
+    history.replaceState(null, '', '/o/r/pull/7');
+    page();
+    syncDescriptionMenu(base);
+    const stale = document.querySelector<HTMLButtonElement>('[data-geld-desc-menu] button');
+    history.replaceState(null, '', '/o/r/pull/8');
+    stale?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(document.querySelector('.geld-desc-menu')).toBeNull();
+    page();
+    reassertDescriptionMenu();
+    expect(document.querySelector('[data-geld-desc-menu]')).toBeNull();
+    syncDescriptionMenu({ ...base, author: 'someone-else' });
+    expect(document.querySelectorAll('[data-geld-desc-menu]')).toHaveLength(1);
+    history.replaceState(null, '', '/');
+  });
+
   it('leaves the clipboard alone when GitHub does not send the Markdown', async () => {
     history.replaceState(null, '', '/o/r/pull/7');
     fetched.response = new Response('oops', { status: 502 });

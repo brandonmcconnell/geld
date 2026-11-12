@@ -97,6 +97,8 @@ const META = `${OVERVIEW_DESCRIPTION} [class*="editMetadata"]`;
 const LABEL = 'More actions for the description';
 
 let current: DescriptionMenuContext | null = null;
+/** The pull request `current` was read on. */
+let currentPull: string | null = null;
 let open: { readonly element: HTMLElement; readonly button: HTMLButtonElement; readonly keys: AbortController } | null = null;
 let buttonIds = 0;
 
@@ -110,19 +112,29 @@ export function syncDescriptionMenu(context: DescriptionMenuContext | null): voi
   for (const stray of document.querySelectorAll(`[${ATTR_MENU}]`)) if (stray.parentElement !== meta) stray.remove();
   if (context === null || meta === null) {
     current = null;
+    currentPull = null;
     closeMenu();
     return;
   }
   // The row is React's: nothing of Geld's goes in before React has hydrated it (`react-hydration.ts`).
   if (!subtreeSettled(meta)) return;
   current = context;
+  currentPull = pullPathOf(location.pathname);
   if (meta.querySelector(`:scope > [${ATTR_MENU}]`) !== null) return;
   meta.append(createButton());
 }
 
-/** Before paint, from the controller's mutation callback: a row GitHub drew anew gets the ⋯ back in its first frame. */
+/** Whether the last pass's context is this page's: GitHub navigates in place, and the next pass has not read the new author yet. */
+function currentIsThisPage(): boolean {
+  return current !== null && pullPathOf(location.pathname) === currentPull;
+}
+
+/**
+ * Before paint, from the controller's mutation callback: a row GitHub drew anew gets the ⋯ back in its first frame,
+ * only while the last pass's context is this pull request's, so the menu never offers the previous author's actions.
+ */
 export function reassertDescriptionMenu(): void {
-  if (current !== null) syncDescriptionMenu(current);
+  if (current !== null && currentIsThisPage()) syncDescriptionMenu(current);
 }
 
 export function removeDescriptionMenu(): void {
@@ -339,7 +351,7 @@ export function scrollToShow(scrollTop: number, viewHeight: number, itemTop: num
 
 function openMenu(button: HTMLButtonElement): void {
   closeMenu();
-  if (current === null) return;
+  if (current === null || !currentIsThisPage()) return;
   const element = createElement('div', { class: 'geld-desc-menu', [OWN_UI_ATTRIBUTE]: '', role: 'menu', 'aria-label': LABEL, tabindex: '-1' });
   const items: HTMLElement[] = [];
   for (const entry of itemsFor(current)) {
