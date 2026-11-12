@@ -4431,7 +4431,7 @@ html [data-geld-person-fold-part][data-geld-person-fold-part] {
   height: 12px;
 }
 
-.geld-review__help-link {
+.geld-review__help:is(:hover, :focus-visible) {
   color: var(--geld-review-accent);
 }
 
