@@ -1683,6 +1683,15 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   With the `hideCommentLines` setting on, `GeldController.classifyEntries` attaches them to visible entries and `applyCommentRows` collapses the matching `tr`s by GitHub's own line anchors (`diff-<digest>R30`: `data-line-anchor` in the React view, `id` in the classic one;
   a split-view row is collapsed only when every line it shows is comment-only), inserting one note row per run with a "Show" button (`shownCommentRuns` keeps opened runs open across re-renders).
   The counts flow through `HiddenBreakdown.lines` (also folded into `totals`), so header, chips and tooltip agree.
+- **A PDF GitHub would only download opens in Geld's PDF viewer** (`src/github/pdf-links.ts`, `attachment-pdf.ts`, `entrypoints/pdf-viewer/`, setting `attachmentLightbox`).
+  An upload (`user-attachments/files/…pdf`, `owner/repo/files/…pdf`) is served from `objects.githubusercontent.com` with `Content-Disposition: attachment`, and a raw repository file as `application/octet-stream`, so a click on either downloaded it;
+  `blob/…/x.pdf` pages keep GitHub's own viewer, and PDFs on other sites are left to the browser.
+  The dialog frames `pdf-viewer.html`, an extension page (a web-accessible resource on github.com only), which checks the address against the same rules, reads the PDF and shows it in the browser's own PDF viewer from a `blob:` URL.
+  Only the extension can read the storage hosts, which answer no cross-origin read, and making them required host permissions would disable the extension on update until each reader approved them.
+  So the page asks for `objects.githubusercontent.com` and `raw.githubusercontent.com` (within the optional `https://*/*`) the first time a PDF needs them, with an Allow button inside the frame, which Chrome accepts as the gesture;
+  a `raw.githubusercontent.com` link needs nothing, since that host answers anyone.
+  Escape inside the frame never reaches the dialog, so the page posts `geld:pdf-close` to the parent.
+  Enterprise hosts are not covered: the page is exposed to github.com alone.
 - **GitHub's own file filter is mirrored, not fought.**
   `DiffView.filteredPaths` (`filteredPathsOf` in `model.ts`) collects files whose tree item or diff root carries `hidden` — GitHub toggles that client-side for its extension / viewed / CODEOWNERS filters and leaves its header alone.
   Those files become `Classified.filtered` → `HiddenBreakdown.filtered`, subtracted from the visible numbers (header, chips, tooltip row "Filtered by GitHub") but never counted as Geld-hidden.

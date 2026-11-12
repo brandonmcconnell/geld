@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyAttachmentLightbox, removeAttachmentLightbox } from './attachment-lightbox';
 import { blockText } from './review/crawler';
 
+vi.mock('wxt/browser', () => ({ browser: { runtime: { getURL: (path: string) => `chrome-extension://geld${path}` } } }));
+
 const ATTACHMENT = 'https://github.com/user-attachments/assets/abc-123';
 
 function mount(href = ATTACHMENT, src = ATTACHMENT): HTMLImageElement {
@@ -112,11 +114,14 @@ describe('attachment lightbox', () => {
     const pdf = mount('https://github.com/owner/repo/files/123/manual.pdf', 'https://img.shields.io/badge/manual-pdf-blue');
     const upload = mount('https://github.com/user-attachments/files/123/report.zip', 'https://img.shields.io/badge/report-zip-blue');
     applyAttachmentLightbox();
-    for (const image of [badge, unrelated, outside, unsafe, pdf, upload]) {
+    for (const image of [badge, unrelated, outside, unsafe, upload]) {
       expect(image.hasAttribute('data-geld-lightbox-image')).toBe(false);
       expect(click(image).defaultPrevented).toBe(false);
     }
     expect(document.querySelector('dialog')).toBeNull();
+    expect(pdf.hasAttribute('data-geld-lightbox-image')).toBe(false);
+    click(pdf);
+    expect(document.querySelector('dialog iframe')).not.toBeNull();
   });
 
   it.each([
@@ -200,6 +205,36 @@ describe('attachment lightbox', () => {
     expect(preview?.hasAttribute('hidden')).toBe(true);
     expect(document.querySelector('[role="status"]')?.textContent).toContain('could not be loaded');
     expect(document.querySelector('dialog a')?.getAttribute('href')).toBe(ATTACHMENT);
+  });
+
+  it('opens a PDF GitHub would download in the PDF viewer, and leaves GitHub\'s own PDF pages alone', () => {
+    const body = document.createElement('div');
+    body.className = 'markdown-body';
+    const upload = document.createElement('a');
+    upload.href = 'https://github.com/user-attachments/files/1/report.pdf';
+    upload.textContent = 'report.pdf';
+    const blob = document.createElement('a');
+    blob.href = 'https://github.com/owner/repo/blob/main/report.pdf';
+    body.append(upload, blob);
+    document.body.append(body);
+    applyAttachmentLightbox();
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    upload.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    const dialog = document.querySelector('dialog');
+    expect(dialog?.querySelector('.geld-lightbox__title')?.textContent).toBe('report.pdf');
+    expect(dialog?.querySelector('.geld-lightbox__original')?.textContent).toBe('Download');
+    expect(dialog?.querySelector('.geld-lightbox__original')?.getAttribute('href')).toBe(upload.href);
+    const frame = dialog?.querySelector('iframe');
+    expect(new URL(frame?.getAttribute('src') ?? '').searchParams.get('src')).toBe(upload.href);
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'geld:pdf-close' }, source: frame?.contentWindow ?? null }));
+    expect(document.querySelector('dialog')).toBeNull();
+    const native = new MouseEvent('click', { bubbles: true, cancelable: true });
+    blob.dispatchEvent(native);
+    expect(native.defaultPrevented).toBe(false);
+    const modified = new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true });
+    upload.dispatchEvent(modified);
+    expect(modified.defaultPrevented).toBe(false);
   });
 
   it('cleans up on navigation and teardown', () => {

@@ -262,7 +262,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         kind: 'toggle',
         key: 'attachmentLightbox',
         label: 'Attachment lightbox',
-        description: 'View images and videos in rendered Markdown in a larger player: issues, pull requests, discussions, READMEs and other Markdown files.',
+        description: 'View images, videos and PDFs in rendered Markdown in a larger player: issues, pull requests, discussions, READMEs and other Markdown files.',
         popup: false,
         surfaces: ['extension'],
       },

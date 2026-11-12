@@ -1,5 +1,7 @@
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { attachmentVideoUrl, createAttachmentVideo } from './attachment-video';
+import { createPdfViewer } from './attachment-pdf';
+import { pdfSourceOf } from './pdf-links';
 import { createAttachmentViewer } from './attachment-viewer';
 import { ICON_LINK_EXTERNAL, ICON_X } from './ui/icons';
 
@@ -43,7 +45,7 @@ interface LightboxViewer {
   readonly dispose: () => void;
 }
 
-function show(viewer: LightboxViewer, title: string, href: string, trigger: HTMLElement): void {
+function show(viewer: LightboxViewer, title: string, href: string, trigger: HTMLElement, linkText = 'Open original'): void {
   closeDialog?.();
   const titleId = `geld-lightbox-title-${Date.now()}`;
   const dialog = createElement('dialog', {
@@ -56,7 +58,7 @@ function show(viewer: LightboxViewer, title: string, href: string, trigger: HTML
   }, [svgFromString(ICON_X)]);
   const original = createElement('a', {
     class: 'btn btn-sm geld-lightbox__original', href, target: '_blank', rel: 'noopener noreferrer',
-  }, ['Open original', svgFromString(ICON_LINK_EXTERNAL)]);
+  }, [linkText, svgFromString(ICON_LINK_EXTERNAL)]);
   dialog.append(
     createElement('header', { class: 'geld-lightbox__header' }, [
       createElement('h1', { class: 'geld-lightbox__title', id: titleId }, [title]),
@@ -96,6 +98,14 @@ function onClick(event: MouseEvent): void {
   if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
   const target = event.target;
   if (!(target instanceof Element)) return;
+  const pdfLink = target.closest('.markdown-body a[href]');
+  const pdf = pdfLink instanceof HTMLAnchorElement && !pdfLink.hasAttribute('download') ? pdfSourceOf(pdfLink.href, window.location.origin) : null;
+  if (pdfLink instanceof HTMLAnchorElement && pdf !== null) {
+    show(createPdfViewer(pdf, () => closeDialog?.()), pdf.name, pdf.url, pdfLink, 'Download');
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return;
+  }
   const image = target.closest('img') ?? target.closest('a')?.querySelector('img');
   if (!(image instanceof HTMLImageElement)) return;
   const link = attachmentLink(image);
