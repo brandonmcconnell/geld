@@ -3055,8 +3055,17 @@ html[data-geld-top-card] section[aria-label='Description']:has(+ .geld-review) {
   border-bottom-right-radius: 0 !important;
 }
 
-/* Comments and Approvals repeat the digest's threads meter and Reviews row, and Checks is the CI row's. */
-html[data-geld-top-card='folded'] [class*='CondensedForYouContainer'] > [class*='MiniStatusGrid'] {
+/*
+ * Comments and Approvals repeat the digest's threads meter and Reviews row, and Checks is the CI row's. Hidden by the
+ * grid, and also, whatever card holds them, by GitHub's own marks on the three blocks (`data-testid="mini-status"`)
+ * and their "Merge status" wrapper anywhere above the description, so they stay hidden if GitHub re-renders the card
+ * into another shape or renames its classes. Nowhere else: the same blocks may serve GitHub elsewhere. Whatever wraps
+ * them goes too, short of the status row's holder: the card borders every child after its first (`> * + *`), so a
+ * wrapper left standing is a 1px box of border, a second line under the status row.
+ */
+html[data-geld-top-card='folded'] [class*='CondensedForYouContainer'] > [class*='MiniStatusGrid'],
+html[data-geld-top-card='folded'] :has(~ section[aria-label='Description']) :is([class*='MiniStatusGrid'], [data-testid='mini-status']),
+html[data-geld-top-card='folded'] :has(~ section[aria-label='Description']) :has([class*='MiniStatusGrid'], [data-testid='mini-status']):not(:has(section[aria-label='Recommended action'])) {
   display: none !important;
 }
 
@@ -3067,11 +3076,6 @@ html[data-geld-top-card='folded'] [class*='CondensedForYouContainer'] > [class*=
  */
 html[data-geld-top-card='folded'] [class*='CondensedForYouContainer']:not(:has(> section[aria-label='Recommended action'])) {
   display: none !important;
-}
-
-/* GitHub's loading row is one line (70px), the row it becomes a title and a line of subtext (72px): the same height, so nothing under it moves. */
-html[data-geld-top-card] [class*='CondensedForYouContainer'] [data-testid='for-you-item-row'][data-item-id='loading'] {
-  min-height: 72px;
 }
 
 /* While GitHub streams the card a `<template>` leads it, so its status row is not `:first-child` and takes a second top border. */
