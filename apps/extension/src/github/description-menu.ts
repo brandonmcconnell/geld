@@ -93,6 +93,8 @@ let buttonIds = 0;
 /** The menu's button in the description's top row, beside GitHub's Edit pencil, each pass; null takes it away. */
 export function syncDescriptionMenu(context: DescriptionMenuContext | null): void {
   const meta = context === null ? null : document.querySelector(META);
+  // A menu whose button left the row (GitHub drew it anew) would still offer the old page's author: it closes with it.
+  if (open !== null && (meta === null || !meta.contains(open.button))) closeMenu();
   for (const stray of document.querySelectorAll(`[${ATTR_MENU}]`)) if (stray.parentElement !== meta) stray.remove();
   if (context === null || meta === null) {
     current = null;
@@ -152,7 +154,7 @@ function itemsFor(context: DescriptionMenuContext): readonly (Item | 'divider')[
     }
     switch (action) {
       case 'copy-link':
-        items.push({ label: 'Copy link', icon: ICON_LINK, run: () => void navigator.clipboard.writeText(pullUrl()) });
+        items.push({ label: 'Copy link', icon: ICON_LINK, run: () => void copyLink() });
         break;
       case 'copy-markdown':
         items.push({ label: 'Copy Markdown', icon: ICON_COPY, run: () => void copyMarkdown() });
@@ -175,6 +177,10 @@ function itemsFor(context: DescriptionMenuContext): readonly (Item | 'divider')[
     }
   }
   return items;
+}
+
+async function copyLink(): Promise<void> {
+  await navigator.clipboard.writeText(pullUrl()).catch(() => window.alert('The link could not be copied. Try again.'));
 }
 
 /** The description's Markdown from the data GitHub's Overview reads it from (`page_data/description`, its `body`). */
@@ -233,6 +239,11 @@ async function unblock(scope: 'personal' | 'org', context: DescriptionMenuContex
 const MENU_GAP = 4;
 const VIEWPORT_MARGIN = 8;
 
+/** Whether any of the button is in the window: a menu whose button scrolled out of it closes rather than float off-screen. */
+export function buttonInView(button: { readonly top: number; readonly bottom: number }, viewport: number): boolean {
+  return button.bottom >= 0 && button.top <= viewport;
+}
+
 /** Where the menu opens: under its button as GitHub's do, above it when only above has the room, and never past the window. */
 export function menuPlacement(button: { readonly top: number; readonly bottom: number }, height: number, viewport: number): { readonly top: number; readonly maxHeight: number } {
   const below = Math.max(0, viewport - button.bottom - MENU_GAP - VIEWPORT_MARGIN);
@@ -280,6 +291,10 @@ function openMenu(button: HTMLButtonElement): void {
       return;
     }
     const rect = button.getBoundingClientRect();
+    if (!buttonInView(rect, document.documentElement.clientHeight)) {
+      closeMenu();
+      return;
+    }
     const left = Math.max(8, Math.min(rect.right - element.offsetWidth, document.documentElement.clientWidth - element.offsetWidth - 8));
     element.style.left = `${Math.round(left)}px`;
     element.style.maxHeight = '';

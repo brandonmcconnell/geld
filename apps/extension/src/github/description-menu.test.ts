@@ -4,7 +4,7 @@ import type { DescriptionMenuContext } from './description-menu';
 
 const fetched = vi.hoisted(() => ({ response: new Response('{}', { status: 200 }) }));
 vi.mock('./page-fetch', () => ({ pageFetch: async () => fetched.response }));
-import { blockRequest, descriptionActions, menuPlacement, scrollToShow, removeDescriptionMenu, reportContentUrl, syncDescriptionMenu, unblockRequest } from './description-menu';
+import { blockRequest, buttonInView, descriptionActions, menuPlacement, scrollToShow, removeDescriptionMenu, reportContentUrl, syncDescriptionMenu, unblockRequest } from './description-menu';
 
 const base: DescriptionMenuContext = { viewer: 'brandon', author: 'spammer', owner: 'mintlify', blocksKnown: true, blocked: null, mayBlockFromOrg: false };
 
@@ -51,6 +51,14 @@ describe('menuPlacement', () => {
 
   it('caps an upward menu to the room above', () => {
     expect(menuPlacement({ top: 300, bottom: 328 }, 900, 400)).toEqual({ top: 8, maxHeight: 288 });
+  });
+});
+
+describe('buttonInView', () => {
+  it('holds while any of the button shows and fails once it has scrolled out', () => {
+    expect(buttonInView({ top: -10, bottom: 18 }, 800)).toBe(true);
+    expect(buttonInView({ top: -128, bottom: -100 }, 800)).toBe(false);
+    expect(buttonInView({ top: 810, bottom: 838 }, 800)).toBe(false);
   });
 });
 
@@ -138,6 +146,28 @@ describe('syncDescriptionMenu', () => {
     copy?.click();
     await vi.waitFor(() => expect(alert).toHaveBeenCalled());
     expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it('closes an open menu when GitHub draws the description row anew', () => {
+    page();
+    syncDescriptionMenu(base);
+    document.querySelector('[data-geld-desc-menu] button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(document.querySelector('.geld-desc-menu')).not.toBeNull();
+    page();
+    syncDescriptionMenu({ ...base, author: 'someone-else' });
+    expect(document.querySelector('.geld-desc-menu')).toBeNull();
+    expect(document.querySelectorAll('[data-geld-desc-menu]')).toHaveLength(1);
+  });
+
+  it('says so when the link cannot be copied', async () => {
+    const alert = vi.fn();
+    Object.defineProperty(window, 'alert', { configurable: true, value: alert });
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn(async () => Promise.reject(new Error('denied'))) } });
+    page();
+    syncDescriptionMenu(base);
+    document.querySelector('[data-geld-desc-menu] button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === 'Copy link')?.click();
+    await vi.waitFor(() => expect(alert).toHaveBeenCalled());
   });
 
   it('goes when the page is no longer one it dresses', () => {
