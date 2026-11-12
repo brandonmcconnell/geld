@@ -1745,10 +1745,89 @@ dialog.geld-block-dialog {
   display: none;
 }
 
-/* The Overview description's ⋯, beside GitHub's Edit pencil, in the shape of Primer's small invisible icon button. */
+/*
+ * The Overview description's ⋯, beside GitHub's Edit pencil, in the shape of Primer's small invisible icon button.
+ * GitHub hangs the row's last button 4px past its end (the pencil's `margin-right: -4px`), so the ⋯ takes that place
+ * and the pencil, no longer last, keeps 4px from it rather than running under it.
+ */
 .geld-desc-menu__wrap {
   display: inline-flex;
   vertical-align: middle;
+  margin-inline: 4px -4px;
+}
+
+html[data-geld-on] section[aria-label='Description'] [class*='editMetadata'] > [class*='editButton'] {
+  margin-inline-end: 0;
+}
+
+/*
+ * The ⋯ goes in only once React has hydrated the row: until then its glyph is drawn in its place, as the button draws
+ * it at rest, so it shows with the pencil and the pencil never moves.
+ */
+html[data-geld-on] section[aria-label='Description'] [class*='editMetadata']:not(:has(> [data-geld-desc-menu]))::after {
+  content: '';
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin-inline: 4px -4px;
+  background: var(--fgColor-muted, #59636e);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM1.5 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm13 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM1.5 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm13 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+}
+
+/*
+ * GitHub's "Loading description history" button keeps its hidden label in the layout (Primer stacks the spinner over
+ * it), so it was 172px wide and its spinner stood 78px left of the pencil. Without the label it is the spinner's
+ * width and stands where "Edited" will, beside the pencil. The label still names the button (`aria-labelledby`).
+ */
+html[data-geld-on] section[aria-label='Description'] [class*='editMetadata'] [class*='editHistoryLoading'][data-loading='true'] [data-component='text'] {
+  display: none;
+}
+
+/*
+ * The Overview description's reaction button is drawn only once GitHub's `page_data/description` answers, a moment
+ * after the description, and the box grew under the text then. A stand-in of the same size and look holds its place
+ * until it comes, for a signed-in reader only (signed out the row is empty), and goes after 10 s if it never does.
+ * Mirrors Primer's small round IconButton: 28px, 8px below the text, the 16px smiley centred.
+ */
+html[data-geld-on]:has(> head > meta[name='user-login']:not([content=''])) section[aria-label='Description'] > [class*='body']:has(> [class*='editMetadata']:not([hidden])):not(:has(> [class*='reactions'], [data-geld-desc-agents])) {
+  position: relative;
+}
+
+html[data-geld-on]:has(> head > meta[name='user-login']:not([content=''])) section[aria-label='Description'] > [class*='body']:has(> [class*='editMetadata']:not([hidden])):not(:has(> [class*='reactions'], [data-geld-desc-agents]))::after {
+  content: '';
+  display: block;
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  margin-top: 8px;
+  border: 1px solid var(--button-default-borderColor-rest, #d1d9e0);
+  border-radius: 50%;
+  background: var(--button-default-bgColor-rest, #f6f8fa);
+  box-shadow: var(--button-default-shadow-resting, 0 1px 0 0 rgba(31, 35, 40, 0.04));
+  animation: geld-desc-reaction-wait 0s 10s forwards;
+}
+
+html[data-geld-on]:has(> head > meta[name='user-login']:not([content=''])) section[aria-label='Description'] > [class*='body']:has(> [class*='editMetadata']:not([hidden])):not(:has(> [class*='reactions'], [data-geld-desc-agents]))::before {
+  content: '';
+  position: absolute;
+  bottom: 6px;
+  inset-inline-start: 6px;
+  width: 16px;
+  height: 16px;
+  background: var(--fgColor-muted, #59636e);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0Zm0 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM5.32 9.94a.75.75 0 0 1 1.05.13c.15.19.63.68 1.63.68s1.48-.49 1.63-.68a.75.75 0 1 1 1.18.92c-.3.38-1.15 1.26-2.81 1.26-1.66 0-2.51-.88-2.81-1.26a.75.75 0 0 1 .13-1.05ZM6.5 6.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm5 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0Zm0 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM5.32 9.94a.75.75 0 0 1 1.05.13c.15.19.63.68 1.63.68s1.48-.49 1.63-.68a.75.75 0 1 1 1.18.92c-.3.38-1.15 1.26-2.81 1.26-1.66 0-2.51-.88-2.81-1.26a.75.75 0 0 1 .13-1.05ZM6.5 6.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm5 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+  animation: geld-desc-reaction-wait 0s 10s forwards;
+}
+
+@keyframes geld-desc-reaction-wait {
+  to {
+    visibility: hidden;
+    height: 0;
+    margin-top: 0;
+    border-width: 0;
+  }
 }
 
 .geld-desc-menu__button {

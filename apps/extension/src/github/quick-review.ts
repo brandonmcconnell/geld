@@ -27,7 +27,7 @@ import { pageFetch } from './page-fetch';
 import { isGhost, leaveGhost } from './ui/bar-motion';
 import { reportError } from '../lib/error-capture';
 import { isOverviewPage } from './review/overview-page';
-import { overviewMergeOf, removeOverviewMerge, syncOverviewMerge } from './overview-merge';
+import { greenOverviewMerges, overviewMergeOf, removeOverviewMerge, syncOverviewMerge } from './overview-merge';
 import { countUsage } from '../lib/usage-count';
 import type { UsageCounter } from '@geld/core';
 
@@ -1493,7 +1493,9 @@ function showMerged(state: Mounted, pullPath: string): void {
  */
 export function reassertStatusPills(): void {
   const pullPath = pullPathOf(window.location.pathname);
-  if (pullPath === null || !headerReactSettled()) return;
+  if (pullPath === null) return;
+  greenOverviewMerges();
+  if (!headerReactSettled()) return;
   if (mounted !== null && mounted.pullPath === pullPath) {
     showStatus(mounted);
     // GitHub re-renders its bar (on load, between tabs) and adds its tabs to it once they scroll under it: the group
