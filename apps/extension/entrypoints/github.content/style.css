@@ -3262,20 +3262,45 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   border: 1px solid var(--geld-review-border-muted);
   border-radius: 6px;
   list-style: none;
-  overflow: hidden;
 }
 
 .geld-review__triage-fix + .geld-review__triage-fix {
   border-top: 1px solid var(--geld-review-border-muted);
 }
 
+/* No `overflow: hidden` on the list, which would clip the rows' menus: the first and last rows round themselves. */
+.geld-review__triage-fix:first-child > .geld-review__triage-fix-row {
+  border-top-left-radius: 5px;
+  border-top-right-radius: 5px;
+}
+
+.geld-review__triage-fix:last-child:not([data-open]) > .geld-review__triage-fix-row,
+.geld-review__triage-fix:last-child > .geld-review__triage-fix-body {
+  border-bottom-left-radius: 5px;
+  border-bottom-right-radius: 5px;
+}
+
 .geld-review__triage-fix-row {
   display: flex;
   align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 0 4px 0 0;
+}
+
+.geld-review__triage-fix-row:hover,
+.geld-review__triage-fix[data-open] > .geld-review__triage-fix-row {
+  background: var(--geld-review-hover);
+}
+
+.geld-review__triage-fix-toggle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
   gap: 8px;
-  width: 100%;
-  min-height: 32px;
-  padding: 4px 4px 4px 10px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 4px 0 10px;
   border: 0;
   background: none;
   color: var(--fgColor-default, var(--color-fg-default));
@@ -3285,15 +3310,14 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   cursor: pointer;
 }
 
-.geld-review__triage-fix-row:hover,
-.geld-review__triage-fix[data-open] > .geld-review__triage-fix-row {
-  background: var(--geld-review-hover);
-}
-
 .geld-review__triage-fix-glyph {
   display: inline-flex;
   flex: 0 0 auto;
   color: var(--geld-review-muted);
+}
+
+.geld-review__triage-fix[data-kind='agent'] .geld-review__triage-fix-glyph {
+  color: var(--geld-review-attention-fg);
 }
 
 .geld-review__triage-fix[data-state='applied'] .geld-review__triage-fix-glyph {
@@ -3302,6 +3326,7 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 
 .geld-review__triage-fix-title {
   flex: 0 1 auto;
+  max-width: 50%;
   min-width: 0;
   overflow: hidden;
   font-weight: 600;
@@ -3309,26 +3334,36 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   white-space: nowrap;
 }
 
-.geld-review__triage-fix-where {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
+/* The path, fitted in the middle (`fitPathInto`: the file name always, then as much of the start as fits), and its lines. */
+.geld-review__triage-fix-place {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 4em;
   color: var(--geld-review-muted);
   font-size: 12px;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.geld-review__triage-fix-where {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.geld-review__triage-fix-lines {
+  flex: 0 0 auto;
 }
 
 .geld-review__triage-fix-counts,
 .geld-review__triage-fix-state {
   flex: 0 0 auto;
-  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
   font-size: 12px;
 }
 
 .geld-review__triage-fix-counts {
   display: inline-flex;
   gap: 4px;
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
 }
 
 .geld-review__triage-fix-counts [data-kind='add'] {
@@ -3341,14 +3376,26 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 
 .geld-review__triage-fix-state {
   color: var(--fgColor-success, var(--color-success-fg));
-  font-family: inherit;
 }
 
-.geld-review__triage-fix-row .geld-review__chevron {
+.geld-review__triage-fix-state[data-kind='agent'] {
+  color: var(--geld-review-muted);
+}
+
+.geld-review__triage-fix-discard {
+  flex: 0 0 auto;
+  color: var(--geld-review-muted);
+}
+
+.geld-review__triage-fix-discard:hover {
+  color: var(--fgColor-danger, var(--color-danger-fg));
+}
+
+.geld-review__triage-fix-row > .geld-review__chevron {
   flex: 0 0 auto;
 }
 
-.geld-review__triage-fix[data-open] .geld-review__triage-fix-row .geld-review__chevron .octicon {
+.geld-review__triage-fix[data-open] .geld-review__triage-fix-row > .geld-review__chevron .octicon {
   transform: rotate(180deg);
 }
 
@@ -3413,6 +3460,15 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   white-space: pre;
 }
 
+.geld-review__diff tr[data-kind='gap'] {
+  background: var(--diffBlob-hunkLine-bgColor, var(--color-diff-blob-hunk-text, var(--geld-review-subtle)));
+}
+
+.geld-review__diff-gap {
+  color: var(--geld-review-muted);
+  font-family: inherit;
+}
+
 .geld-review__diff tr[data-kind='add'] {
   background: var(--diffBlob-additionLine-bgColor, var(--color-diff-blob-addition-line-bg-color, #dafbe1));
 }
@@ -3431,44 +3487,63 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 
 .geld-review__triage-fix-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
 }
 
-.geld-review__handoff {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 16px 10px 38px;
+/* Discard reads as a quiet link, muted until the pointer is on it, as GitHub's secondary links do. */
+.geld-review__triage-fix-link {
+  margin-right: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--geld-review-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.geld-review__triage-fix-link:hover,
+.geld-review__triage-fix-link:focus-visible {
+  color: var(--fgColor-accent, var(--color-accent-fg));
+}
+
+.geld-review__triage-status {
+  margin: 0 16px 10px 38px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
 }
 
 /* A split button of Geld's own: Primer's group rounds by `:first-child`, which the caret inside its `details` always is. */
-.geld-review__handoff-group {
+.geld-review__split {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: stretch;
 }
 
-.geld-review__handoff-group > .geld-review__menu {
+.geld-review__split > .geld-review__menu {
   display: flex;
 }
 
-.geld-review__handoff-main {
+.geld-review__split-main {
   display: inline-flex !important;
   align-items: center;
   gap: 6px;
-  list-style: none;
-}
-
-.geld-review__handoff-group > .geld-review__handoff-main {
   border-top-right-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
 }
 
-.geld-review__handoff-main .geld-review__bot-icon {
+/* The agent's mark stands as far from the button's left edge as from its top and bottom. */
+.geld-review__split-agent {
+  padding-left: calc((var(--control-small-size, 28px) - 16px) / 2 - 1px) !important;
+}
+
+.geld-review__split-main .geld-review__bot-icon {
   margin: 0;
 }
 
-.geld-review__handoff-caret {
+.geld-review__split-caret {
   display: inline-flex !important;
   align-items: center;
   height: 100%;
@@ -3479,52 +3554,40 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   list-style: none;
 }
 
-.geld-review__handoff-caret::-webkit-details-marker,
-.geld-review__handoff-main::-webkit-details-marker {
+.geld-review__split-caret::-webkit-details-marker {
   display: none;
 }
 
-.geld-review__menu-list.geld-review__handoff-list {
-  right: auto;
-  left: 0;
-  min-width: 260px;
+.geld-review__menu-list.geld-review__split-list {
+  min-width: 200px;
 }
 
-.geld-review__handoff-item {
+.geld-review__split-item {
   display: flex !important;
   align-items: center;
   gap: 8px;
 }
 
-.geld-review__handoff-item .geld-review__bot-icon {
+.geld-review__menu-item.geld-review__split-item > .geld-review__bot-icon {
   flex: 0 0 auto;
   width: 16px;
   height: 16px;
   margin: 0;
 }
 
-.geld-review__handoff-glyph {
+.geld-review__split-glyph {
   display: inline-flex;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
   align-items: center;
   justify-content: center;
   color: var(--geld-review-muted);
 }
 
-.geld-review__handoff-glyph .octicon {
+.geld-review__split-glyph .octicon {
   width: 14px;
   height: 14px;
-}
-
-.geld-review__handoff-name {
-  flex: 0 0 auto;
-}
-
-.geld-review__handoff-item .geld-review__menu-hint {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-align: right;
-  text-overflow: ellipsis;
 }
 
 .geld-review__menu-sep {
@@ -3533,27 +3596,20 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   background: var(--geld-review-border-muted);
 }
 
-.geld-review__handoff-done {
-  color: var(--geld-review-muted);
-  font-size: 12px;
-}
-
 @container geld-review (width <= 640px) {
   .geld-review__triage-line,
   .geld-review__triage-fixes,
-  .geld-review__triage-writing {
+  .geld-review__triage-writing,
+  .geld-review__triage-status {
     margin-left: 16px;
-  }
-
-  .geld-review__handoff {
-    padding-left: 16px;
   }
 
   .geld-review__triage-line {
     flex-wrap: wrap;
   }
 
-  .geld-review__triage-fix-where {
+  .geld-review__triage-fix-place,
+  .geld-review__split-main:has(.octicon, .geld-review__bot-icon) .geld-review__split-label {
     display: none;
   }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SuggestInputItem } from './triage';
-import { codeSpans, diffCounts, lineDiff, numberedLines, parseSuggestOutput, suggestionReplyBody, textLines } from './triage';
+import { codeSpans, diffCounts, diffHunks, lineDiff, numberedLines, parseSuggestOutput, suggestionReplyBody, textLines } from './triage';
 
 const item = (id: string, text: string): SuggestInputItem => ({ id, title: 't', path: 'src/a.ts', excerpts: [], target: { start: 10, end: 10, text }, around: '' });
 
@@ -42,6 +42,26 @@ describe('lineDiff', () => {
 
   it('keeps unchanged lines in the middle as context', () => {
     expect(lineDiff(['x', 'keep', 'y'], ['X', 'keep', 'Y']).map((line) => line.kind)).toEqual(['del', 'add', 'context', 'del', 'add']);
+  });
+});
+
+describe('diffHunks', () => {
+  const lines = (count: number): readonly string[] => Array.from({ length: count }, (_, index) => `line ${index + 1}`);
+
+  it('folds a long unchanged stretch between two changes, keeping three lines of context each side', () => {
+    const before = lines(20);
+    const after = before.map((line, index) => (index === 1 || index === 18 ? `${line}!` : line));
+    const rows = diffHunks(lineDiff(before, after, 100));
+    expect(rows.filter((row) => row.kind === 'gap')).toEqual([{ kind: 'gap', hidden: 10 }]);
+    expect(rows[0]).toEqual({ kind: 'context', text: 'line 1', before: 100, after: 100 });
+    expect(rows.at(-1)).toEqual({ kind: 'context', text: 'line 20', before: 119, after: 119 });
+  });
+
+  it('never folds a single line, nor anything in a short fix', () => {
+    const before = lines(9);
+    const after = before.map((line, index) => (index === 0 || index === 8 ? `${line}!` : line));
+    expect(diffHunks(lineDiff(before, after)).some((row) => row.kind === 'gap')).toBe(false);
+    expect(diffHunks(lineDiff(['a'], ['b']))).toHaveLength(2);
   });
 });
 

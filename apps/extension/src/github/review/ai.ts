@@ -508,12 +508,15 @@ export interface TriageSuggestion {
   readonly current: boolean;
 }
 
-/** The triage's fixes worth showing: open ones with a change for findings still open, and ones applied while their finding stands. */
+/**
+ * The triage's rows: a fix for each finding still open (or a note that it needs an agent, where no fix fits its lines),
+ * and fixes applied while their finding stands.
+ */
 export function triageSuggestions(meta: GeldPrMeta): readonly TriageSuggestion[] {
   const byThread = new Map(meta.items.map((item) => [threadKeyOf(item), item]));
   const out: TriageSuggestion[] = [];
   for (const entry of suggestions.values()) {
-    if (entry.state === 'discarded' || entry.replacement === null) continue;
+    if (entry.state === 'discarded') continue;
     const item = byThread.get(entry.key);
     if (item === undefined) continue;
     if (entry.state === 'open' && !isOpenStatus(item.status)) continue;

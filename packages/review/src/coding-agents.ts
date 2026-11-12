@@ -102,9 +102,9 @@ export interface AgentFinding {
   readonly url?: string;
 }
 
-/** The task for an agent, in plain Markdown: the open findings, where each is, and what to do when done. */
+/** The task for an agent, in plain Markdown: the findings (one, or one problem several reviewers reported), where each is, and what to do when done. */
 export function agentTask(findings: readonly AgentFinding[], pullUrl: string): string {
-  const lines = [`Address the open review findings on ${pullUrl}:`, ''];
+  const lines = [findings.length === 1 ? `Address this review finding on ${pullUrl}:` : `Address these review findings on ${pullUrl}:`, ''];
   findings.forEach((finding, index) => {
     const where = finding.path === undefined ? '' : ` (\`${finding.path}${finding.line === undefined ? '' : `:${finding.line}`}\`)`;
     lines.push(`${index + 1}. ${finding.title}${where}`);

@@ -25,7 +25,7 @@ import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassi
 import { aiPending, aiStateFor, clearAiForPage, discardSuggestion, jevDecisionsFor, loadAiForPage, markSuggestionApplied, previewDecisionKey, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi, withJevDone } from './ai';
 import type { AiState, SuggestionSource, SuggestionTarget } from './ai';
 import { applyFix } from './apply-suggestion';
-import { agentComment, agentsInRelatedLinks, agentTask, CODING_AGENTS, codingAgentById, lineDiff, recommendAgents } from '@geld/review';
+import { agentComment, agentsInRelatedLinks, agentTask, CODING_AGENTS, codingAgentById, diffHunks, lineDiff, recommendAgents } from '@geld/review';
 import type { CodingAgent } from '@geld/review';
 import { relatedLinksOnPage } from '../related-links';
 import { wholeFileLines } from '../whole-file';
@@ -2618,7 +2618,8 @@ function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, pr
     start: entry.start,
     end: entry.end,
     summary: entry.summary,
-    diff: lineDiff(entry.original, entry.replacement ?? [], entry.start),
+    kind: entry.replacement === null ? ('agent' as const) : ('fix' as const),
+    diff: entry.replacement === null ? [] : diffHunks(lineDiff(entry.original, entry.replacement, entry.start)),
     reporters: [...new Set([item, ...partners].flatMap((each) => authorLabels(each)))],
     threads: 1 + partners.length,
     state: entry.state === 'applied' ? ('applied' as const) : ('open' as const),
@@ -2632,7 +2633,6 @@ function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, pr
     recommended: pick.recommended === null || pick.reason === null ? null : { id: pick.recommended.id, reason: pick.reason },
     openKey: visit.triage.openKey,
     collapsed: visit.triage.collapsed,
-    findings: meta.items.filter((item) => isOpenStatus(item.status)).length,
     writing: aiPending().has('suggest'),
     handedOff: visit.triage.handedOff,
   };
@@ -4194,24 +4194,25 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         reapplySoon();
       });
     },
-    onHandOff: (agentId, how) => {
+    onHandOff: (agentId, how, key) => {
       const subject = subjectOf();
       if (subject === null) return;
       const pullUrl = `${subject.origin}/${subject.owner}/${subject.repo}/pull/${subject.number}`;
-      const findings = meta.items
-        .filter((item) => isOpenStatus(item.status))
-        .map((item) => {
-          const note = triageNoteFor(item);
-          const anchor = item.sources[0]?.anchor;
-          return {
-            title: item.title,
-            ...(item.path === undefined ? {} : { path: item.path }),
-            ...(item.line === undefined ? {} : { line: item.line }),
-            ...(item.context === undefined ? {} : { context: item.context }),
-            ...(note === null ? {} : { suggestion: note }),
-            ...(anchor === undefined ? {} : { url: `${pullUrl}#${anchor}` }),
-          };
-        });
+      // The row's finding and the others its fix answers: an agent is asked about one problem at a time.
+      const row = triageSuggestions(meta).find((entry) => entry.entry.key === key);
+      const findings = (row === undefined ? [] : [row.item, ...row.partners]).map((item) => {
+        const anchor = item.sources[0]?.anchor;
+        const note = triageNoteFor(item);
+        return {
+          title: item.title,
+          ...(item.path === undefined ? {} : { path: item.path }),
+          ...(item.line === undefined ? {} : { line: item.line }),
+          ...(item.context === undefined ? {} : { context: item.context }),
+          ...(note === null ? {} : { suggestion: note }),
+          ...(anchor === undefined ? {} : { url: `${pullUrl}#${anchor}` }),
+        };
+      });
+      if (findings.length === 0) return;
       const task = agentTask(findings, pullUrl);
       const said = (text: string): void => {
         visit.triage.handedOff = text;

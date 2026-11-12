@@ -183,6 +183,32 @@ export function lineDiff(before: readonly string[], after: readonly string[], st
   });
 }
 
+/** A diff row as shown: a line, or unchanged lines folded away between two changes. */
+export type DiffRow = DiffLine | { readonly kind: 'gap'; readonly hidden: number };
+
+/**
+ * The diff as GitHub shows a hunk: `context` unchanged lines kept on each side of a change, and a longer unchanged
+ * stretch between them folded into one gap row, so a fix across a wide range reads as its changes.
+ */
+export function diffHunks(lines: readonly DiffLine[], context = 3): readonly DiffRow[] {
+  const keep = lines.map((_, index) => lines.slice(Math.max(0, index - context), index + context + 1).some((line) => line.kind !== 'context'));
+  // A fold of one line hides nothing worth folding.
+  keep.forEach((kept, index) => {
+    if (!kept && keep[index - 1] !== false && keep[index + 1] !== false) keep[index] = true;
+  });
+  const rows: DiffRow[] = [];
+  let hidden = 0;
+  lines.forEach((line, index) => {
+    if (keep[index] === true) {
+      if (hidden > 0) rows.push({ kind: 'gap', hidden });
+      hidden = 0;
+      rows.push(line);
+    } else hidden += 1;
+  });
+  if (hidden > 0) rows.push({ kind: 'gap', hidden });
+  return rows;
+}
+
 export function diffCounts(lines: readonly DiffLine[]): { readonly added: number; readonly removed: number } {
   return { added: lines.filter((line) => line.kind === 'add').length, removed: lines.filter((line) => line.kind === 'del').length };
 }
