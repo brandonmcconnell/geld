@@ -5,7 +5,7 @@ import type { NightlyFolder, NightlyStatus } from './state';
 /** What the nightly panel says, worked out from the stored state alone, the same in the popup and on the page. */
 
 export type NightlyAction = 'install' | 'retry' | 'restore' | 'rollback' | 'check' | 'connect' | 'manage';
-export type NightlyTone = 'ok' | 'ready' | 'busy' | 'error' | 'paused';
+export type NightlyTone = 'ok' | 'ready' | 'busy' | 'error' | 'paused' | 'needs-folder';
 
 export interface NightlyView {
   readonly headline: string;
@@ -84,11 +84,10 @@ function viewText(status: NightlyStatus, folder: NightlyFolder | null, version: 
   }
   if (folder === null) {
     const which = installedIn === null ? 'the folder it runs from' : installedIn;
-    const waiting = newer === null ? '' : `${capital(buildLabel(newer.version))} is ready. `;
     return {
       headline: 'Folder not connected',
-      detail: `${waiting}Geld can only install builds once you connect ${which}.${installedIn === null ? '' : ' Pick it when Chrome asks.'}`,
-      tone: 'ready',
+      detail: `Geld can only install builds once you connect ${which}.${installedIn === null ? '' : ' Pick it when Chrome asks.'}`,
+      tone: 'needs-folder',
       action: { kind: 'connect', label: 'Connect folder' },
     };
   }

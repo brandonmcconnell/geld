@@ -33,10 +33,12 @@ const status = (patch: Partial<NightlyStatus>): NightlyStatus => ({
 });
 
 describe('nightlyView', () => {
-  it('leads with connecting the folder until there is one, naming a build that waits on it', () => {
+  it('is about connecting the folder until there is one, whatever build is out', () => {
     const view = nightlyView(status({ latest: release(3305) }), null, '0.1.2.3301', NOW);
     expect(view.headline).toBe('Folder not connected');
-    expect(view.detail).toBe('Build 3305 is ready. Geld can only install builds once you connect the folder it runs from.');
+    expect(view.detail).toBe('Geld can only install builds once you connect the folder it runs from.');
+    expect(view.tone).toBe('needs-folder');
+    expect(nightlyView(status({ latest: release(3301) }), null, '0.1.2.3301', NOW).tone).toBe('needs-folder');
     expect(view.action).toEqual({ kind: 'connect', label: 'Connect folder' });
   });
 

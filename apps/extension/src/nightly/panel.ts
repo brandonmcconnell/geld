@@ -29,11 +29,19 @@ const CSS = `
 .geld-nightly__status[data-tone='paused'] { align-items: flex-start; flex-direction: column; padding: 10px 12px; border: 1px solid var(--destructive); }
 .geld-nightly__status[data-tone='paused'] .geld-nightly__headline { color: var(--destructive); font-weight: 600; }
 .geld-nightly__status .geld-button { flex-shrink: 0; }
-.geld-nightly__side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
-.geld-nightly__check { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted-foreground); white-space: nowrap; }
-.geld-nightly__check:hover { color: var(--foreground); }
-.geld-nightly__check svg { width: 12px; height: 12px; vertical-align: -1px !important; }
+.geld-nightly { --geld-nightly-amber: light-dark(oklch(0.56 0.13 65), oklch(0.82 0.14 80)); }
+.geld-nightly__status[data-tone='needs-folder'] { padding: 10px 12px; border: 1px solid color-mix(in oklch, var(--geld-nightly-amber) 55%, transparent); background: color-mix(in oklch, var(--geld-nightly-amber) 8%, transparent); }
+.geld-nightly__status[data-tone='needs-folder'] .geld-nightly__headline { color: var(--geld-nightly-amber); font-weight: 600; }
+.geld-nightly__headrow { display: flex; align-items: center; gap: 4px; }
+.geld-nightly__check { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border: 0; background: none; color: var(--muted-foreground); cursor: pointer; }
+.geld-nightly__check:hover, .geld-nightly__check:focus-visible { color: var(--foreground); }
+.geld-nightly__check:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+.geld-nightly__check:disabled { cursor: default; }
+.geld-nightly__check svg { width: 12px; height: 12px; }
 .geld-nightly__check[aria-busy='true'] svg { animation: geld-nightly-spin 0.9s linear infinite; }
+.geld-nightly__tip { position: absolute; top: calc(100% + 8px); left: 50%; z-index: 10; padding: 6px 8px; border: 1px solid var(--border); background: var(--popover); box-shadow: 0 4px 12px oklch(0 0 0 / 12%); color: var(--foreground); font-size: 12px; font-weight: 400; line-height: 1.4; white-space: nowrap; transform: translateX(-50%); pointer-events: none; visibility: hidden; }
+.geld-nightly__tip::before { content: ''; position: absolute; top: -5px; left: calc(50% - 4px); width: 8px; height: 8px; border: 1px solid var(--border); border-right: 0; border-bottom: 0; background: var(--popover); transform: rotate(45deg); }
+.geld-nightly__check:hover .geld-nightly__tip, .geld-nightly__check:focus-visible .geld-nightly__tip { visibility: visible; }
 @keyframes geld-nightly-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .geld-nightly__check[aria-busy='true'] svg { animation: none; } }
 `;
@@ -76,22 +84,21 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
   const headline = element('p', 'geld-nightly__headline');
   headline.setAttribute('aria-live', 'polite');
   const detail = element('p', 'geld-nightly__detail');
-  const detailText = element('span', '');
-  const check = element('button', 'geld-button geld-button--link geld-nightly__check');
+  const check = element('button', 'geld-nightly__check');
   check.type = 'button';
   const checkIcon = document.createElement('template');
   checkIcon.innerHTML = ICON_SYNC;
-  const checkLabel = element('span', '', 'Check for updates');
-  check.append(...checkIcon.content.childNodes, checkLabel);
-  detail.append(detailText);
+  const checkTip = element('span', 'geld-nightly__tip');
+  checkTip.setAttribute('aria-hidden', 'true');
+  check.append(...checkIcon.content.childNodes, checkTip);
+  const headrow = element('div', 'geld-nightly__headrow');
+  headrow.append(headline, check);
   const text = element('div', 'geld-nightly__text');
-  text.append(headline, detail);
+  text.append(headrow, detail);
   const action = element('button', 'geld-button geld-button--small');
   action.type = 'button';
-  const side = element('div', 'geld-nightly__side');
-  side.append(action, check);
   const status = element('div', 'geld-nightly__status');
-  status.append(text, side);
+  status.append(text, action);
   const top = element('div', 'geld-nightly__top');
   top.append(name, modes);
   host.append(top, status);
@@ -116,17 +123,16 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
     }
     const view = nightlyView(state, folder, version, Date.now(), conflict, installedIn);
     headline.textContent = view.headline;
-    detailText.textContent = localError ?? view.detail ?? '';
-    detailText.hidden = detailText.textContent === '';
+    detail.textContent = localError ?? view.detail ?? '';
+    detail.hidden = detail.textContent === '';
     check.hidden = !view.check;
     check.disabled = checking || busy;
     check.setAttribute('aria-busy', String(checking));
-    checkLabel.textContent = checking ? 'Checking…' : 'Check for updates';
-    detail.hidden = detailText.hidden;
+    checkTip.textContent = checking ? 'Checking…' : 'Check for updates';
+    check.setAttribute('aria-label', checking ? 'Checking for updates' : 'Check for updates');
     status.dataset['tone'] = localError === null ? view.tone : 'error';
     current = view.action?.kind ?? null;
     action.hidden = view.action === null;
-    side.hidden = action.hidden && check.hidden;
     action.textContent = view.action?.label ?? '';
     action.classList.toggle('geld-button--primary', current === 'install' || current === 'restore');
     action.disabled = busy;
