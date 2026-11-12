@@ -554,8 +554,11 @@ export interface PanelHandlers {
   /** Commit the fix to the pull request's branch, and with `resolve` resolve every thread it answers. */
   readonly onApplySuggestion: (key: string, resolve: boolean) => void;
   readonly onDiscardSuggestion: (key: string) => void;
-  /** Hand a finding (by its thread's key) to a coding agent: a comment that starts it, its own app, or the task copied. */
-  readonly onHandOff: (agentId: string, how: HandOff, key: string) => void;
+  /**
+   * Hand a finding (by its thread's key) on: `comment` posts what starts the agent `id`, `open` opens it in the open
+   * target `id` (`OPEN_TARGETS`), `copy` copies the task for any other.
+   */
+  readonly onHandOff: (id: string, how: HandOff, key: string) => void;
   /** "Request a bot" / "Request an agent": the feedback page, its draft asking Geld to support another review bot or coding agent. */
   readonly onMissingTool: (tool: MissingTool) => void;
 }
@@ -587,17 +590,33 @@ export interface TriageSuggestionView {
 export interface TriageAgent {
   readonly id: string;
   readonly name: string;
-  readonly command: string;
+  /** What starts it in a comment on the pull request; null for an agent started from its own app only (T3 Code). */
+  readonly command: string | null;
   readonly iconSrc: string | null;
   readonly note: string | null;
-  /** It opens a task in its own app too (Cursor's prompt link). */
-  readonly opens: boolean;
+  /** For an agent no comment starts (T3 Code): the open target its one action follows. */
+  readonly opens: string | null;
   /** The pull request's links show its author used it. */
   readonly used: boolean;
+  /** Likely to answer here (`agentLikely`): the menus list it before the rest, which wait behind "Other agents". */
+  readonly likely: boolean;
+}
+
+/** One way to open a finding as a draft: a service's web app or its app, a line of its own in the menu. */
+export interface TriageOpenTarget {
+  readonly id: string;
+  readonly service: string;
+  readonly variant: 'web' | 'app';
+  readonly iconSrc: string | null;
+  readonly likely: boolean;
+  /** Its link cannot carry the task, so the task is copied to paste there (Cursor on the web). */
+  readonly copiesTask: boolean;
 }
 
 export interface TriageView {
   readonly suggestions: readonly TriageSuggestionView[];
+  /** Every web app and app a finding opens in, in the registry's order. */
+  readonly openTargets: readonly TriageOpenTarget[];
   /** Every agent, the recommended one first. */
   readonly agents: readonly TriageAgent[];
   readonly recommended: { readonly id: string; readonly reason: 'preferred' | 'used' } | null;
@@ -605,8 +624,8 @@ export interface TriageView {
   readonly collapsed: boolean;
   /** The fixes are still being written. */
   readonly writing: boolean;
-  /** What the last hand-off did, said once under the card: "Posted @cursor". */
-  readonly handedOff: string | null;
+  /** What the last hand-off did, said once under the card ("Posted @cursor"), and the finding to offer copying again after a failed copy. */
+  readonly handedOff: { readonly text: string; readonly copyAgain: string | null } | null;
 }
 
 export function itemKey(id: string): string {
@@ -1417,7 +1436,16 @@ function triageCard(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     } else if (triage.writing) {
       card.append(createElement('p', { class: `${PANEL_CLASS}__triage-writing`, 'data-pending': '' }, ['Writing fixes for the open threads…']));
     }
-    if (triage.handedOff !== null) card.append(createElement('p', { class: `${PANEL_CLASS}__triage-status`, role: 'status' }, [triage.handedOff]));
+    if (triage.handedOff !== null) {
+      const status = createElement('p', { class: `${PANEL_CLASS}__triage-status`, role: 'status' }, [triage.handedOff.text]);
+      const again = triage.handedOff.copyAgain;
+      if (again !== null) {
+        const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__triage-fix-link`, [ATTR_FOCUS]: 'triage-copy-again' }, ['Copy the task']);
+        button.addEventListener('click', () => handlers.onHandOff('', 'copy', again));
+        status.append(' ', button);
+      }
+      card.append(status);
+    }
   }
   return card.children.length === 0 ? null : card;
 }
@@ -1530,6 +1558,10 @@ function splitButton(main: HTMLButtonElement, label: string, focusKey: string, f
   caret.addEventListener('click', (event) => event.stopPropagation());
   const list = createElement('div', { class: `${PANEL_CLASS}__menu-list ${PANEL_CLASS}__split-list`, role: 'menu' });
   fill(list, () => details.removeAttribute('open'));
+  // "Other agents" folds again when the menu closes, so the menu always opens on the likely agents.
+  details.addEventListener('toggle', () => {
+    if (!details.open) for (const more of list.querySelectorAll('details[open]')) more.removeAttribute('open');
+  });
   details.append(caret, list);
   main.classList.add(`${PANEL_CLASS}__split-main`);
   return createElement('div', { class: `${PANEL_CLASS}__split` }, [main, details]);
@@ -1545,16 +1577,68 @@ function menuItem(content: readonly (Node | string)[], close: () => void, onSele
   return node;
 }
 
-/** "Fix with Cursor", "Open in Cursor" and "Copy the task", for one finding, the recommended agent first. */
+const VARIANT_WORD: Readonly<Record<TriageOpenTarget['variant'], string>> = { web: 'Web', app: 'App' };
+
+/**
+ * For one finding, two sections under small sticky headings. "Fix in PR": "Fix with" each agent a comment on the pull
+ * request starts. "Open in agent": "Open in" each service's web app or app, one line per way in, a pill saying which,
+ * each with the service's mark. In both, what is likely here comes first (as the review bots' request menu puts the
+ * bots it has a sign of first) and the rest wait behind a disclosure; with nothing likely, everything is listed.
+ */
 function agentItems(list: HTMLElement, key: string, triage: TriageView, handlers: PanelHandlers, close: () => void, skip: string | null): void {
-  for (const agent of triage.agents) {
-    if (agent.id !== skip) list.append(menuItem([agentMark(agent), `Fix with ${agent.name}`], close, () => handlers.onHandOff(agent.id, 'comment', key)));
-  }
-  for (const agent of triage.agents) {
-    if (agent.opens) list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_LINK_EXTERNAL)]), `Open in ${agent.name}`], close, () => handlers.onHandOff(agent.id, 'open', key)));
-  }
-  list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_COPY)]), 'Copy the task'], close, () => handlers.onHandOff('', 'copy', key)));
+  const section = (heading: string, items: readonly HTMLElement[], folded: readonly HTMLElement[], more: string): void => {
+    if (items.length + folded.length === 0) return;
+    list.append(createElement('div', { class: `${PANEL_CLASS}__split-heading`, role: 'presentation' }, [heading]));
+    list.append(...items);
+    if (folded.length === 0) return;
+    const disclosure = createElement('details', { class: `${PANEL_CLASS}__request-more ${PANEL_CLASS}__split-more` });
+    const summary = createElement('summary', { class: `${PANEL_CLASS}__request-more-summary` }, [icon(ICON_CHEVRON_RIGHT), more]);
+    summary.addEventListener('click', (event) => event.stopPropagation());
+    disclosure.append(summary, ...folded);
+    list.append(disclosure);
+  };
+  const fixItem = (agent: TriageAgent): HTMLElement => menuItem([agentMark(agent), `Fix with ${agent.name}`], close, () => handlers.onHandOff(agent.id, 'comment', key));
+  const openItem = (target: TriageOpenTarget): HTMLElement => {
+    const item = menuItem(
+      [
+        target.iconSrc === null ? createElement('span', { class: `${PANEL_CLASS}__bot-icon`, 'aria-hidden': 'true' }) : markImg(target.iconSrc, false),
+        createElement('span', { class: `${PANEL_CLASS}__split-name` }, [`Open in ${target.service}`]),
+        createElement('span', { class: `${PANEL_CLASS}__split-pill` }, [VARIANT_WORD[target.variant]]),
+      ],
+      close,
+      () => handlers.onHandOff(target.id, 'open', key),
+    );
+    if (target.copiesTask) item.title = `Copies the task, then opens ${target.service} to paste it`;
+    return item;
+  };
+  const fixers = likelyFirst(triage.agents.filter((agent) => agent.command !== null));
+  const lead = skip === null ? undefined : triage.agents.find((agent) => agent.id === skip);
+  const show = (agent: TriageAgent): boolean => agent.id !== skip;
+  const shown = fixers.first.filter(show);
+  const foldedFixers = fixers.folded.filter(show);
+  section('Fix in PR', shown.map(fixItem), foldedFixers.map(fixItem), `Other agents (${foldedFixers.length})`);
+  const targets = likelyFirst(triage.openTargets);
+  const keep = (target: TriageOpenTarget): boolean => target.id !== lead?.opens;
+  const shownTargets = targets.first.filter(keep);
+  const foldedTargets = targets.folded.filter(keep);
+  section('Open in agent', shownTargets.map(openItem), foldedTargets.map(openItem), `Other apps (${foldedTargets.length})`);
   list.append(createElement('div', { class: `${PANEL_CLASS}__menu-sep`, role: 'separator' }), missingToolHelp('coding agent', handlers, close, 'menuitem'));
+}
+
+/**
+ * What a menu lists first and what waits behind its disclosure: the likely entries first, and everything only when none
+ * is likely. Decided by the entries, not by what the menu shows of them: the likely agent may be the row's own button
+ * and so absent from its menu, and the rest still stay folded then. Exported for its test.
+ */
+export function likelyFirst<T extends { readonly likely: boolean }>(entries: readonly T[]): { readonly first: readonly T[]; readonly folded: readonly T[] } {
+  const likely = entries.filter((entry) => entry.likely);
+  return likely.length === 0 ? { first: entries, folded: [] } : { first: likely, folded: entries.filter((entry) => !entry.likely) };
+}
+
+/** "Copy the task" for any other agent, at the top of the menu, then the divider over the agents. */
+function copyItem(list: HTMLElement, key: string, handlers: PanelHandlers, close: () => void): void {
+  list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_COPY)]), 'Copy the task'], close, () => handlers.onHandOff('', 'copy', key)));
+  list.append(createElement('div', { class: `${PANEL_CLASS}__menu-sep`, role: 'separator' }));
 }
 
 const MISSING_TOOL_LABEL: Readonly<Record<MissingTool, string>> = { 'review bot': 'Request a bot', 'coding agent': 'Request an agent' };
@@ -1581,10 +1665,8 @@ function applyControl(fix: TriageSuggestionView, triage: TriageView, handlers: P
   ]);
   main.addEventListener('click', () => handlers.onApplySuggestion(fix.key, false));
   return splitButton(main, 'More ways to fix this', `fix-head-more:${fix.key}`, (list, close) => {
-    if (!blocked) {
-      list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_CHECK)]), 'Apply and resolve'], close, () => handlers.onApplySuggestion(fix.key, true)));
-      list.append(createElement('div', { class: `${PANEL_CLASS}__menu-sep`, role: 'separator' }));
-    }
+    if (!blocked) list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_CHECK)]), 'Apply and resolve'], close, () => handlers.onApplySuggestion(fix.key, true)));
+    copyItem(list, fix.key, handlers, close);
     agentItems(list, fix.key, triage, handlers, close, null);
   });
 }
@@ -1594,7 +1676,10 @@ function agentControl(key: string, triage: TriageView, handlers: PanelHandlers):
   const lead = triage.recommended === null ? undefined : triage.agents.find((agent) => agent.id === triage.recommended?.id);
   if (lead === undefined) {
     const main = createElement('button', { type: 'button', class: 'btn btn-sm', title: 'Hand this finding to a coding agent', [ATTR_FOCUS]: `fix-agent:${key}` }, [createElement('span', { class: `${PANEL_CLASS}__split-label` }, ['Fix with…'])]);
-    const control = splitButton(main, 'Coding agents', `fix-agent-more:${key}`, (list, close) => agentItems(list, key, triage, handlers, close, null));
+    const control = splitButton(main, 'Coding agents', `fix-agent-more:${key}`, (list, close) => {
+      copyItem(list, key, handlers, close);
+      agentItems(list, key, triage, handlers, close, null);
+    });
     // With no agent to lead, the whole button opens the menu.
     main.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -1603,12 +1688,17 @@ function agentControl(key: string, triage: TriageView, handlers: PanelHandlers):
     return control;
   }
   const why = triage.recommended?.reason === 'used' ? `${lead.name} worked on this pull request` : 'Your coding agent in Geld settings';
-  const main = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__split-agent`, title: `Post ${lead.command} on the pull request with this finding. ${why}.`, [ATTR_FOCUS]: `fix-agent:${key}` }, [
+  const what = lead.command === null ? `Open this finding in ${lead.name} as a draft on this pull request` : `Post ${lead.command} on the pull request with this finding`;
+  const main = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__split-agent`, title: `${what}. ${why}.`, [ATTR_FOCUS]: `fix-agent:${key}` }, [
     agentMark(lead),
-    createElement('span', { class: `${PANEL_CLASS}__split-label` }, [`Fix with ${lead.name}`]),
+    // "Fix with" starts an agent from a comment; an agent that only opens a draft in its app says so, as its menu item does.
+    createElement('span', { class: `${PANEL_CLASS}__split-label` }, [lead.command === null ? `Open in ${lead.name}` : `Fix with ${lead.name}`]),
   ]);
-  main.addEventListener('click', () => handlers.onHandOff(lead.id, 'comment', key));
-  return splitButton(main, 'Other coding agents', `fix-agent-more:${key}`, (list, close) => agentItems(list, key, triage, handlers, close, lead.id));
+  main.addEventListener('click', () => (lead.command === null ? lead.opens !== null && handlers.onHandOff(lead.opens, 'open', key) : handlers.onHandOff(lead.id, 'comment', key)));
+  return splitButton(main, 'Other coding agents', `fix-agent-more:${key}`, (list, close) => {
+    copyItem(list, key, handlers, close);
+    agentItems(list, key, triage, handlers, close, lead.id);
+  });
 }
 
 const GROUPING_LABEL: Readonly<Record<PanelModel['grouping'], string>> = { type: 'Type', batch: 'Push' };
