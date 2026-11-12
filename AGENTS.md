@@ -1708,6 +1708,14 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The pull request's author gets a small "Author" pill after the name (GitHub's own `.Label` inside a compact card is hidden;
   it rendered as a full-width box).
   A comment posted through a GitHub App (a review left via Replicas) wears the App's mark on the corner of the picture, read from the timeline row's `.avatar-parent-child a[href*="/apps/"] > img` (alt = name, src, href), and the person's hovercard gets a "Posted via <App>" line linking to the App: GitHub's user hovercard is one shared `.js-hovercard-content` refilled per hover, so `armViaHovercard` arms the login while the marked picture or name is under the pointer and a `MutationObserver` appends the line once the card for that login lands.
+- **Images in rendered Markdown open in Geld's lightbox, on every GitHub page** (`attachment-lightbox.ts`, setting `attachmentLightbox`).
+  An image counts only through its link: GitHub's own link to an upload (`assets/` always, `files/` only when its path names an image), to a repository image (`blob`, `raw`, `raw.githubusercontent.com`), or camo's link from an external image to itself, so a badge linked anywhere else keeps its link.
+  The images are a gallery per rendered body (`.markdown-body`), so one comment's screenshots never mix with another's.
+  The gallery is [Ramka](https://ramka.dev) (`attachment-gallery.tsx`, `@ramka/react`, React 19), the extension's only React: zoom, pan, swipe, pinch and the morph from the inline image are Ramka's, the card, header and footer are Geld's own classes, shared with the video player's `<dialog>`.
+  GitHub's link is handed to Ramka as the trigger (`TriggerBridge`), never rendered again by React, so the page's node stays where it is.
+  The gallery's host is a manual popover, appended to the open `<dialog>` holding the image when there is one (note history): a modal dialog leaves everything outside it inert, and the top layer puts the gallery above it.
+  Ramka adds its CSS as constructed stylesheets (`document.adoptedStyleSheets`) whenever the browser has them, which Firefox content scripts once refused;
+  Firefox 160 takes them (gallery, zoom and arrows checked in Nov 2026), so check again there after updating Ramka.
 - **Comment-only lines** (`@geld/core/comment-lines.ts`, `src/github/ui/comment-rows.ts`).
   `parseUnifiedDiff` also records, per file, the changed lines that hold no code outside comments (language by file name;
   unknown languages are skipped;
