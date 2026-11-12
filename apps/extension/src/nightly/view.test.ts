@@ -124,8 +124,8 @@ describe('nightlyView', () => {
     expect(ready.detail).toBe('GitHub did not answer.');
     expect(ready.action).toEqual({ kind: 'install', label: 'Install' });
     const updated = status({ latest: release(3305), backup: '0.1.2.3301', checkError: 'GitHub did not answer.', lastInstall: { from: '0.1.2.3301', to: '0.1.2.3305', at: minutesAgo(10), method: 'folder' } });
-    expect(nightlyView(updated, folder, '0.1.2.3305', NOW).detail).toBe('Updated from build 3301 10 minutes ago. GitHub did not answer.');
-    expect(nightlyView(updated, folder, '0.1.2.3305', NOW).action).toEqual({ kind: 'rollback', label: 'Roll back' });
+    expect(nightlyView(updated, folder, '0.1.2.3305', NOW).detail).toBe('Updated 10 minutes ago. GitHub did not answer.');
+    expect(nightlyView(updated, folder, '0.1.2.3305', NOW).action).toEqual({ kind: 'rollback', label: 'Roll back', title: 'Go back to build 3301' });
     expect(nightlyView(status({ latest: release(3301), checkError: 'GitHub did not answer.' }), folder, '0.1.2.3301', NOW).detail).toBe('GitHub did not answer.');
     expect(nightlyView(status({ latest: release(3305), checkError: 'GitHub did not answer.' }), null, '0.1.2.3301', NOW).detail).not.toContain('GitHub');
   });
@@ -161,12 +161,17 @@ describe('nightlyView', () => {
     const updated = status({ latest: release(3305), backup: '0.1.2.3301', lastInstall: { from: '0.1.2.3301', to: '0.1.2.3305', at: minutesAgo(10), method: 'folder' } });
     expect(nightlyView(updated, folder, '0.1.2.3305', NOW)).toEqual({
       headline: 'Up to date',
-      detail: 'Updated from build 3301 10 minutes ago.',
+      detail: 'Updated 10 minutes ago',
       tone: 'ok',
-      action: { kind: 'rollback', label: 'Roll back' },
+      action: { kind: 'rollback', label: 'Roll back', title: 'Go back to build 3301' },
       check: true,
     });
     expect(nightlyView(updated, folder, '0.1.2.3305', NOW + 25 * 3_600_000).action).toBeNull();
+  });
+
+  it('keeps the line after a rollback short', () => {
+    const view = nightlyView(status({ latest: release(3301), lastInstall: { from: '0.1.2.3305', to: '0.1.2.3301', at: minutesAgo(2), method: 'folder', rollback: true } }), folder, '0.1.2.3301', NOW);
+    expect(view).toMatchObject({ headline: 'Back on build 3301', detail: 'Went back 2 minutes ago' });
   });
 
   it('says a rolled-back build waits for the reader', () => {

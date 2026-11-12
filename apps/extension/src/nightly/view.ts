@@ -12,7 +12,7 @@ export interface NightlyView {
   readonly headline: string;
   readonly detail: string | null;
   readonly tone: NightlyTone;
-  readonly action: { readonly kind: NightlyAction; readonly label: string } | null;
+  readonly action: { readonly kind: NightlyAction; readonly label: string; readonly title?: string } | null;
   /** Whether "Check for updates" sits under the action: once a folder is connected, except while a build installs or Nightly is paused. */
   readonly check: boolean;
 }
@@ -66,7 +66,7 @@ export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null,
   const check = folder !== null && view.tone !== 'busy' && view.tone !== 'paused';
   // A failed check is said in every state that offers one, beside whatever the line already says and does.
   const failed = check ? status.checkError : null;
-  const detail = failed === null || view.detail?.includes(failed) === true ? view.detail : view.detail === null ? failed : `${view.detail} ${failed}`;
+  const detail = failed === null || view.detail?.includes(failed) === true ? view.detail : view.detail === null ? failed : `${/[.!?]$/.test(view.detail) ? view.detail : `${view.detail}.`} ${failed}`;
   return { ...view, detail, check };
 }
 
@@ -136,13 +136,13 @@ function viewText(status: NightlyStatus, folder: NightlyFolder | null, version: 
   const install = status.lastInstall;
   if (install !== null && install.to === version && now - new Date(install.at).getTime() < RECENT_MS) {
     if (install.rollback === true) {
-      return { headline: `Back on ${buildLabel(version)}`, detail: `Went back from ${buildLabel(install.from)} ${ago(install.at, now)}.`, tone: 'ok', action: null };
+      return { headline: `Back on ${buildLabel(version)}`, detail: `Went back ${ago(install.at, now)}`, tone: 'ok', action: null };
     }
     return {
       headline: 'Up to date',
-      detail: `Updated from ${buildLabel(install.from)} ${ago(install.at, now)}.`,
+      detail: `Updated ${ago(install.at, now)}`,
       tone: 'ok',
-      action: status.backup === install.from ? { kind: 'rollback', label: 'Roll back' } : null,
+      action: status.backup === install.from ? { kind: 'rollback', label: 'Roll back', title: `Go back to ${buildLabel(install.from)}` } : null,
     };
   }
   return {

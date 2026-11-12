@@ -42,6 +42,10 @@ const CSS = `
 .geld-nightly__tip { position: absolute; top: calc(100% + 8px); left: 50%; z-index: 10; padding: 6px 8px; border: 1px solid var(--border); background: var(--popover); box-shadow: 0 4px 12px oklch(0 0 0 / 12%); color: var(--foreground); font-size: 12px; font-weight: 400; line-height: 1.4; white-space: nowrap; transform: translateX(-50%); pointer-events: none; visibility: hidden; }
 .geld-nightly__tip::before { content: ''; position: absolute; top: -5px; left: calc(50% - 4px); width: 8px; height: 8px; border: 1px solid var(--border); border-right: 0; border-bottom: 0; background: var(--popover); transform: rotate(45deg); }
 .geld-nightly__check:hover .geld-nightly__tip, .geld-nightly__check:focus-visible .geld-nightly__tip { visibility: visible; }
+.geld-nightly__action { position: relative; flex-shrink: 0; }
+.geld-nightly__action .geld-nightly__tip { left: auto; right: 0; transform: none; }
+.geld-nightly__action .geld-nightly__tip::before { left: auto; right: 14px; }
+.geld-nightly__action:has(.geld-button:hover) .geld-nightly__tip, .geld-nightly__action:has(.geld-button:focus-visible) .geld-nightly__tip { visibility: visible; }
 @keyframes geld-nightly-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .geld-nightly__check[aria-busy='true'] svg { animation: none; } }
 `;
@@ -97,8 +101,12 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
   text.append(headrow, detail);
   const action = element('button', 'geld-button geld-button--small');
   action.type = 'button';
+  const actionTip = element('span', 'geld-nightly__tip');
+  actionTip.setAttribute('aria-hidden', 'true');
+  const actionWrap = element('span', 'geld-nightly__action');
+  actionWrap.append(action, actionTip);
   const status = element('div', 'geld-nightly__status');
-  status.append(text, action);
+  status.append(text, actionWrap);
   const top = element('div', 'geld-nightly__top');
   top.append(name, modes);
   host.append(top, status);
@@ -134,6 +142,12 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
     current = view.action?.kind ?? null;
     action.hidden = view.action === null;
     action.textContent = view.action?.label ?? '';
+    const tip = view.action?.title;
+    actionTip.textContent = tip ?? '';
+    actionTip.hidden = tip === undefined;
+    if (tip === undefined) action.removeAttribute('aria-label');
+    else action.setAttribute('aria-label', `${view.action?.label ?? ''}: ${tip}`);
+    actionWrap.hidden = action.hidden;
     action.classList.toggle('geld-button--primary', current === 'install' || current === 'restore');
     action.disabled = busy;
   };
