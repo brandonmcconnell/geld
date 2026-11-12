@@ -113,6 +113,8 @@ export function ghostBarDepartures(records: readonly MutationRecord[]): void {
 
 let lastParts: Map<PartKind, Element> | null = null;
 let running: Animation[] = [];
+/** The block the running slide carries. */
+let carried: readonly Element[] = [];
 
 function partsOf(inner: HTMLElement): Map<PartKind, Element> {
   const parts = new Map<PartKind, Element>();
@@ -144,6 +146,7 @@ function hold(elements: readonly Element[], on: boolean): void {
 function cancelRunning(): void {
   for (const animation of running) animation.cancel();
   running = [];
+  carried = [];
 }
 
 /**
@@ -152,7 +155,8 @@ function cancelRunning(): void {
  * it, or the ghosts of the old ones carried out to it before they go. One animation for the whole block, measured from
  * the title (three layout reads, only when parts come or go), and taken over from wherever a running one has got to when
  * React adds or drops its parts in a second commit. A part replaced by another of its kind (GitHub re-rendering its bar,
- * GitHub's label giving way to Geld's pill) moves nothing.
+ * GitHub's label giving way to Geld's pill) moves nothing at rest; mid-slide it is taken along from where the slide has
+ * got to, or it would stand at its place while the rest of the block slid on.
  */
 export function animateBarGroup(): void {
   const inner = document.querySelector<HTMLElement>(PERSISTENT_BAR_INNER);
@@ -168,7 +172,9 @@ export function animateBarGroup(): void {
   const added = [...now.keys()].filter((kind) => before?.has(kind) !== true);
   const removed = [...(before?.keys() ?? [])].filter((kind) => !now.has(kind));
   for (const ghost of fresh) if (before === null || !removed.some((kind) => ghost.getAttribute(ATTR_KIND) === kind)) ghost.remove();
-  if (before === null || (added.length === 0 && removed.length === 0) || !motionAllowed()) return;
+  if (before === null || !motionAllowed()) return;
+  const moved = added.length > 0 || removed.length > 0;
+  if (!moved && (running.length === 0 || blockOf(inner).every((element) => carried.includes(element)))) return;
   const anchor = inner.querySelector<HTMLElement>(':scope > [class*="metadata"] > [class*="number"]') ?? inner.querySelector<HTMLElement>(':scope > [class*="metadata"] > [class*="title"]');
   if (anchor === null) {
     cancelRunning();
@@ -181,7 +187,8 @@ export function animateBarGroup(): void {
   hold(newcomers, false);
   cancelRunning();
   const ghosts = leftGhosts(inner);
-  if (removed.length === 0) {
+  // Taking a running exit over, its ghosts are still on their way out.
+  if (removed.length === 0 && (moved || ghosts.length === 0)) {
     for (const ghost of ghosts) ghost.remove();
     slide(blockOf(inner), seen - anchor.getBoundingClientRect().left, 0, BAR_ENTER, null);
     return;
@@ -203,6 +210,7 @@ function slide(block: readonly HTMLElement[], from: number, to: number, timing: 
     done();
     return;
   }
+  carried = block;
   running = block.map((element) => {
     const animation = element.animate([{ translate: `${from}px 0` }, { translate: `${to}px 0` }], { ...timing, fill: 'forwards' });
     // Taken over or cancelled, it rejects `finished`, which nothing waits on.

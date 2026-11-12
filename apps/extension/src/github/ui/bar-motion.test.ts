@@ -48,11 +48,13 @@ function stick(inner: HTMLElement): void {
  * Layout as the block's script reads it: the number stands 100px further right for every part or ghost before it that
  * is not held out of the layout.
  */
-function fakeLayout(inner: HTMLElement): void {
+function fakeLayout(inner: HTMLElement, sliding: { offset: number } = { offset: 0 }): void {
   const number = inner.querySelector<HTMLElement>('[class*="number"]')!;
   number.getBoundingClientRect = () => {
     const before = [...inner.querySelectorAll('[data-testid="mini-header-tab-switcher-trigger"], [class*="navigationDivider"], [data-component="StateLabel"], [data-geld-ghost="left"]')].filter((part) => !part.hasAttribute('data-geld-bar-hold'));
-    return DOMRect.fromRect({ x: 16 + 100 * before.length, y: 0, width: 20, height: 20 });
+    // A running slide's translate shows in the box until the slide is cancelled.
+    const moving = number.closest('[class*="metadata"]')!.getAnimations().some((animation) => animation.playState !== 'idle');
+    return DOMRect.fromRect({ x: 16 + 100 * before.length + (moving ? sliding.offset : 0), y: 0, width: 20, height: 20 });
   };
 }
 
@@ -165,6 +167,38 @@ describe('bar motion', () => {
       stick(inner);
     });
     ghostBarDepartures(records);
+    animateBarGroup();
+    expect(slidesNow()).toHaveLength(0);
+    expect(inner.querySelector('[data-geld-ghost]')).toBeNull();
+  });
+
+  it('takes a part GitHub replaces mid-slide along from where the slide has got to', () => {
+    const inner = bar(false);
+    const sliding = { offset: 0 };
+    fakeLayout(inner, sliding);
+    animateBarGroup();
+    stick(inner);
+    animateBarGroup();
+    const slidesNow = watchSlides();
+    sliding.offset = -120;
+    const fresh = document.createElement('button');
+    fresh.setAttribute('data-testid', 'mini-header-tab-switcher-trigger');
+    ghostBarDepartures(recording(() => inner.querySelector('[data-testid="mini-header-tab-switcher-trigger"]')!.replaceWith(fresh)));
+    animateBarGroup();
+    const slides = slidesNow();
+    expect(slides.map((slide) => slide.element)).toContain(fresh);
+    expect(new Set(slides.map((slide) => `${slide.from} → ${slide.to}`))).toEqual(new Set(['-120px 0 → 0px 0']));
+    expect(inner.querySelector('[data-geld-ghost]')).toBeNull();
+  });
+
+  it('keeps a replacement still when the bar is at rest', () => {
+    const inner = bar();
+    fakeLayout(inner);
+    animateBarGroup();
+    const slidesNow = watchSlides();
+    const fresh = document.createElement('button');
+    fresh.setAttribute('data-testid', 'mini-header-tab-switcher-trigger');
+    ghostBarDepartures(recording(() => inner.querySelector('[data-testid="mini-header-tab-switcher-trigger"]')!.replaceWith(fresh)));
     animateBarGroup();
     expect(slidesNow()).toHaveLength(0);
     expect(inner.querySelector('[data-geld-ghost]')).toBeNull();
