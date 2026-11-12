@@ -84,6 +84,7 @@ const PERSONAL_KEYS = [
   'aiModel',
   'aiDecisionModel',
   'suggestedFixes',
+  'codingAgent',
   'autoViewed',
   'testOutline',
   'testSyntaxes',

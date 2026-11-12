@@ -12,7 +12,7 @@
 import type { GeldSettings } from '@geld/core';
 import { persist } from '../../lib/context';
 import { whenIdle } from '../../lib/idle';
-import type { AddressedEvidence, CommentLane, ConsolidateInputItem, ConsolidateOutputItem, GeldPrMeta, JevAnswer, JevRequest, LaneInput, Preview, PreviewStatusInput, RawComment, ReviewItem, ReviewSummary, ThreadInput } from '@geld/review';
+import type { AddressedEvidence, CommentLane, ConsolidateInputItem, ConsolidateOutputItem, GeldPrMeta, JevAnswer, JevRequest, LaneInput, Preview, PreviewStatusInput, RawComment, ReviewItem, ReviewSummary, SuggestInputItem, SuggestPullRequest, ThreadInput } from '@geld/review';
 import {
   applyAddressed,
   applyConsolidation,
@@ -43,10 +43,19 @@ import {
   summaryIsCurrent,
   summaryRecord,
   summaryUserPrompt,
+  codeSpans,
+  isBotOnly,
+  isOpenStatus,
+  numberedLines,
+  parseSuggestOutput,
+  sourceExcerpts,
+  SUGGEST_JSON_SCHEMA,
+  SUGGEST_SYSTEM,
+  suggestUserPrompt,
 } from '@geld/review';
 import type { Carried } from '@geld/review';
 import { browser } from 'wxt/browser';
-import type { AiRunRecord, JevDecision } from '../../lib/local-state';
+import type { AiRunRecord, JevDecision, StoredSuggestion } from '../../lib/local-state';
 import { AI_RUNS_CAP, aiGatewayItem, aiKeyItem, aiRunsItem, jevDecisionsItem, jevKeyItem, jevSourceItem } from '../../lib/local-state';
 import type { AiCompleteRequest, AiEvaluateRequest } from '../../lib/messages';
 import { isAiCompleteResponse, isAiEvaluateResponse } from '../../lib/messages';
@@ -59,6 +68,10 @@ import { countUsage } from '../../lib/usage-count';
 /** What the model said about each item on this pull request, hydrated from the run store (`local:aiRuns`). */
 const rewrites = new Map<string, ConsolidateOutputItem>();
 let summary: ReviewSummary | undefined;
+/** Comment anchors the model has been shown on this pull request (`PlanOptions.seen`). */
+const seen = new Set<string>();
+/** The triage's fixes, by the thread they are for. */
+const suggestions = new Map<string, StoredSuggestion>();
 /** The pull request the module state belongs to, and its record as last stored. */
 let runKey: string | null = null;
 let lastRun: AiRunRecord | null = null;
@@ -102,6 +115,8 @@ export function loadAiForPage(key: string, onLoaded: () => void): void {
   runKey = key;
   rewrites.clear();
   summary = undefined;
+  seen.clear();
+  suggestions.clear();
   lastRun = null;
   inFlight.clear();
   const loading = aiRunsItem.getValue().then(
@@ -124,6 +139,21 @@ function adopt(record: AiRunRecord): void {
   rewrites.clear();
   for (const entry of record.rewrites) rewrites.set(entry.id, entry);
   summary = record.summary;
+  seen.clear();
+  for (const anchor of record.seen ?? []) seen.add(anchor);
+  suggestions.clear();
+  for (const entry of record.suggestions ?? []) suggestions.set(entry.key, entry);
+}
+
+function recordOf(ranAt: string, error: string | null): AiRunRecord {
+  return {
+    ranAt,
+    rewrites: [...rewrites.values()],
+    ...(summary === undefined ? {} : { summary }),
+    ...(error === null ? {} : { error }),
+    seen: [...seen],
+    suggestions: [...suggestions.values()],
+  };
 }
 
 async function store(record: AiRunRecord | null): Promise<void> {
@@ -144,6 +174,8 @@ async function store(record: AiRunRecord | null): Promise<void> {
 export async function clearAiForPage(): Promise<void> {
   rewrites.clear();
   summary = undefined;
+  seen.clear();
+  suggestions.clear();
   lastRun = null;
   await store(null);
 }
@@ -163,8 +195,11 @@ export type AiState =
   | { readonly kind: 'nothing' }
   | { readonly kind: 'running' }
   | { readonly kind: 'current'; readonly ranAt: string }
-  | { readonly kind: 'stale'; readonly ranAt: string }
+  | { readonly kind: 'stale'; readonly ranAt: string; readonly reason: StaleReason }
   | { readonly kind: 'failed'; readonly ranAt: string; readonly error: string };
+
+/** What a run now would read that the last one did not: new comments or threads, or commits its fixes predate. */
+export type StaleReason = 'comments' | 'commits';
 
 export function aiStateFor(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings): AiState {
   if (meta.producer.ai) return { kind: 'app', hasLocal: lastRun !== null };
@@ -174,16 +209,68 @@ export function aiStateFor(meta: GeldPrMeta, comments: readonly RawComment[], se
   if (summaryInput(withAi(meta).items).length === 0) return { kind: 'nothing' };
   if (lastRun === null) return { kind: 'ready' };
   if (lastRun.error !== undefined) return { kind: 'failed', ranAt: lastRun.ranAt, error: lastRun.error };
-  return hasWork(meta, comments, settings) ? { kind: 'stale', ranAt: lastRun.ranAt } : { kind: 'current', ranAt: lastRun.ranAt };
+  const work = workFor(meta, comments, settings);
+  return work === null ? { kind: 'current', ranAt: lastRun.ranAt } : { kind: 'stale', ranAt: lastRun.ranAt, reason: work };
 }
 
-/** Whether a run now would ask the model anything: items whose sources the last run did not see, or a TL;DR behind the items. */
-function hasWork(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings): boolean {
+function wantFix(settings: GeldSettings): boolean {
+  return settings.suggestedFixes === 'all' || settings.suggestedFixes === 'ai';
+}
+
+/**
+ * Whether the triage proposes fixes. They are what the reader asked for by running it, so only `off` stops them:
+ * `bots` and `ai` choose which fixes stand on an item (`fixVisible`), as the setting's copy says.
+ */
+export function triageFixesOn(settings: GeldSettings): boolean {
+  return settings.suggestedFixes !== 'off';
+}
+
+const anchorsOf = (items: readonly ReviewItem[]): readonly string[] => items.flatMap((item) => item.sources.map((source) => source.anchor));
+
+/** The fix was written from every comment its threads hold now: no reply arrived since that it has not read. */
+function writtenFrom(entry: StoredSuggestion, items: readonly ReviewItem[]): boolean {
+  if (entry.sources === undefined) return true;
+  const read = new Set(entry.sources);
+  return anchorsOf(items).every((anchor) => read.has(anchor));
+}
+
+/**
+ * What a run now would ask the model about, if anything: comments it has not been shown, a TL;DR behind the open
+ * items, or findings whose fix was written for an earlier commit. Null when a run would change nothing, so the panel
+ * offers no run that would only cost a request.
+ */
+function workFor(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings): StaleReason | null {
   const known = withAi(meta);
-  const plan = planConsolidation(known, meta.items, { comments, wantFix: settings.suggestedFixes === 'all' || settings.suggestedFixes === 'ai' });
-  if (plan.pending.length > 0) return true;
+  const plan = planConsolidation(known, meta.items, { comments, wantFix: wantFix(settings), seen });
+  if (plan.pending.length > 0) return 'comments';
   const input = summaryInput(known.items);
-  return input.length > 0 && !summaryIsCurrent(known.summary ?? summary, known.items);
+  if (input.length > 0 && !summaryIsCurrent(known.summary ?? summary, known.items)) return 'comments';
+  if (!triageFixesOn(settings)) return null;
+  for (const item of suggestionCandidates(meta.items)) {
+    const existing = suggestionFor(threadKeyOf(item));
+    if (existing === undefined) return 'comments';
+    if (existing.state !== 'open') continue;
+    if (!writtenFrom(existing, [item])) return 'comments';
+    if (existing.headSha !== meta.headSha) return 'commits';
+  }
+  return null;
+}
+
+/** The first comment's anchor of the item's review thread: it stays when replies join, unlike the item's id. */
+export function threadKeyOf(item: ReviewItem): string {
+  return item.sources.find((source) => source.kind === 'thread')?.anchor ?? '';
+}
+
+/** Open bot findings on a review thread, the ones a fix can be proposed for. People's requests stay theirs to settle. */
+function suggestionCandidates(items: readonly ReviewItem[]): readonly ReviewItem[] {
+  return items.filter((item) => isOpenStatus(item.status) && isBotOnly(item) && item.path !== undefined && threadKeyOf(item) !== '');
+}
+
+function suggestionFor(threadKey: string): StoredSuggestion | undefined {
+  const own = suggestions.get(threadKey);
+  if (own !== undefined) return own;
+  for (const entry of suggestions.values()) if (entry.threads.includes(threadKey)) return entry;
+  return undefined;
 }
 
 /**
@@ -279,33 +366,49 @@ export interface ConsolidateRun {
   readonly changed: boolean;
 }
 
+/** What the triage needs from the page to propose fixes: the pull request's intent, and each finding's lines. */
+export interface SuggestionSource {
+  readonly pull: SuggestPullRequest;
+  /** The lines the finding's thread is on and the whole file at the head, or null when its thread takes no suggestion (outdated, unreadable). */
+  readonly target: (item: ReviewItem) => Promise<SuggestionTarget | null>;
+}
+
+export interface SuggestionTarget {
+  readonly path: string;
+  readonly start: number;
+  readonly end: number;
+  /** The file at the head, line 1 first. */
+  readonly lines: readonly string[];
+}
+
+/** Findings asked about in one request: enough for one pull request's open threads, few enough to keep the answer reliable. */
+const SUGGEST_BATCH = 12;
+const SUGGEST_MARGIN = 25;
+
 /**
- * Run the model for this pull request, on the reader's request: consolidate
- * the open bot-only items whose sources the last run did not see and write
- * (or refresh) the TL;DR, then store the result on this device. `onProgress`
- * fires as soon as requests start, so the rows can shimmer, and again when
- * results land. A run that gets no usable answer is stored with its reason.
+ * Run the model for this pull request, on the reader's request: consolidate the open bot-only items whose comments the
+ * model has not been shown, write (or refresh) the TL;DR, and propose a fix for each open bot finding that has none for
+ * this commit, then store it all on this device. Nothing is asked that was asked before: a finding the model left as
+ * reported, or a fix whose lines did not change across a push, costs no request. `onProgress` fires as requests start,
+ * so the rows can shimmer, and again when results land. A run that gets no usable answer is stored with its reason.
  */
-export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings, onProgress: () => void): Promise<ConsolidateRun> {
+export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings, onProgress: () => void, source: SuggestionSource | null = null): Promise<ConsolidateRun> {
   if (meta.producer.ai || !(await aiConfigured(settings)) || inFlight.size > 0) return { changed: false };
   await hydrating;
   const apiKey = (await aiKeyItem.getValue()).trim();
   if (apiKey === '') return { changed: false };
-  countUsage('ai_triage_run');
   const known: GeldPrMeta = withAi(meta);
-  const plan = planConsolidation(known, meta.items, { comments, wantFix: settings.suggestedFixes === 'all' || settings.suggestedFixes === 'ai' });
+  const plan = planConsolidation(known, meta.items, { comments, wantFix: wantFix(settings), seen });
   const pending = plan.pending;
   const needsTldr = summaryInput(known.items).length > 0 && !summaryIsCurrent(known.summary ?? summary, known.items);
+  const needsFixes = source !== null && triageFixesOn(settings) && workFor(meta, comments, settings) !== null;
   const ranAt = new Date().toISOString();
-  if (pending.length === 0 && !needsTldr) {
-    // Nothing new to ask about: the run still counts, so the control says when the reader last looked.
-    lastRun = { ranAt, rewrites: [...rewrites.values()], ...(summary === undefined ? {} : { summary }) };
-    await store(lastRun);
-    return { changed: true };
-  }
+  if (pending.length === 0 && !needsTldr && !needsFixes) return { changed: false };
+  countUsage('ai_triage_run');
 
   for (const item of pending) inFlight.add(item.id);
   if (needsTldr) inFlight.add('tldr');
+  if (needsFixes) inFlight.add('suggest');
   onProgress();
 
   let failure: string | null = null;
@@ -320,24 +423,183 @@ export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], s
         else failure = 'The model answered in a shape Geld could not read.';
       }
     }
+    // Shown to the model or judged to need nothing from it: either way, not asked again until a new comment joins.
+    if (failure === null) for (const item of pending) for (const anchor of item.sources) seen.add(anchor);
     for (const item of pending) inFlight.delete(item.id);
     onProgress();
   }
+  const items = applyConsolidation(meta.items, new Map<string, Carried>(), [...rewrites.values()]);
   if (needsTldr && failure === null) {
-    const items = applyConsolidation(meta.items, new Map<string, Carried>(), [...rewrites.values()]);
     const result = await complete(settings, apiKey, SUMMARY_SYSTEM, summaryUserPrompt(summaryInput(items), summary?.tldr ?? null), SUMMARY_JSON_SCHEMA, 'geld_summary');
     if (!result.ok) failure = result.reason;
     else {
       const parsed = parseSummaryOutput(result.text);
-      if (parsed !== null && parsed.ok) summary = summaryRecord(parsed.value, items, ranAt);
+      const paths = items.flatMap((item) => (item.path === undefined ? [] : [item.path]));
+      if (parsed !== null && parsed.ok) summary = summaryRecord(codeSpans(parsed.value, paths), items, ranAt);
       else failure = 'The model answered in a shape Geld could not read.';
     }
   }
   inFlight.delete('tldr');
-  lastRun = { ranAt, rewrites: [...rewrites.values()], ...(summary === undefined ? {} : { summary }), ...(failure === null ? {} : { error: failure }) };
+  onProgress();
+  if (needsFixes && source !== null && failure === null) failure = await proposeFixes(meta.headSha, items, comments, settings, apiKey, source);
+  inFlight.delete('suggest');
+  lastRun = recordOf(ranAt, failure);
   await store(lastRun);
   onProgress();
   return { changed: true };
+}
+
+/**
+ * Fixes for the open bot findings that have none for this commit. A fix written for an earlier commit whose lines read
+ * the same now is carried to this one without asking; the rest are asked about together, so findings reporting one
+ * problem can share a fix. Resolves with the reason when the model could not answer.
+ */
+async function proposeFixes(headSha: string, items: readonly ReviewItem[], comments: readonly RawComment[], settings: GeldSettings, apiKey: string, source: SuggestionSource): Promise<string | null> {
+  const asks: Array<{ readonly item: ReviewItem; readonly target: SuggestionTarget }> = [];
+  // Threads that own their fix first: a partner reads what became of the fix it shares.
+  const owns = (item: ReviewItem): boolean => (suggestionFor(threadKeyOf(item))?.key ?? threadKeyOf(item)) === threadKeyOf(item);
+  const candidates = [...suggestionCandidates(items)].sort((a, b) => Number(owns(b)) - Number(owns(a)));
+  const openThreads = new Set(candidates.map(threadKeyOf));
+  for (const item of candidates) {
+    const key = threadKeyOf(item);
+    const existing = suggestionFor(key);
+    if (existing !== undefined && existing.state !== 'open') continue;
+    const fresh = existing !== undefined && writtenFrom(existing, [item]);
+    if (existing !== undefined && fresh && existing.headSha === headSha) continue;
+    const target = await source.target(item);
+    if (target === null) {
+      // Unreadable or outdated here: this thread leaves any fix it shared and gets a placeholder of its own for this
+      // commit, so the next run does not count it as behind. A shared fix written for its lines goes, and its partners
+      // are asked about on their own.
+      const shared = existing === undefined ? undefined : suggestions.get(existing.key);
+      if (shared !== undefined && shared.threads.length > 1) {
+        if (shared.key === key) suggestions.delete(key);
+        else suggestions.set(shared.key, { ...shared, threads: shared.threads.filter((thread) => thread !== key) });
+      }
+      const ownNote = existing?.key === key && existing.threads.length === 1 && existing.replacement === null ? existing.summary : '';
+      suggestions.set(key, { key, threads: [key], headSha, path: item.path ?? '', start: 0, end: 0, original: [], replacement: null, summary: ownNote, state: 'open', sources: [...anchorsOf([item])] });
+      continue;
+    }
+    if (existing !== undefined && existing.key !== key) {
+      // A partner follows the fix it shares while that fix's own thread is open and nothing new arrived in its own.
+      const shared = suggestions.get(existing.key);
+      if (fresh && openThreads.has(existing.key) && shared !== undefined) continue;
+      if (shared !== undefined) suggestions.set(existing.key, { ...shared, threads: shared.threads.filter((thread) => thread !== key) });
+      asks.push({ item, target });
+      continue;
+    }
+    const original = target.lines.slice(target.start - 1, target.end);
+    if (existing !== undefined && fresh && existing.key === key && existing.start === target.start && existing.end === target.end && existing.original.join('\n') === original.join('\n')) {
+      suggestions.set(key, { ...existing, headSha });
+      continue;
+    }
+    asks.push({ item, target });
+  }
+  const byTitle = new Map<string, string[]>();
+  for (const { item } of asks) byTitle.set(item.title, [...(byTitle.get(item.title) ?? []), threadKeyOf(item)]);
+  for (let at = 0; at < asks.length; at += SUGGEST_BATCH) {
+    const batch = asks.slice(at, at + SUGGEST_BATCH);
+    const inputs: SuggestInputItem[] = batch.map(({ item, target }) => {
+      const key = threadKeyOf(item);
+      const partners = (byTitle.get(item.title) ?? []).filter((other) => other !== key);
+      return {
+        id: key,
+        title: item.title,
+        ...(item.context === undefined ? {} : { context: item.context }),
+        path: target.path,
+        excerpts: sourceExcerpts(comments, item),
+        target: { start: target.start, end: target.end, text: target.lines.slice(target.start - 1, target.end).join('\n') },
+        around: numberedLines(target.lines, target.start, target.end, SUGGEST_MARGIN),
+        ...(partners.length === 0 ? {} : { sameProblemAs: partners }),
+      };
+    });
+    const result = await complete(settings, apiKey, SUGGEST_SYSTEM, suggestUserPrompt(source.pull, inputs), SUGGEST_JSON_SCHEMA, 'geld_suggest');
+    if (!result.ok) return result.reason;
+    const parsed = parseSuggestOutput(result.text, inputs);
+    if (parsed === null) return 'The model answered in a shape Geld could not read.';
+    const targets = new Map(batch.map(({ item, target }) => [threadKeyOf(item), target]));
+    const asked = new Map(batch.map(({ item }) => [threadKeyOf(item), item]));
+    const paths = items.flatMap((item) => (item.path === undefined ? [] : [item.path]));
+    for (const entry of parsed) {
+      const key = entry.ids[0] ?? '';
+      const target = targets.get(key);
+      if (target === undefined) continue;
+      for (const other of entry.ids.slice(1)) suggestions.delete(other);
+      suggestions.set(key, {
+        key,
+        threads: entry.ids,
+        headSha,
+        path: target.path,
+        start: target.start,
+        end: target.end,
+        original: target.lines.slice(target.start - 1, target.end),
+        replacement: entry.replacement,
+        summary: codeSpans(entry.summary, paths),
+        state: 'open',
+        sources: [...anchorsOf(entry.ids.flatMap((id) => asked.get(id) ?? []))],
+      });
+    }
+  }
+  return null;
+}
+
+/** A fix the triage proposed, as the panel shows it: its finding's current title and whether it is for the head. */
+export interface TriageSuggestion {
+  readonly entry: StoredSuggestion;
+  /** The finding the fix is for (the first of the threads it answers). */
+  readonly item: ReviewItem;
+  /** The other findings it settles with the same change. */
+  readonly partners: readonly ReviewItem[];
+  /** Written at the head commit from every comment its threads hold: an earlier commit or a reply since makes it stale. */
+  readonly current: boolean;
+}
+
+/**
+ * The triage's rows: a fix for each finding still open (or a note that it needs an agent, where no fix fits its lines),
+ * and fixes applied while their finding stands.
+ */
+export function triageSuggestions(meta: GeldPrMeta, settings: GeldSettings): readonly TriageSuggestion[] {
+  if (!triageFixesOn(settings)) return [];
+  const byThread = new Map(meta.items.map((item) => [threadKeyOf(item), item]));
+  const out: TriageSuggestion[] = [];
+  for (const entry of suggestions.values()) {
+    if (entry.state === 'discarded') continue;
+    const item = byThread.get(entry.key);
+    if (item === undefined) continue;
+    if (entry.state === 'open' && !isOpenStatus(item.status)) continue;
+    const partners = entry.threads.slice(1).flatMap((key) => {
+      const partner = byThread.get(key);
+      return partner === undefined ? [] : [partner];
+    });
+    out.push({ entry, item, partners, current: entry.headSha === meta.headSha && writtenFrom(entry, [item, ...partners]) });
+  }
+  return out;
+}
+
+/** What the triage said is needed where no fix fits a finding's lines, for the hand-off to an agent. */
+export function triageNoteFor(item: ReviewItem): string | null {
+  const entry = suggestionFor(threadKeyOf(item));
+  return entry === undefined || entry.summary === '' ? null : entry.summary;
+}
+
+async function settle(key: string, state: StoredSuggestion['state'], anchors: readonly string[] = []): Promise<void> {
+  const entry = suggestions.get(key);
+  if (entry === undefined) return;
+  suggestions.set(key, { ...entry, state, ...(entry.sources === undefined ? {} : { sources: [...entry.sources, ...anchors] }) });
+  // Geld's own reply in the thread is not news for the model.
+  for (const anchor of anchors) seen.add(anchor);
+  if (lastRun !== null) {
+    lastRun = recordOf(lastRun.ranAt, lastRun.error ?? null);
+    await store(lastRun);
+  }
+}
+
+export function discardSuggestion(key: string): Promise<void> {
+  return settle(key, 'discarded');
+}
+
+export function markSuggestionApplied(key: string, replyAnchor: string | null): Promise<void> {
+  return settle(key, 'applied', replyAnchor === null ? [] : [replyAnchor]);
 }
 
 /** Titles the model has already rewritten for this pull request. */

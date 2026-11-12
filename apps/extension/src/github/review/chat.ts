@@ -882,7 +882,7 @@ function dressOverviewUnresolve(thread: HTMLElement): void {
 /**
  * The lines a thread is on, as GitHub names them: the Overview's heading ("Line 8230", "Lines 845 - 853"), the
  * classic snippet's "Comment on lines +3331 to +3335", or for a single classic line the last numbered row of the
- * snippet (the line the comment is on). Exported for its test only.
+ * snippet (the line the comment is on).
  */
 export function threadLinesOf(thread: HTMLElement): { readonly start: number; readonly end: number } | null {
   const of = (start: string | undefined, end: string | undefined): { readonly start: number; readonly end: number } | null => {

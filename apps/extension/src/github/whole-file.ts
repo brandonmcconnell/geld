@@ -46,3 +46,18 @@ async function read(origin: string, repo: string, sha: string, path: string): Pr
   if (lines[lines.length - 1] === '') lines.pop();
   return lines;
 }
+
+/** The same file as a promise, from the same cache: the lines, or null when it cannot be read. */
+export function wholeFileLines(origin: string, repo: string, sha: string, path: string): Promise<readonly string[] | null> {
+  const key = `${origin}/${repo}@${sha}:${path}`;
+  const entry = files.get(key);
+  if (entry?.state === 'ready') return Promise.resolve(entry.lines);
+  if (entry?.state === 'failed') return Promise.resolve(null);
+  return read(origin, repo, sha, path).then(
+    (lines) => {
+      files.set(key, lines === null ? { state: 'failed' } : { state: 'ready', lines });
+      return lines;
+    },
+    () => null,
+  );
+}
