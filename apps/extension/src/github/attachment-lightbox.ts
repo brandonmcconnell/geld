@@ -26,6 +26,8 @@ function attachmentLink(image: HTMLImageElement): HTMLAnchorElement | null {
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
   if (url.hostname === 'user-images.githubusercontent.com' || url.hostname === 'private-user-images.githubusercontent.com') return link;
   if (url.hostname === 'raw.githubusercontent.com' || url.hostname === 'media.githubusercontent.com') return IMAGE_PATH.test(url.pathname) ? link : null;
+  // GitHub proxies an external image through camo and links it to itself, so only that self-link counts.
+  if (url.hostname === 'camo.githubusercontent.com') return url.href === image.src ? link : null;
   if (url.origin !== window.location.origin) return null;
   return /^\/(?:user-attachments\/(?:assets|files)\/|[^/]+\/[^/]+\/(?:assets|files)\/)/.test(url.pathname)
     || (/^\/[^/]+\/[^/]+\/(?:blob|raw)\//.test(url.pathname) && IMAGE_PATH.test(url.pathname)) ? link : null;
