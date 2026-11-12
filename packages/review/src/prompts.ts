@@ -11,10 +11,10 @@ import { ADDRESSED_VERDICTS, SEVERITIES } from './model';
 export const CONSOLIDATE_SYSTEM = `You consolidate code-review findings for a pull-request digest. Each item is one concern; its sources are the comments (from review bots and people) that raised it.
 Rules:
 - "title": one line, at most 80 characters, no trailing period. Say what is wrong or asked, naming the symbol or file when it helps. Keep the reporters' meaning; never invent a bug.
-- "context": at most two sentences with what a reader needs beyond the title — the consequence, the condition, the reasoning a source gave. Omit it when the title already says everything. Merge duplicates: when several sources report the same thing, keep the union of useful detail once.
+- "context": at most two sentences with what a reader needs beyond the title — the consequence, the condition, the reasoning a source gave. Use null when the title already says everything. Merge duplicates: when several sources report the same thing, keep the union of useful detail once.
 - When "previousTitle" is given, the item was already summarised; change the title and context only as much as the new sources require. Prefer keeping them.
-- "fix": only when asked ("wantFix": true) and only when a concrete change follows from the sources; a short code or prose change, no commentary. Omit otherwise.
-- "severity": one of the allowed values when you can tell; omit otherwise.
+- "fix": only when asked ("wantFix": true) and only when a concrete change follows from the sources; a short code or prose change, no commentary. null otherwise.
+- "severity": one of the allowed values when you can tell; null otherwise.
 - When "sameProblemAs" lists other ids, those items were judged to report the same underlying problem: give them one and the same title, and let each context say which other reporters raised it.
 - Return JSON only, matching the schema. Every id must be one of the ids you were given.`;
 
@@ -66,9 +66,9 @@ const consolidateOutputSchema = z.object({
     z.object({
       id: z.string().min(1),
       title: z.string().min(1).max(120),
-      severity: z.enum(SEVERITIES).optional(),
-      context: z.string().max(600).optional(),
-      fix: z.string().max(2000).optional(),
+      severity: z.enum(SEVERITIES).nullish(),
+      context: z.string().max(600).nullish(),
+      fix: z.string().max(2000).nullish(),
     }),
   ),
 });
@@ -138,13 +138,14 @@ export const CONSOLIDATE_JSON_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['id', 'title'],
+        // Strict structured outputs reject optional keys, so the optional fields are required and nullable.
+        required: ['id', 'title', 'severity', 'context', 'fix'],
         properties: {
           id: { type: 'string' },
           title: { type: 'string' },
-          severity: { type: 'string', enum: [...SEVERITIES] },
-          context: { type: 'string' },
-          fix: { type: 'string' },
+          severity: { type: ['string', 'null'], enum: [...SEVERITIES, null] },
+          context: { type: ['string', 'null'] },
+          fix: { type: ['string', 'null'] },
         },
       },
     },
@@ -190,7 +191,7 @@ export function parseConsolidateOutput(text: string, allowedIds: ReadonlySet<str
   if (!parsed.success) return { ok: false, issues: issuesOf(parsed.error) };
   const kept = keepKnownIds(parsed.data.items, allowedIds).map((entry) => {
     const item: ConsolidateOutputItem = { id: entry.id, title: entry.title.trim().replace(/\.$/, '') };
-    const graded = entry.severity === undefined ? item : { ...item, severity: entry.severity };
+    const graded = entry.severity === undefined || entry.severity === null ? item : { ...item, severity: entry.severity };
     const context = entry.context?.trim() ?? '';
     const explained = context === '' ? graded : { ...graded, context };
     const fix = entry.fix?.trim() ?? '';

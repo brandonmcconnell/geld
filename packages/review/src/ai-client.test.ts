@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { completeChat, joinUrl, listModels } from './ai-client';
+import type { ChatCompletionOptions } from './ai-client';
 import { evaluateDecision } from './jev';
 
 describe('ai-client', () => {
@@ -166,4 +167,17 @@ it('calls the given fetch on its own, as a browser requires of its native fetch'
       request: { model: 'jev-latest', state: 'Fixture', questions: { a: { type: 'noul', instructions: 'Yes?' } } },
     }),
   ).toEqual({ ok: true, model: 'jev', answers: { a: { type: 'noul', noul: 0.9 } } });
+});
+
+it('leaves temperature to the provider unless the caller sets one', async () => {
+  const bodies: unknown[] = [];
+  const fetchImpl = async (_input: string, init?: RequestInit): Promise<Response> => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }));
+  };
+  const options: ChatCompletionOptions = { fetch: fetchImpl, baseUrl: 'https://api.openai.com', apiKey: 'synthetic', model: 'gpt-5', messages: [{ role: 'user', content: 'hi' }] };
+  await completeChat(options);
+  await completeChat({ ...options, temperature: 0.2 });
+  expect(bodies[0]).not.toHaveProperty('temperature');
+  expect(bodies[1]).toHaveProperty('temperature', 0.2);
 });

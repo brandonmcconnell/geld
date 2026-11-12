@@ -6,14 +6,18 @@ import type { NightlyFolder, NightlyStatus, UpdateMode } from './state';
 /** What the nightly panel says, worked out from the stored state alone, the same in the popup and on the page. */
 
 export type NightlyAction = 'install' | 'retry' | 'restore' | 'rollback' | 'check' | 'connect' | 'manage';
-export type NightlyTone = 'ok' | 'ready' | 'busy' | 'error' | 'paused';
+export type NightlyTone = 'ok' | 'ready' | 'busy' | 'error' | 'paused' | 'needs-folder';
 
 export interface NightlyView {
   readonly headline: string;
   readonly detail: string | null;
   readonly tone: NightlyTone;
   readonly action: { readonly kind: NightlyAction; readonly label: string } | null;
+  /** Whether "Check for updates" sits under the action: once a folder is connected, except while a build installs or Nightly is paused. */
+  readonly check: boolean;
 }
+
+type ViewText = Omit<NightlyView, 'check'>;
 
 export function buildLabel(version: string): string {
   const build = buildOf(version);
@@ -33,7 +37,7 @@ export function ago(iso: string, now: number): string {
 /** A change the reader may want to undo is offered for a day. */
 const RECENT_MS = 24 * 60 * 60 * 1000;
 
-export function pausedView(conflict: Conflict): NightlyView {
+export function pausedView(conflict: Conflict): ViewText {
   return conflict.kind === 'stable'
     ? {
         headline: 'Geld Nightly is paused',
@@ -56,8 +60,18 @@ export interface NightlyViewContext {
   readonly mode?: UpdateMode;
 }
 
+export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null, version: string, now: number, context: NightlyViewContext = {}): NightlyView {
+  const { conflict = null, installedIn = null, mode = 'automatic' } = context;
+  const view = conflict === null ? viewText(status, folder, version, now, installedIn, mode) : pausedView(conflict);
+  const check = folder !== null && view.tone !== 'busy' && view.tone !== 'paused';
+  // A failed check is said in every state that offers one, beside whatever the line already says and does.
+  const failed = check ? status.checkError : null;
+  const detail = failed === null || view.detail?.includes(failed) === true ? view.detail : view.detail === null ? failed : `${view.detail} ${failed}`;
+  return { ...view, detail, check };
+}
+
 /** Why the waiting build did not install, when that is still the case and newer than any failure of the same build. */
-function blockerView(status: NightlyStatus, folder: NightlyFolder, newer: NightlyRelease, mode: UpdateMode): NightlyView | null {
+function blockerView(status: NightlyStatus, folder: NightlyFolder, newer: NightlyRelease, mode: UpdateMode): ViewText | null {
   const blocked = status.blocked;
   if (blocked === null || blocked.version !== newer.version || newer.version === status.skipped) return null;
   const failure = status.failure;
@@ -76,9 +90,7 @@ function blockerView(status: NightlyStatus, folder: NightlyFolder, newer: Nightl
   return { headline, detail: blocked.reason, tone: 'ready', action: { kind: 'connect', label: 'Connect folder' } };
 }
 
-export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null, version: string, now: number, context: NightlyViewContext = {}): NightlyView {
-  const { conflict = null, installedIn = null, mode = 'automatic' } = context;
-  if (conflict !== null) return pausedView(conflict);
+function viewText(status: NightlyStatus, folder: NightlyFolder | null, version: string, now: number, installedIn: string | null, mode: UpdateMode): ViewText {
   const latest = status.latest;
   const newer = latest !== null && compareVersions(latest.version, version) > 0 ? latest : null;
   if (status.installing !== null) {
@@ -105,10 +117,11 @@ export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null,
     };
   }
   if (folder === null) {
+    const which = installedIn === null ? 'the folder it runs from' : installedIn;
     return {
-      headline: newer === null ? 'Up to date' : `${capital(buildLabel(newer.version))} is ready`,
-      detail: installedIn === null ? 'Connect the folder Geld runs from so it can install builds.' : `Connect ${installedIn} so Geld can install builds. Pick it when Chrome asks.`,
-      tone: newer === null ? 'ok' : 'ready',
+      headline: 'Folder not connected',
+      detail: `Geld can only install builds once you connect ${which}.${installedIn === null ? '' : ' Pick it when Chrome asks.'}`,
+      tone: 'needs-folder',
       action: { kind: 'connect', label: 'Connect folder' },
     };
   }
@@ -136,7 +149,7 @@ export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null,
     headline: 'Up to date',
     detail: status.checkError ?? (status.checkedAt === null ? 'Not checked yet.' : `Checked ${ago(status.checkedAt, now)}.`),
     tone: status.checkError === null ? 'ok' : 'error',
-    action: { kind: 'check', label: 'Check now' },
+    action: null,
   };
 }
 

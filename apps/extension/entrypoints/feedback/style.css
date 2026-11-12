@@ -389,3 +389,17 @@ body {
 .feedback__send-tip[hidden] {
   display: none;
 }
+
+.feedback__warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: light-dark(#9a6700, #d29922);
+}
+
+.feedback__warning svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  fill: currentColor;
+}

@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { allCategories, DEFAULT_SETTINGS } from '@geld/core';
 import { EMPTY_BREAKDOWN } from './breakdown';
-import { applyHeaderStats, ATTR_COUNTS_STAND_IN, branchGroupTotals, countsSkeletonStandIn, findHeaderStatGroups, isCountsStandIn, syncCountsStandIn } from './header-stats';
+import { applyHeaderStats, ATTR_COUNTS_STAND_IN, branchGroupTotals, countsSkeletonStandIn, findHeaderStatGroups, isCountsStandIn, LIVE_COUNTS_STAND_IN, syncCountsStandIn } from './header-stats';
 import { setTabCounts } from './tab-counts';
 
 /** A pull request header's tab row as GitHub renders it, its counts wrapper empty for a change of binary files only. */
@@ -232,6 +232,26 @@ describe('syncCountsStandIn on the new page', () => {
     stick(false);
     expect(syncCountsStandIn(ZERO)).toBe(false);
     expect(counts?.parentElement).toBe(tabs);
+  });
+
+  it('leaves a ghost in the bar to slide out as it goes back to the tab row, and none on the way in', () => {
+    vi.stubGlobal('CSSStartingStyleRule', class {});
+    const { tabs, bar } = overview(REAL_COUNTS);
+    syncCountsStandIn(ZERO);
+    stick(true);
+    syncCountsStandIn(ZERO);
+    expect(tabs.querySelector('[data-geld-ghost]')).toBeNull();
+    stick(false);
+    syncCountsStandIn(ZERO);
+    expect(bar.firstElementChild?.getAttribute('data-geld-ghost')).toBe('down');
+    expect(document.querySelectorAll(LIVE_COUNTS_STAND_IN)).toHaveLength(1);
+    expect(tabs.querySelector(LIVE_COUNTS_STAND_IN)).not.toBeNull();
+    // Back in the bar while the ghost still slides out: the stand-in moves itself, never takes the ghost for it.
+    stick(true);
+    syncCountsStandIn(ZERO);
+    expect(bar.querySelectorAll(LIVE_COUNTS_STAND_IN)).toHaveLength(1);
+    expect(tabs.querySelector(LIVE_COUNTS_STAND_IN)).toBeNull();
+    vi.unstubAllGlobals();
   });
 
   it('stands first in the bar when the page loads scrolled past the tabs', () => {

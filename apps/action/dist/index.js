@@ -33491,10 +33491,10 @@ function renderSummary(meta3, subject) {
 var CONSOLIDATE_SYSTEM = `You consolidate code-review findings for a pull-request digest. Each item is one concern; its sources are the comments (from review bots and people) that raised it.
 Rules:
 - "title": one line, at most 80 characters, no trailing period. Say what is wrong or asked, naming the symbol or file when it helps. Keep the reporters' meaning; never invent a bug.
-- "context": at most two sentences with what a reader needs beyond the title \u2014 the consequence, the condition, the reasoning a source gave. Omit it when the title already says everything. Merge duplicates: when several sources report the same thing, keep the union of useful detail once.
+- "context": at most two sentences with what a reader needs beyond the title \u2014 the consequence, the condition, the reasoning a source gave. Use null when the title already says everything. Merge duplicates: when several sources report the same thing, keep the union of useful detail once.
 - When "previousTitle" is given, the item was already summarised; change the title and context only as much as the new sources require. Prefer keeping them.
-- "fix": only when asked ("wantFix": true) and only when a concrete change follows from the sources; a short code or prose change, no commentary. Omit otherwise.
-- "severity": one of the allowed values when you can tell; omit otherwise.
+- "fix": only when asked ("wantFix": true) and only when a concrete change follows from the sources; a short code or prose change, no commentary. null otherwise.
+- "severity": one of the allowed values when you can tell; null otherwise.
 - When "sameProblemAs" lists other ids, those items were judged to report the same underlying problem: give them one and the same title, and let each context say which other reporters raised it.
 - Return JSON only, matching the schema. Every id must be one of the ids you were given.`;
 var SUMMARY_SYSTEM = `You write the TL;DR of a pull request's review state for its digest.
@@ -33511,9 +33511,9 @@ var consolidateOutputSchema = external_exports.object({
     external_exports.object({
       id: external_exports.string().min(1),
       title: external_exports.string().min(1).max(120),
-      severity: external_exports.enum(SEVERITIES).optional(),
-      context: external_exports.string().max(600).optional(),
-      fix: external_exports.string().max(2e3).optional()
+      severity: external_exports.enum(SEVERITIES).nullish(),
+      context: external_exports.string().max(600).nullish(),
+      fix: external_exports.string().max(2e3).nullish()
     })
   )
 });
@@ -33557,13 +33557,14 @@ var CONSOLIDATE_JSON_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["id", "title"],
+        // Strict structured outputs reject optional keys, so the optional fields are required and nullable.
+        required: ["id", "title", "severity", "context", "fix"],
         properties: {
           id: { type: "string" },
           title: { type: "string" },
-          severity: { type: "string", enum: [...SEVERITIES] },
-          context: { type: "string" },
-          fix: { type: "string" }
+          severity: { type: ["string", "null"], enum: [...SEVERITIES, null] },
+          context: { type: ["string", "null"] },
+          fix: { type: ["string", "null"] }
         }
       }
     }
@@ -33605,7 +33606,7 @@ function parseConsolidateOutput(text, allowedIds) {
   if (!parsed.success) return { ok: false, issues: issuesOf2(parsed.error) };
   const kept = keepKnownIds(parsed.data.items, allowedIds).map((entry2) => {
     const item = { id: entry2.id, title: entry2.title.trim().replace(/\.$/, "") };
-    const graded = entry2.severity === void 0 ? item : { ...item, severity: entry2.severity };
+    const graded = entry2.severity === void 0 || entry2.severity === null ? item : { ...item, severity: entry2.severity };
     const context = entry2.context?.trim() ?? "";
     const explained = context === "" ? graded : { ...graded, context };
     const fix = entry2.fix?.trim() ?? "";
@@ -33653,9 +33654,9 @@ async function completeChat(options) {
   if (options.apiKey === "") return { ok: false, reason: "No API key." };
   const body = {
     model: options.model,
-    messages: options.messages,
-    temperature: options.temperature ?? 0
+    messages: options.messages
   };
+  if (options.temperature !== void 0) body.temperature = options.temperature;
   if (options.jsonSchema !== void 0) {
     body.response_format = {
       type: "json_schema",

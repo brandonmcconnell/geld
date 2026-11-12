@@ -3,7 +3,8 @@
  * shown: the number and title, then its actions ("Merge status", GitHub's review button, the panel toggles).
  */
 const PERSISTENT_BAR = '[data-testid="diff-comparison-viewer-sticky-header-slot"][class*="Persistent"]';
-const PERSISTENT_BAR_ACTIONS = `${PERSISTENT_BAR} [data-testid="diff-comparison-viewer-sticky-header-bar"] [class*="miniHeaderInner"] > [class*="actions"]`;
+export const PERSISTENT_BAR_INNER = `${PERSISTENT_BAR} [data-testid="diff-comparison-viewer-sticky-header-bar"] [class*="miniHeaderInner"]`;
+const PERSISTENT_BAR_ACTIONS = `${PERSISTENT_BAR_INNER} > [class*="actions"]`;
 /** What GitHub adds to the bar once the page header's tabs have scrolled under it, and takes away when they come back. */
 const STUCK_MARK = `${PERSISTENT_BAR} [data-testid="mini-header-tab-switcher-trigger"]`;
 
