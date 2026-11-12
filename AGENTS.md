@@ -1734,6 +1734,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   GitHub's link is handed to Ramka as the trigger (`TriggerBridge`), never rendered again by React, so the page's node stays where it is.
   Ramka's pull to dismiss is off (`pullToClose={false}`): at 1x it reads a trackpad's two-finger scroll as a pull, shrinking the card, which looked like a zoom, and closing it.
   A plain wheel or trackpad scroll zooms toward the pointer instead (`scrollToZoom`), as the viewer before Ramka did, and back to Fit, where it stops.
+  Ramka also hides the image it morphs from (`[data-morph-target]`, opacity 0, the image shown as the reader pages through) for as long as the gallery is open, which left a hole in the comment behind the backdrop.
+  The stylesheet keeps it shown (`!important`, since Ramka's sheet is adopted after the page's): the gallery's image is its own `<img>` of the same address, served from the browser's cache, and the open and close morphs are View Transition snapshots, which need no hiding.
   The gallery's host is a manual popover, appended to the open `<dialog>` holding the image when there is one (note history): a modal dialog leaves everything outside it inert, and the top layer puts the gallery above it.
   Ramka adds its CSS as constructed stylesheets (`document.adoptedStyleSheets`) whenever the browser has them, which Firefox content scripts once refused;
   Firefox 160 takes them (gallery, zoom and arrows checked in Nov 2026), so check again there after updating Ramka.
