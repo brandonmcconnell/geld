@@ -1374,7 +1374,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   **"Check for updates" is a bare refresh icon right after the status headline** (`NightlyView.check`, `.geld-nightly__check`), in Manual and Automatic alike, once a folder is connected and except while a build installs or Nightly is paused, so a reader never has to wait for the next page load or the 30-minute alarm.
   Its words are in a tooltip of the panel's own, drawn like the popup's, since the panel also runs on the nightly page, and the icon stands outside the headline's live region so the tooltip is not announced.
   While the background's look runs the tooltip reads "Checking…" and the glyph turns.
-  After an update or a rollback, the build it came from is a tag between the headline and that icon (`NightlyView.from`, `from 4163`), so the line under it stays short: "Updated 19 minutes ago." or "Went back 2 minutes ago."
+  After an update the line under the headline says only when ("Updated 19 minutes ago", no period, short enough not to wrap beside Roll back), and the build Roll back returns to is in that button's tooltip.
   With no folder connected nothing can install, so the line is about that alone (tone `needs-folder`): "Folder not connected", no build named, Connect folder as its action, the panel tinted amber (`--geld-nightly-amber`, local to the panel since the popup and site share their tokens).
   A folder picker or Chrome's permission prompt would close the popup, so connecting the folder and an install that needs Chrome's OK continue on the nightly page, which shows the same panel and the folder.
   The reload fires `onInstalled`, which puts Geld back into open GitHub tabs as after any update.

@@ -50,7 +50,6 @@ describe('nightlyView', () => {
       tone: 'ok',
       action: null,
       check: true,
-      from: null,
     });
   });
 
@@ -117,7 +116,6 @@ describe('nightlyView', () => {
       tone: 'error',
       action: { kind: 'retry', label: 'Try again' },
       check: true,
-      from: null,
     });
   });
 
@@ -163,18 +161,17 @@ describe('nightlyView', () => {
     const updated = status({ latest: release(3305), backup: '0.1.2.3301', lastInstall: { from: '0.1.2.3301', to: '0.1.2.3305', at: minutesAgo(10), method: 'folder' } });
     expect(nightlyView(updated, folder, '0.1.2.3305', NOW)).toEqual({
       headline: 'Up to date',
-      detail: 'Updated 10 minutes ago.',
+      detail: 'Updated 10 minutes ago',
       tone: 'ok',
-      action: { kind: 'rollback', label: 'Roll back' },
+      action: { kind: 'rollback', label: 'Roll back', title: 'Go back to build 3301' },
       check: true,
-      from: 'from 3301',
     });
     expect(nightlyView(updated, folder, '0.1.2.3305', NOW + 25 * 3_600_000).action).toBeNull();
   });
 
-  it('tags the build a rollback came from and keeps the line short', () => {
+  it('keeps the line after a rollback short', () => {
     const view = nightlyView(status({ latest: release(3301), lastInstall: { from: '0.1.2.3305', to: '0.1.2.3301', at: minutesAgo(2), method: 'folder', rollback: true } }), folder, '0.1.2.3301', NOW);
-    expect(view).toMatchObject({ headline: 'Back on build 3301', from: 'from 3305', detail: 'Went back 2 minutes ago.' });
+    expect(view).toMatchObject({ headline: 'Back on build 3301', detail: 'Went back 2 minutes ago' });
   });
 
   it('says a rolled-back build waits for the reader', () => {
