@@ -1565,21 +1565,26 @@ function agentItems(list: HTMLElement, key: string, triage: TriageView, handlers
       });
     return [...fixes, ...opens];
   };
-  const likely = triage.agents.filter((agent) => agent.likely);
-  const others = triage.agents.filter((agent) => !agent.likely);
-  const shown = itemsFor(likely);
-  const hidden = itemsFor(others);
-  if (shown.length === 0) list.append(...hidden);
-  else {
-    list.append(...shown);
-    if (hidden.length > 0) {
-      const more = createElement('details', { class: `${PANEL_CLASS}__request-more ${PANEL_CLASS}__split-more` });
-      const summary = createElement('summary', { class: `${PANEL_CLASS}__request-more-summary` }, [icon(ICON_CHEVRON_RIGHT), `Other agents (${others.length})`]);
-      summary.addEventListener('click', (event) => event.stopPropagation());
-      more.append(summary, ...hidden);
-      list.append(more);
-    }
+  const groups = agentMenuGroups(triage.agents);
+  list.append(...itemsFor(groups.first));
+  const hidden = itemsFor(groups.folded);
+  if (hidden.length > 0) {
+    const more = createElement('details', { class: `${PANEL_CLASS}__request-more ${PANEL_CLASS}__split-more` });
+    const summary = createElement('summary', { class: `${PANEL_CLASS}__request-more-summary` }, [icon(ICON_CHEVRON_RIGHT), `Other agents (${groups.folded.length})`]);
+    summary.addEventListener('click', (event) => event.stopPropagation());
+    more.append(summary, ...hidden);
+    list.append(more);
   }
+}
+
+/**
+ * Which agents a menu lists first and which wait behind "Other agents": the likely ones first, and every agent only when
+ * none is likely. Decided by the agents, not by what the menu shows of them: the likely agent may be the row's own
+ * button and so absent from its menu, and the rest still stay folded then. Exported for its test.
+ */
+export function agentMenuGroups(agents: readonly TriageAgent[]): { readonly first: readonly TriageAgent[]; readonly folded: readonly TriageAgent[] } {
+  const likely = agents.filter((agent) => agent.likely);
+  return likely.length === 0 ? { first: agents, folded: [] } : { first: likely, folded: agents.filter((agent) => !agent.likely) };
 }
 
 /** "Copy the task" for any other agent, at the top of the menu, then the divider over the agents. */
