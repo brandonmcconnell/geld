@@ -1536,7 +1536,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Findings reporting one problem share one fix (`StoredSuggestion.threads`), keyed by each thread's first anchor (`threadKeyOf`), which stays when replies join.
   A fix written for an earlier commit whose lines read the same at the new head is carried over with no request, and the rest are asked again only when the reader triages again.
   A fix also remembers every comment its threads held when it was written (`StoredSuggestion.sources`): a reply since makes it stale (no Apply, and the card offers another run), as a new commit does, so a bot's correction is read before its old fix can be committed.
-  A thread whose lines cannot be read (outdated, or the file unreadable) leaves a placeholder for the commit it was checked at, so it never keeps the triage stale after a push.
+  A thread whose lines cannot be read (outdated, or the file unreadable) leaves any fix it shared and gets a placeholder of its own for the commit it was checked at, so it never keeps the triage stale after a push;
+  a shared fix written for that thread's lines goes, and its partners are asked about on their own.
+  A partner thread follows the fix it shares only while that fix's own thread is open and nothing new arrived in the partner: otherwise it splits off and is asked about alone (threads that own their fix are read first, so a partner sees what became of it).
   Only `suggestedFixes: off` stops the triage's fixes (`triageFixesOn`): `bots` and `ai` choose which fixes stand on an item, while the triage's are what the reader asked for by running it, as the setting's copy says.
   Apply and resolve presses only Resolve (`resolveIfOpen`), so a partner thread someone resolved meanwhile is never unresolved.
   A row opens to its diff (`lineDiff`, folded as GitHub folds a hunk by `diffHunks`: three lines of context either side of a change, a longer unchanged stretch one gap row) with Apply, Apply and resolve, and Discard, a muted link that turns accent on hover.

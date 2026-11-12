@@ -456,7 +456,11 @@ export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], s
  */
 async function proposeFixes(headSha: string, items: readonly ReviewItem[], comments: readonly RawComment[], settings: GeldSettings, apiKey: string, source: SuggestionSource): Promise<string | null> {
   const asks: Array<{ readonly item: ReviewItem; readonly target: SuggestionTarget }> = [];
-  for (const item of suggestionCandidates(items)) {
+  // Threads that own their fix first: a partner reads what became of the fix it shares.
+  const owns = (item: ReviewItem): boolean => (suggestionFor(threadKeyOf(item))?.key ?? threadKeyOf(item)) === threadKeyOf(item);
+  const candidates = [...suggestionCandidates(items)].sort((a, b) => Number(owns(b)) - Number(owns(a)));
+  const openThreads = new Set(candidates.map(threadKeyOf));
+  for (const item of candidates) {
     const key = threadKeyOf(item);
     const existing = suggestionFor(key);
     if (existing !== undefined && existing.state !== 'open') continue;
@@ -464,8 +468,24 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
     if (existing !== undefined && fresh && existing.headSha === headSha) continue;
     const target = await source.target(item);
     if (target === null) {
-      // Unreadable or outdated here: a placeholder for this commit, so the next run does not count it as behind.
-      suggestions.set(existing?.key ?? key, { key: existing?.key ?? key, threads: existing?.threads ?? [key], headSha, path: item.path ?? '', start: 0, end: 0, original: [], replacement: null, summary: existing?.replacement === null ? existing.summary : '', state: 'open', sources: [...anchorsOf([item])] });
+      // Unreadable or outdated here: this thread leaves any fix it shared and gets a placeholder of its own for this
+      // commit, so the next run does not count it as behind. A shared fix written for its lines goes, and its partners
+      // are asked about on their own.
+      const shared = existing === undefined ? undefined : suggestions.get(existing.key);
+      if (shared !== undefined && shared.threads.length > 1) {
+        if (shared.key === key) suggestions.delete(key);
+        else suggestions.set(shared.key, { ...shared, threads: shared.threads.filter((thread) => thread !== key) });
+      }
+      const ownNote = existing?.key === key && existing.threads.length === 1 && existing.replacement === null ? existing.summary : '';
+      suggestions.set(key, { key, threads: [key], headSha, path: item.path ?? '', start: 0, end: 0, original: [], replacement: null, summary: ownNote, state: 'open', sources: [...anchorsOf([item])] });
+      continue;
+    }
+    if (existing !== undefined && existing.key !== key) {
+      // A partner follows the fix it shares while that fix's own thread is open and nothing new arrived in its own.
+      const shared = suggestions.get(existing.key);
+      if (fresh && openThreads.has(existing.key) && shared !== undefined) continue;
+      if (shared !== undefined) suggestions.set(existing.key, { ...shared, threads: shared.threads.filter((thread) => thread !== key) });
+      asks.push({ item, target });
       continue;
     }
     const original = target.lines.slice(target.start - 1, target.end);
