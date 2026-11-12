@@ -25,8 +25,9 @@ function attachmentLink(image: HTMLImageElement): HTMLAnchorElement | null {
   // GitHub proxies an external image through camo and links it to itself, so only that self-link counts.
   if (url.hostname === 'camo.githubusercontent.com') return url.href === image.src ? link : null;
   if (url.origin !== window.location.origin) return null;
-  return /^\/(?:user-attachments\/(?:assets|files)\/|[^/]+\/[^/]+\/(?:assets|files)\/)/.test(url.pathname)
-    || (/^\/[^/]+\/[^/]+\/(?:blob|raw)\//.test(url.pathname) && IMAGE_PATH.test(url.pathname)) ? link : null;
+  if (/^\/(?:user-attachments|[^/]+\/[^/]+)\/assets\//.test(url.pathname)) return link;
+  // A `files` upload can be any file (a PDF, a zip), so it counts only when it names an image.
+  return /^\/(?:user-attachments\/files|[^/]+\/[^/]+\/(?:files|blob|raw))\//.test(url.pathname) && IMAGE_PATH.test(url.pathname) ? link : null;
 }
 
 /** GitHub names every upload "image" (older uploads "Image"), which says nothing a dialog title should. */
