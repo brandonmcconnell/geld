@@ -877,6 +877,55 @@ html[data-geld-tab-counts] [data-component='PageHeader']:has([class*='branchGrou
 }
 
 /*
+ * What a sticky header gains as it takes over from the page header comes in, and what it loses goes, rather than
+ * blinking (`ui/bar-motion.ts`). The bar's left side (GitHub's tab switcher, divider and label or Geld's pill, with the
+ * number and title) slides as one block, by a script that measures it. Here: the review group and the counts rise from
+ * under the bar, as the tab row they came from scrolled up under it, and their ghosts sink back. Timings mirror
+ * `BAR_ENTER` and `BAR_LEAVE`, so both sides move on one clock; only translate and opacity move, which the compositor runs.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  :is(.geld-quick-review[data-geld-place], [class*='miniHeaderInner'] > [class*='actions'] > [data-geld-counts-stand-in]):not([data-geld-ghost]) {
+    transition:
+      translate 220ms cubic-bezier(0.2, 0, 0, 1),
+      opacity 220ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  @starting-style {
+    :is(.geld-quick-review[data-geld-place], [class*='miniHeaderInner'] > [class*='actions'] > [data-geld-counts-stand-in]):not([data-geld-ghost]) {
+      translate: 0 10px;
+      opacity: 0;
+    }
+  }
+
+  [data-geld-ghost='down'] {
+    pointer-events: none;
+    will-change: translate, opacity;
+    /* Longhands: the minifier turns an `animation` shorthand with no name into `animation: none`. */
+    animation-name: geld-bar-leave-down;
+    animation-duration: 200ms;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    animation-fill-mode: both;
+  }
+}
+
+/* The left block's ghosts ride its animation and have none of their own. */
+[data-geld-ghost='left'] {
+  pointer-events: none;
+}
+
+/* Out of the layout for the moment the block's script reads where the title stood without these parts. */
+[data-geld-bar-hold] {
+  display: none !important;
+}
+
+@keyframes geld-bar-leave-down {
+  to {
+    translate: 0 10px;
+    opacity: 0;
+  }
+}
+
+/*
  * [✓ | ✗ | 💬]: a Primer button group dressed as the Files changed toolbar's own default buttons (Merge status, the
  * settings gear): their surface, border and resting shadow, from the same tokens.
  */
