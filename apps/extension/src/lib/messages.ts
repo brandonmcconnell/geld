@@ -208,7 +208,7 @@ export interface FeedbackOpenMessage {
   readonly diagnostics?: boolean;
   /** A Geld Nightly rollback the reader is saying why about, its builds in words ("build 4179"). */
   readonly rollback?: FeedbackRollback;
-  /** Words to start an empty draft with (a "Don't see yours?" link). */
+  /** Words to start an empty draft with (a "Not listed?" link). */
   readonly draft?: FeedbackDraft;
 }
 

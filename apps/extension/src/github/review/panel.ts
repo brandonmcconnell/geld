@@ -556,7 +556,7 @@ export interface PanelHandlers {
   readonly onDiscardSuggestion: (key: string) => void;
   /** Hand a finding (by its thread's key) to a coding agent: a comment that starts it, its own app, or the task copied. */
   readonly onHandOff: (agentId: string, how: HandOff, key: string) => void;
-  /** "Don't see yours?": the feedback page, its draft asking Geld to support another review bot or coding agent. */
+  /** "Not listed?": the feedback page, its draft asking Geld to support another review bot or coding agent. */
   readonly onMissingTool: (tool: MissingTool) => void;
 }
 
@@ -1557,9 +1557,9 @@ function agentItems(list: HTMLElement, key: string, triage: TriageView, handlers
   list.append(createElement('div', { class: `${PANEL_CLASS}__menu-sep`, role: 'separator' }), missingToolHelp('coding agent', handlers, close, 'menuitem'));
 }
 
-/** "Don't see yours? Let us know.": the feedback page, its draft asking Geld to support the reader's own tool. */
+/** "Not listed? Tell us.": the feedback page, its draft asking Geld to support the reader's own tool. */
 function missingToolHelp(tool: MissingTool, handlers: PanelHandlers, close: () => void, role: 'menuitem' | null = null): HTMLElement {
-  const link = createElement('button', { type: 'button', class: `${PANEL_CLASS}__help-link`, title: `Ask for your ${tool} to be supported`, ...(role === null ? {} : { role }) }, ['Let us know']);
+  const link = createElement('button', { type: 'button', class: `${PANEL_CLASS}__help-link`, title: `Ask for your ${tool} to be supported`, ...(role === null ? {} : { role }) }, ['Tell us']);
   link.addEventListener('click', (event) => {
     event.stopPropagation();
     close();
@@ -1567,7 +1567,7 @@ function missingToolHelp(tool: MissingTool, handlers: PanelHandlers, close: () =
   });
   return createElement('span', { class: `${PANEL_CLASS}__help`, ...(role === null ? {} : { role: 'none' }) }, [
     createElement('span', { class: `${PANEL_CLASS}__help-glyph`, 'aria-hidden': 'true' }, [icon(ICON_QUESTION)]),
-    createElement('span', {}, ['Don\u2019t see yours? ', link, '.']),
+    createElement('span', {}, ['Not listed? ', link, '.']),
   ]);
 }
 

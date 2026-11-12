@@ -4391,19 +4391,20 @@ html [data-geld-person-fold-part][data-geld-person-fold-part] {
   background: var(--geld-review-border);
 }
 
+/* Inset as the items are, so the help glyph stands under the checkboxes and Cancel ends where "Not run" does. */
 .geld-review__request-footer {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 2px 2px 0;
+  padding: 2px 8px 0;
 }
 
 .geld-review__request-footer > .geld-review__help {
   margin-right: auto;
-  padding: 0 4px 0 6px;
+  padding: 0;
 }
 
-/* "Don't see yours? Let us know." at the foot of the bot and agent menus. */
+/* "Not listed? Tell us." at the foot of the bot and agent menus. */
 .geld-review__help {
   display: flex;
   align-items: center;
