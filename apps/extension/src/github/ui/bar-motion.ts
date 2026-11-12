@@ -1,28 +1,47 @@
-import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
+import { OWN_UI_ATTRIBUTE } from '../dom';
 import { PERSISTENT_BAR_INNER } from '../persistent-bar';
 
 /**
- * What enters a sticky header slides in by the stylesheet's `@starting-style`; what leaves it is gone from the bar at
- * once (React removes GitHub's parts, Geld moves its own back to the tab row), so a copy of it stays behind to slide out:
- * a ghost, inert and Geld's, that removes itself when its animation ends.
+ * GitHub's bar over the new pull request page gains its tab switcher, a divider and the state label (Geld's pill) when
+ * its tabs scroll under it, and loses them when they come back, all in one frame. The left side moves as one block:
+ * those parts, the number and the title travel together on one translate, in from the page's edge and back out to it
+ * (`animateBarGroup`). On the right, the review group and the counts rise in by the stylesheet's `@starting-style`.
+ * What leaves is gone from the bar at once, so a copy of it stays behind until it is out of sight: a ghost, inert and
+ * Geld's, that the block carries out (left) or that sinks away by itself (down).
  */
 export type GhostDirection = 'down' | 'left';
 
 const ATTR_GHOST = 'data-geld-ghost';
-/** Past the stylesheet's exit animation: the ghost goes then even when no `animationend` came (a hidden tab, a style change). */
-const GHOST_MS = 320;
+const ATTR_KIND = 'data-geld-ghost-kind';
+/** Read once by `animateBarGroup`: a ghost made since then is this change's. */
+const ATTR_SEEN = 'data-geld-ghost-seen';
+/** Out of the layout for a moment, to read where the title stood without it (the stylesheet hides it). */
+const ATTR_HOLD = 'data-geld-bar-hold';
+/** Past every exit: a ghost goes then even when nothing removed it (a hidden tab, a style change). */
+const GHOST_MS = 600;
 /**
  * Attributes Geld's and GitHub's code find live controls by, which a ghost must not answer to: a ghost tab switcher read
  * as the bar still stuck. The counts' stand-in mark stays, for the spacing the stylesheet keys on it; code skips ghosts.
  */
 const LIVE_MARKS = ['id', 'data-testid', 'data-geld-status-pill', 'data-geld-focus', 'aria-labelledby', 'aria-describedby', 'aria-controls'];
 
-/** GitHub's parts the bar shows only while it stands for the page header (its tabs scrolled under it). */
+/** Mirrored in the stylesheet's sticky-header block, so both sides of the bar move on one clock. */
+export const BAR_ENTER = { duration: 220, easing: 'cubic-bezier(0.2, 0, 0, 1)' } as const;
+export const BAR_LEAVE = { duration: 200, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' } as const;
+
+type PartKind = 'switcher' | 'divider' | 'label';
+
+/** GitHub's parts the bar shows only while it stands for the page header, as children of its inner row or its metadata. */
+const PARTS: readonly (readonly [PartKind, string])[] = [
+  ['switcher', ':scope > [data-testid="mini-header-tab-switcher-trigger"]'],
+  ['divider', ':scope > [class*="navigationDivider"]:not([data-geld-ghost])'],
+  ['label', ':scope > [class*="metadata"] > :is([data-component="StateLabel"], button:has(> [data-component="StateLabel"]), button[data-geld-status-pill]):not([data-geld-status-hidden], [data-geld-ghost])'],
+];
 const BAR_LEFT_PARTS = '[data-testid="mini-header-tab-switcher-trigger"], [class*="navigationDivider"]';
 const BAR_STATE_LABEL = '[data-component="StateLabel"], button:has(> [data-component="StateLabel"])';
 
 export function motionAllowed(): boolean {
-  // Where nothing slides in (no `@starting-style`), nothing slides out either.
+  // Where the right side cannot slide in (no `@starting-style`), neither side moves.
   if (!('CSSStartingStyleRule' in globalThis)) return false;
   return typeof window.matchMedia !== 'function' || !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
@@ -31,58 +50,40 @@ export function isGhost(element: Element): boolean {
   return element.hasAttribute(ATTR_GHOST);
 }
 
-function inertCopy(element: Element): HTMLElement | null {
-  const copy = element.cloneNode(true);
-  if (!(copy instanceof HTMLElement)) return null;
-  for (const node of [copy, ...copy.querySelectorAll('*')]) for (const name of LIVE_MARKS) node.removeAttribute(name);
-  for (const node of copy.querySelectorAll('tool-tip, [popover], [role="tooltip"]')) node.remove();
-  return copy;
+function kindOf(element: Element): PartKind {
+  if (element.matches('[data-testid="mini-header-tab-switcher-trigger"]')) return 'switcher';
+  return element.matches('[class*="navigationDivider"]') ? 'divider' : 'label';
 }
 
-/**
- * A ghost is the copy itself, in its place among its siblings so every rule spacing it still holds, except one with
- * content leaving left: that copy goes whole inside a box of Geld's that narrows to nothing with the copy held at its right
- * edge, so it slides out behind the box's left edge as the parts after it close up, rather than being cut by its own edge.
- * An empty part (the divider) has nothing to cut, and GitHub spaces it as the bar's own child, which a box would undo.
- * The parent's gap goes with a left ghost (`--geld-ghost-gap`), or the title would close up short and snap at the end.
- */
-function ghostOf(element: Element, direction: GhostDirection, parent: Element): HTMLElement | null {
-  const copy = inertCopy(element);
-  if (copy === null) return null;
-  const ghost = direction === 'left' && element.childNodes.length > 0 ? createElement('span', {}, [copy]) : copy;
-  if (direction === 'left') {
-    const gap = Number.parseFloat(getComputedStyle(parent).columnGap);
-    if (Number.isFinite(gap) && gap > 0) ghost.style.setProperty('--geld-ghost-gap', `${gap}px`);
-  }
+/** A copy in the element's place among its siblings, so every rule spacing it still holds. */
+function ghostOf(element: Element, direction: GhostDirection): HTMLElement | null {
+  const ghost = element.cloneNode(true);
+  if (!(ghost instanceof HTMLElement)) return null;
+  for (const node of [ghost, ...ghost.querySelectorAll('*')]) for (const name of LIVE_MARKS) node.removeAttribute(name);
+  for (const node of ghost.querySelectorAll('tool-tip, [popover], [role="tooltip"]')) node.remove();
   ghost.setAttribute(ATTR_GHOST, direction);
+  if (direction === 'left') ghost.setAttribute(ATTR_KIND, kindOf(element));
   ghost.setAttribute(OWN_UI_ATTRIBUTE, '');
   ghost.setAttribute('aria-hidden', 'true');
   ghost.inert = true;
-  let done = false;
-  const remove = (): void => {
-    if (done) return;
-    done = true;
-    ghost.remove();
-  };
   ghost.addEventListener('animationend', (event) => {
-    if (event.target === ghost) remove();
+    if (event.target === ghost) ghost.remove();
   });
-  window.setTimeout(remove, GHOST_MS);
+  window.setTimeout(() => ghost.remove(), GHOST_MS);
   return ghost;
 }
 
-/** Leave a copy of `element` where it stands, sliding out, before the caller moves or removes it. */
+/** Leave a copy of `element` where it stands, before the caller moves or removes it. */
 export function leaveGhost(element: HTMLElement, direction: GhostDirection): void {
-  const parent = element.parentElement;
-  if (parent === null || !element.isConnected || !motionAllowed()) return;
-  const ghost = ghostOf(element, direction, parent);
+  if (element.parentElement === null || !element.isConnected || !motionAllowed()) return;
+  const ghost = ghostOf(element, direction);
   if (ghost !== null) element.before(ghost);
 }
 
 /**
  * Before paint, from the controller's mutation callback: GitHub's tab switcher, its divider and the state label React
- * has just taken out of its bar (the tabs back in view) are put back as ghosts in the places they left, sliding out to
- * the left. A label Geld hides behind its pill is left alone: the pill leaves as a ghost of its own (`syncStatusPills`).
+ * has just taken out of its bar (the tabs back in view) are put back as ghosts in the places they left, for the block to
+ * carry out. A label Geld hides behind its pill is left alone: the pill leaves as a ghost of its own (`syncStatusPills`).
  */
 export function ghostBarDepartures(records: readonly MutationRecord[]): void {
   if (!motionAllowed()) return;
@@ -98,7 +99,7 @@ export function ghostBarDepartures(records: readonly MutationRecord[]): void {
     const ghosts: HTMLElement[] = [];
     for (const node of record.removedNodes) {
       if (!(node instanceof HTMLElement) || !node.matches(parts) || node.hasAttribute('data-geld-status-hidden') || isGhost(node)) continue;
-      const ghost = ghostOf(node, 'left', parent);
+      const ghost = ghostOf(node, 'left');
       if (ghost !== null) ghosts.push(ghost);
     }
     if (ghosts.length === 0) continue;
@@ -108,4 +109,110 @@ export function ghostBarDepartures(records: readonly MutationRecord[]): void {
     fragment.append(...ghosts);
     parent.insertBefore(fragment, next ?? previous?.nextSibling ?? parent.firstChild);
   }
+}
+
+let lastParts: Map<PartKind, Element> | null = null;
+let running: Animation[] = [];
+
+function partsOf(inner: HTMLElement): Map<PartKind, Element> {
+  const parts = new Map<PartKind, Element>();
+  for (const [kind, selector] of PARTS) {
+    const part = inner.querySelector(selector);
+    if (part !== null) parts.set(kind, part);
+  }
+  return parts;
+}
+
+function leftGhosts(inner: HTMLElement): HTMLElement[] {
+  return [...inner.querySelectorAll<HTMLElement>(`[${ATTR_GHOST}="left"]`)];
+}
+
+/** Everything on the bar's left: its inner row's children before the actions, the metadata with its label among them. */
+function blockOf(inner: HTMLElement): HTMLElement[] {
+  const block: HTMLElement[] = [];
+  for (const child of inner.children) {
+    if (child.matches('[class*="actions"]')) break;
+    if (child instanceof HTMLElement) block.push(child);
+  }
+  return block;
+}
+
+function hold(elements: readonly Element[], on: boolean): void {
+  for (const element of elements) element.toggleAttribute(ATTR_HOLD, on);
+}
+
+function cancelRunning(): void {
+  for (const animation of running) animation.cancel();
+  running = [];
+}
+
+/**
+ * Before paint, after the parts and Geld's pill are in place: the bar's left side gained or lost parts, so the block
+ * slides from where its title stood on screen to where it stands now, the new parts coming in from the page's edge with
+ * it, or the ghosts of the old ones carried out to it before they go. One animation for the whole block, measured from
+ * the title (three layout reads, only when parts come or go), and taken over from wherever a running one has got to when
+ * React adds or drops its parts in a second commit. A part replaced by another of its kind (GitHub re-rendering its bar,
+ * GitHub's label giving way to Geld's pill) moves nothing.
+ */
+export function animateBarGroup(): void {
+  const inner = document.querySelector<HTMLElement>(PERSISTENT_BAR_INNER);
+  if (inner === null) {
+    lastParts = null;
+    return;
+  }
+  const now = partsOf(inner);
+  const before = lastParts;
+  lastParts = now;
+  const fresh = [...inner.querySelectorAll<HTMLElement>(`[${ATTR_GHOST}="left"]:not([${ATTR_SEEN}])`)];
+  for (const ghost of fresh) ghost.setAttribute(ATTR_SEEN, '');
+  const added = [...now.keys()].filter((kind) => before?.has(kind) !== true);
+  const removed = [...(before?.keys() ?? [])].filter((kind) => !now.has(kind));
+  for (const ghost of fresh) if (before === null || !removed.some((kind) => ghost.getAttribute(ATTR_KIND) === kind)) ghost.remove();
+  if (before === null || (added.length === 0 && removed.length === 0) || !motionAllowed()) return;
+  const anchor = inner.querySelector<HTMLElement>(':scope > [class*="metadata"] > [class*="number"]') ?? inner.querySelector<HTMLElement>(':scope > [class*="metadata"] > [class*="title"]');
+  if (anchor === null) {
+    cancelRunning();
+    for (const ghost of leftGhosts(inner)) ghost.remove();
+    return;
+  }
+  const newcomers = added.flatMap((kind) => now.get(kind) ?? []);
+  hold(newcomers, true);
+  const seen = anchor.getBoundingClientRect().left;
+  hold(newcomers, false);
+  cancelRunning();
+  const ghosts = leftGhosts(inner);
+  if (removed.length === 0) {
+    for (const ghost of ghosts) ghost.remove();
+    slide(blockOf(inner), seen - anchor.getBoundingClientRect().left, 0, BAR_ENTER, null);
+    return;
+  }
+  const withGhosts = anchor.getBoundingClientRect().left;
+  hold(ghosts, true);
+  const without = anchor.getBoundingClientRect().left;
+  hold(ghosts, false);
+  slide(blockOf(inner), seen - withGhosts, without - withGhosts, BAR_LEAVE, ghosts);
+}
+
+function slide(block: readonly HTMLElement[], from: number, to: number, timing: typeof BAR_ENTER | typeof BAR_LEAVE, ghosts: readonly HTMLElement[] | null): void {
+  const done = (): void => {
+    // In the frame the block arrives, before paint: the ghosts go as the layout closes up under the same offset.
+    for (const ghost of ghosts ?? []) ghost.remove();
+    cancelRunning();
+  };
+  if (Math.abs(from - to) < 0.5 || typeof Element.prototype.animate !== 'function') {
+    done();
+    return;
+  }
+  running = block.map((element) => {
+    const animation = element.animate([{ translate: `${from}px 0` }, { translate: `${to}px 0` }], { ...timing, fill: 'forwards' });
+    // Taken over or cancelled, it rejects `finished`, which nothing waits on.
+    animation.finished.catch(() => undefined);
+    return animation;
+  });
+  const first = running[0];
+  if (first === undefined) return;
+  const mine = running;
+  first.addEventListener('finish', () => {
+    if (running === mine) done();
+  });
 }

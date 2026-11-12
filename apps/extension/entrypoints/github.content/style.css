@@ -877,135 +877,50 @@ html[data-geld-tab-counts] [data-component='PageHeader']:has([class*='branchGrou
 }
 
 /*
- * What a sticky header gains as it takes over from the page header slides in: GitHub's tab switcher, its divider and the
- * state label (or Geld's pill) from the left, the review group and the counts up from under the bar, as the tab row they
- * came from scrolled up under it. What it loses is gone at once, so a ghost of it slides back out (`ui/bar-motion.ts`),
- * by a `to`-only animation that starts from wherever the ghost stands. Only translate and opacity move on the right, which
- * the compositor runs; the left's widths are layout, which is why the bar's mutations run only the header pass.
+ * What a sticky header gains as it takes over from the page header comes in, and what it loses goes, rather than
+ * blinking (`ui/bar-motion.ts`). The bar's left side (GitHub's tab switcher, divider and label or Geld's pill, with the
+ * number and title) slides as one block, by a script that measures it. Here: the review group and the counts rise from
+ * under the bar, as the tab row they came from scrolled up under it, and their ghosts sink back. Timings mirror
+ * `BAR_ENTER` and `BAR_LEAVE`, so both sides move on one clock; only translate and opacity move, which the compositor runs.
  */
 @media (prefers-reduced-motion: no-preference) {
-  :is(
-      [data-testid='diff-comparison-viewer-sticky-header-bar'] [class*='miniHeaderInner'] > :is([data-testid='mini-header-tab-switcher-trigger'], [class*='navigationDivider']),
-      [data-testid='diff-comparison-viewer-sticky-header-bar'] [class*='miniHeaderInner'] > [class*='metadata'] > :is([data-component='StateLabel'], button:has(> [data-component='StateLabel']), button[data-geld-status-pill]),
-      .geld-quick-review[data-geld-place], [class*='miniHeaderInner'] > [class*='actions'] > [data-geld-counts-stand-in]
-    ):not([data-geld-ghost]) {
+  :is(.geld-quick-review[data-geld-place], [class*='miniHeaderInner'] > [class*='actions'] > [data-geld-counts-stand-in]):not([data-geld-ghost]) {
     transition:
-      translate 200ms cubic-bezier(0.2, 0, 0, 1),
-      opacity 200ms cubic-bezier(0.2, 0, 0, 1);
+      translate 220ms cubic-bezier(0.2, 0, 0, 1),
+      opacity 220ms cubic-bezier(0.2, 0, 0, 1);
   }
 
   @starting-style {
-    :is(
-        [data-testid='diff-comparison-viewer-sticky-header-bar'] [class*='miniHeaderInner'] > :is([data-testid='mini-header-tab-switcher-trigger'], [class*='navigationDivider']),
-        [data-testid='diff-comparison-viewer-sticky-header-bar'] [class*='miniHeaderInner'] > [class*='metadata'] > :is([data-component='StateLabel'], button:has(> [data-component='StateLabel']), button[data-geld-status-pill])
-      ):not([data-geld-ghost]) {
-      translate: -12px 0;
-      opacity: 0;
-    }
-
     :is(.geld-quick-review[data-geld-place], [class*='miniHeaderInner'] > [class*='actions'] > [data-geld-counts-stand-in]):not([data-geld-ghost]) {
       translate: 0 10px;
       opacity: 0;
     }
   }
 
-  [data-geld-ghost] {
-    align-self: center;
+  [data-geld-ghost='down'] {
     pointer-events: none;
     will-change: translate, opacity;
     /* Longhands: the minifier turns an `animation` shorthand with no name into `animation: none`. */
-    animation-duration: 160ms;
-    animation-timing-function: cubic-bezier(0.3, 0, 1, 1);
-    animation-fill-mode: both;
-  }
-
-  [data-geld-ghost='down'] {
     animation-name: geld-bar-leave-down;
-  }
-
-  /* A box of Geld's around the whole copy, held at its right edge, or an empty part's copy itself (`ghostOf`). */
-  [data-geld-ghost='left'] {
-    display: flex;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: flex-end;
-    animation-name: geld-bar-leave-left;
-  }
-
-  [data-geld-ghost='left'] > * {
-    flex-shrink: 0;
-  }
-
-  /*
-   * About 130px arrive on the left at once, which pushed the title over in one jump: where `auto` widths interpolate,
-   * the newcomers grow from nothing and the ghosts narrow to it, so the title glides. Their content is held at the right
-   * edge (`flex-end` overflows at the start), so what grows or narrows reads as sliding out from behind the left edge
-   * rather than a box cut across its own words. They never shrink otherwise, as GitHub has them (the switcher's
-   * `min-width: max-content`), and are clipped only while narrower than their content.
-   */
-  @supports (interpolate-size: allow-keywords) {
-    :is(
-        [data-testid='diff-comparison-viewer-sticky-header-bar'] [class*='miniHeaderInner'] > :is([data-testid='mini-header-tab-switcher-trigger'], [class*='navigationDivider']),
-        [data-testid='diff-comparison-viewer-sticky-header-bar'] [class*='miniHeaderInner'] > [class*='metadata'] > :is([data-component='StateLabel'], button:has(> [data-component='StateLabel']), button[data-geld-status-pill])
-      ):not([data-geld-ghost]) {
-      interpolate-size: allow-keywords;
-      flex-shrink: 0;
-      justify-content: flex-end;
-      min-width: 0;
-      overflow-x: clip;
-      transition:
-        opacity 200ms cubic-bezier(0.2, 0, 0, 1),
-        width 200ms cubic-bezier(0.2, 0, 0, 1),
-        padding-inline 200ms cubic-bezier(0.2, 0, 0, 1),
-        margin-inline 200ms cubic-bezier(0.2, 0, 0, 1);
-    }
-
-    @starting-style {
-      :is(
-          [data-testid='diff-comparison-viewer-sticky-header-bar'] [class*='miniHeaderInner'] > :is([data-testid='mini-header-tab-switcher-trigger'], [class*='navigationDivider']),
-          [data-testid='diff-comparison-viewer-sticky-header-bar'] [class*='miniHeaderInner'] > [class*='metadata'] > :is([data-component='StateLabel'], button:has(> [data-component='StateLabel']), button[data-geld-status-pill])
-        ):not([data-geld-ghost]) {
-        translate: none;
-        width: 0;
-        padding-inline: 0;
-        margin-inline: 0;
-      }
-
-      /* The title's 8px gap (GitHub's metadata row, `--base-size-8`) arrives with the label too, rather than at once. */
-      [data-testid='diff-comparison-viewer-sticky-header-bar'] [class*='miniHeaderInner'] > [class*='metadata'] > :is([data-component='StateLabel'], button:has(> [data-component='StateLabel']), button[data-geld-status-pill]):not([data-geld-ghost]) {
-        margin-inline-end: calc(-1 * var(--base-size-8, 8px));
-      }
-    }
-
-    [data-geld-ghost='left'] {
-      interpolate-size: allow-keywords;
-      min-width: 0;
-      overflow-x: clip;
-      will-change: opacity;
-      animation-name: geld-bar-collapse-left;
-    }
+    animation-duration: 200ms;
+    animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    animation-fill-mode: both;
   }
 }
 
-@keyframes geld-bar-leave-left {
-  to {
-    translate: -12px 0;
-    opacity: 0;
-  }
+/* The left block's ghosts ride its animation and have none of their own. */
+[data-geld-ghost='left'] {
+  pointer-events: none;
+}
+
+/* Out of the layout for the moment the block's script reads where the title stood without these parts. */
+[data-geld-bar-hold] {
+  display: none !important;
 }
 
 @keyframes geld-bar-leave-down {
   to {
     translate: 0 10px;
-    opacity: 0;
-  }
-}
-
-@keyframes geld-bar-collapse-left {
-  to {
-    width: 0;
-    padding-inline: 0;
-    margin-inline: 0 calc(-1 * var(--geld-ghost-gap, 0px));
     opacity: 0;
   }
 }
