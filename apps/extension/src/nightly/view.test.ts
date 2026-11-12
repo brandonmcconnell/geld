@@ -125,7 +125,7 @@ describe('nightlyView', () => {
     expect(ready.action).toEqual({ kind: 'install', label: 'Install' });
     const updated = status({ latest: release(3305), backup: '0.1.2.3301', checkError: 'GitHub did not answer.', lastInstall: { from: '0.1.2.3301', to: '0.1.2.3305', at: minutesAgo(10), method: 'folder' } });
     expect(nightlyView(updated, folder, '0.1.2.3305', NOW).detail).toBe('Updated 10 minutes ago. GitHub did not answer.');
-    expect(nightlyView(updated, folder, '0.1.2.3305', NOW).action).toEqual({ kind: 'rollback', label: 'Roll back' });
+    expect(nightlyView(updated, folder, '0.1.2.3305', NOW).action).toEqual({ kind: 'rollback', label: 'Roll back', title: 'Go back to build 3301' });
     expect(nightlyView(status({ latest: release(3301), checkError: 'GitHub did not answer.' }), folder, '0.1.2.3301', NOW).detail).toBe('GitHub did not answer.');
     expect(nightlyView(status({ latest: release(3305), checkError: 'GitHub did not answer.' }), null, '0.1.2.3301', NOW).detail).not.toContain('GitHub');
   });
