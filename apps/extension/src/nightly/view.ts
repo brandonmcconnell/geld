@@ -55,7 +55,11 @@ export function pausedView(conflict: Conflict): ViewText {
 /** `installedIn`: the folder the installer wrote, named so the reader knows what to pick when Chrome asks. */
 export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null, version: string, now: number, conflict: Conflict | null = null, installedIn: string | null = null): NightlyView {
   const view = conflict === null ? viewText(status, folder, version, now, installedIn) : pausedView(conflict);
-  return { ...view, check: folder !== null && view.tone !== 'busy' && view.tone !== 'paused' };
+  const check = folder !== null && view.tone !== 'busy' && view.tone !== 'paused';
+  // A failed check is said in every state that offers one, beside whatever the line already says and does.
+  const failed = check ? status.checkError : null;
+  const detail = failed === null || view.detail?.includes(failed) === true ? view.detail : view.detail === null ? failed : `${view.detail} ${failed}`;
+  return { ...view, detail, check };
 }
 
 function viewText(status: NightlyStatus, folder: NightlyFolder | null, version: string, now: number, installedIn: string | null): ViewText {
