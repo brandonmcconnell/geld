@@ -5312,10 +5312,22 @@ html [data-geld-person-fold-part][data-geld-person-fold-part] {
 .geld-review__avatar,
 .geld-review__bot-icon,
 .geld-review-hovercard__avatar,
-.geld-review__head-slot .avatar {
+.geld-review__head-slot .avatar,
+.geld-review__push-avatar,
+.geld-review__qv .AvatarStack-body .avatar img {
   /* A faint ring so an avatar never blends into the surface, in either scheme. */
   outline: 1px solid rgb(128 128 128 / 15%);
   outline-offset: -1px;
+}
+
+/* GitHub's commit-row stack on loan: its own outer ring gives way to ours, and each avatar masks the one under it
+ * as Geld's stacks do. GitHub lays the first avatar on top, so the mask is on every one but the last. */
+.geld-review__qv .AvatarStack-body .avatar {
+  box-shadow: none;
+}
+
+.geld-review__qv .AvatarStack-body .avatar:not(:last-child) {
+  box-shadow: 0 0 0 2px var(--geld-review-bg);
 }
 
 .geld-review__avatar[data-kind='bot'] {
