@@ -1148,6 +1148,18 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `local:debugScopes` (set from the harness, never the UI) runs the full pass after every scoped one and logs `[geld] scope disagreement`.
   Numbers at the end of this work (vitest#10554): the review pass 149 ms → 36 ms mean (`checksSection()` used to scan the whole page's text on every call on a merged PR), the crawl 7.4 → 2.9 ms, main-thread time in the first 30 s of the conversation page 4.5 s → 2.85 s, a 14-row `/pulls` page 14 + 12 storage writes → 3 + 4;
   the largest item left is the files adapters' DOM read (`read`, ~13 ms a pass on a 124-file diff).
+- **A pull request GitHub's compare form failed to open gets "Try with Geld"** (`src/github/create-pull-retry.ts`, `src/lib/create-pull.ts`, Nov 2026, after GitHub refused one on pingdotgg/t3code as "was submitted too quickly").
+  GitHub's form carries the moment it was rendered (`timestamp`, `timestamp_secret`) and refuses one sent sooner than its threshold, which a form opened prefilled (`?expand=1&title=…`, as agent tools open it) and sent at once meets.
+  After a refusal GitHub renders the form again at `/owner/repo/pull/create`, title and body kept, under a `.flash-error` whose `.js-flash-alert` begins with "Pull request creation failed."
+  Under that flash Geld puts a button led by its emblem (GitHub's `tool-tip`: "Geld can reattempt this failed operation, as the gh CLI would") and, below it, the same request as a `gh pr create` command with a copy button, kept in step with the form as the reader edits it.
+  Nothing is sent until the reader clicks, so it never races GitHub's own attempt, and nothing shows for a failure a second send cannot change (`isRetryableFailure`: the pull request exists, no commits between, a blank or invalid field).
+  A click sends the form itself again through the reader's session (`pageFetch`, urlencoded, with the submit button GitHub would send), held until the form is `MIN_FORM_AGE_MS` (5 s) old by its own `timestamp`.
+  The threshold is a guess: GitHub does not publish it.
+  When that fails too, it makes the request `gh pr create` makes, `POST /repos/{owner}/{repo}/pulls`, from the background with the reader's Geld App token (`createPullRequest` in `account-service.ts`, through `withToken`), on github.com only.
+  The background takes that message only from a github.com tab on the pull request's own repository (`senderMayCreatePull`).
+  A user token reaches only repositories the Geld App is installed on, so elsewhere the API step says so and the `gh` line is the way out.
+  Success opens the new pull request: Chrome's answer keeps the redirect's URL, Firefox's page fetch loses it, so the answer's canonical link is read too (`createdPullUrl`).
+  The signed-in compare form was not visible to automation: its field names (`pull_request[title]`, `pull_request[body]`, `timestamp`) are GitHub's long-standing ones, verified only against a reconstruction served as github.com with the built extension.
 - **Feedback stays in the extension** (`entrypoints/feedback/`, `src/lib/feedback.ts`, `src/ui/feedback-link.ts`).
   The popup's and options page's Feedback links and Report with diagnostics open the extension's own `feedback.html` in a tab, never the site or GitHub's issue form;
   a tab rather than the popup, which closes when it loses focus.

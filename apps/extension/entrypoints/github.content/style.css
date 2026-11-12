@@ -11082,3 +11082,81 @@ html[data-geld-on] [class*='ReactionsMenuOption'] [data-component='ActionList.It
 .geld-review__msg-actions > [data-component='Tooltip'] {
   position: absolute;
 }
+
+/*
+ * "Try with Geld" under the compare page's "Pull request creation failed" flash, and the same request as a `gh` command.
+ * The flash is GitHub's danger surface, so the button keeps GitHub's default look. GitHub's `.btn` rules load after these, hence the doubled class.
+ */
+.geld-pull-retry {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.geld-pull-retry__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.geld-pull-retry .geld-pull-retry__try {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.geld-pull-retry .geld-pull-retry__try[aria-busy='true'] {
+  cursor: progress;
+}
+
+.geld-pull-retry__mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+}
+
+.geld-pull-retry__mark svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.geld-pull-retry__status:empty {
+  display: none;
+}
+
+.geld-pull-retry__local {
+  font-size: 12px;
+  color: var(--fgColor-muted, #59636e);
+}
+
+.geld-pull-retry__local[hidden] {
+  display: none;
+}
+
+.geld-pull-retry__local > span {
+  flex: 0 0 auto;
+}
+
+.geld-pull-retry__command {
+  min-width: 0;
+  overflow: hidden;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--bgColor-neutral-muted, rgba(129, 139, 152, 0.12));
+  color: var(--fgColor-default, #1f2328);
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, monospace);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-pull-retry .geld-pull-retry__copy {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 4px;
+}

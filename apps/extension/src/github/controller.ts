@@ -47,6 +47,7 @@ import type { ListSurface } from './list-surfaces';
 import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surfaces';
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
 import { applyPeoplePresence, removePeoplePresence } from './people-presence';
+import { applyCreatePullRetry, removeCreatePullRetry } from './create-pull-retry';
 import { applyBlockedListHiding, removeBlockedListHiding } from './blocked-lists';
 import { blockedFor } from './blocked-users';
 import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
@@ -1171,6 +1172,7 @@ export class GeldController {
     if (!document.documentElement.hasAttribute(ATTR_DRESSED)) document.documentElement.setAttribute(ATTR_DRESSED, '');
     this.syncTabCounts();
     applyAttachmentLightbox(this.settings.attachmentLightbox);
+    guard('content:create-pull-retry', () => applyCreatePullRetry());
 
     // Another page state (a navigation) is always the whole page, whatever the batches said.
     const full = scope === null || this.lastPassKey !== page.stateKey;
@@ -2175,6 +2177,7 @@ export class GeldController {
     removeCommitHover();
     removeAuthorHiding();
     removePeoplePresence();
+    removeCreatePullRetry();
     removeBlockedListHiding();
     removeSurfaceStyles();
     for (const group of findHeaderStatGroups()) restoreHeaderStats(group);

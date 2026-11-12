@@ -6,6 +6,8 @@ import { browser } from 'wxt/browser';
 import type { AuthFlowState, GitHubAccount, RemoteInvalid, SyncState } from './account';
 import { accountItem, authFlowItem, effectiveClientId, EMPTY_SYNC_STATE, syncStateItem, tokensOf, withTokens } from './account';
 import { loadCatalog } from './catalog';
+import type { CreatePullOutcome, PullAttempt } from './create-pull';
+import { apiRefusal, parseCreatedPull } from './create-pull';
 import { FEEDBACK_REPO, ISSUE_BODY_LIMIT, parseCreatedIssue, refusalMessage } from './feedback';
 import type { AccountActionMessage, AccountActionResponse, FeedbackSubmitMessage, FeedbackSubmitResponse } from './messages';
 import { settingsItem } from './storage';
@@ -391,6 +393,49 @@ async function submitFeedback(message: FeedbackSubmitMessage): Promise<FeedbackS
 
 export function handleFeedbackMessage(message: FeedbackSubmitMessage): Promise<FeedbackSubmitResponse> {
   return submitFeedback(message);
+}
+
+/* ------------------------------------------------------- pull request retry */
+
+async function postPull(token: string, attempt: PullAttempt): Promise<CreatePullOutcome> {
+  const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(attempt.owner)}/${encodeURIComponent(attempt.repo)}/pulls`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${token}`,
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      title: attempt.title,
+      body: attempt.body,
+      base: attempt.base,
+      head: attempt.head,
+      ...(attempt.headRepo === null ? {} : { head_repo: attempt.headRepo }),
+      draft: attempt.draft,
+    }),
+  });
+  if (response.status === 401) throw new SignedOutError();
+  const answer: unknown = await response.json().catch(() => null);
+  if (response.ok) {
+    const pull = parseCreatedPull(answer);
+    return pull === null ? { ok: false, reason: 'refused', message: 'GitHub opened the pull request but its answer could not be read.' } : { ok: true, ...pull };
+  }
+  return apiRefusal(response.status, answer);
+}
+
+/** The request `gh pr create` makes, with the reader's Geld App token, for a pull request GitHub's own form failed to open. */
+export async function createPullRequest(attempt: PullAttempt): Promise<CreatePullOutcome> {
+  const account = await accountItem.getValue();
+  if (account === null) return { ok: false, reason: 'unavailable', message: 'Sign in to Geld with GitHub to retry through the API.' };
+  // An OAuth App token only carries the gist scope.
+  if (account.auth !== 'app') return { ok: false, reason: 'unavailable', message: 'Sign in to Geld with GitHub again to retry through the API.' };
+  try {
+    return await withToken((token) => postPull(token, attempt));
+  } catch (error) {
+    if (error instanceof SignedOutError) return { ok: false, reason: 'unavailable', message: 'GitHub signed Geld out.' };
+    return { ok: false, reason: 'refused', message: `Could not reach GitHub: ${error instanceof Error ? error.message : String(error)}` };
+  }
 }
 
 /* ------------------------------------------------------------------ wiring */
