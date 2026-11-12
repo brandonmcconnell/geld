@@ -1,5 +1,5 @@
 import type { BlockChoices, BlockScope } from './block-dialog';
-import { BLOCK_DURATIONS, openBlockDialog, openUnblockDialog } from './block-dialog';
+import { BLOCK_DURATIONS, BLOCK_LABELS, openBlockDialog, openUnblockDialog, UNBLOCK_LABELS } from './block-dialog';
 import type { BlockedBy } from './blocked-list';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { pageFetch } from './page-fetch';
@@ -177,16 +177,16 @@ function itemsFor(context: DescriptionMenuContext): readonly (Item | 'divider')[
         items.push({ label: 'Report content', icon: ICON_REPORT, href: reportContentUrl(location.origin, pullUrl(), author) });
         break;
       case 'block':
-        items.push({ label: 'Block user for you', icon: ICON_OCTAGON_BLOCKED, dialog: true, run: () => block('personal', context) });
+        items.push({ label: BLOCK_LABELS.personal, icon: ICON_OCTAGON_BLOCKED, dialog: true, run: () => block('personal', context) });
         break;
       case 'unblock':
-        items.push({ label: 'Unblock user for you', icon: ICON_OCTAGON_BLOCKED, dialog: true, run: () => unblock('personal', context) });
+        items.push({ label: UNBLOCK_LABELS.personal, icon: ICON_OCTAGON_BLOCKED, dialog: true, run: () => unblock('personal', context) });
         break;
       case 'block-org':
-        items.push({ label: 'Block user for org', icon: ICON_OCTAGON_BLOCKED, dialog: true, run: () => block('org', context) });
+        items.push({ label: BLOCK_LABELS.org, icon: ICON_OCTAGON_BLOCKED, dialog: true, run: () => block('org', context) });
         break;
       case 'unblock-org':
-        items.push({ label: 'Unblock user for org', icon: ICON_OCTAGON_BLOCKED, dialog: true, run: () => unblock('org', context) });
+        items.push({ label: UNBLOCK_LABELS.org, icon: ICON_OCTAGON_BLOCKED, dialog: true, run: () => unblock('org', context) });
         break;
     }
   }

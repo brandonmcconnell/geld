@@ -221,7 +221,7 @@ describe('syncDescriptionMenu', () => {
     const dialog = openDialog('Block user for you');
     history.replaceState(null, '', '/o/r/pull/8');
     fetched.urls.length = 0;
-    [...dialog.querySelectorAll('button')].find((node) => node.textContent === 'Block user')?.click();
+    [...dialog.querySelectorAll('button')].find((node) => node.textContent === 'Block user for you')?.click();
     await vi.waitFor(() => expect(dialog.querySelector('[role="alert"]')?.textContent).toContain('moved to another page'));
     expect(fetched.urls).toEqual([]);
   });

@@ -33,6 +33,10 @@ export const HIDE_REASONS: readonly { readonly value: string; readonly label: st
   { value: 'LOW_QUALITY', label: 'Low quality' },
 ];
 
+/** The menu's words for each block, which its dialog's button repeats. */
+export const BLOCK_LABELS: { readonly [S in BlockScope]: string } = { personal: 'Block user for you', org: 'Block user for org' };
+export const UNBLOCK_LABELS: { readonly [S in BlockScope]: string } = { personal: 'Unblock user for you', org: 'Unblock user for org' };
+
 export interface BlockChoices {
   /** Organisation only. */
   readonly duration: BlockDuration;
@@ -141,7 +145,8 @@ export function openBlockDialog(options: BlockDialogOptions): HTMLDialogElement 
     DEFAULT_BLOCK_CHOICES.closeContent,
   );
   const error = createElement('p', { class: 'geld-block-dialog__error', role: 'alert', hidden: '' });
-  const submit = createElement('button', { type: 'button', class: 'btn btn-danger' }, [scope === 'personal' ? 'Block user' : 'Block user from organization']);
+  const label = BLOCK_LABELS[scope];
+  const submit = createElement('button', { type: 'button', class: 'btn btn-danger' }, [label]);
   const body: HTMLElement[] = [];
   let duration: HTMLSelectElement | null = null;
   let notify: HTMLInputElement | null = null;
@@ -236,7 +241,7 @@ export function openBlockDialog(options: BlockDialogOptions): HTMLDialogElement 
     void options.onBlock(choices).then((failure) => {
       if (failure === null) return;
       sending = false;
-      submit.textContent = scope === 'personal' ? 'Block user' : 'Block user from organization';
+      submit.textContent = label;
       sync();
       error.textContent = failure;
       error.hidden = false;
@@ -278,7 +283,7 @@ export function openUnblockDialog(options: UnblockDialogOptions): HTMLDialogElem
   const { scope, login, org } = options;
   const error = createElement('p', { class: 'geld-block-dialog__error', role: 'alert', hidden: '' });
   const cancel = createElement('button', { type: 'button', class: 'btn' }, ['Cancel']);
-  const submit = createElement('button', { type: 'button', class: 'btn btn-danger' }, ['Unblock user']);
+  const submit = createElement('button', { type: 'button', class: 'btn btn-danger' }, [UNBLOCK_LABELS[scope]]);
   const words: (string | Node)[] = scope === 'personal' ? ['Are you sure you want to unblock ', createElement('strong', {}, [`@${login}`]), '?'] : ['Are you sure you want to unblock ', createElement('strong', {}, [login]), ' from ', createElement('strong', {}, [org]), '?'];
   const { dialog, close } = frame(scope === 'personal' ? `Unblock @${login}` : `Unblock ${login} from ${org}`, [createElement('p', { class: 'geld-block-dialog__text' }, words), error], [cancel, submit]);
   let sending = false;

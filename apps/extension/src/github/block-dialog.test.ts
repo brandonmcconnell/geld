@@ -27,7 +27,7 @@ describe('openBlockDialog', () => {
     expect(dialog.querySelector('.Overlay-title')?.textContent).toBe('Block @spammer');
     expect(byLabel(dialog, 'Close all open issues').checked).toBe(false);
     expect(dialog.querySelector('textarea')?.getAttribute('maxlength')).toBe('250');
-    button(dialog, 'Block user').click();
+    button(dialog, 'Block user for you').click();
     await vi.waitFor(() => expect(onBlock).toHaveBeenCalledWith({ ...DEFAULT_BLOCK_CHOICES, notify: false }));
   });
 
@@ -38,7 +38,7 @@ describe('openBlockDialog', () => {
     const [duration, reason] = [...dialog.querySelectorAll('select')];
     expect(duration?.value).toBe('INDEFINITE');
     expect(byLabel(dialog, 'Send user a notification').checked).toBe(true);
-    const submit = button(dialog, 'Block user from organization');
+    const submit = button(dialog, 'Block user for org');
     const hide = byLabel(dialog, "Hide this user's comments");
     hide.checked = true;
     hide.dispatchEvent(new Event('change'));
@@ -57,10 +57,10 @@ describe('openBlockDialog', () => {
 
   it('keeps the dialog open with GitHub’s refusal', async () => {
     const dialog = openBlockDialog({ scope: 'personal', login: 'spammer', org: 'o', contentUrl: '', onBlock: async () => 'GitHub did not block this user (422). Please try again.', returnFocus: null });
-    button(dialog, 'Block user').click();
+    button(dialog, 'Block user for you').click();
     await vi.waitFor(() => expect(dialog.querySelector('[role="alert"]')?.textContent).toContain('422'));
     expect(dialog.isConnected).toBe(true);
-    expect(button(dialog, 'Block user').disabled).toBe(false);
+    expect(button(dialog, 'Block user for you').disabled).toBe(false);
   });
 });
 
@@ -69,7 +69,7 @@ describe('openUnblockDialog', () => {
     const onUnblock = vi.fn(async () => null);
     const dialog = openUnblockDialog({ scope: 'org', login: 'spammer', org: 'acme', onUnblock, returnFocus: null });
     expect(dialog.textContent).toContain('Are you sure you want to unblock spammer from acme?');
-    button(dialog, 'Unblock user').click();
+    button(dialog, 'Unblock user for org').click();
     await vi.waitFor(() => expect(onUnblock).toHaveBeenCalled());
     document.body.innerHTML = '';
   });
