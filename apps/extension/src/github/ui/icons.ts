@@ -342,7 +342,11 @@ export const ICON_CROSS_REFERENCE = octicon(
   'octicon-cross-reference',
 );
 
-/** Primer's Spinner as its buttons show it while they work: a faint full track and a quarter arc that turns. */
+/**
+ * GitHub's own loading spinner, Primer's Spinner, copied from its markup (the edit-history menu and deferred edit
+ * forms render it with the class `anim-rotate`, Primer React as `data-component="Spinner"`). `.geld-spinner` turns it
+ * as `anim-rotate` does, so it never depends on GitHub's stylesheet.
+ */
 export const ICON_SPINNER =
   '<svg class="octicon geld-spinner" viewBox="0 0 16 16" width="16" height="16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="7" stroke="currentColor" stroke-opacity="0.25" stroke-width="2" vector-effect="non-scaling-stroke"></circle><path d="M15 8a7.002 7.002 0 00-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" vector-effect="non-scaling-stroke"></path></svg>';
 

@@ -4687,18 +4687,6 @@ html [data-geld-person-fold-part][data-geld-person-fold-part] {
     transform: rotate(360deg);
   }
 }
-
-/* The sync octicon's arrows run counter-clockwise; the spin follows them. */
-@keyframes geld-spin-ccw {
-  to {
-    transform: rotate(-360deg);
-  }
-}
-
-.geld-review__icon--spin .octicon {
-  animation: geld-spin-ccw 1.6s linear infinite;
-}
-
 /* One level down: reviews, threads and people's comments inside the Reviews row. */
 .geld-review__slot[data-kind='list'] > .geld-review__slot-body {
   padding: 0;
@@ -7943,8 +7931,10 @@ summary.geld-review__edited--menu:hover,
   background: var(--geld-review-subtle);
 }
 
-/* Running: the frame goes transparent (never away, so the box keeps its size), the control fades, the glyph spins
-   and the pointer is the ordinary one — the click still lands, and asks before posting again. */
+/* Running: the frame goes transparent (never away, so the box keeps its size), the control fades, GitHub's spinner
+   stands in the glyph's place and the pointer is the ordinary one — the click still lands, and asks before posting
+   again. Both glyphs are in the button, since a click turns it to running in place (`!important` over the
+   octicon's inline display). */
 .geld-review__rerun[data-running] {
   border-color: transparent;
   background: none;
@@ -7952,14 +7942,9 @@ summary.geld-review__edited--menu:hover,
   cursor: default;
 }
 
-.geld-review__rerun[data-running] .octicon {
-  animation: geld-spin-ccw 1.6s linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .geld-review__rerun[data-running] .octicon {
-    animation: none;
-  }
+.geld-review__rerun:not([data-running]) .geld-spinner,
+.geld-review__rerun[data-running] .octicon:not(.geld-spinner) {
+  display: none !important;
 }
 
 /* "See latest" in Rerun's box, on an older word of the bot's: the history glyph mirrored, so its arrow runs the
@@ -9403,8 +9388,7 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
   }
 
   .geld-review [data-pending],
-  .geld-review__skeleton,
-  .geld-review__icon--spin .octicon {
+  .geld-review__skeleton {
     animation: none;
   }
 }
