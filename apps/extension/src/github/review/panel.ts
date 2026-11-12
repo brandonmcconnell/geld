@@ -20,7 +20,7 @@ import { botTitle, isOpenStatus, itemThreads, resolveBotId, threadCounts } from 
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { reactSettled } from '../react-hydration';
 import type { RevisionMarker } from './crawler';
-import { ICON_ALERT, ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_EXCLAMATION_CIRCLE_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_TRASH, ICON_TRIANGLE_DOWN, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER, ICON_EYE_CLOSED, ICON_BLOCKED } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_EXCLAMATION_CIRCLE_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_QUESTION, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_TRASH, ICON_TRIANGLE_DOWN, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER, ICON_EYE_CLOSED, ICON_BLOCKED } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checkStateOfRun, checksHealth, checksRowTone, checksSummary, checksTotal, pushRowTone, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
 import type { CheckCounts, CheckState, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -43,6 +43,7 @@ import { fitPathInto } from './path-fit';
 import { relativeTimeElement } from './time';
 import { DIGEST_VIEW_OPTIONS, digestViewLabel, viewChoice, viewLabel } from './digest-view';
 import { takeViewFocus } from './view-focus';
+import type { MissingTool } from '../../lib/feedback';
 
 export const PANEL_CLASS = 'geld-review';
 export const ATTR_PANEL = 'data-geld-review-panel';
@@ -558,6 +559,8 @@ export interface PanelHandlers {
    * target `id` (`OPEN_TARGETS`), `copy` copies the task for any other.
    */
   readonly onHandOff: (id: string, how: HandOff, key: string) => void;
+  /** "Request a bot" / "Request an agent": the feedback page, its draft asking Geld to support another review bot or coding agent. */
+  readonly onMissingTool: (tool: MissingTool) => void;
 }
 
 export type HandOff = 'comment' | 'open' | 'copy';
@@ -1619,6 +1622,7 @@ function agentItems(list: HTMLElement, key: string, triage: TriageView, handlers
   const shownTargets = targets.first.filter(keep);
   const foldedTargets = targets.folded.filter(keep);
   section('Open in agent', shownTargets.map(openItem), foldedTargets.map(openItem), `Other apps (${foldedTargets.length})`);
+  list.append(createElement('div', { class: `${PANEL_CLASS}__menu-sep`, role: 'separator' }), missingToolHelp('coding agent', handlers, close, 'menuitem'));
 }
 
 /**
@@ -1635,6 +1639,22 @@ export function likelyFirst<T extends { readonly likely: boolean }>(entries: rea
 function copyItem(list: HTMLElement, key: string, handlers: PanelHandlers, close: () => void): void {
   list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_COPY)]), 'Copy the task'], close, () => handlers.onHandOff('', 'copy', key)));
   list.append(createElement('div', { class: `${PANEL_CLASS}__menu-sep`, role: 'separator' }));
+}
+
+const MISSING_TOOL_LABEL: Readonly<Record<MissingTool, string>> = { 'review bot': 'Request a bot', 'coding agent': 'Request an agent' };
+
+/** "Request a bot" / "Request an agent": the feedback page, its draft asking Geld to support the reader's own tool. */
+function missingToolHelp(tool: MissingTool, handlers: PanelHandlers, close: () => void, role: 'menuitem' | null = null): HTMLElement {
+  const link = createElement('button', { type: 'button', class: `${PANEL_CLASS}__help`, title: `Ask Geld to support your ${tool}`, ...(role === null ? {} : { role }) }, [
+    createElement('span', { class: `${PANEL_CLASS}__help-glyph`, 'aria-hidden': 'true' }, [icon(ICON_QUESTION)]),
+    createElement('span', { class: `${PANEL_CLASS}__help-link` }, [MISSING_TOOL_LABEL[tool]]),
+  ]);
+  link.addEventListener('click', (event) => {
+    event.stopPropagation();
+    close();
+    handlers.onMissingTool(tool);
+  });
+  return link;
 }
 
 function applyControl(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHandlers): HTMLElement {
@@ -2121,7 +2141,8 @@ function requestMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | 
     event.stopPropagation();
     details.removeAttribute('open');
   });
-  list.append(createElement('div', { class: `${PANEL_CLASS}__request-footer` }, [run, cancel]));
+  const help = missingToolHelp('review bot', handlers, () => details.removeAttribute('open'));
+  list.append(createElement('div', { class: `${PANEL_CLASS}__request-footer` }, [help, run, cancel]));
   syncRun();
   details.append(summary, list);
   return details;

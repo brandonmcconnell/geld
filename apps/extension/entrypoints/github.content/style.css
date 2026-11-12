@@ -4391,10 +4391,52 @@ html [data-geld-person-fold-part][data-geld-person-fold-part] {
   background: var(--geld-review-border);
 }
 
+/* Inset as the items are, so the help glyph stands under the checkboxes and Cancel ends where "Not run" does. */
 .geld-review__request-footer {
   display: flex;
+  align-items: center;
   gap: 8px;
-  padding: 2px 2px 0;
+  padding: 2px 8px 0;
+}
+
+.geld-review__request-footer > .geld-review__help {
+  margin-right: auto;
+  padding: 0;
+}
+
+/* "Request a bot" / "Request an agent" at the foot of the bot and agent menus: glyph and words, one button. */
+.geld-review__help {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  color: var(--geld-review-muted);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.geld-review__help-glyph {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.geld-review__help-glyph > .octicon {
+  width: 12px;
+  height: 12px;
+}
+
+.geld-review__help:is(:hover, :focus-visible) {
+  color: var(--geld-review-accent);
+}
+
+.geld-review__help:is(:hover, :focus-visible) .geld-review__help-link {
+  text-decoration: underline;
 }
 
 .geld-review__request-run[disabled] {
