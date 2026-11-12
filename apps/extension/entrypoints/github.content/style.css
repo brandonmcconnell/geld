@@ -5782,19 +5782,20 @@ html [data-geld-person-fold-part][data-geld-person-fold-part] {
   outline-color: light-dark(rgb(128 128 128 / 15%), transparent);
 }
 
-/* A cutout that is a solid blob with a one-colour edge falls just short of a tile: its own colour fills it out to one. */
-.geld-review__avatar[data-shape='cutout'][data-ground],
-.geld-review__bot-icon[data-shape='cutout'][data-ground],
-.geld-review-hovercard__avatar[data-shape='cutout'][data-ground] {
+/*
+ * Overlapping marks need a ground of their own, or a cutout floats over its neighbour. Alone it keeps its free edge.
+ * A solid blob with a one-colour edge falls just short of a tile, so its own colour fills it out to one. Any other
+ * cutout gets a white tile in both schemes, as a picture would, with the tiles' ring, and art that comes near the
+ * edge is padded in to a tenth of the tile (`--geld-mark-inset`, from mark-shape.ts). White ink gets a dark tile.
+ */
+.geld-review__avatar + .geld-review__avatar[data-shape='cutout'][data-ground],
+.geld-review__avatar[data-shape='cutout'][data-ground]:has(+ .geld-review__avatar),
+.geld-review__deploy-sum .geld-review__bot-icon + .geld-review__bot-icon[data-shape='cutout'][data-ground],
+.geld-review__deploy-sum .geld-review__bot-icon[data-shape='cutout'][data-ground]:has(+ .geld-review__bot-icon) {
   background: var(--geld-mark-ground);
   outline-color: rgb(128 128 128 / 15%);
 }
 
-/*
- * Overlapping marks need a ground of their own, or a cutout floats over its neighbour. It gets a white tile in both
- * schemes, as a picture would, with the tiles' ring, and art that comes near the edge is padded in to a tenth of
- * the tile (`--geld-mark-inset`, from mark-shape.ts). White ink gets a dark tile instead.
- */
 .geld-review__avatar + .geld-review__avatar[data-shape='cutout']:not([data-ground]),
 .geld-review__avatar[data-shape='cutout']:not([data-ground]):has(+ .geld-review__avatar),
 .geld-review__deploy-sum .geld-review__bot-icon + .geld-review__bot-icon[data-shape='cutout']:not([data-ground]),

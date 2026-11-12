@@ -43,6 +43,11 @@ describe('readMark', () => {
     expect(readMark(picture((x, y) => (inDisc(x, y) ? PURPLE : CLEAR)), SIZE, SIZE)).toEqual({ shape: 'round', ink: null, ground: null, inset: 0 });
   });
 
+  it('reads a shape that touches every edge with free corners as a cutout, not a disc or a tile', () => {
+    const inEar = (x: number, y: number): boolean => x >= 28 && x < 37 && y >= 3 && y < 12;
+    expect(readMark(picture((x, y) => (inDisc(x, y) || inEar(x, y) ? PURPLE : CLEAR)), SIZE, SIZE).shape).toBe('cutout');
+  });
+
   it('reads a glyph that never reaches the edges as a cutout that needs no padding', () => {
     expect(readMark(picture((x, y) => (inGlyph(x, y) ? PURPLE : CLEAR)), SIZE, SIZE)).toEqual({ shape: 'cutout', ink: null, ground: null, inset: 0 });
   });
