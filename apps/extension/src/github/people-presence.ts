@@ -1,6 +1,7 @@
 import { compileAuthorRules } from '@geld/core';
 import type { BlockedBy } from './blocked-list';
-import { blockedFor } from './blocked-users';
+import { blockedFor, mayBlockFromOrg, personalBlocksRead } from './blocked-users';
+import { removeDescriptionMenu, syncDescriptionMenu } from './description-menu';
 import { createElement, OWN_UI_ATTRIBUTE } from './dom';
 import { isMinimizedWrapper } from './review/edit-times';
 import { lookUpUnhideForms, markedOnGitHub, sendUnhide, unhideFormOf } from './review/hidden-people';
@@ -292,6 +293,15 @@ export function applyPeoplePresence(options: PresenceOptions): void {
   syncFolds(standingOf);
   syncLabels(blocked);
   syncNotice(blocked, options.noun);
+  const author = pageAuthor();
+  syncDescriptionMenu({
+    viewer,
+    author,
+    owner,
+    blocksKnown: personalBlocksRead(),
+    blocked: author === null ? null : (blocked.get(author.toLowerCase()) ?? null),
+    mayBlockFromOrg: mayBlockFromOrg(owner),
+  });
   // Blocked people always leave the sidebar; the pull request's state stays GitHub's.
   syncSidebarPeople((login) => standingOf(login) !== null || blocked.has(login.toLowerCase()));
   // Their hovercard says why, with Hide their comments for a blocked person GitHub still shows, and Unhide for the hidden.
@@ -311,4 +321,5 @@ export function removePeoplePresence(): void {
   for (const node of document.querySelectorAll(`[${ATTR_LINE}], [${ATTR_LABEL}], [${ATTR_NOTICE}]`)) node.remove();
   clearSidebarPeople();
   removePersonHovercards();
+  removeDescriptionMenu();
 }

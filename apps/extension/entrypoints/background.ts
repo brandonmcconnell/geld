@@ -420,12 +420,11 @@ async function fetchFile(url: string): Promise<FetchFileResponse> {
 
 const BLOCKED_USERS_PAGE = /^https:\/\/github\.com\/(?:settings|organizations\/[A-Za-z0-9-]+\/settings)\/blocked_users$/;
 
-/** The logins on a GitHub "Blocked users" page; none when the reader may not see it (404) or is signed out. */
+/** The logins on a GitHub "Blocked users" page; a failure when the reader may not see it (404: not a moderator there) or is signed out. */
 async function fetchBlockedUsers(url: string): Promise<BlockedUsersResponse> {
   if (!BLOCKED_USERS_PAGE.test(url)) return { ok: false, reason: 'disallowed-url' };
   try {
     const response = await fetch(url, { credentials: 'include', cache: 'no-store', redirect: 'follow' });
-    if (response.status === 404) return { ok: true, logins: [] };
     if (!response.ok) return { ok: false, reason: `http-${response.status}` };
     if (new URL(response.url).pathname !== new URL(url).pathname) return { ok: false, reason: 'signed-out' };
     return { ok: true, logins: blockedLoginsIn(await response.text()) };

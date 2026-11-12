@@ -1659,6 +1659,198 @@ html[data-geld-tab-counts] [data-component='PageHeader']:has([class*='branchGrou
   white-space: nowrap;
 }
 
+/* The block dialogs: GitHub's own options, drawn with Primer's Overlay and form classes. */
+dialog.geld-block-dialog {
+  width: min(640px, calc(100vw - 32px));
+  height: fit-content;
+  max-height: calc(100vh - 64px);
+}
+
+.geld-block-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.geld-block-dialog__text {
+  margin: 0;
+  color: var(--fgColor-default, #1f2328);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.geld-block-dialog .geld-block-dialog__field {
+  margin: 0;
+}
+
+.geld-block-dialog__label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Primer's `.form-group textarea.form-control` is 200px tall, loaded after this sheet at the same weight. */
+.geld-block-dialog .form-group textarea.geld-block-dialog__note {
+  width: 100%;
+  height: 80px;
+  min-height: 80px;
+  resize: vertical;
+}
+
+.geld-block-dialog__field .note,
+.geld-block-dialog__check .note {
+  margin: 4px 0 0;
+  color: var(--fgColor-muted, #59636e);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.geld-block-dialog__heading {
+  margin: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--borderColor-muted, rgba(209, 217, 224, 0.7));
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.geld-block-dialog .geld-block-dialog__check {
+  margin: 0;
+}
+
+.geld-block-dialog__check label {
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.geld-block-dialog__quote {
+  margin: 8px 0 0;
+  padding: 0 12px;
+  border-left: 0.25em solid var(--borderColor-default, #d1d9e0);
+  color: var(--fgColor-muted, #59636e);
+}
+
+.geld-block-dialog__reason {
+  align-self: flex-start;
+  margin: -8px 0 0 20px;
+}
+
+.geld-block-dialog__error {
+  margin: 0;
+  color: var(--fgColor-danger, #d1242f);
+  font-size: 14px;
+}
+
+.geld-block-dialog__error[hidden] {
+  display: none;
+}
+
+/* The Overview description's ⋯, beside GitHub's Edit pencil, in the shape of Primer's small invisible icon button. */
+.geld-desc-menu__wrap {
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.geld-desc-menu__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fgColor-muted, #59636e);
+  cursor: pointer;
+}
+
+.geld-desc-menu__button:hover,
+.geld-desc-menu__button[aria-expanded='true'] {
+  background: var(--control-transparent-bgColor-hover, rgba(208, 215, 222, 0.32));
+  color: var(--fgColor-default, #1f2328);
+}
+
+.geld-desc-menu__button:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, #0969da);
+  outline-offset: -2px;
+}
+
+.geld-desc-menu__wrap:has(> [aria-expanded='true']) > tool-tip {
+  display: none !important;
+}
+
+/* Its menu is drawn as GitHub's Overview menus are (Primer's inset ActionList in an AnchoredOverlay, measured Nov 2026): no
+   border but a ring in the shadow, 8px above and below, items inset 8px and 33px tall, full-width dividers. */
+.geld-desc-menu {
+  position: fixed;
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+  min-width: 192px;
+  padding: 8px 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 12px;
+  background: var(--overlay-bgColor, var(--bgColor-default, #ffffff));
+  box-shadow: var(--shadow-floating-small, 0 0 0 1px rgba(209, 217, 224, 0.25), 0 6px 12px -3px rgba(37, 41, 46, 0.04), 0 6px 18px 0 rgba(37, 41, 46, 0.12));
+}
+
+.geld-desc-menu__item {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  min-height: 33px;
+  margin: 0 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fgColor-default, #1f2328);
+  font: inherit;
+  font-size: 14px;
+  line-height: 21px;
+  text-align: left;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.geld-desc-menu__item:hover {
+  background: var(--control-transparent-bgColor-hover, rgba(129, 139, 152, 0.15));
+  color: var(--fgColor-default, #1f2328);
+  text-decoration: none;
+}
+
+.geld-desc-menu__item:active {
+  background: var(--control-transparent-bgColor-active, rgba(129, 139, 152, 0.23));
+}
+
+.geld-desc-menu__item:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, #0969da);
+  outline-offset: -2px;
+}
+
+.geld-desc-menu__visual {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  height: 20px;
+  margin-right: 8px;
+  color: var(--fgColor-muted, #59636e);
+}
+
+.geld-desc-menu__label {
+  line-height: 20px;
+}
+
+.geld-desc-menu__divider {
+  flex: 0 0 auto;
+  height: 1px;
+  margin: 7px 0 8px;
+  background: var(--borderColor-muted, rgba(209, 217, 224, 0.7));
+}
+
 /* The merge box: the method, the commit GitHub would write (editable), and GitHub's bypass checkbox when that is the only way. */
 .geld-quick-review__method[hidden],
 .geld-quick-review__commit[hidden],

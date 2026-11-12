@@ -367,7 +367,7 @@ export function logUrlOfCard(body: Element): string | null {
 let embeddedPull: { readonly source: Element; readonly number: number; readonly nodeId: string } | null = null;
 
 /** This pull request's node id (`PR_…`) from the React page's embedded payload, when the payload is this pull request's. */
-function pullRequestNodeId(): string | null {
+export function pullRequestNodeId(): string | null {
   const number = Number(/\/pull\/(\d+)/.exec(location.pathname)?.[1] ?? Number.NaN);
   if (embeddedPull === null || !embeddedPull.source.isConnected) {
     embeddedPull = null;
