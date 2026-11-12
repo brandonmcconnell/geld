@@ -9,10 +9,6 @@ let activePath: string | null = null;
 let closeDialog: (() => void) | null = null;
 const videoButtons = new Map<HTMLVideoElement, HTMLButtonElement>();
 
-function isConversation(): boolean {
-  return /^\/[^/]+\/[^/]+\/(?:issues|pull)\/\d+(?:\/|$)/.test(window.location.pathname);
-}
-
 function attachmentLink(image: HTMLImageElement): HTMLAnchorElement | null {
   if (image.closest('.markdown-body') === null) return null;
   const link = image.closest('a');
@@ -29,8 +25,9 @@ function attachmentLink(image: HTMLImageElement): HTMLAnchorElement | null {
   // GitHub proxies an external image through camo and links it to itself, so only that self-link counts.
   if (url.hostname === 'camo.githubusercontent.com') return url.href === image.src ? link : null;
   if (url.origin !== window.location.origin) return null;
-  return /^\/(?:user-attachments\/(?:assets|files)\/|[^/]+\/[^/]+\/(?:assets|files)\/)/.test(url.pathname)
-    || (/^\/[^/]+\/[^/]+\/(?:blob|raw)\//.test(url.pathname) && IMAGE_PATH.test(url.pathname)) ? link : null;
+  if (/^\/(?:user-attachments|[^/]+\/[^/]+)\/assets\//.test(url.pathname)) return link;
+  // A `files` upload can be any file (a PDF, a zip), so it counts only when it names an image.
+  return /^\/(?:user-attachments\/files|[^/]+\/[^/]+\/(?:files|blob|raw))\//.test(url.pathname) && IMAGE_PATH.test(url.pathname) ? link : null;
 }
 
 /** GitHub names every upload "image" (older uploads "Image"), which says nothing a dialog title should. */
@@ -96,7 +93,7 @@ function show(viewer: LightboxViewer, title: string, href: string, trigger: HTML
 }
 
 function onClick(event: MouseEvent): void {
-  if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || !isConversation()) return;
+  if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
   const target = event.target;
   if (!(target instanceof Element)) return;
   const image = target.closest('img') ?? target.closest('a')?.querySelector('img');
@@ -136,7 +133,7 @@ function enhanceVideos(): void {
 }
 
 export function applyAttachmentLightbox(enabled = true): void {
-  if (!enabled || !isConversation()) {
+  if (!enabled) {
     removeAttachmentLightbox();
     return;
   }

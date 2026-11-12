@@ -50,7 +50,11 @@ describe('attachment lightbox', () => {
     expect(document.querySelector('dialog')?.open).toBe(true);
   });
 
-  it.each(['/owner/repo/issues/42', '/owner/repo/pull/42', '/owner/repo/pull/42/files'])('opens an attachment on %s and preserves its original link', (path) => {
+  it.each([
+    '/owner/repo/issues/42', '/owner/repo/pull/42', '/owner/repo/pull/42/files', '/owner/repo',
+    '/owner/repo/blob/main/README.md', '/owner/repo/discussions/7', '/orgs/owner/discussions/7',
+    '/owner/repo/wiki/Home', '/owner/repo/releases',
+  ])('opens an attachment on %s and preserves its original link', (path) => {
     vi.stubGlobal('location', new URL(`https://github.com${path}`));
     const image = mount();
     applyAttachmentLightbox();
@@ -105,8 +109,10 @@ describe('attachment lightbox', () => {
     const outside = mount();
     outside.closest('div')?.classList.remove('markdown-body');
     const unsafe = mount('javascript:alert(1)');
+    const pdf = mount('https://github.com/owner/repo/files/123/manual.pdf', 'https://img.shields.io/badge/manual-pdf-blue');
+    const upload = mount('https://github.com/user-attachments/files/123/report.zip', 'https://img.shields.io/badge/report-zip-blue');
     applyAttachmentLightbox();
-    for (const image of [badge, unrelated, outside, unsafe]) {
+    for (const image of [badge, unrelated, outside, unsafe, pdf, upload]) {
       expect(image.hasAttribute('data-geld-lightbox-image')).toBe(false);
       expect(click(image).defaultPrevented).toBe(false);
     }
@@ -207,9 +213,6 @@ describe('attachment lightbox', () => {
     removeAttachmentLightbox();
     expect(document.querySelector('dialog')).toBeNull();
     expect(image.hasAttribute('data-geld-lightbox-image')).toBe(false);
-    expect(click(image).defaultPrevented).toBe(false);
-    vi.stubGlobal('location', new URL('https://github.com/owner/repo'));
-    applyAttachmentLightbox();
     expect(click(image).defaultPrevented).toBe(false);
   });
 });
