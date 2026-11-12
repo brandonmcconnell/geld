@@ -120,6 +120,11 @@ export function syncDescriptionMenu(context: DescriptionMenuContext | null): voi
   meta.append(createButton());
 }
 
+/** Before paint, from the controller's mutation callback: a row GitHub drew anew gets the ⋯ back in its first frame. */
+export function reassertDescriptionMenu(): void {
+  if (current !== null) syncDescriptionMenu(current);
+}
+
 export function removeDescriptionMenu(): void {
   syncDescriptionMenu(null);
 }

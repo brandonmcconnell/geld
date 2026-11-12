@@ -1760,20 +1760,27 @@ html[data-geld-on] section[aria-label='Description'] [class*='editMetadata'] > [
   margin-inline-end: 0;
 }
 
-/* The ⋯ goes in only once React has hydrated the row: its place is held from the first frame, so the pencil never moves. */
+/*
+ * The ⋯ goes in only once React has hydrated the row: until then its glyph is drawn in its place, as the button draws
+ * it at rest, so it shows with the pencil and the pencil never moves.
+ */
 html[data-geld-on] section[aria-label='Description'] [class*='editMetadata']:not(:has(> [data-geld-desc-menu]))::after {
   content: '';
   flex: none;
   width: 28px;
   height: 28px;
   margin-inline: 4px -4px;
+  background: var(--fgColor-muted, #59636e);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM1.5 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm13 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3ZM1.5 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm13 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
 }
 
 /*
- * GitHub's "Loading description history" placeholder: a loading button as wide as its hidden words, so its spinner
- * stood alone well left of the pencil until the history answered. The "Edited" menu shows once there is one to open.
+ * GitHub's "Loading description history" button keeps its hidden label in the layout (Primer stacks the spinner over
+ * it), so it was 172px wide and its spinner stood 78px left of the pencil. Without the label it is the spinner's
+ * width and stands where "Edited" will, beside the pencil. The label still names the button (`aria-labelledby`).
  */
-html[data-geld-on] section[aria-label='Description'] [class*='editMetadata'] [data-loading-wrapper]:has(> [class*='editHistoryLoading'][data-loading='true']) {
+html[data-geld-on] section[aria-label='Description'] [class*='editMetadata'] [class*='editHistoryLoading'][data-loading='true'] [data-component='text'] {
   display: none;
 }
 
