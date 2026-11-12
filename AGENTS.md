@@ -1564,6 +1564,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   "Copy the task" serves any other.
   The comment is posted only after a confirm that shows it, and carries the row's finding (with the findings its fix shares a problem with), the triage's suggestion and the thread link (`agentTask`).
   The menus name each agent and nothing more: commands and notes on the right read as clutter.
+  **The menus list the agents likely to answer first** (`agentLikely`, as the review bots' request menu lists the bots it has a sign of first): the reader's choice, an agent the pull request's links show its author used, or one whose App's review bot is known on the repository (`CodingAgent.installedWith`: Bugbot for Cursor, and Copilot's, Claude's, Codex's and Devin's own review bots;
+  seen on the page, declared or configured, from `requestableBots`).
+  The rest wait behind "Other agents (N)", folded again whenever the menu closes, and with no agent likely every agent is listed.
+  A desktop app (T3 Code, Cursor's) is never guessed at: it counts only as the reader's choice or when the links show it was used.
   Which agent leads is the `codingAgent` setting (Experiments, options page only, `auto` by default), unless the reader is the pull request's author and its related links show another agent worked on it (`recommendAgents`, `agentsInRelatedLinks`): then that one leads, except when the links name the reader's own choice too, which leads.
   With `auto` and nothing known, "Fix with…" opens the menu.
   The agent's mark stands as far from its button's left edge as from its top and bottom (`.geld-review__split-agent`).

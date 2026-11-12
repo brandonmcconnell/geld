@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agentComment, agentsInRelatedLinks, agentTask, codingAgentById, recommendAgents } from './coding-agents';
+import { agentComment, agentLikely, agentsInRelatedLinks, agentTask, codingAgentById, recommendAgents } from './coding-agents';
 
 const ids = (agents: readonly { readonly id: string }[]): readonly string[] => agents.map((agent) => agent.id);
 
@@ -24,6 +24,26 @@ describe('recommendAgents', () => {
   it('recommends nothing on auto unless the author is reading', () => {
     expect(recommendAgents('auto', ['copilot'], false).recommended).toBeNull();
     expect(recommendAgents('auto', ['copilot'], true).recommended?.id).toBe('copilot');
+  });
+});
+
+describe('agentLikely', () => {
+  const agent = (id: string) => {
+    const found = codingAgentById(id);
+    if (found === undefined) throw new Error(id);
+    return found;
+  };
+
+  it('counts an agent whose review bot is known here, the reader’s choice, and the one the author used', () => {
+    expect(agentLikely(agent('cursor'), 'auto', [], new Set(['bugbot']))).toBe(true);
+    expect(agentLikely(agent('codex'), 'auto', [], new Set(['bugbot', 'greptile']))).toBe(false);
+    expect(agentLikely(agent('devin'), 'devin', [], new Set())).toBe(true);
+    expect(agentLikely(agent('claude'), 'auto', ['claude'], new Set())).toBe(true);
+  });
+
+  it('never guesses at an app nothing on the page can show', () => {
+    expect(agentLikely(agent('t3code'), 'auto', [], new Set(['bugbot', 'codex', 'copilot', 'claude', 'devin']))).toBe(false);
+    expect(agentLikely(agent('t3code'), 't3code', [], new Set())).toBe(true);
   });
 });
 

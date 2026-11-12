@@ -29,6 +29,11 @@ export interface CodingAgent {
   readonly icon?: 't3code';
   /** Related-link services (`related-links.ts` spec ids) that show it worked on a pull request. */
   readonly relatedIds: readonly string[];
+  /**
+   * Review bots (registry ids) whose presence on a repository says this agent's GitHub integration is installed there:
+   * the same App answers both (Bugbot and `@cursor` are Cursor's), so a mention would be heard.
+   */
+  readonly installedWith?: readonly string[];
   /** A link that opens the task in the agent's own app as a draft, where it has one, and what following it is called. */
   readonly openUrl?: (task: string, pull: PullRef) => string;
   readonly openLabel?: string;
@@ -50,6 +55,7 @@ export const CODING_AGENTS: readonly CodingAgent[] = [
     command: '@cursor',
     bot: 'bugbot',
     relatedIds: ['cursor', 'cursor-automation'],
+    installedWith: ['bugbot'],
     // The web form of Cursor's prompt deeplink: it hands the prompt to the desktop app, not to Cursor on the web.
     openUrl: (task) => {
       const url = new URL('https://cursor.com/link/prompt');
@@ -58,10 +64,10 @@ export const CODING_AGENTS: readonly CodingAgent[] = [
     },
     openLabel: 'Open in Cursor desktop',
   },
-  { id: 'copilot', name: 'Copilot', command: '@copilot', appId: 1143301, relatedIds: ['copilot'], note: 'Not on pull requests from forks' },
-  { id: 'claude', name: 'Claude', command: '@claude', bot: 'claude', relatedIds: ['claude-code'], note: 'Needs the Claude Code GitHub Action' },
-  { id: 'codex', name: 'Codex', command: '@codex', bot: 'codex', relatedIds: ['codex'] },
-  { id: 'devin', name: 'Devin', command: '/devin', bot: 'devin', relatedIds: ['devin'], note: 'Open pull requests only' },
+  { id: 'copilot', name: 'Copilot', command: '@copilot', appId: 1143301, relatedIds: ['copilot'], installedWith: ['copilot'], note: 'Not on pull requests from forks' },
+  { id: 'claude', name: 'Claude', command: '@claude', bot: 'claude', relatedIds: ['claude-code'], installedWith: ['claude'], note: 'Needs the Claude Code GitHub Action' },
+  { id: 'codex', name: 'Codex', command: '@codex', bot: 'codex', relatedIds: ['codex'], installedWith: ['codex'] },
+  { id: 'devin', name: 'Devin', command: '/devin', bot: 'devin', relatedIds: ['devin'], installedWith: ['devin'], note: 'Open pull requests only' },
   {
     // A prompt link: app.t3.codes asks once where to open it (desktop, mobile, or a connected browser), and `pr` puts the
     // draft in the pull request's thread, or on its branch in a new worktree after the reader confirms.
@@ -92,6 +98,15 @@ export function agentsInRelatedLinks(serviceIds: readonly string[]): readonly Ag
     if (agent !== undefined && !found.includes(agent.id)) found.push(agent.id);
   }
   return found;
+}
+
+/**
+ * Whether the agent is likely to answer here, as the review bots' request menu judges its bots: it is the reader's
+ * choice, the pull request's links show its author used it, or a review bot of the same App is known on the repository
+ * (`knownBots`: seen on the page, declared or configured).
+ */
+export function agentLikely(agent: CodingAgent, preferred: CodingAgentId, used: readonly AgentId[], knownBots: ReadonlySet<string>): boolean {
+  return agent.id === preferred || used.includes(agent.id) || (agent.installedWith ?? []).some((bot) => knownBots.has(bot));
 }
 
 export interface AgentRecommendation {

@@ -25,7 +25,7 @@ import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassi
 import { aiPending, aiStateFor, clearAiForPage, discardSuggestion, jevDecisionsFor, loadAiForPage, markSuggestionApplied, previewDecisionKey, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi, withJevDone } from './ai';
 import type { AiState, SuggestionSource, SuggestionTarget } from './ai';
 import { applyFix } from './apply-suggestion';
-import { agentComment, agentsInRelatedLinks, agentTask, CODING_AGENTS, codingAgentById, diffHunks, lineDiff, recommendAgents } from '@geld/review';
+import { agentComment, agentLikely, agentsInRelatedLinks, agentTask, CODING_AGENTS, codingAgentById, diffHunks, lineDiff, recommendAgents } from '@geld/review';
 import type { CodingAgent } from '@geld/review';
 import { relatedLinksOnPage } from '../related-links';
 import { wholeFileLines } from '../whole-file';
@@ -2604,7 +2604,7 @@ function agentIcon(agent: CodingAgent): string | null {
 }
 
 /** The triage card's reading: the fixes to show, who to hand the rest to, and what this visit did with them. */
-function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, prAuthor: string | null): TriageView | null {
+function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, prAuthor: string | null, knownBots: ReadonlySet<string>): TriageView | null {
   if (ai.kind !== 'current' && ai.kind !== 'stale' && ai.kind !== 'failed' && ai.kind !== 'running') return null;
   const viewer = document.querySelector('meta[name="user-login"]')?.getAttribute('content') ?? '';
   const services = relatedLinksOnPage(reapplySoon)
@@ -2630,7 +2630,16 @@ function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, pr
   }));
   return {
     suggestions,
-    agents: pick.order.map((agent) => ({ id: agent.id, name: agent.name, command: agent.command ?? null, iconSrc: agentIcon(agent), note: agent.note ?? null, openLabel: agent.openUrl === undefined ? null : (agent.openLabel ?? `Open in ${agent.name}`), used: used.includes(agent.id) })),
+    agents: pick.order.map((agent) => ({
+      id: agent.id,
+      name: agent.name,
+      command: agent.command ?? null,
+      iconSrc: agentIcon(agent),
+      note: agent.note ?? null,
+      openLabel: agent.openUrl === undefined ? null : (agent.openLabel ?? `Open in ${agent.name}`),
+      used: used.includes(agent.id),
+      likely: agentLikely(agent, settings.codingAgent, used, knownBots),
+    })),
     recommended: pick.recommended === null || pick.reason === null ? null : { id: pick.recommended.id, reason: pick.reason },
     openKey: visit.triage.openKey,
     collapsed: visit.triage.collapsed,
@@ -3864,7 +3873,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     openCommits: visit.openCommits,
     openPreviews: visit.openPreviews,
     ai: aiState,
-    triage: triageViewFor(meta, aiState, settings, prAuthor),
+    triage: triageViewFor(meta, aiState, settings, prAuthor, new Set(requestable.filter((bot) => bot.presence !== 'other').map((bot) => bot.id))),
     archivedPreviewsOpen: visit.archivedPreviewsOpen,
     deployments,
     prAuthor,

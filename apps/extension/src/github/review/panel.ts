@@ -592,6 +592,8 @@ export interface TriageAgent {
   readonly openLabel: string | null;
   /** The pull request's links show its author used it. */
   readonly used: boolean;
+  /** Likely to answer here (`agentLikely`): the menus list it before the rest, which wait behind "Other agents". */
+  readonly likely: boolean;
 }
 
 export interface TriageView {
@@ -1528,6 +1530,10 @@ function splitButton(main: HTMLButtonElement, label: string, focusKey: string, f
   caret.addEventListener('click', (event) => event.stopPropagation());
   const list = createElement('div', { class: `${PANEL_CLASS}__menu-list ${PANEL_CLASS}__split-list`, role: 'menu' });
   fill(list, () => details.removeAttribute('open'));
+  // "Other agents" folds again when the menu closes, so the menu always opens on the likely agents.
+  details.addEventListener('toggle', () => {
+    if (!details.open) for (const more of list.querySelectorAll('details[open]')) more.removeAttribute('open');
+  });
   details.append(caret, list);
   main.classList.add(`${PANEL_CLASS}__split-main`);
   return createElement('div', { class: `${PANEL_CLASS}__split` }, [main, details]);
@@ -1544,17 +1550,35 @@ function menuItem(content: readonly (Node | string)[], close: () => void, onSele
 }
 
 /**
- * "Fix with" each agent a comment starts, then each app the task opens in ("Open in Cursor desktop", "Open in T3
- * Code", with the agent's mark), then "Copy the task", for one finding, the recommended agent first.
+ * For one finding: "Fix with" each agent a comment starts and "Open in" each app the task opens in, likely agents first
+ * (as the review bots' request menu puts the bots it has a sign of first) and the rest behind "Other agents", then
+ * "Copy the task". With no agent likely, every agent is listed, as that menu lists the registry.
  */
 function agentItems(list: HTMLElement, key: string, triage: TriageView, handlers: PanelHandlers, close: () => void, skip: string | null): void {
-  for (const agent of triage.agents) {
-    if (agent.id !== skip && agent.command !== null) list.append(menuItem([agentMark(agent), `Fix with ${agent.name}`], close, () => handlers.onHandOff(agent.id, 'comment', key)));
-  }
-  for (const agent of triage.agents) {
-    if (agent.openLabel === null || (agent.id === skip && agent.command === null)) continue;
-    const mark = agent.command === null ? agentMark(agent) : createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_LINK_EXTERNAL)]);
-    list.append(menuItem([mark, agent.openLabel], close, () => handlers.onHandOff(agent.id, 'open', key)));
+  const itemsFor = (agents: readonly TriageAgent[]): HTMLElement[] => {
+    const fixes = agents.filter((agent) => agent.id !== skip && agent.command !== null).map((agent) => menuItem([agentMark(agent), `Fix with ${agent.name}`], close, () => handlers.onHandOff(agent.id, 'comment', key)));
+    const opens = agents
+      .filter((agent) => agent.openLabel !== null && !(agent.id === skip && agent.command === null))
+      .map((agent) => {
+        const mark = agent.command === null ? agentMark(agent) : createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_LINK_EXTERNAL)]);
+        return menuItem([mark, agent.openLabel ?? ''], close, () => handlers.onHandOff(agent.id, 'open', key));
+      });
+    return [...fixes, ...opens];
+  };
+  const likely = triage.agents.filter((agent) => agent.likely);
+  const others = triage.agents.filter((agent) => !agent.likely);
+  const shown = itemsFor(likely);
+  const hidden = itemsFor(others);
+  if (shown.length === 0) list.append(...hidden);
+  else {
+    list.append(...shown);
+    if (hidden.length > 0) {
+      const more = createElement('details', { class: `${PANEL_CLASS}__request-more ${PANEL_CLASS}__split-more` });
+      const summary = createElement('summary', { class: `${PANEL_CLASS}__request-more-summary` }, [icon(ICON_CHEVRON_RIGHT), `Other agents (${others.length})`]);
+      summary.addEventListener('click', (event) => event.stopPropagation());
+      more.append(summary, ...hidden);
+      list.append(more);
+    }
   }
   list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_COPY)]), 'Copy the task'], close, () => handlers.onHandOff('', 'copy', key)));
 }
