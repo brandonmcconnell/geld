@@ -1723,6 +1723,19 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   With the `hideCommentLines` setting on, `GeldController.classifyEntries` attaches them to visible entries and `applyCommentRows` collapses the matching `tr`s by GitHub's own line anchors (`diff-<digest>R30`: `data-line-anchor` in the React view, `id` in the classic one;
   a split-view row is collapsed only when every line it shows is comment-only), inserting one note row per run with a "Show" button (`shownCommentRuns` keeps opened runs open across re-renders).
   The counts flow through `HiddenBreakdown.lines` (also folded into `totals`), so header, chips and tooltip agree.
+- **A PDF GitHub would only download opens in Geld's PDF viewer** (`src/github/pdf-links.ts`, `attachment-pdf.ts`, `entrypoints/pdf-viewer/`, setting `attachmentLightbox`).
+  An upload (`user-attachments/files/…pdf`, `owner/repo/files/…pdf`) is served from `objects.githubusercontent.com` with `Content-Disposition: attachment`, and a raw repository file as `application/octet-stream`, so a click on either downloaded it;
+  `blob/…/x.pdf` pages keep GitHub's own viewer, and PDFs on other sites are left to the browser.
+  The dialog frames `pdf-viewer.html`, an extension page (a web-accessible resource on github.com only), which checks the address against the same rules, reads the PDF and shows it in the browser's own PDF viewer from a `blob:` URL.
+  Only the extension can read the storage hosts, which answer no cross-origin read, and making them required host permissions would disable the extension on update until each reader approved them.
+  So the page asks, within the optional `https://*/*`, for the one host the PDF comes from the first time it is needed (`objects.githubusercontent.com` for an upload, `raw.githubusercontent.com` for github.com's raw links, which redirect there), with an Allow button inside the frame, which Chrome accepts as the gesture;
+  a `raw.githubusercontent.com` link needs nothing, since that host answers anyone.
+  Escape inside the frame never reaches the dialog, so the page posts `geld:pdf-close` to the parent.
+  The dialog's Download (the `download` octicon, no new tab) saves the copy the page already holds once it posts `geld:pdf-ready`, under the dialog's file name, and until then is a plain same-tab link, which downloads since GitHub serves both kinds as a download.
+  Chrome's own toolbar names the PDF by its Title metadata, else by the `blob:` URL's random id (a `File` name does not help), and its own download button saves `<id>.pdf`, which is why the dialog keeps its own Download.
+  Enterprise hosts are not covered: the page is exposed to github.com alone.
+  Before it reads anything with the reader's session the page checks it is framed by github.com (`framedByGitHub`: every `location.ancestorOrigins`, else the referrer), the manifest's limit being only a second guard.
+  Firefox has no PDF viewer yet (`manifest.exclude` on the page, `import.meta.env.FIREFOX` in the click): its MV2 web-accessible list cannot be limited to github.com, and the frame never left `about:blank` on github.com in Firefox 160 (Nov 2026), so PDF links download there as before.
 - **GitHub's own file filter is mirrored, not fought.**
   `DiffView.filteredPaths` (`filteredPathsOf` in `model.ts`) collects files whose tree item or diff root carries `hidden` — GitHub toggles that client-side for its extension / viewed / CODEOWNERS filters and leaves its header alone.
   Those files become `Classified.filtered` → `HiddenBreakdown.filtered`, subtracted from the visible numbers (header, chips, tooltip row "Filtered by GitHub") but never counted as Geld-hidden.

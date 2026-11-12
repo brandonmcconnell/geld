@@ -4,6 +4,8 @@ import type { GalleryImage } from './attachment-gallery';
 import { applyAttachmentLightbox, removeAttachmentLightbox } from './attachment-lightbox';
 import { blockText } from './review/crawler';
 
+vi.mock('wxt/browser', () => ({ browser: { runtime: { getURL: (path: string) => `chrome-extension://geld${path}` } } }));
+
 interface Opened {
   readonly items: readonly GalleryImage[];
   readonly index: number;
@@ -143,12 +145,15 @@ describe('attachment lightbox', () => {
     const pdf = mount('https://github.com/owner/repo/files/123/manual.pdf', 'https://img.shields.io/badge/manual-pdf-blue');
     const upload = mount('https://github.com/user-attachments/files/123/report.zip', 'https://img.shields.io/badge/report-zip-blue');
     applyAttachmentLightbox();
-    for (const image of [badge, unrelated, outside, unsafe, pdf, upload]) {
+    for (const image of [badge, unrelated, outside, unsafe, upload]) {
       expect(image.hasAttribute('data-geld-lightbox-image')).toBe(false);
       expect(image.closest('a')?.hasAttribute('aria-haspopup')).toBe(false);
       expect(click(image).defaultPrevented).toBe(false);
     }
     expect(open()).toBeUndefined();
+    expect(pdf.hasAttribute('data-geld-lightbox-image')).toBe(false);
+    click(pdf);
+    expect(document.querySelector('dialog iframe')).not.toBeNull();
   });
 
   it.each([
@@ -207,6 +212,62 @@ describe('attachment lightbox', () => {
     applyAttachmentLightbox();
     image.closest('a')?.click();
     expect(open()).toBeDefined();
+  });
+
+  it('opens a PDF GitHub would download in the PDF viewer, and leaves GitHub\'s own PDF pages alone', () => {
+    const body = document.createElement('div');
+    body.className = 'markdown-body';
+    const upload = document.createElement('a');
+    upload.href = 'https://github.com/user-attachments/files/1/report.pdf';
+    upload.textContent = 'report.pdf';
+    const blob = document.createElement('a');
+    blob.href = 'https://github.com/owner/repo/blob/main/report.pdf';
+    body.append(upload, blob);
+    document.body.append(body);
+    applyAttachmentLightbox();
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    upload.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    const dialog = document.querySelector('dialog');
+    expect(dialog?.querySelector('.geld-lightbox__title')?.textContent).toBe('report.pdf');
+    expect(dialog?.querySelector('.geld-lightbox__original')?.textContent).toBe('Download');
+    const download = dialog?.querySelector<HTMLAnchorElement>('.geld-lightbox__original');
+    expect(download?.getAttribute('href')).toBe(upload.href);
+    expect(download?.hasAttribute('target')).toBe(false);
+    expect(download?.getAttribute('download')).toBe('report.pdf');
+    expect(download?.querySelector('.octicon-download')).not.toBeNull();
+    const frame = dialog?.querySelector('iframe');
+    const before = new MouseEvent('click', { bubbles: true, cancelable: true });
+    download?.dispatchEvent(before);
+    expect(before.defaultPrevented).toBe(false);
+    if (!frame) throw new Error('expected the PDF frame');
+    // happy-dom loads no frame, so the frame's window is a stand-in that records what the dialog sends it.
+    const post = vi.fn();
+    const framed = new EventTarget();
+    Object.defineProperty(framed, 'postMessage', { value: post });
+    Object.defineProperty(frame, 'contentWindow', { value: framed, configurable: true });
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'geld:pdf-ready' }, source: null }));
+    const stray = new MouseEvent('click', { bubbles: true, cancelable: true });
+    download?.dispatchEvent(stray);
+    expect(stray.defaultPrevented).toBe(false);
+    const ready = new MessageEvent('message', { data: { type: 'geld:pdf-ready' } });
+    Object.defineProperty(ready, 'source', { value: framed });
+    window.dispatchEvent(ready);
+    const after = new MouseEvent('click', { bubbles: true, cancelable: true });
+    download?.dispatchEvent(after);
+    expect(after.defaultPrevented).toBe(true);
+    expect(post).toHaveBeenCalledWith({ type: 'geld:pdf-download' }, 'chrome-extension://geld');
+    expect(new URL(frame?.getAttribute('src') ?? '').searchParams.get('src')).toBe(upload.href);
+    const closing = new MessageEvent('message', { data: { type: 'geld:pdf-close' } });
+    Object.defineProperty(closing, 'source', { value: framed });
+    window.dispatchEvent(closing);
+    expect(document.querySelector('dialog')).toBeNull();
+    const native = new MouseEvent('click', { bubbles: true, cancelable: true });
+    blob.dispatchEvent(native);
+    expect(native.defaultPrevented).toBe(false);
+    const modified = new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true });
+    upload.dispatchEvent(modified);
+    expect(modified.defaultPrevented).toBe(false);
   });
 
   it('cleans up on navigation and teardown', () => {

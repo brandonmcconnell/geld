@@ -1,5 +1,7 @@
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { attachmentVideoUrl, createAttachmentVideo } from './attachment-video';
+import { createPdfViewer } from './attachment-pdf';
+import { pdfSourceOf } from './pdf-links';
 import { openAttachmentGallery } from './attachment-gallery';
 import type { GalleryImage } from './attachment-gallery';
 import { ICON_LINK_EXTERNAL, ICON_X } from './ui/icons';
@@ -40,13 +42,15 @@ function titleFor(image: HTMLImageElement): string {
   return alt === '' || /^image$/i.test(alt) ? 'Image' : alt;
 }
 
-interface VideoViewer {
+interface DialogViewer {
   readonly stage: HTMLElement;
+  /** The header's control in place of Open original. */
+  readonly action?: HTMLElement;
   readonly mount?: () => void;
   readonly dispose: () => void;
 }
 
-function showVideo(viewer: VideoViewer, title: string, href: string, trigger: HTMLElement): void {
+function showDialog(viewer: DialogViewer, title: string, href: string, trigger: HTMLElement): void {
   closeDialog?.();
   const titleId = `geld-lightbox-title-${Date.now()}`;
   const dialog = createElement('dialog', {
@@ -57,7 +61,7 @@ function showVideo(viewer: VideoViewer, title: string, href: string, trigger: HT
   const close = createElement('button', {
     type: 'button', class: 'geld-lightbox__close', 'aria-label': 'Close', title: 'Close (Esc)',
   }, [svgFromString(ICON_X)]);
-  const original = createElement('a', {
+  const original = viewer.action ?? createElement('a', {
     class: 'btn btn-sm geld-lightbox__original', href, target: '_blank', rel: 'noopener noreferrer',
   }, ['Open original', svgFromString(ICON_LINK_EXTERNAL)]);
   dialog.append(
@@ -123,6 +127,14 @@ function onClick(event: MouseEvent): void {
   if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
   const target = event.target;
   if (!(target instanceof Element)) return;
+  const pdfLink = target.closest('.markdown-body a[href]');
+  const pdf = !import.meta.env.FIREFOX && pdfLink instanceof HTMLAnchorElement && !pdfLink.hasAttribute('download') ? pdfSourceOf(pdfLink.href, window.location.origin) : null;
+  if (pdfLink instanceof HTMLAnchorElement && pdf !== null) {
+    showDialog(createPdfViewer(pdf, () => closeDialog?.()), pdf.name, pdf.url, pdfLink);
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return;
+  }
   const image = target.closest('img') ?? target.closest('a')?.querySelector('img');
   if (!(image instanceof HTMLImageElement)) return;
   const link = attachmentLink(image);
@@ -152,7 +164,7 @@ function enhanceVideos(): void {
         ? video.parentElement.querySelector(':scope > summary')?.textContent?.trim()
         : undefined;
       const title = video.getAttribute('aria-label')?.trim() || summary || 'Video';
-      showVideo(createAttachmentVideo(video, url), title, url, button);
+      showDialog(createAttachmentVideo(video, url), title, url, button);
     });
     video.after(button);
     videoButtons.set(video, button);
