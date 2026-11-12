@@ -3,8 +3,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_BLOCK_CHOICES } from './block-dialog';
 import type { DescriptionMenuContext } from './description-menu';
 
-const fetched = vi.hoisted(() => ({ response: new Response('{}', { status: 200 }) }));
-vi.mock('./page-fetch', () => ({ pageFetch: async () => fetched.response }));
+const fetched = vi.hoisted(() => ({ response: new Response('{}', { status: 200 }), urls: [] as string[] }));
+vi.mock('./page-fetch', () => ({
+  pageFetch: async (url: string) => {
+    fetched.urls.push(url);
+    return fetched.response;
+  },
+}));
 import { blockRequest, buttonInView, descriptionActions, menuPlacement, scrollToShow, removeDescriptionMenu, reportContentUrl, syncDescriptionMenu, unblockRequest } from './description-menu';
 
 const base: DescriptionMenuContext = { viewer: 'brandon', author: 'spammer', owner: 'mintlify', blocksKnown: true, blocked: null, mayBlockFromOrg: false };
@@ -184,6 +189,41 @@ describe('syncDescriptionMenu', () => {
     document.querySelector('[data-geld-desc-menu] button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === 'Copy link')?.click();
     await vi.waitFor(() => expect(alert).toHaveBeenCalled());
+  });
+
+  const openDialog = (label: string): HTMLDialogElement => {
+    document.querySelector('[data-geld-desc-menu] button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === label)?.click();
+    const dialog = document.querySelector<HTMLDialogElement>('dialog.geld-block-dialog');
+    if (dialog === null) throw new Error(`no dialog for ${label}`);
+    return dialog;
+  };
+
+  it('closes a block dialog when the tab moves to another pull request, and when Geld stands down', () => {
+    history.replaceState(null, '', '/o/r/pull/7');
+    page();
+    syncDescriptionMenu({ ...base, mayBlockFromOrg: true });
+    openDialog('Block user for org');
+    history.replaceState(null, '', '/o/r/pull/8');
+    syncDescriptionMenu({ ...base, mayBlockFromOrg: true });
+    expect(document.querySelector('dialog.geld-block-dialog')).toBeNull();
+    history.replaceState(null, '', '/o/r/pull/7');
+    syncDescriptionMenu(base);
+    openDialog('Block user for you');
+    removeDescriptionMenu();
+    expect(document.querySelector('dialog.geld-block-dialog')).toBeNull();
+  });
+
+  it('sends nothing for a dialog confirmed after the tab moved on', async () => {
+    history.replaceState(null, '', '/o/r/pull/7');
+    page();
+    syncDescriptionMenu(base);
+    const dialog = openDialog('Block user for you');
+    history.replaceState(null, '', '/o/r/pull/8');
+    fetched.urls.length = 0;
+    [...dialog.querySelectorAll('button')].find((node) => node.textContent === 'Block user')?.click();
+    await vi.waitFor(() => expect(dialog.querySelector('[role="alert"]')?.textContent).toContain('moved to another page'));
+    expect(fetched.urls).toEqual([]);
   });
 
   it('goes when the page is no longer one it dresses', () => {

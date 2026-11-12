@@ -102,6 +102,8 @@ let buttonIds = 0;
 
 /** The menu's button in the description's top row, beside GitHub's Edit pencil, each pass; null takes it away. */
 export function syncDescriptionMenu(context: DescriptionMenuContext | null): void {
+  // A dialog stays only while its pull request is the page: GitHub navigates in place, and the body outlives it.
+  if (pending !== null && (!pending.dialog.isConnected || context === null || pullPathOf(location.pathname) !== pending.pull)) closePendingDialog();
   const meta = context === null ? null : document.querySelector(META);
   // A menu whose button left the row (GitHub drew it anew) would still offer the old page's author: it closes with it.
   if (open !== null && (meta === null || !meta.contains(open.button))) closeMenu();
@@ -230,34 +232,68 @@ function failureWords(verb: string, response: Response | null): string {
   return `GitHub did not ${verb} this user${response === null ? '' : ` (${response.status})`}. Please try again.`;
 }
 
+/** The page a dialog was opened on, read once at the click: what its block sends, whatever the tab shows by then. */
+interface DialogPage {
+  readonly pull: string;
+  readonly url: string;
+  readonly contentId: string | null;
+}
+
+/** The block or unblock dialog open now, and the pull request it was opened on. */
+let pending: { readonly dialog: HTMLDialogElement; readonly pull: string } | null = null;
+
+function closePendingDialog(): void {
+  if (pending?.dialog.open === true) pending.dialog.close();
+  pending = null;
+}
+
+function dialogPage(): DialogPage | null {
+  const pull = pullPathOf(location.pathname);
+  return pull === null ? null : { pull, url: `${location.origin}${pull}`, contentId: pullRequestNodeId() };
+}
+
+/** Said, and nothing sent, when the tab has moved to another page while the dialog stood open. */
+function movedOn(page: DialogPage): string | null {
+  return pullPathOf(location.pathname) === page.pull ? null : 'This tab has moved to another page, so nothing was sent. Open the menu again on the pull request.';
+}
+
 function block(scope: BlockScope, context: DescriptionMenuContext): void {
   const login = context.author;
-  if (login === null) return;
-  openBlockDialog({
+  const page = dialogPage();
+  if (login === null || page === null) return;
+  closePendingDialog();
+  const dialog = openBlockDialog({
     scope,
     login,
     org: context.owner,
-    contentUrl: pullUrl(),
+    contentUrl: page.url,
     returnFocus: menuButton(),
     onBlock: async (choices) => {
-      const request = blockRequest(scope, login, context.owner, pullRequestNodeId(), pullUrl(), choices, fetchNonce());
+      const away = movedOn(page);
+      if (away !== null) return away;
+      const request = blockRequest(scope, login, context.owner, page.contentId, page.url, choices, fetchNonce());
       const response = await pageFetch(request.url, request.init).catch(() => null);
       if (response?.ok !== true) return failureWords('block', response);
       location.reload();
       return null;
     },
   });
+  pending = { dialog, pull: page.pull };
 }
 
 function unblock(scope: BlockScope, context: DescriptionMenuContext): void {
   const login = context.author;
-  if (login === null) return;
-  openUnblockDialog({
+  const page = dialogPage();
+  if (login === null || page === null) return;
+  closePendingDialog();
+  const dialog = openUnblockDialog({
     scope,
     login,
     org: context.owner,
     returnFocus: menuButton(),
     onUnblock: async () => {
+      const away = movedOn(page);
+      if (away !== null) return away;
       const request = unblockRequest(scope, login, context.owner, fetchNonce());
       const response = await pageFetch(request.url, request.init).catch(() => null);
       if (response?.ok !== true) return failureWords('unblock', response);
@@ -265,6 +301,7 @@ function unblock(scope: BlockScope, context: DescriptionMenuContext): void {
       return null;
     },
   });
+  pending = { dialog, pull: page.pull };
 }
 
 function menuButton(): HTMLElement | null {

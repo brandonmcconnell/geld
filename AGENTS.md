@@ -2159,6 +2159,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Unblocking asks GitHub's "Are you sure you want to unblock …?" in the same frame.
   The dialogs are Primer's `Overlay` as fits its content (`height: fit-content`: a fixed size scrolled most of the org dialog away), and Escape is caught on the window in the capture phase, since GitHub's page stops Escape's keydown on the document and neither the dialog's own cancel nor a listener on it ever heard it.
   GitHub's refusal shows inside the dialog, which stays open to try again.
+  A dialog belongs to the pull request it was opened on: its address and content id are read at the click (`dialogPage`), it closes when the page moves to another path or Geld stands down (`closePendingDialog` in `syncDescriptionMenu`, since GitHub navigates in place and the body outlives the page), and one confirmed after the tab moved sends nothing and says so (`movedOn`).
   Copy Markdown writes nothing when GitHub does not send the description (a failed or unexpected answer), and says so, so the reader's clipboard keeps what it had.
   The menu opens under its button, above it when only above has the room (`menuPlacement`), and is held to the room the window leaves, scrolling inside itself past that.
   Moving through it with the arrow keys scrolls the focused item into view inside the menu (`scrollToShow`), since its focus keeps the page still with `preventScroll`.
