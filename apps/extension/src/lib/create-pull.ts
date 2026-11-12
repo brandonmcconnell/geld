@@ -88,10 +88,15 @@ export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-/** The same request from the reader's own terminal. */
+/** The same request from the reader's own terminal: `gh pr create`, or `gh api` for a head `gh pr create` cannot name (another repository of the base's owner). */
 export function ghCommand(attempt: PullAttempt, host = 'github.com'): string {
-  const words = ['gh', 'pr', 'create', '--repo', `${attempt.owner}/${attempt.repo}`, '--base', attempt.base, '--head', attempt.head, '--title', attempt.title, '--body', attempt.body];
-  if (attempt.draft) words.push('--draft');
+  const words =
+    attempt.headRepo === null
+      ? ['gh', 'pr', 'create', '--repo', `${attempt.owner}/${attempt.repo}`, '--base', attempt.base, '--head', attempt.head, '--title', attempt.title, '--body', attempt.body, ...(attempt.draft ? ['--draft'] : [])]
+      : [
+          'gh', 'api', '--method', 'POST', `repos/${attempt.owner}/${attempt.repo}/pulls`,
+          '-f', `title=${attempt.title}`, '-f', `body=${attempt.body}`, '-f', `base=${attempt.base}`, '-f', `head=${attempt.head}`, '-f', `head_repo=${attempt.headRepo}`, '-F', `draft=${attempt.draft}`,
+        ];
   const command = words.map(shellQuote).join(' ');
   return host === 'github.com' ? command : `GH_HOST=${shellQuote(host)} ${command}`;
 }

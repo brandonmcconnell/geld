@@ -229,6 +229,8 @@ export type FeedbackSubmitResponse =
 export interface CreatePullMessage {
   readonly type: 'geld:create-pull';
   readonly attempt: PullAttempt;
+  /** The login GitHub's page says is signed in (`meta[name="user-login"]`): the request goes only as that same account. */
+  readonly viewer: string;
 }
 
 /**
@@ -380,17 +382,18 @@ function isPullAttempt(value: unknown): value is PullAttempt {
   );
 }
 
-/** Content script → background: whether the reader is signed in to Geld with the GitHub App, which the API retry needs. Answered with a boolean, never the account. */
+/** Content script → background: whether Geld is signed in with the GitHub App as the account the page is signed in as, which the API retry needs. Answered with a boolean, never the account. */
 export interface ApiSignedInMessage {
   readonly type: 'geld:api-signed-in';
+  readonly viewer: string;
 }
 
 export function isApiSignedInMessage(value: unknown): value is ApiSignedInMessage {
-  return isRecord(value) && value.type === 'geld:api-signed-in';
+  return isRecord(value) && value.type === 'geld:api-signed-in' && typeof value.viewer === 'string';
 }
 
 export function isCreatePullMessage(value: unknown): value is CreatePullMessage {
-  return isRecord(value) && value.type === 'geld:create-pull' && isPullAttempt(value.attempt);
+  return isRecord(value) && value.type === 'geld:create-pull' && isPullAttempt(value.attempt) && typeof value.viewer === 'string';
 }
 
 export function isCreatePullOutcome(value: unknown): value is CreatePullOutcome {

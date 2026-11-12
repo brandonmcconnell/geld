@@ -7,7 +7,7 @@ vi.mock('wxt/browser', () => ({
   browser: { runtime: { sendMessage: (message: { readonly type: string }) => Promise.resolve(message.type === 'geld:api-signed-in' ? background.signedIn : undefined) } },
 }));
 
-import { applyCreatePullRetry, attemptFromPage, createdPullUrl, findCreateFailure, findCreateForm, removeCreatePullRetry, waitBeforeResubmit } from './create-pull-retry';
+import { applyCreatePullRetry, attemptFromPage, createdPullUrl, findCreateFailure, findCreateForm, removeCreatePullRetry, sidebarChoices, waitBeforeResubmit } from './create-pull-retry';
 
 /** GitHub's flash partial (the compare page's `js-flash-template`), with the message a failed create renders in it. */
 const FLASH = (message: string): string => `
@@ -51,7 +51,21 @@ describe('findCreateFailure', () => {
   });
 });
 
-describe('attemptFromPage', () => {
+describe('attemptFromPage and sidebarChoices', () => {
+  it('reads a draft from an input submitter, whose label is its value', () => {
+    page(FORM('T').replace('<button type="submit" class="btn-primary btn">Create pull request</button>', '<input type="submit" class="btn-primary btn" value="Create draft pull request">'));
+    const form = findCreateForm();
+    if (form === null) throw new Error('no form');
+    expect(attemptFromPage(form, new URL(location.href))?.draft).toBe(true);
+  });
+
+  it('names the sidebar choices the API cannot carry, and only those chosen', () => {
+    page(FORM('T').replace('</form>', '<input type="hidden" name="reviewer_user_ids[]" value="12"><input type="hidden" name="issue[labels][]" value=""></form>'));
+    const form = findCreateForm();
+    if (form === null) throw new Error('no form');
+    expect(sidebarChoices(form)).toEqual(['Reviewers']);
+  });
+
   it('reads the pull request the form was sending', () => {
     page(FORM('Fix the nav'));
     const form = findCreateForm();
@@ -123,6 +137,20 @@ describe('applyCreatePullRetry', () => {
     expect(document.querySelector('.geld-pull-retry__command')?.textContent).toBe(COMMAND);
     applyCreatePullRetry();
     expect(document.querySelectorAll('.geld-pull-retry')).toHaveLength(1);
+  });
+
+  it('keeps its controls on a flash with no alert element, whose text the controls now lead', async () => {
+    background.signedIn = true;
+    page(
+      FLASH('Pull request creation failed. Validation failed: was submitted too quickly').replace('<div aria-atomic="true" role="alert" class="js-flash-alert">', '<div>') +
+        FORM('Fix the nav'),
+    );
+    applyCreatePullRetry();
+    await settle();
+    const side = document.querySelector('.geld-pull-retry__side');
+    expect(side).not.toBeNull();
+    applyCreatePullRetry();
+    expect(document.querySelector('.geld-pull-retry__side')).toBe(side);
   });
 
   it('offers nothing for a failure a second send cannot change', () => {

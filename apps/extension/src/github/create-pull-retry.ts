@@ -30,10 +30,17 @@ export interface CreateFailure {
   readonly message: string;
 }
 
+/** GitHub's words alone: Geld's buttons stand inside the flash, ahead of the message when no alert element wraps it. */
+function gitHubText(element: Element): string {
+  const copy = element.cloneNode(true);
+  if (copy instanceof Element) for (const own of copy.querySelectorAll(`[${OWN_UI_ATTRIBUTE}]`)) own.remove();
+  return (copy.textContent ?? '').replace(/\s+/g, ' ').trim();
+}
+
 export function findCreateFailure(root: ParentNode = document): CreateFailure | null {
   for (const flash of root.querySelectorAll<HTMLElement>('.flash-error')) {
     const alert = flash.querySelector<HTMLElement>('.js-flash-alert, [role="alert"]') ?? flash;
-    const message = (alert.textContent ?? '').replace(/\s+/g, ' ').trim();
+    const message = gitHubText(alert);
     if (message.startsWith(CREATE_FAILED_PREFIX)) return { flash, alert, message: message.slice(CREATE_FAILED_PREFIX.length).trim() };
   }
   return null;
@@ -74,7 +81,8 @@ export function attemptFromPage(form: HTMLFormElement, pageUrl: URL = new URL(lo
   const entries = formEntries(form);
   const submitter = submitterOf(form);
   const draftValue = entries.get('draft') ?? '';
-  const draft = /^(on|true|1)$/i.test(draftValue) || /\bdraft\b/i.test(submitter?.textContent ?? submitter?.value ?? '');
+  const label = submitter instanceof HTMLInputElement ? submitter.value : (submitter?.textContent ?? '');
+  const draft = /^(on|true|1)$/i.test(draftValue) || /\bdraft\b/i.test(label);
   return pullAttemptFrom({
     pagePath: pageUrl.pathname,
     queries: [actionOf(form, pageUrl.href).searchParams, pageUrl.searchParams],
@@ -111,9 +119,13 @@ export function createdPullUrl(answerUrl: string, html: string, base: string): s
   return null;
 }
 
-async function resubmit(form: HTMLFormElement): Promise<Outcome> {
+/** A send that did not go: the controls went while it waited (a navigation, Geld turned off), or the reader declined. */
+const CANCELLED: Outcome = { ok: false, message: 'Cancelled.' };
+
+async function resubmit(form: HTMLFormElement, signal: AbortSignal): Promise<Outcome> {
   const wait = waitBeforeResubmit(form);
   if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+  if (signal.aborted || !form.isConnected) return CANCELLED;
   const action = actionOf(form);
   try {
     const answer = await pageFetch(action, {
@@ -132,9 +144,33 @@ async function resubmit(form: HTMLFormElement): Promise<Outcome> {
   }
 }
 
+/** Who GitHub says is signed in on this page: the API request is made only as that same account. */
+function viewer(): string {
+  return document.querySelector('meta[name="user-login"]')?.getAttribute('content') ?? '';
+}
+
+/** Sidebar choices the form would send that the API's create request has no field for. */
+const SIDEBAR_FIELDS: readonly { readonly pattern: RegExp; readonly words: string }[] = [
+  { pattern: /reviewer/i, words: 'Reviewers' },
+  { pattern: /assignee/i, words: 'Assignees' },
+  { pattern: /label/i, words: 'Labels' },
+  { pattern: /milestone/i, words: 'A milestone' },
+  { pattern: /project/i, words: 'Projects' },
+];
+
+export function sidebarChoices(form: HTMLFormElement): readonly string[] {
+  const entries = [...formEntries(form)].filter(([, value]) => value.trim() !== '');
+  return SIDEBAR_FIELDS.filter(({ pattern }) => entries.some(([name]) => pattern.test(name))).map(({ words }) => words);
+}
+
+function listWords(words: readonly string[]): string {
+  if (words.length <= 1) return words.join('');
+  return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1] ?? ''}`;
+}
+
 async function throughApi(attempt: PullAttempt): Promise<CreatePullOutcome> {
   if (location.origin !== 'https://github.com') return { ok: false, reason: 'unavailable', message: 'Retrying through the API works on github.com only.' };
-  const request: CreatePullMessage = { type: 'geld:create-pull', attempt };
+  const request: CreatePullMessage = { type: 'geld:create-pull', attempt, viewer: viewer() };
   try {
     const answer: unknown = await browser.runtime.sendMessage(request);
     return isCreatePullOutcome(answer) ? answer : { ok: false, reason: 'unavailable', message: 'Geld could not ask GitHub.' };
@@ -166,7 +202,7 @@ let mounted: Mounted | null = null;
 /** "Trigger via API" needs the reader's Geld App sign-in: without it only "Try again" is offered. */
 async function apiSignedIn(): Promise<boolean> {
   if (location.origin !== 'https://github.com') return false;
-  const request: ApiSignedInMessage = { type: 'geld:api-signed-in' };
+  const request: ApiSignedInMessage = { type: 'geld:api-signed-in', viewer: viewer() };
   try {
     const answer: unknown = await browser.runtime.sendMessage(request);
     return answer === true;
@@ -246,7 +282,10 @@ function mountButtons(failure: CreateFailure, form: HTMLFormElement, state: Moun
     button.setAttribute('aria-busy', 'true');
     button.replaceChildren(svgFromString(ICON_SPINNER), createElement('span', {}, [working]));
     status.textContent = '';
+    const startedOn = location.href;
     void work(attempt).then((outcome) => {
+      // The reader left, or Geld stood down, while it ran: the answer belongs to a page that is gone.
+      if (signal.aborted || location.href !== startedOn) return;
       if (outcome.ok) {
         status.textContent = 'Pull request opened.';
         location.assign(outcome.url);
@@ -256,12 +295,16 @@ function mountButtons(failure: CreateFailure, form: HTMLFormElement, state: Moun
       for (const other of buttons) other.disabled = false;
       button.removeAttribute('aria-busy');
       button.replaceChildren(...face);
-      status.textContent = `${failed} ${sentence(outcome.message)}`;
+      status.textContent = outcome === CANCELLED ? '' : `${failed} ${sentence(outcome.message)}`;
     });
   };
-  again.addEventListener('click', () => run(again, 'Trying again…', () => resubmit(form), 'Still failed.'), { signal });
+  again.addEventListener('click', () => run(again, 'Trying again…', () => resubmit(form, signal), 'Still failed.'), { signal });
   if (api !== null) {
     const viaApi = async (attempt: PullAttempt): Promise<Outcome> => {
+      const left = sidebarChoices(form);
+      if (left.length > 0 && !window.confirm(`The API opens the pull request with its title, description and branches. ${listWords(left)} chosen here will not be set. Open it anyway?`)) {
+        return CANCELLED;
+      }
       const answer = await throughApi(attempt);
       return answer.ok ? { ok: true, url: answer.url } : { ok: false, message: answer.message };
     };

@@ -48,6 +48,12 @@ describe('ghCommand', () => {
     expect(ghCommand({ ...ATTEMPT, draft: true, body: '' }, 'ghe.acme.dev')).toBe("GH_HOST=ghe.acme.dev gh pr create --repo pingdotgg/t3code --base main --head theo:fix-nav --title 'Fix the nav' --body '' --draft");
   });
 
+  it('names a head in a sibling repository through gh api, which gh pr create has no flag for', () => {
+    expect(ghCommand({ ...ATTEMPT, owner: 'o', repo: 'r', head: 'o:fix', headRepo: 'r-fork', title: 'T', body: 'B' })).toBe(
+      'gh api --method POST repos/o/r/pulls -f title=T -f body=B -f base=main -f head=o:fix -f head_repo=r-fork -F draft=false',
+    );
+  });
+
   it('quotes for the shell', () => {
     expect(shellQuote("it's")).toBe(`'it'\\''s'`);
     expect(shellQuote('$(rm -rf ~)')).toBe("'$(rm -rf ~)'");

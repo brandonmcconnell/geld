@@ -573,12 +573,12 @@ export default defineBackground(() => {
       return true;
     }
     if (isApiSignedInMessage(message)) {
-      void apiSignedIn().then(sendResponse, () => sendResponse(false));
+      void apiSignedIn(message.viewer).then(sendResponse, () => sendResponse(false));
       return true;
     }
     // Only from github.com's own pages of the repository the pull request is opened on, where the reader was already trying to.
     if (isCreatePullMessage(message) && senderMayCreatePull(sender.tab?.url, message.attempt)) {
-      void createPullRequest(message.attempt).then(sendResponse);
+      void createPullRequest(message.attempt, message.viewer).then(sendResponse);
       return true;
     }
     if (isCatalogCheckMessage(message)) {

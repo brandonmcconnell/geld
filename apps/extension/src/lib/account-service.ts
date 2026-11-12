@@ -424,18 +424,24 @@ async function postPull(token: string, attempt: PullAttempt): Promise<CreatePull
   return apiRefusal(response.status, answer);
 }
 
-/** Signed in with the Geld App, whose token the API retry takes. An OAuth App account only carries the gist scope. */
-export async function apiSignedIn(): Promise<boolean> {
+function sameLogin(a: string, b: string): boolean {
+  return a !== '' && a.toLowerCase() === b.toLowerCase();
+}
+
+/** Signed in with the Geld App as the same account GitHub's page is signed in as. An OAuth App account only carries the gist scope. */
+export async function apiSignedIn(viewer: string): Promise<boolean> {
   const account = await accountItem.getValue();
-  return account !== null && account.auth === 'app';
+  return account !== null && account.auth === 'app' && sameLogin(account.login, viewer);
 }
 
 /** The request `gh pr create` makes, with the reader's Geld App token, for a pull request GitHub's own form failed to open. */
-export async function createPullRequest(attempt: PullAttempt): Promise<CreatePullOutcome> {
+export async function createPullRequest(attempt: PullAttempt, viewer: string): Promise<CreatePullOutcome> {
   const account = await accountItem.getValue();
   if (account === null) return { ok: false, reason: 'unavailable', message: 'Sign in to Geld with GitHub to retry through the API.' };
   // An OAuth App token only carries the gist scope.
   if (account.auth !== 'app') return { ok: false, reason: 'unavailable', message: 'Sign in to Geld with GitHub again to retry through the API.' };
+  // Geld may still hold another account than the one GitHub's page is signed in as: never open it as someone else.
+  if (!sameLogin(account.login, viewer)) return { ok: false, reason: 'unavailable', message: `Geld is signed in as ${account.login}, not as ${viewer === '' ? 'the account on this page' : viewer}.` };
   try {
     return await withToken((token) => postPull(token, attempt));
   } catch (error) {
