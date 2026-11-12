@@ -195,7 +195,7 @@ export interface GeldSettings {
 }
 
 /** Ids shared with `@geld/review`'s coding agent registry (`CODING_AGENTS`), which keys its entries by them. */
-export const CODING_AGENT_IDS = ['auto', 'cursor', 'copilot', 'claude', 'codex', 'devin'] as const;
+export const CODING_AGENT_IDS = ['auto', 'cursor', 'copilot', 'claude', 'codex', 'devin', 't3code'] as const;
 export type CodingAgentId = (typeof CODING_AGENT_IDS)[number];
 
 export function isCodingAgentId(value: unknown): value is CodingAgentId {

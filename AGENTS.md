@@ -1550,7 +1550,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Only `suggestedFixes: off` stops the triage's fixes (`triageFixesOn`): `bots` and `ai` choose which fixes stand on an item, while the triage's are what the reader asked for by running it, as the setting's copy says.
   Apply and resolve presses only Resolve (`resolveIfOpen`), so a partner thread someone resolved meanwhile is never unresolved.
   A row opens to its diff (`lineDiff`, folded as GitHub folds a hunk by `diffHunks`: three lines of context either side of a change, a longer unchanged stretch one gap row) with Apply, Apply and resolve, and Discard, a muted link that turns accent on hover.
-  Open or closed, the row carries the trash (Discard) and a split "Apply" whose menu offers Apply and resolve, then "Fix with" each agent, Open in Cursor and Copy the task (`applyControl`).
+  Open or closed, the row carries the trash (Discard) and a split "Apply" whose menu offers Apply and resolve and Copy the task, then under a divider "Fix with" each agent and "Open in" each app (`applyControl`).
   A finding no fix fits gets a row too, marked "Needs an agent", with "Fix with" the recommended agent and the others in its menu (`agentControl`).
   Every action is on its finding's row, and there is no hand-off for all findings at once: under rows that already hold fixes, a "Fix with Cursor" for everything read as if nothing were fixed yet.
   The row shows the path, not only the file name, fitted by `fitPathInto` (the file name, then as much of the start as fits, and where even the file name does not fit, the file name cut in its middle).
@@ -1558,10 +1558,18 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   **Apply goes through GitHub's own suggestion machinery** (`apply-suggestion.ts`), so no token with write access to code is needed: the fix is posted as a `suggestion` reply in the finding's thread (`page_data/create_review_comment`, `{ text, inReplyTo, submitBatch, path }`), then committed with `page_data/apply_review_suggestions` (`{ comments: [{ id }], message, expectedHeadOid }` and an `Idempotency-Key`), both read from GitHub's bundle in Nov 2026 and exercised against a signed-out page with the writes intercepted, not yet signed in.
   Apply and resolve then presses Resolve on every thread the fix answers.
   A refusal shows GitHub's words, and a commit refused after the reply posted says the suggestion is in the thread, where GitHub's own Commit suggestion can still take it.
-  **A finding can be handed to a coding agent** (`@geld/review/coding-agents.ts`): Cursor, Copilot, Claude and Codex start from a comment that begins with their mention, Devin from `/devin` (their docs, Nov 2026), and Cursor also opens the task in its desktop app (`cursor.com/link/prompt`);
-  "Copy the task" serves any other.
+  **A finding can be handed to a coding agent** (`@geld/review/coding-agents.ts`): Cursor, Copilot, Claude and Codex start from a comment that begins with their mention, Devin from `/devin` (their docs, Nov 2026), and Cursor also opens the task in its desktop app;
+  "Open in Cursor desktop" is `cursor.com/link/prompt`, the web form of Cursor's prompt deeplink, which hands the prompt to the desktop app and is not Cursor on the web.
+  **T3 Code has no comment command, only prompt links** (`https://app.t3.codes/new?prompt=…&repo=…&pr=owner/name/N`, its `docs/user/prompt-links.md`): the link opens a draft the reader sends, in the pull request's thread or on its branch in a new worktree, the prompt cut at its 8,000 characters.
+  So it reads "Open in T3 Code" everywhere, on the row's button when it is the chosen agent too (`CodingAgent.command` absent, `openLabel`): "Fix with" is kept for agents a comment starts working on the pull request, "Open in" for a draft the reader sends from the agent's app.
+  Its mark is its MIT-licensed favicon, bundled as `public/agent-icons/t3code.png` (web accessible), since it has no GitHub App to borrow one from, and its thread links (`app.t3.codes/threads/<environment>/<thread>`) are a related-links agent service, so an author who links one gets it recommended.
+  "Copy the task" serves any other, and stands at the top of every agent menu, under Apply and resolve where there is one (`copyItem`).
   The comment is posted only after a confirm that shows it, and carries the row's finding (with the findings its fix shares a problem with), the triage's suggestion and the thread link (`agentTask`).
   The menus name each agent and nothing more: commands and notes on the right read as clutter.
+  **The menus list the agents likely to answer first** (`agentLikely`, as the review bots' request menu lists the bots it has a sign of first): the reader's choice, an agent the pull request's links show its author used, or one whose App's review bot is known on the repository (`CodingAgent.installedWith`: Bugbot for Cursor, and Copilot's, Claude's, Codex's and Devin's own review bots;
+  seen on the page, declared or configured, from `requestableBots`).
+  The rest wait behind "Other agents (N)", folded again whenever the menu closes, and with no agent likely every agent is listed.
+  A desktop app (T3 Code, Cursor's) is never guessed at: it counts only as the reader's choice or when the links show it was used.
   Which agent leads is the `codingAgent` setting (Experiments, options page only, `auto` by default), unless the reader is the pull request's author and its related links show another agent worked on it (`recommendAgents`, `agentsInRelatedLinks`): then that one leads, except when the links name the reader's own choice too, which leads.
   With `auto` and nothing known, "Fix with…" opens the menu.
   The agent's mark stands as far from its button's left edge as from its top and bottom (`.geld-review__split-agent`).

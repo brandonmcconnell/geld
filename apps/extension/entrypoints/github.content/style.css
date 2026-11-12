@@ -11087,3 +11087,19 @@ html[data-geld-on] [class*='ReactionsMenuOption'] [data-component='ActionList.It
 .geld-review__msg-actions > [data-component='Tooltip'] {
   position: absolute;
 }
+
+/* In the agents' menus the disclosure's chevron stands in the marks' column, so its words line up with theirs. */
+.geld-review__split-more > summary {
+  gap: 8px;
+  padding: 0 6px;
+}
+
+.geld-review__split-more > .geld-review__menu-item {
+  min-height: 28px;
+  padding: 0 6px;
+  line-height: 20px;
+}
+
+.geld-review__split-more > summary > .octicon {
+  width: 16px;
+}

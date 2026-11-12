@@ -584,13 +584,16 @@ export interface TriageSuggestionView {
 export interface TriageAgent {
   readonly id: string;
   readonly name: string;
-  readonly command: string;
+  /** What starts it in a comment on the pull request; null for an agent started from its own app only (T3 Code). */
+  readonly command: string | null;
   readonly iconSrc: string | null;
   readonly note: string | null;
-  /** It opens a task in its own app too (Cursor's prompt link). */
-  readonly opens: boolean;
+  /** What opening the task in its own app is called ("Open in Cursor desktop"), or null where it has no app link. */
+  readonly openLabel: string | null;
   /** The pull request's links show its author used it. */
   readonly used: boolean;
+  /** Likely to answer here (`agentLikely`): the menus list it before the rest, which wait behind "Other agents". */
+  readonly likely: boolean;
 }
 
 export interface TriageView {
@@ -1527,6 +1530,10 @@ function splitButton(main: HTMLButtonElement, label: string, focusKey: string, f
   caret.addEventListener('click', (event) => event.stopPropagation());
   const list = createElement('div', { class: `${PANEL_CLASS}__menu-list ${PANEL_CLASS}__split-list`, role: 'menu' });
   fill(list, () => details.removeAttribute('open'));
+  // "Other agents" folds again when the menu closes, so the menu always opens on the likely agents.
+  details.addEventListener('toggle', () => {
+    if (!details.open) for (const more of list.querySelectorAll('details[open]')) more.removeAttribute('open');
+  });
   details.append(caret, list);
   main.classList.add(`${PANEL_CLASS}__split-main`);
   return createElement('div', { class: `${PANEL_CLASS}__split` }, [main, details]);
@@ -1542,15 +1549,48 @@ function menuItem(content: readonly (Node | string)[], close: () => void, onSele
   return node;
 }
 
-/** "Fix with Cursor", "Open in Cursor" and "Copy the task", for one finding, the recommended agent first. */
+/**
+ * For one finding: "Fix with" each agent a comment starts and "Open in" each app the task opens in, likely agents first
+ * (as the review bots' request menu puts the bots it has a sign of first) and the rest behind "Other agents". With no
+ * agent likely, every agent is listed, as that menu lists the registry.
+ */
 function agentItems(list: HTMLElement, key: string, triage: TriageView, handlers: PanelHandlers, close: () => void, skip: string | null): void {
-  for (const agent of triage.agents) {
-    if (agent.id !== skip) list.append(menuItem([agentMark(agent), `Fix with ${agent.name}`], close, () => handlers.onHandOff(agent.id, 'comment', key)));
+  const itemsFor = (agents: readonly TriageAgent[]): HTMLElement[] => {
+    const fixes = agents.filter((agent) => agent.id !== skip && agent.command !== null).map((agent) => menuItem([agentMark(agent), `Fix with ${agent.name}`], close, () => handlers.onHandOff(agent.id, 'comment', key)));
+    const opens = agents
+      .filter((agent) => agent.openLabel !== null && !(agent.id === skip && agent.command === null))
+      .map((agent) => {
+        const mark = agent.command === null ? agentMark(agent) : createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_LINK_EXTERNAL)]);
+        return menuItem([mark, agent.openLabel ?? ''], close, () => handlers.onHandOff(agent.id, 'open', key));
+      });
+    return [...fixes, ...opens];
+  };
+  const groups = agentMenuGroups(triage.agents);
+  list.append(...itemsFor(groups.first));
+  const hidden = itemsFor(groups.folded);
+  if (hidden.length > 0) {
+    const more = createElement('details', { class: `${PANEL_CLASS}__request-more ${PANEL_CLASS}__split-more` });
+    const summary = createElement('summary', { class: `${PANEL_CLASS}__request-more-summary` }, [icon(ICON_CHEVRON_RIGHT), `Other agents (${groups.folded.length})`]);
+    summary.addEventListener('click', (event) => event.stopPropagation());
+    more.append(summary, ...hidden);
+    list.append(more);
   }
-  for (const agent of triage.agents) {
-    if (agent.opens) list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_LINK_EXTERNAL)]), `Open in ${agent.name}`], close, () => handlers.onHandOff(agent.id, 'open', key)));
-  }
+}
+
+/**
+ * Which agents a menu lists first and which wait behind "Other agents": the likely ones first, and every agent only when
+ * none is likely. Decided by the agents, not by what the menu shows of them: the likely agent may be the row's own
+ * button and so absent from its menu, and the rest still stay folded then. Exported for its test.
+ */
+export function agentMenuGroups(agents: readonly TriageAgent[]): { readonly first: readonly TriageAgent[]; readonly folded: readonly TriageAgent[] } {
+  const likely = agents.filter((agent) => agent.likely);
+  return likely.length === 0 ? { first: agents, folded: [] } : { first: likely, folded: agents.filter((agent) => !agent.likely) };
+}
+
+/** "Copy the task" for any other agent, at the top of the menu, then the divider over the agents. */
+function copyItem(list: HTMLElement, key: string, handlers: PanelHandlers, close: () => void): void {
   list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_COPY)]), 'Copy the task'], close, () => handlers.onHandOff('', 'copy', key)));
+  list.append(createElement('div', { class: `${PANEL_CLASS}__menu-sep`, role: 'separator' }));
 }
 
 function applyControl(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHandlers): HTMLElement {
@@ -1561,10 +1601,8 @@ function applyControl(fix: TriageSuggestionView, triage: TriageView, handlers: P
   ]);
   main.addEventListener('click', () => handlers.onApplySuggestion(fix.key, false));
   return splitButton(main, 'More ways to fix this', `fix-head-more:${fix.key}`, (list, close) => {
-    if (!blocked) {
-      list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_CHECK)]), 'Apply and resolve'], close, () => handlers.onApplySuggestion(fix.key, true)));
-      list.append(createElement('div', { class: `${PANEL_CLASS}__menu-sep`, role: 'separator' }));
-    }
+    if (!blocked) list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_CHECK)]), 'Apply and resolve'], close, () => handlers.onApplySuggestion(fix.key, true)));
+    copyItem(list, fix.key, handlers, close);
     agentItems(list, fix.key, triage, handlers, close, null);
   });
 }
@@ -1574,7 +1612,10 @@ function agentControl(key: string, triage: TriageView, handlers: PanelHandlers):
   const lead = triage.recommended === null ? undefined : triage.agents.find((agent) => agent.id === triage.recommended?.id);
   if (lead === undefined) {
     const main = createElement('button', { type: 'button', class: 'btn btn-sm', title: 'Hand this finding to a coding agent', [ATTR_FOCUS]: `fix-agent:${key}` }, [createElement('span', { class: `${PANEL_CLASS}__split-label` }, ['Fix with…'])]);
-    const control = splitButton(main, 'Coding agents', `fix-agent-more:${key}`, (list, close) => agentItems(list, key, triage, handlers, close, null));
+    const control = splitButton(main, 'Coding agents', `fix-agent-more:${key}`, (list, close) => {
+      copyItem(list, key, handlers, close);
+      agentItems(list, key, triage, handlers, close, null);
+    });
     // With no agent to lead, the whole button opens the menu.
     main.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -1583,12 +1624,17 @@ function agentControl(key: string, triage: TriageView, handlers: PanelHandlers):
     return control;
   }
   const why = triage.recommended?.reason === 'used' ? `${lead.name} worked on this pull request` : 'Your coding agent in Geld settings';
-  const main = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__split-agent`, title: `Post ${lead.command} on the pull request with this finding. ${why}.`, [ATTR_FOCUS]: `fix-agent:${key}` }, [
+  const what = lead.command === null ? `Open this finding in ${lead.name} as a draft on this pull request` : `Post ${lead.command} on the pull request with this finding`;
+  const main = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__split-agent`, title: `${what}. ${why}.`, [ATTR_FOCUS]: `fix-agent:${key}` }, [
     agentMark(lead),
-    createElement('span', { class: `${PANEL_CLASS}__split-label` }, [`Fix with ${lead.name}`]),
+    // "Fix with" starts an agent from a comment; an agent that only opens a draft in its app says so, as its menu item does.
+    createElement('span', { class: `${PANEL_CLASS}__split-label` }, [lead.command === null ? (lead.openLabel ?? `Open in ${lead.name}`) : `Fix with ${lead.name}`]),
   ]);
-  main.addEventListener('click', () => handlers.onHandOff(lead.id, 'comment', key));
-  return splitButton(main, 'Other coding agents', `fix-agent-more:${key}`, (list, close) => agentItems(list, key, triage, handlers, close, lead.id));
+  main.addEventListener('click', () => handlers.onHandOff(lead.id, lead.command === null ? 'open' : 'comment', key));
+  return splitButton(main, 'Other coding agents', `fix-agent-more:${key}`, (list, close) => {
+    copyItem(list, key, handlers, close);
+    agentItems(list, key, triage, handlers, close, lead.id);
+  });
 }
 
 const GROUPING_LABEL: Readonly<Record<PanelModel['grouping'], string>> = { type: 'Type', batch: 'Push' };
