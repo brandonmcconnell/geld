@@ -621,8 +621,8 @@ export interface TriageView {
   readonly collapsed: boolean;
   /** The fixes are still being written. */
   readonly writing: boolean;
-  /** What the last hand-off did, said once under the card: "Posted @cursor". */
-  readonly handedOff: string | null;
+  /** What the last hand-off did, said once under the card ("Posted @cursor"), and the finding to offer copying again after a failed copy. */
+  readonly handedOff: { readonly text: string; readonly copyAgain: string | null } | null;
 }
 
 export function itemKey(id: string): string {
@@ -1433,7 +1433,16 @@ function triageCard(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
     } else if (triage.writing) {
       card.append(createElement('p', { class: `${PANEL_CLASS}__triage-writing`, 'data-pending': '' }, ['Writing fixes for the open threads…']));
     }
-    if (triage.handedOff !== null) card.append(createElement('p', { class: `${PANEL_CLASS}__triage-status`, role: 'status' }, [triage.handedOff]));
+    if (triage.handedOff !== null) {
+      const status = createElement('p', { class: `${PANEL_CLASS}__triage-status`, role: 'status' }, [triage.handedOff.text]);
+      const again = triage.handedOff.copyAgain;
+      if (again !== null) {
+        const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__triage-fix-link`, [ATTR_FOCUS]: 'triage-copy-again' }, ['Copy the task']);
+        button.addEventListener('click', () => handlers.onHandOff('', 'copy', again));
+        status.append(' ', button);
+      }
+      card.append(status);
+    }
   }
   return card.children.length === 0 ? null : card;
 }

@@ -214,7 +214,13 @@ interface TriageVisit {
   collapsed: boolean;
   readonly busy: Map<string, 'apply' | 'resolve'>;
   readonly errors: Map<string, string>;
-  handedOff: string | null;
+  handedOff: HandedOff | null;
+}
+
+/** What the last hand-off did, said under the card, and the finding whose task to offer copying again when a copy failed. */
+interface HandedOff {
+  readonly text: string;
+  readonly copyAgain: string | null;
 }
 
 function freshTriage(): TriageVisit {
@@ -4237,12 +4243,13 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       });
       if (findings.length === 0) return;
       const task = agentTask(findings, pullUrl);
-      const said = (text: string): void => {
-        visit.triage.handedOff = text;
+      const said = (text: string, copyAgain: string | null = null): void => {
+        visit.triage.handedOff = { text, copyAgain };
         reapply();
       };
+      const notCopied = (lead: string): void => said(`${lead} The browser did not take the task on the clipboard.`, key);
       if (how === 'copy') {
-        void copyText(task).then(() => said('Copied the task'));
+        void copyText(task).then((copied) => (copied ? said('Copied the task') : notCopied('Could not copy the task.')));
         return;
       }
       if (how === 'open') {
@@ -4250,12 +4257,14 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         if (target === undefined) return;
         countUsage('agent_handoff');
         const url = target.url(task, { owner: subject.owner, repo: subject.repo, number: subject.number });
-        // Opened in the click's own turn, which the browser's popup blocker requires; the copy finishes meanwhile.
-        if (target.copiesTask === true) void copyText(task);
+        // The copy starts while this page still has focus, and the tab opens in the click's own turn, which the
+        // browser's popup blocker requires; what is said waits for the copy to settle.
+        const copying = target.copiesTask === true ? copyText(task) : null;
         // A web link opens in a tab; an app's own scheme is handed to the system from this page, leaving no blank tab.
         if (/^https?:/i.test(url)) window.open(url, '_blank', 'noopener');
         else createElement('a', { href: url }).click();
-        said(target.copiesTask === true ? `Copied the task and opened ${target.service}. Paste it there to start` : `Opened in ${target.service}`);
+        if (copying === null) said(`Opened in ${target.service}`);
+        else void copying.then((copied) => (copied ? said(`Copied the task and opened ${target.service}. Paste it there to start`) : notCopied(`Opened ${target.service}, but the task is not copied.`)));
         return;
       }
       const agent = codingAgentById(agentId) ?? CODING_AGENTS[0];
