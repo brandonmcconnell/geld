@@ -1548,7 +1548,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Only `suggestedFixes: off` stops the triage's fixes (`triageFixesOn`): `bots` and `ai` choose which fixes stand on an item, while the triage's are what the reader asked for by running it, as the setting's copy says.
   Apply and resolve presses only Resolve (`resolveIfOpen`), so a partner thread someone resolved meanwhile is never unresolved.
   A row opens to its diff (`lineDiff`, folded as GitHub folds a hunk by `diffHunks`: three lines of context either side of a change, a longer unchanged stretch one gap row) with Apply, Apply and resolve, and Discard, a muted link that turns accent on hover.
-  Open or closed, the row carries the trash (Discard) and a split "Apply" whose menu offers Apply and resolve, then "Fix with" each agent, Open in Cursor and Copy the task (`applyControl`).
+  Open or closed, the row carries the trash (Discard) and a split "Apply" whose menu offers Apply and resolve and Copy the task, then under a divider "Fix with" each agent and "Open in" each app (`applyControl`).
   A finding no fix fits gets a row too, marked "Needs an agent", with "Fix with" the recommended agent and the others in its menu (`agentControl`).
   Every action is on its finding's row, and there is no hand-off for all findings at once: under rows that already hold fixes, a "Fix with Cursor" for everything read as if nothing were fixed yet.
   The row shows the path, not only the file name, fitted by `fitPathInto` (the file name, then as much of the start as fits, and where even the file name does not fit, the file name cut in its middle).
@@ -1561,7 +1561,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   **T3 Code has no comment command, only prompt links** (`https://app.t3.codes/new?prompt=…&repo=…&pr=owner/name/N`, its `docs/user/prompt-links.md`): the link opens a draft the reader sends, in the pull request's thread or on its branch in a new worktree, the prompt cut at its 8,000 characters.
   So it reads "Open in T3 Code" everywhere, on the row's button when it is the chosen agent too (`CodingAgent.command` absent, `openLabel`): "Fix with" is kept for agents a comment starts working on the pull request, "Open in" for a draft the reader sends from the agent's app.
   Its mark is its MIT-licensed favicon, bundled as `public/agent-icons/t3code.png` (web accessible), since it has no GitHub App to borrow one from, and its thread links (`app.t3.codes/threads/<environment>/<thread>`) are a related-links agent service, so an author who links one gets it recommended.
-  "Copy the task" serves any other.
+  "Copy the task" serves any other, and stands at the top of every agent menu, under Apply and resolve where there is one (`copyItem`).
   The comment is posted only after a confirm that shows it, and carries the row's finding (with the findings its fix shares a problem with), the triage's suggestion and the thread link (`agentTask`).
   The menus name each agent and nothing more: commands and notes on the right read as clutter.
   **The menus list the agents likely to answer first** (`agentLikely`, as the review bots' request menu lists the bots it has a sign of first): the reader's choice, an agent the pull request's links show its author used, or one whose App's review bot is known on the repository (`CodingAgent.installedWith`: Bugbot for Cursor, and Copilot's, Claude's, Codex's and Devin's own review bots;

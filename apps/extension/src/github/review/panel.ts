@@ -1551,8 +1551,8 @@ function menuItem(content: readonly (Node | string)[], close: () => void, onSele
 
 /**
  * For one finding: "Fix with" each agent a comment starts and "Open in" each app the task opens in, likely agents first
- * (as the review bots' request menu puts the bots it has a sign of first) and the rest behind "Other agents", then
- * "Copy the task". With no agent likely, every agent is listed, as that menu lists the registry.
+ * (as the review bots' request menu puts the bots it has a sign of first) and the rest behind "Other agents". With no
+ * agent likely, every agent is listed, as that menu lists the registry.
  */
 function agentItems(list: HTMLElement, key: string, triage: TriageView, handlers: PanelHandlers, close: () => void, skip: string | null): void {
   const itemsFor = (agents: readonly TriageAgent[]): HTMLElement[] => {
@@ -1580,7 +1580,12 @@ function agentItems(list: HTMLElement, key: string, triage: TriageView, handlers
       list.append(more);
     }
   }
+}
+
+/** "Copy the task" for any other agent, at the top of the menu, then the divider over the agents. */
+function copyItem(list: HTMLElement, key: string, handlers: PanelHandlers, close: () => void): void {
   list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_COPY)]), 'Copy the task'], close, () => handlers.onHandOff('', 'copy', key)));
+  list.append(createElement('div', { class: `${PANEL_CLASS}__menu-sep`, role: 'separator' }));
 }
 
 function applyControl(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHandlers): HTMLElement {
@@ -1591,10 +1596,8 @@ function applyControl(fix: TriageSuggestionView, triage: TriageView, handlers: P
   ]);
   main.addEventListener('click', () => handlers.onApplySuggestion(fix.key, false));
   return splitButton(main, 'More ways to fix this', `fix-head-more:${fix.key}`, (list, close) => {
-    if (!blocked) {
-      list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_CHECK)]), 'Apply and resolve'], close, () => handlers.onApplySuggestion(fix.key, true)));
-      list.append(createElement('div', { class: `${PANEL_CLASS}__menu-sep`, role: 'separator' }));
-    }
+    if (!blocked) list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_CHECK)]), 'Apply and resolve'], close, () => handlers.onApplySuggestion(fix.key, true)));
+    copyItem(list, fix.key, handlers, close);
     agentItems(list, fix.key, triage, handlers, close, null);
   });
 }
@@ -1604,7 +1607,10 @@ function agentControl(key: string, triage: TriageView, handlers: PanelHandlers):
   const lead = triage.recommended === null ? undefined : triage.agents.find((agent) => agent.id === triage.recommended?.id);
   if (lead === undefined) {
     const main = createElement('button', { type: 'button', class: 'btn btn-sm', title: 'Hand this finding to a coding agent', [ATTR_FOCUS]: `fix-agent:${key}` }, [createElement('span', { class: `${PANEL_CLASS}__split-label` }, ['Fix with…'])]);
-    const control = splitButton(main, 'Coding agents', `fix-agent-more:${key}`, (list, close) => agentItems(list, key, triage, handlers, close, null));
+    const control = splitButton(main, 'Coding agents', `fix-agent-more:${key}`, (list, close) => {
+      copyItem(list, key, handlers, close);
+      agentItems(list, key, triage, handlers, close, null);
+    });
     // With no agent to lead, the whole button opens the menu.
     main.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -1620,7 +1626,10 @@ function agentControl(key: string, triage: TriageView, handlers: PanelHandlers):
     createElement('span', { class: `${PANEL_CLASS}__split-label` }, [lead.command === null ? (lead.openLabel ?? `Open in ${lead.name}`) : `Fix with ${lead.name}`]),
   ]);
   main.addEventListener('click', () => handlers.onHandOff(lead.id, lead.command === null ? 'open' : 'comment', key));
-  return splitButton(main, 'Other coding agents', `fix-agent-more:${key}`, (list, close) => agentItems(list, key, triage, handlers, close, lead.id));
+  return splitButton(main, 'Other coding agents', `fix-agent-more:${key}`, (list, close) => {
+    copyItem(list, key, handlers, close);
+    agentItems(list, key, triage, handlers, close, lead.id);
+  });
 }
 
 const GROUPING_LABEL: Readonly<Record<PanelModel['grouping'], string>> = { type: 'Type', batch: 'Push' };
