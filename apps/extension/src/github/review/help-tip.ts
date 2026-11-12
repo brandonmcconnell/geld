@@ -12,8 +12,11 @@ export interface HelpTipOptions {
   readonly role?: 'menuitem';
 }
 
-const GAP_PX = 6;
+/** The caret's 7px height plus 3px of air between its tip and the glyph. */
+const GAP_PX = 10;
 const EDGE_PX = 8;
+/** How far in from the tip's edge the caret stands, when the window leaves room. */
+const CARET_INSET_PX = 16;
 const HIDE_DELAY_MS = 150;
 
 let tipCount = 0;
@@ -26,9 +29,8 @@ let tipCount = 0;
 export function helpTip(options: HelpTipOptions): HTMLElement {
   const { prefix } = options;
   const id = `geld-help-tip-${++tipCount}`;
-  const button = createElement('button', { type: 'button', class: `${prefix}__help`, 'aria-label': options.label, 'aria-expanded': 'false', 'aria-controls': id, ...(options.role === undefined ? {} : { role: options.role }) }, [
-    createElement('span', { class: `${prefix}__help-glyph`, 'aria-hidden': 'true' }, [svgFromString(ICON_QUESTION)]),
-  ]);
+  const glyph = createElement('span', { class: `${prefix}__help-glyph`, 'aria-hidden': 'true' }, [svgFromString(ICON_QUESTION)]);
+  const button = createElement('button', { type: 'button', class: `${prefix}__help`, 'aria-label': options.label, 'aria-expanded': 'false', 'aria-controls': id, ...(options.role === undefined ? {} : { role: options.role }) }, [glyph]);
   const tip = createElement('div', { id, class: `${prefix}__help-tip`, popover: 'manual' }, [...options.content]);
   const canPop = typeof tip.showPopover === 'function';
   if (!canPop) tip.hidden = true;
@@ -39,15 +41,23 @@ export function helpTip(options: HelpTipOptions): HTMLElement {
   let shown = false;
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
   let detach: (() => void) | null = null;
+  let lastSpot = '';
 
   const place = (): void => {
-    const anchor = button.getBoundingClientRect();
+    const anchor = (glyph.querySelector('svg') ?? glyph).getBoundingClientRect();
     const box = tip.getBoundingClientRect();
     const above = anchor.top - GAP_PX - box.height;
-    const top = above >= EDGE_PX ? above : anchor.bottom + GAP_PX;
-    const left = Math.min(Math.max(EDGE_PX, anchor.left - EDGE_PX), window.innerWidth - box.width - EDGE_PX);
-    tip.style.top = `${Math.round(top)}px`;
-    tip.style.left = `${Math.round(left)}px`;
+    const fitsAbove = above >= EDGE_PX;
+    const top = fitsAbove ? above : anchor.bottom + GAP_PX;
+    const centre = anchor.left + anchor.width / 2;
+    const left = Math.min(Math.max(EDGE_PX, centre - CARET_INSET_PX), window.innerWidth - box.width - EDGE_PX);
+    const spot = `${top}:${left}:${centre}:${fitsAbove}`;
+    if (spot === lastSpot) return;
+    lastSpot = spot;
+    tip.dataset.placement = fitsAbove ? 'above' : 'below';
+    tip.style.top = `${top}px`;
+    tip.style.left = `${left}px`;
+    tip.style.setProperty('--geld-arrow-x', `${centre - left}px`);
   };
 
   const show = (): void => {
@@ -58,8 +68,18 @@ export function helpTip(options: HelpTipOptions): HTMLElement {
     if (canPop) tip.showPopover();
     else tip.hidden = false;
     button.setAttribute('aria-expanded', 'true');
+    lastSpot = '';
     place();
-    const onMove = (): void => place();
+    // Followed every frame while open: the menu can move under the tip with no scroll or resize to say so (the page
+    // settling as the panel rebuilds), and a tip placed once was left standing where the icon had been.
+    let frame = requestAnimationFrame(function follow() {
+      if (!button.isConnected) {
+        close();
+        return;
+      }
+      place();
+      frame = requestAnimationFrame(follow);
+    });
     const onDown = (event: Event): void => {
       if (event.target instanceof Node && (button.contains(event.target) || tip.contains(event.target))) return;
       pinned = false;
@@ -70,13 +90,10 @@ export function helpTip(options: HelpTipOptions): HTMLElement {
     const onToggle = (): void => {
       if (menu?.open !== true) close();
     };
-    window.addEventListener('scroll', onMove, true);
-    window.addEventListener('resize', onMove);
     document.addEventListener('mousedown', onDown, true);
     menu?.addEventListener('toggle', onToggle);
     detach = () => {
-      window.removeEventListener('scroll', onMove, true);
-      window.removeEventListener('resize', onMove);
+      cancelAnimationFrame(frame);
       document.removeEventListener('mousedown', onDown, true);
       menu?.removeEventListener('toggle', onToggle);
     };

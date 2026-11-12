@@ -4521,10 +4521,6 @@ html [data-geld-person-fold-part][data-geld-person-fold-part] {
   height: 14px;
 }
 
-.geld-review__help:is(:hover, :focus-visible, [aria-expanded='true']) {
-  color: var(--geld-review-accent);
-}
-
 /* A popover in the top layer: the UA's centring, frame and colours give way to the panel's overlay, placed from the icon. */
 .geld-review__help-tip {
   position: fixed;
@@ -4532,15 +4528,55 @@ html [data-geld-person-fold-part][data-geld-person-fold-part] {
   margin: 0;
   max-width: 280px;
   padding: 6px 10px;
-  border: 1px solid var(--borderColor-default, var(--color-border-default, #d1d9e0));
+  --geld-help-tip-border: var(--borderColor-default, var(--color-border-default, #d1d9e0));
+  --geld-help-tip-bg: var(--overlay-bgColor, var(--bgColor-default, #fff));
+  border: 1px solid var(--geld-help-tip-border);
   border-radius: 6px;
-  background: var(--overlay-bgColor, var(--bgColor-default, #fff));
+  background: var(--geld-help-tip-bg);
   box-shadow: var(--shadow-floating-small, 0 8px 24px rgba(31, 35, 40, 0.12));
   color: var(--fgColor-default, var(--color-fg-default));
   font-size: 12px;
   line-height: 18px;
   white-space: nowrap;
   overflow: visible;
+}
+
+/* The caret, as the breakdown tooltip draws it: the border colour's triangle under the surface's, both on the padding edge. */
+.geld-review__help-tip::before,
+.geld-review__help-tip::after {
+  content: '';
+  position: absolute;
+  left: var(--geld-arrow-x, 16px);
+  transform: translateX(-50%);
+  border: 7px solid transparent;
+}
+
+.geld-review__help-tip::after {
+  border-width: 6px;
+}
+
+.geld-review__help-tip[data-placement='above']::before {
+  top: 100%;
+  border-bottom-width: 0;
+  border-top-color: var(--geld-help-tip-border);
+}
+
+.geld-review__help-tip[data-placement='above']::after {
+  top: 100%;
+  border-bottom-width: 0;
+  border-top-color: var(--geld-help-tip-bg);
+}
+
+.geld-review__help-tip[data-placement='below']::before {
+  bottom: 100%;
+  border-top-width: 0;
+  border-bottom-color: var(--geld-help-tip-border);
+}
+
+.geld-review__help-tip[data-placement='below']::after {
+  bottom: 100%;
+  border-top-width: 0;
+  border-bottom-color: var(--geld-help-tip-bg);
 }
 
 .geld-review__help-link {
