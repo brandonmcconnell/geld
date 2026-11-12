@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agentComment, agentLikely, agentsInRelatedLinks, agentTask, codingAgentById, recommendAgents } from './coding-agents';
+import { agentComment, agentLikely, agentsInRelatedLinks, agentTask, codingAgentById, openTargetById, openTargetLikely, recommendAgents } from './coding-agents';
 
 const ids = (agents: readonly { readonly id: string }[]): readonly string[] => agents.map((agent) => agent.id);
 
@@ -58,20 +58,53 @@ describe('hand-off', () => {
     expect(task).toContain('   Thread: https://github.com/o/r/pull/1#discussion_r1');
     const devin = codingAgentById('devin');
     expect(devin === undefined ? '' : agentComment(devin, task)).toMatch(/^\/devin Address/);
-    const pull = { owner: 'o', repo: 'r', number: 1 };
-    const cursor = codingAgentById('cursor');
-    expect(cursor?.openUrl?.('fix it', pull)).toBe('https://cursor.com/link/prompt?text=fix+it');
-    expect(cursor?.openLabel).toBe('Open in Cursor desktop');
   });
 
-  it('opens T3 Code as a draft on the pull request, and posts nothing for it', () => {
+  it('posts nothing for T3 Code, whose one action opens its app', () => {
     const t3 = codingAgentById('t3code');
     expect(t3?.command).toBeUndefined();
     expect(t3 === undefined ? '' : agentComment(t3, 'fix it')).toBeNull();
-    const url = new URL(t3?.openUrl?.(`fix ${'x'.repeat(9000)}`, { owner: 'o', repo: 'r', number: 12 }) ?? '');
-    expect(`${url.origin}${url.pathname}`).toBe('https://app.t3.codes/new');
-    expect(url.searchParams.get('repo')).toBe('o/r');
-    expect(url.searchParams.get('pr')).toBe('o/r/12');
-    expect(url.searchParams.get('prompt')?.length).toBe(8000);
+    expect(t3?.opens).toBe('t3code-app');
+  });
+});
+
+describe('OPEN_TARGETS', () => {
+  const pull = { owner: 'o', repo: 'r', number: 12 };
+  const open = (id: string, task = 'fix it'): URL => new URL(openTargetById(id)?.url(task, pull) ?? 'about:blank');
+
+  it('builds each service’s documented link with the pull request where it takes one', () => {
+    expect(open('cursor-app').toString()).toBe('https://cursor.com/link/prompt?text=fix+it');
+    expect(Object.fromEntries(open('claude-web').searchParams)).toEqual({ prompt: 'fix it', repositories: 'o/r' });
+    expect(open('claude-app').protocol).toBe('claude-cli:');
+    expect(Object.fromEntries(open('claude-app').searchParams)).toEqual({ repo: 'o/r', q: 'fix it' });
+    expect(Object.fromEntries(open('codex-app').searchParams)).toEqual({ prompt: 'fix it', originUrl: 'https://github.com/o/r' });
+    expect(open('devin-web').toString()).toBe('https://app.devin.ai/?prompt=fix+it');
+    expect(open('factory-web').toString()).toBe('https://app.factory.ai/sessions/new?prompt=fix+it');
+    const t3 = open('t3code-app');
+    expect(`${t3.origin}${t3.pathname}`).toBe('https://app.t3.codes/new');
+    expect(Object.fromEntries(t3.searchParams)).toEqual({ prompt: 'fix it', repo: 'o/r', pr: 'o/r/12' });
+  });
+
+  it('wraps the Copilot app’s session link in GitHub’s launcher', () => {
+    const launcher = open('copilot-app');
+    expect(`${launcher.origin}${launcher.pathname}`).toBe('https://github.com/copilot/app/launch');
+    const inner = new URL(launcher.searchParams.get('open') ?? 'about:blank');
+    expect(inner.protocol).toBe('ghapp:');
+    expect(Object.fromEntries(inner.searchParams)).toEqual({ repo: 'o/r', pr: '12', prompt: 'fix it' });
+  });
+
+  it('cuts a long task to what each link takes', () => {
+    const long = 'x'.repeat(9000);
+    expect(open('t3code-app', long).searchParams.get('prompt')?.length).toBe(8000);
+    expect(open('claude-app', long).searchParams.get('q')?.length).toBe(5000);
+    expect(open('claude-web', long).searchParams.get('prompt')?.length).toBe(6000);
+  });
+
+  it('counts a target as likely through its agent, or for a service no agent stands for, through the links', () => {
+    const factory = openTargetById('factory-web');
+    const claude = openTargetById('claude-web');
+    expect(factory === undefined ? null : openTargetLikely(factory, () => true, [])).toBe(false);
+    expect(factory === undefined ? null : openTargetLikely(factory, () => false, ['factory'])).toBe(true);
+    expect(claude === undefined ? null : openTargetLikely(claude, (id) => id === 'claude', [])).toBe(true);
   });
 });

@@ -11098,3 +11098,55 @@ html[data-geld-on] [class*='ReactionsMenuOption'] [data-component='ActionList.It
 .geld-review__split-more > summary > .octicon {
   width: 16px;
 }
+
+/*
+ * The agents' menus scroll within the window, and each section's small heading stays at the top while its lines pass
+ * under it. `top` is the list's own padding, so a stuck heading meets the menu's edge.
+ */
+.geld-review__menu-list.geld-review__split-list {
+  /* Wide enough for "Open in Claude Code" and its pill, so opening a fold never widens the menu. */
+  min-width: 240px;
+  max-height: min(70vh, 460px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.geld-review__split-heading {
+  position: sticky;
+  top: -6px;
+  z-index: 1;
+  margin: 0 -6px;
+  padding: 6px 12px 4px;
+  background: var(--overlay-bgColor, var(--geld-review-bg));
+  color: var(--geld-review-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.geld-review__split-heading + .geld-review__split-heading,
+.geld-review__menu-item + .geld-review__split-heading,
+.geld-review__split-more + .geld-review__split-heading {
+  margin-top: 4px;
+  border-top: 1px solid var(--geld-review-border-muted);
+}
+
+.geld-review__split-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Which way in a line opens: the service's web app or its app. */
+.geld-review__split-pill {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border: 1px solid var(--geld-review-border);
+  border-radius: 2em;
+  color: var(--geld-review-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+}
