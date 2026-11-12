@@ -2,14 +2,18 @@ import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { attachmentVideoUrl, createAttachmentVideo } from './attachment-video';
 import { createPdfViewer } from './attachment-pdf';
 import { pdfSourceOf } from './pdf-links';
-import { createAttachmentViewer } from './attachment-viewer';
+import { openAttachmentGallery } from './attachment-gallery';
+import type { GalleryImage } from './attachment-gallery';
 import { ICON_LINK_EXTERNAL, ICON_X } from './ui/icons';
 
 const IMAGE_ATTRIBUTE = 'data-geld-lightbox-image';
+const LINK_ATTRIBUTE = 'data-geld-lightbox-link';
 const IMAGE_PATH = /\.(?:avif|gif|jpe?g|png|svg|webp)$/i;
 let activePath: string | null = null;
 let closeDialog: (() => void) | null = null;
 const videoButtons = new Map<HTMLVideoElement, HTMLButtonElement>();
+const imageIds = new WeakMap<HTMLImageElement, string>();
+let nextImageId = 0;
 
 function attachmentLink(image: HTMLImageElement): HTMLAnchorElement | null {
   if (image.closest('.markdown-body') === null) return null;
@@ -38,14 +42,13 @@ function titleFor(image: HTMLImageElement): string {
   return alt === '' || /^image$/i.test(alt) ? 'Image' : alt;
 }
 
-interface LightboxViewer {
+interface DialogViewer {
   readonly stage: HTMLElement;
-  readonly controls?: HTMLElement;
   readonly mount?: () => void;
   readonly dispose: () => void;
 }
 
-function show(viewer: LightboxViewer, title: string, href: string, trigger: HTMLElement, linkText = 'Open original'): void {
+function showDialog(viewer: DialogViewer, title: string, href: string, trigger: HTMLElement, linkText = 'Open original'): void {
   closeDialog?.();
   const titleId = `geld-lightbox-title-${Date.now()}`;
   const dialog = createElement('dialog', {
@@ -62,14 +65,11 @@ function show(viewer: LightboxViewer, title: string, href: string, trigger: HTML
   dialog.append(
     createElement('header', { class: 'geld-lightbox__header' }, [
       createElement('h1', { class: 'geld-lightbox__title', id: titleId }, [title]),
-      ...(viewer.controls === undefined ? [original] : []),
+      original,
       close,
     ]),
     createElement('div', { class: 'geld-lightbox__body' }, [viewer.stage]),
   );
-  if (viewer.controls) {
-    dialog.append(createElement('footer', { class: 'geld-lightbox__footer' }, [viewer.controls, original]));
-  }
   const dismiss = (): void => {
     if (closeDialog !== dismiss) return;
     closeDialog = null;
@@ -94,6 +94,33 @@ function show(viewer: LightboxViewer, title: string, href: string, trigger: HTML
   close.focus();
 }
 
+function galleryImage(image: HTMLImageElement): GalleryImage | null {
+  const link = attachmentLink(image);
+  if (link === null) return null;
+  let id = imageIds.get(image);
+  if (id === undefined) {
+    id = `geld-lightbox-image-${++nextImageId}`;
+    imageIds.set(image, id);
+  }
+  return { id, image, link, title: titleFor(image) };
+}
+
+/** Each rendered body is its own gallery, so one comment's screenshots never mix with another's. */
+function openGallery(image: HTMLImageElement): void {
+  const body = image.closest('.markdown-body');
+  const items = [...(body?.querySelectorAll('img') ?? [])].flatMap((candidate) => {
+    const item = candidate instanceof HTMLImageElement ? galleryImage(candidate) : null;
+    return item === null ? [] : [item];
+  });
+  const index = items.findIndex((item) => item.image === image);
+  if (index < 0) return;
+  closeDialog?.();
+  const dismiss = openAttachmentGallery(items, index, () => {
+    if (closeDialog === dismiss) closeDialog = null;
+  });
+  closeDialog = dismiss;
+}
+
 function onClick(event: MouseEvent): void {
   if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
   const target = event.target;
@@ -101,7 +128,7 @@ function onClick(event: MouseEvent): void {
   const pdfLink = target.closest('.markdown-body a[href]');
   const pdf = !import.meta.env.FIREFOX && pdfLink instanceof HTMLAnchorElement && !pdfLink.hasAttribute('download') ? pdfSourceOf(pdfLink.href, window.location.origin) : null;
   if (pdfLink instanceof HTMLAnchorElement && pdf !== null) {
-    show(createPdfViewer(pdf, () => closeDialog?.()), pdf.name, pdf.url, pdfLink, 'Download');
+    showDialog(createPdfViewer(pdf, () => closeDialog?.()), pdf.name, pdf.url, pdfLink, 'Download');
     event.preventDefault();
     event.stopImmediatePropagation();
     return;
@@ -110,7 +137,7 @@ function onClick(event: MouseEvent): void {
   if (!(image instanceof HTMLImageElement)) return;
   const link = attachmentLink(image);
   if (link === null) return;
-  show(createAttachmentViewer(image), titleFor(image), link.href, link);
+  openGallery(image);
   event.preventDefault();
   event.stopImmediatePropagation();
 }
@@ -135,7 +162,7 @@ function enhanceVideos(): void {
         ? video.parentElement.querySelector(':scope > summary')?.textContent?.trim()
         : undefined;
       const title = video.getAttribute('aria-label')?.trim() || summary || 'Video';
-      show(createAttachmentVideo(video, url), title, url, button);
+      showDialog(createAttachmentVideo(video, url), title, url, button);
     });
     video.after(button);
     videoButtons.set(video, button);
@@ -151,12 +178,28 @@ export function applyAttachmentLightbox(enabled = true): void {
   activePath = window.location.pathname;
   document.addEventListener('click', onClick, true);
   enhanceVideos();
+  const links = new Set<HTMLAnchorElement>();
   for (const image of document.querySelectorAll('.markdown-body img')) {
     if (image instanceof HTMLImageElement) {
-      const eligible = attachmentLink(image) !== null;
-      if (eligible !== image.hasAttribute(IMAGE_ATTRIBUTE)) image.toggleAttribute(IMAGE_ATTRIBUTE, eligible);
+      const link = attachmentLink(image);
+      if ((link !== null) !== image.hasAttribute(IMAGE_ATTRIBUTE)) image.toggleAttribute(IMAGE_ATTRIBUTE, link !== null);
+      if (link !== null) links.add(link);
     }
   }
+  for (const link of document.querySelectorAll<HTMLAnchorElement>(`a[${LINK_ATTRIBUTE}]`)) {
+    if (!links.has(link)) releaseLink(link);
+  }
+  for (const link of links) {
+    if (link.hasAttribute(LINK_ATTRIBUTE) || link.hasAttribute('aria-haspopup')) continue;
+    link.setAttribute(LINK_ATTRIBUTE, '');
+    link.setAttribute('aria-haspopup', 'dialog');
+  }
+}
+
+/** Only the `aria-haspopup` Geld added comes off: a link GitHub gave one keeps it. */
+function releaseLink(link: HTMLAnchorElement): void {
+  link.removeAttribute(LINK_ATTRIBUTE);
+  link.removeAttribute('aria-haspopup');
 }
 
 export function removeAttachmentLightbox(): void {
@@ -166,4 +209,5 @@ export function removeAttachmentLightbox(): void {
   videoButtons.clear();
   activePath = null;
   for (const image of document.querySelectorAll(`[${IMAGE_ATTRIBUTE}]`)) image.removeAttribute(IMAGE_ATTRIBUTE);
+  for (const link of document.querySelectorAll<HTMLAnchorElement>(`a[${LINK_ATTRIBUTE}]`)) releaseLink(link);
 }

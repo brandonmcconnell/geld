@@ -25,8 +25,9 @@ describe('fitPath', () => {
     expect(fitPath('aa/bb/cc/dd/ee/file.ts', 'aa/bb/cc/…/ee/file.ts'.length, measure)).toBe('aa/bb/cc/…/ee/file.ts');
   });
 
-  it('falls back to the file name alone', () => {
+  it('falls back to the file name alone, then cuts the file name in its middle', () => {
     expect(fitPath(PATH, 20, measure)).toBe('…/MentionFormat.ts');
-    expect(fitPath(PATH, 5, measure)).toBe('…/MentionFormat.ts');
+    expect(fitPath(PATH, 12, measure)).toBe('Mentio…at.ts');
+    expect(fitPath(PATH, 5, measure)).toBe('Me…ts');
   });
 });

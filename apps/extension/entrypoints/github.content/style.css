@@ -3379,6 +3379,433 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   background: var(--geld-review-hover);
 }
 
+/* ---- The AI triage, right under the Geld row ------------------------------- */
+
+.geld-review__triage {
+  border-bottom: 1px solid var(--geld-review-border-muted);
+  background: var(--geld-review-bg);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.geld-review__triage-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 16px 8px;
+}
+
+.geld-review__triage-glyph {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding-top: 2px;
+  color: var(--geld-review-accent);
+}
+
+.geld-review__triage-glyph .octicon {
+  width: 14px;
+  height: 14px;
+}
+
+.geld-review__triage-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-review__triage-text code,
+.geld-review__triage-fix-summary code,
+.geld-review__triage-fix-title code {
+  padding: 0.1em 0.35em;
+  border-radius: 6px;
+  background: var(--bgColor-neutral-muted, rgba(175, 184, 193, 0.2));
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 85%;
+}
+
+.geld-review__triage-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 8px 38px;
+  padding: 4px 4px 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.geld-review__triage-line[data-tone='attention'] {
+  background: light-dark(var(--geld-review-attention-bg), color-mix(in srgb, var(--geld-review-attention-fg) 14%, var(--geld-review-bg)));
+}
+
+.geld-review__triage-line[data-tone='danger'] {
+  background: light-dark(var(--geld-review-danger-bg), color-mix(in srgb, var(--geld-review-danger-fg) 14%, var(--geld-review-bg)));
+}
+
+.geld-review__triage-writing {
+  margin: 0 16px 8px 38px;
+  font-size: 12px;
+}
+
+.geld-review__triage-fixes {
+  margin: 0 16px 8px 38px;
+  padding: 0;
+  border: 1px solid var(--geld-review-border-muted);
+  border-radius: 6px;
+  list-style: none;
+}
+
+.geld-review__triage-fix + .geld-review__triage-fix {
+  border-top: 1px solid var(--geld-review-border-muted);
+}
+
+/* No `overflow: hidden` on the list, which would clip the rows' menus: the first and last rows round themselves. */
+.geld-review__triage-fix:first-child > .geld-review__triage-fix-row {
+  border-top-left-radius: 5px;
+  border-top-right-radius: 5px;
+}
+
+.geld-review__triage-fix:last-child:not([data-open]) > .geld-review__triage-fix-row,
+.geld-review__triage-fix:last-child > .geld-review__triage-fix-body {
+  border-bottom-left-radius: 5px;
+  border-bottom-right-radius: 5px;
+}
+
+.geld-review__triage-fix-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 0 4px 0 0;
+}
+
+.geld-review__triage-fix-row:hover,
+.geld-review__triage-fix[data-open] > .geld-review__triage-fix-row {
+  background: var(--geld-review-hover);
+}
+
+.geld-review__triage-fix-toggle {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 4px 0 10px;
+  border: 0;
+  background: none;
+  color: var(--fgColor-default, var(--color-fg-default));
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.geld-review__triage-fix-glyph {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--geld-review-muted);
+}
+
+.geld-review__triage-fix[data-kind='agent'] .geld-review__triage-fix-glyph {
+  color: var(--geld-review-attention-fg);
+}
+
+.geld-review__triage-fix[data-state='applied'] .geld-review__triage-fix-glyph {
+  color: var(--fgColor-success, var(--color-success-fg));
+}
+
+.geld-review__triage-fix-title {
+  flex: 0 1 auto;
+  max-width: 50%;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The path, fitted in the middle (`fitPathInto`: the file name always, then as much of the start as fits), and its lines. */
+.geld-review__triage-fix-place {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 4em;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.geld-review__triage-fix-where {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.geld-review__triage-fix-lines {
+  flex: 0 0 auto;
+}
+
+.geld-review__triage-fix-counts,
+.geld-review__triage-fix-state {
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+
+.geld-review__triage-fix-counts {
+  display: inline-flex;
+  gap: 4px;
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+}
+
+.geld-review__triage-fix-counts [data-kind='add'] {
+  color: var(--fgColor-success, var(--color-success-fg));
+}
+
+.geld-review__triage-fix-counts [data-kind='del'] {
+  color: var(--fgColor-danger, var(--color-danger-fg));
+}
+
+.geld-review__triage-fix-state {
+  color: var(--fgColor-success, var(--color-success-fg));
+}
+
+.geld-review__triage-fix-state[data-kind='agent'] {
+  color: var(--geld-review-muted);
+}
+
+.geld-review__triage-fix-discard {
+  flex: 0 0 auto;
+  color: var(--geld-review-muted);
+}
+
+.geld-review__triage-fix-discard:hover {
+  color: var(--fgColor-danger, var(--color-danger-fg));
+}
+
+.geld-review__triage-fix-row > .geld-review__chevron {
+  flex: 0 0 auto;
+}
+
+.geld-review__triage-fix[data-open] .geld-review__triage-fix-row > .geld-review__chevron .octicon {
+  transform: rotate(180deg);
+}
+
+.geld-review__triage-fix-body {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--geld-review-border-muted);
+}
+
+.geld-review__triage-fix-summary,
+.geld-review__triage-fix-note,
+.geld-review__triage-fix-error {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.geld-review__triage-fix-note {
+  color: var(--geld-review-muted);
+}
+
+.geld-review__triage-fix-error {
+  margin: 8px 0 0;
+  color: var(--fgColor-danger, var(--color-danger-fg));
+}
+
+.geld-review__diff-wrap {
+  margin-bottom: 8px;
+  border: 1px solid var(--geld-review-border-muted);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.geld-review__diff {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.geld-review__diff td {
+  padding: 0 8px;
+  border: 0;
+  vertical-align: top;
+}
+
+.geld-review__diff-num {
+  width: 1%;
+  color: var(--geld-review-muted);
+  text-align: right;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.geld-review__diff-sign {
+  width: 1%;
+  padding: 0 0 0 4px !important;
+  user-select: none;
+}
+
+.geld-review__diff-code {
+  white-space: pre;
+}
+
+.geld-review__diff tr[data-kind='gap'] {
+  background: var(--diffBlob-hunkLine-bgColor, var(--color-diff-blob-hunk-text, var(--geld-review-subtle)));
+}
+
+.geld-review__diff-gap {
+  color: var(--geld-review-muted);
+  font-family: inherit;
+}
+
+.geld-review__diff tr[data-kind='add'] {
+  background: var(--diffBlob-additionLine-bgColor, var(--color-diff-blob-addition-line-bg-color, #dafbe1));
+}
+
+.geld-review__diff tr[data-kind='add'] .geld-review__diff-num {
+  background: var(--diffBlob-additionNum-bgColor, var(--color-diff-blob-addition-num-bg-color, #aceebb));
+}
+
+.geld-review__diff tr[data-kind='del'] {
+  background: var(--diffBlob-deletionLine-bgColor, var(--color-diff-blob-deletion-line-bg-color, #ffebe9));
+}
+
+.geld-review__diff tr[data-kind='del'] .geld-review__diff-num {
+  background: var(--diffBlob-deletionNum-bgColor, var(--color-diff-blob-deletion-num-bg-color, #ffcecb));
+}
+
+.geld-review__triage-fix-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Discard reads as a quiet link, muted until the pointer is on it, as GitHub's secondary links do. */
+.geld-review__triage-fix-link {
+  margin-right: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--geld-review-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.geld-review__triage-fix-link:hover,
+.geld-review__triage-fix-link:focus-visible {
+  color: var(--fgColor-accent, var(--color-accent-fg));
+}
+
+.geld-review__triage-status {
+  margin: 0 16px 10px 38px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+}
+
+/* A split button of Geld's own: Primer's group rounds by `:first-child`, which the caret inside its `details` always is. */
+.geld-review__split {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+}
+
+.geld-review__split > .geld-review__menu {
+  display: flex;
+}
+
+.geld-review__split-main {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+/* The agent's mark stands as far from the button's left edge as from its top and bottom. */
+.geld-review__split-agent {
+  padding-left: calc((var(--control-small-size, 28px) - 16px) / 2 - 1px) !important;
+}
+
+.geld-review__split-main .geld-review__bot-icon {
+  margin: 0;
+}
+
+.geld-review__split-caret {
+  display: inline-flex !important;
+  align-items: center;
+  height: 100%;
+  margin-left: -1px;
+  padding: 0 6px !important;
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  list-style: none;
+}
+
+.geld-review__split-caret::-webkit-details-marker {
+  display: none;
+}
+
+.geld-review__menu-list.geld-review__split-list {
+  min-width: 200px;
+}
+
+.geld-review__split-item {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+
+.geld-review__menu-item.geld-review__split-item > .geld-review__bot-icon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.geld-review__split-glyph {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  color: var(--geld-review-muted);
+}
+
+.geld-review__split-glyph .octicon {
+  width: 14px;
+  height: 14px;
+}
+
+.geld-review__menu-sep {
+  height: 1px;
+  margin: 6px -6px;
+  background: var(--geld-review-border-muted);
+}
+
+@container geld-review (width <= 640px) {
+  .geld-review__triage-line,
+  .geld-review__triage-fixes,
+  .geld-review__triage-writing,
+  .geld-review__triage-status {
+    margin-left: 16px;
+  }
+
+  .geld-review__triage-line {
+    flex-wrap: wrap;
+  }
+
+  .geld-review__triage-fix-place,
+  .geld-review__split-main:has(.octicon, .geld-review__bot-icon) .geld-review__split-label {
+    display: none;
+  }
+}
+
 /* Lucide's marks are outlines: GitHub's `.octicon { fill: currentColor }` would fill their shapes solid (the Flow mark's two boxes rendered as blobs). */
 svg.geld-lucide {
   fill: none !important;
@@ -4920,16 +5347,7 @@ html [data-geld-person-fold-part][data-geld-person-fold-part] {
   text-decoration: underline;
 }
 
-/* ---- TL;DR and AI shimmer -------------------------------------------------- */
-
-.geld-review__tldr {
-  margin: 0;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--geld-review-border-muted);
-  color: var(--fgColor-default, var(--color-fg-default));
-  font-size: 13px;
-  line-height: 20px;
-}
+/* ---- AI shimmer ------------------------------------------------------------ */
 
 /*
  * Text the model is still working on: a soft highlight sweeping across the
@@ -5312,10 +5730,22 @@ html [data-geld-person-fold-part][data-geld-person-fold-part] {
 .geld-review__avatar,
 .geld-review__bot-icon,
 .geld-review-hovercard__avatar,
-.geld-review__head-slot .avatar {
+.geld-review__head-slot .avatar,
+.geld-review__push-avatar,
+.geld-review__qv .AvatarStack-body .avatar img {
   /* A faint ring so an avatar never blends into the surface, in either scheme. */
   outline: 1px solid rgb(128 128 128 / 15%);
   outline-offset: -1px;
+}
+
+/* GitHub's commit-row stack on loan: its own outer ring gives way to ours, and each avatar masks the one under it
+ * as Geld's stacks do. GitHub lays the first avatar on top, so the mask is on every one but the last. */
+.geld-review__qv .AvatarStack-body .avatar {
+  box-shadow: none;
+}
+
+.geld-review__qv .AvatarStack-body .avatar:not(:last-child) {
+  box-shadow: 0 0 0 2px var(--geld-review-bg);
 }
 
 .geld-review__avatar[data-kind='bot'] {
@@ -10086,7 +10516,7 @@ dialog.geld-flow .geld-flow__actions .Overlay-closeButton {
   cursor: zoom-in;
 }
 
-dialog.geld-lightbox {
+:is(dialog.geld-lightbox, .geld-lightbox--gallery) {
   position: fixed;
   inset: 0;
   display: flex;
@@ -10107,8 +10537,29 @@ dialog.geld-lightbox {
   font: 14px/1.5 var(--fontStack-system, sans-serif);
 }
 
-.geld-lightbox::backdrop {
+.geld-lightbox::backdrop,
+.geld-lightbox__backdrop {
   background: var(--overlay-backdrop-bgColor, rgb(31 35 40 / 50%));
+}
+
+/* The gallery's host is a popover only to reach the top layer: no box of its own, its content fixed to the viewport. */
+.geld-lightbox-host {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  color: inherit;
+  background: none;
+  border: 0;
+}
+
+.geld-lightbox__backdrop {
+  position: fixed;
+  inset: 0;
 }
 
 .geld-lightbox__header {
@@ -10134,7 +10585,7 @@ dialog.geld-lightbox {
   text-overflow: ellipsis;
 }
 
-dialog.geld-lightbox[open]:has(.geld-lightbox__stage--large) {
+:is(dialog.geld-lightbox[open]:has(.geld-lightbox__stage--large), .geld-lightbox--gallery) {
   box-sizing: border-box;
   width: min(1120px, 84vw);
   min-width: 0;
@@ -10143,17 +10594,17 @@ dialog.geld-lightbox[open]:has(.geld-lightbox__stage--large) {
   max-height: none;
 }
 
-.geld-lightbox:has(.geld-lightbox__stage--large) .geld-lightbox__body {
+.geld-lightbox:is(:has(.geld-lightbox__stage--large), .geld-lightbox--gallery) .geld-lightbox__body {
   flex: 1;
   grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   place-items: stretch;
 }
 
-.geld-lightbox:has(.geld-lightbox__stage--large) :is(.geld-lightbox__header, .geld-lightbox__footer) {
+.geld-lightbox:is(:has(.geld-lightbox__stage--large), .geld-lightbox--gallery) :is(.geld-lightbox__header, .geld-lightbox__footer) {
   flex: none;
 }
 
-.geld-lightbox:has(.geld-lightbox__stage--large) .geld-lightbox__footer {
+.geld-lightbox:is(:has(.geld-lightbox__stage--large), .geld-lightbox--gallery) .geld-lightbox__footer {
   padding: 8px;
 }
 
@@ -10181,7 +10632,7 @@ dialog.geld-lightbox[open]:has(.geld-lightbox__stage--large) {
   background: var(--control-transparent-bgColor-hover, var(--bgColor-neutral-muted, #818b981f));
 }
 
-.geld-lightbox__close svg {
+:is(.geld-lightbox__close, .geld-lightbox__nav, .geld-lightbox__glyph) svg {
   display: block;
   width: 16px;
   height: 16px;
@@ -10203,24 +10654,113 @@ dialog.geld-lightbox[open]:has(.geld-lightbox__stage--large) {
   touch-action: none;
 }
 
+.geld-lightbox__counter {
+  flex: none;
+  color: var(--fgColor-muted, #59636e);
+  font-variant-numeric: tabular-nums;
+}
+
+.geld-lightbox--gallery .geld-lightbox__body {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+}
+
+.geld-lightbox__slides {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  scrollbar-width: none;
+}
+
+.geld-lightbox__slides::-webkit-scrollbar {
+  display: none;
+}
+
+.geld-lightbox__slide {
+  box-sizing: border-box;
+  flex: 0 0 100%;
+  min-width: 100%;
+  height: 100%;
+  padding: 24px;
+}
+
 .geld-lightbox__image {
-  position: absolute;
-  inset: 0;
   display: block;
+  width: 100%;
+  height: 100%;
   max-width: none;
-  max-height: none;
-  margin: auto;
-  transform-origin: center;
   user-select: none;
   cursor: zoom-in;
 }
 
-.geld-lightbox__stage[data-zoomed] .geld-lightbox__image {
+[data-ramka-zoom][data-zoom] .geld-lightbox__image {
   cursor: grab;
 }
 
-.geld-lightbox__stage[data-dragging] .geld-lightbox__image {
+[data-ramka-zoom][data-dragging] .geld-lightbox__image {
   cursor: grabbing;
+}
+
+.geld-lightbox__slide .geld-lightbox__status {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  height: 100%;
+  align-content: center;
+  margin: auto;
+}
+
+.geld-lightbox__slide .geld-lightbox__status p {
+  margin: 0;
+}
+
+.geld-lightbox__nav {
+  position: absolute;
+  top: 50%;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--fgColor-default, #1f2328);
+  background: var(--button-default-bgColor-rest, #f6f8fa);
+  border: var(--borderWidth-thin, 1px) solid var(--button-default-borderColor-rest, #d1d9e0);
+  border-radius: 50%;
+  box-shadow: var(--shadow-resting-small, 0 1px 1px 0 #1f23280f);
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.geld-lightbox__nav:hover {
+  background: var(--button-default-bgColor-hover, #eff2f5);
+}
+
+.geld-lightbox__nav[data-disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.geld-lightbox__nav--previous {
+  inset-inline-start: 12px;
+}
+
+.geld-lightbox__nav--next {
+  inset-inline-end: 12px;
+}
+
+.geld-lightbox__nav--previous svg,
+.geld-lightbox__nav--next:dir(rtl) svg {
+  transform: scaleX(-1);
+}
+
+.geld-lightbox__nav--previous:dir(rtl) svg {
+  transform: none;
+}
+
+.geld-lightbox__glyph {
+  display: contents;
 }
 
 .geld-lightbox__status {

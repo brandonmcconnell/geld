@@ -57,6 +57,15 @@ describe('planConsolidation', () => {
     expect(grown.pending[0]?.excerpts).toHaveLength(2);
   });
 
+  it('does not ask again about an item the last run saw and left as reported, until a new comment joins it', () => {
+    const seen = new Set(['discussion_r1']);
+    expect(planConsolidation(null, firstItems, { comments: first, seen }).pending).toEqual([]);
+    const reply = { anchor: 'discussion_r2', kind: 'thread' as const, author: 'cursor[bot]', body: 'Still throws.' };
+    const opener = bot('discussion_r1', 'greptile-apps[bot]', 'Null check missing in parseDiff.', 42);
+    const grownComments: RawComment[] = [{ ...opener, threadAnchors: [{ anchor: opener.anchor, kind: 'thread', author: opener.author, body: opener.body }, reply] }];
+    expect(planConsolidation(null, clusterComments(grownComments), { comments: grownComments, seen }).pending).toHaveLength(1);
+  });
+
   it('applies model fixes only where no bot fix exists', () => {
     const withBotFix = clusterComments([bot('discussion_r5', 'coderabbitai[bot]', 'Use const.\n```suggestion\nconst x = 1;\n```', 5)]);
     const applied = applyConsolidation(withBotFix, new Map(), [{ id: withBotFix[0]?.id ?? '', title: 'Use const', fix: 'let → const' }]);

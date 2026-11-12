@@ -187,6 +187,19 @@ export interface GeldSettings {
    * model proposes. `all`: both. `off`: never show one.
    */
   readonly suggestedFixes: SuggestedFixMode;
+  /**
+   * The coding agent the triage hands open findings to first. `auto` lets the pull request decide: the agent its
+   * author used (from its related links) when the reader is that author, else the menu's order.
+   */
+  readonly codingAgent: CodingAgentId;
+}
+
+/** Ids shared with `@geld/review`'s coding agent registry (`CODING_AGENTS`), which keys its entries by them. */
+export const CODING_AGENT_IDS = ['auto', 'cursor', 'copilot', 'claude', 'codex', 'devin'] as const;
+export type CodingAgentId = (typeof CODING_AGENT_IDS)[number];
+
+export function isCodingAgentId(value: unknown): value is CodingAgentId {
+  return typeof value === 'string' && CODING_AGENT_IDS.some((id) => id === value);
 }
 
 export const SUGGESTED_FIX_MODES = ['all', 'bots', 'ai', 'off'] as const;
@@ -280,6 +293,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   aiJev: false,
   aiDecisionModel: '',
   suggestedFixes: 'bots',
+  codingAgent: 'auto',
 };
 
 /**
@@ -544,6 +558,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     aiJev: bool(record, 'aiJev', DEFAULT_SETTINGS.aiJev),
     aiDecisionModel: typeof record.aiDecisionModel === 'string' ? record.aiDecisionModel.trim() : DEFAULT_SETTINGS.aiDecisionModel,
     suggestedFixes: isSuggestedFixMode(record.suggestedFixes) ? record.suggestedFixes : DEFAULT_SETTINGS.suggestedFixes,
+    codingAgent: isCodingAgentId(record.codingAgent) ? record.codingAgent : DEFAULT_SETTINGS.codingAgent,
   };
 }
 

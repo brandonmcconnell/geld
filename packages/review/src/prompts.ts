@@ -18,10 +18,11 @@ Rules:
 - When "sameProblemAs" lists other ids, those items were judged to report the same underlying problem: give them one and the same title, and let each context say which other reporters raised it.
 - Return JSON only, matching the schema. Every id must be one of the ids you were given.`;
 
-export const SUMMARY_SYSTEM = `You write the TL;DR of a pull request's review state for its digest.
+export const SUMMARY_SYSTEM = `You write the triage of a pull request's open review feedback for its digest: what the author has to do before it can merge.
 Rules:
 - At most three sentences, plain prose, no lists, no headings, no emoji.
-- Say what kind of feedback is open (bugs, questions, nits), where it clusters, and what is blocking if anything. Do not repeat every item.
+- Say concretely what each open finding asks for (the change, in a few words, not just its file), and whether anything blocks merging. Group findings that ask for the same kind of change.
+- Wrap file names, paths, symbols, identifiers and code in backticks: \`attachment-viewer.tsx\`, \`parseDiff()\`.
 - When "previousTldr" is given, keep its wording where it still holds and change only what the item list requires.
 - Return JSON only: {"tldr": "..."}.`;
 
@@ -50,6 +51,7 @@ export interface SummaryInputItem {
   readonly severity: string;
   readonly status: string;
   readonly path?: string;
+  readonly context?: string;
 }
 
 export interface AddressedInputItem {
