@@ -74,6 +74,9 @@ describe('OPEN_TARGETS', () => {
 
   it('builds each service’s documented link with the pull request where it takes one', () => {
     expect(open('cursor-app').toString()).toBe('https://cursor.com/link/prompt?text=fix+it');
+    expect(open('cursor-web').toString()).toBe('https://cursor.com/agents');
+    expect(openTargetById('cursor-web')?.copiesTask).toBe(true);
+    expect(openTargetById('claude-web')?.copiesTask).toBeUndefined();
     expect(Object.fromEntries(open('claude-web').searchParams)).toEqual({ prompt: 'fix it', repositories: 'o/r' });
     expect(open('claude-app').protocol).toBe('claude-cli:');
     expect(Object.fromEntries(open('claude-app').searchParams)).toEqual({ repo: 'o/r', q: 'fix it' });

@@ -2651,7 +2651,7 @@ function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, pr
       used: used.includes(agent.id),
       likely: likely(agent.id),
     })),
-    openTargets: OPEN_TARGETS.map((target) => ({ id: target.id, service: target.service, variant: target.variant, iconSrc: targetIcon(target), likely: openTargetLikely(target, likely, services) })),
+    openTargets: OPEN_TARGETS.map((target) => ({ id: target.id, service: target.service, variant: target.variant, iconSrc: targetIcon(target), likely: openTargetLikely(target, likely, services), copiesTask: target.copiesTask === true })),
     recommended: pick.recommended === null || pick.reason === null ? null : { id: pick.recommended.id, reason: pick.reason },
     openKey: visit.triage.openKey,
     collapsed: visit.triage.collapsed,
@@ -4250,10 +4250,12 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         if (target === undefined) return;
         countUsage('agent_handoff');
         const url = target.url(task, { owner: subject.owner, repo: subject.repo, number: subject.number });
+        // Opened in the click's own turn, which the browser's popup blocker requires; the copy finishes meanwhile.
+        if (target.copiesTask === true) void copyText(task);
         // A web link opens in a tab; an app's own scheme is handed to the system from this page, leaving no blank tab.
         if (/^https?:/i.test(url)) window.open(url, '_blank', 'noopener');
         else createElement('a', { href: url }).click();
-        said(`Opened in ${target.service}`);
+        said(target.copiesTask === true ? `Copied the task and opened ${target.service}. Paste it there to start` : `Opened in ${target.service}`);
         return;
       }
       const agent = codingAgentById(agentId) ?? CODING_AGENTS[0];

@@ -75,13 +75,17 @@ export interface OpenTarget {
   readonly appId?: number;
   readonly relatedIds?: readonly string[];
   readonly url: (task: string, pull: PullRef) => string;
+  /** The link cannot carry the task: it is copied first, for the reader to paste where the link lands. */
+  readonly copiesTask?: true;
 }
 
 /**
  * Where a task can be opened, each read from the service's own docs in Nov 2026 unless said otherwise. Cursor has no web
- * link that opens a prompt or a cloud agent (its forum, Feb 2026), so it has only its app.
+ * link that opens a prompt or a cloud agent (its forum, Feb 2026), so its web line copies the task and opens its agents.
  */
 export const OPEN_TARGETS: readonly OpenTarget[] = [
+  // Cursor's web agents take no prompt in their link (its forum, Feb 2026), so the task is copied for the reader to paste there.
+  { id: 'cursor-web', service: 'Cursor', variant: 'web', agent: 'cursor', copiesTask: true, url: () => 'https://cursor.com/agents' },
   // The web form of Cursor's prompt deeplink: a cursor.com page that hands the prompt to the app.
   { id: 'cursor-app', service: 'Cursor', variant: 'app', agent: 'cursor', url: (task) => link('https://cursor.com/link/prompt', { text: cut(task, LINK_TASK_CHARS) }) },
   { id: 'claude-web', service: 'Claude Code', variant: 'web', agent: 'claude', url: (task, pull) => link('https://claude.ai/code', { prompt: cut(task, LINK_TASK_CHARS), repositories: `${pull.owner}/${pull.repo}` }) },

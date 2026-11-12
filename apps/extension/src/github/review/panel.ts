@@ -606,6 +606,8 @@ export interface TriageOpenTarget {
   readonly variant: 'web' | 'app';
   readonly iconSrc: string | null;
   readonly likely: boolean;
+  /** Its link cannot carry the task, so the task is copied to paste there (Cursor on the web). */
+  readonly copiesTask: boolean;
 }
 
 export interface TriageView {
@@ -1584,8 +1586,8 @@ function agentItems(list: HTMLElement, key: string, triage: TriageView, handlers
     list.append(disclosure);
   };
   const fixItem = (agent: TriageAgent): HTMLElement => menuItem([agentMark(agent), `Fix with ${agent.name}`], close, () => handlers.onHandOff(agent.id, 'comment', key));
-  const openItem = (target: TriageOpenTarget): HTMLElement =>
-    menuItem(
+  const openItem = (target: TriageOpenTarget): HTMLElement => {
+    const item = menuItem(
       [
         target.iconSrc === null ? createElement('span', { class: `${PANEL_CLASS}__bot-icon`, 'aria-hidden': 'true' }) : markImg(target.iconSrc, false),
         createElement('span', { class: `${PANEL_CLASS}__split-name` }, [`Open in ${target.service}`]),
@@ -1594,6 +1596,9 @@ function agentItems(list: HTMLElement, key: string, triage: TriageView, handlers
       close,
       () => handlers.onHandOff(target.id, 'open', key),
     );
+    if (target.copiesTask) item.title = `Copies the task, then opens ${target.service} to paste it`;
+    return item;
+  };
   const fixers = likelyFirst(triage.agents.filter((agent) => agent.command !== null));
   const lead = skip === null ? undefined : triage.agents.find((agent) => agent.id === skip);
   const show = (agent: TriageAgent): boolean => agent.id !== skip;
