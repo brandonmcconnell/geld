@@ -1659,6 +1659,65 @@ html[data-geld-tab-counts] [data-component='PageHeader']:has([class*='branchGrou
   white-space: nowrap;
 }
 
+/* The Overview description's ⋯, beside GitHub's Edit pencil, in the shape of Primer's small invisible icon button. */
+.geld-desc-menu__wrap {
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.geld-desc-menu__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fgColor-muted, #59636e);
+  cursor: pointer;
+}
+
+.geld-desc-menu__button:hover,
+.geld-desc-menu__button[aria-expanded='true'] {
+  background: var(--control-transparent-bgColor-hover, rgba(208, 215, 222, 0.32));
+  color: var(--fgColor-default, #1f2328);
+}
+
+.geld-desc-menu__button:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, #0969da);
+  outline-offset: -2px;
+}
+
+.geld-desc-menu {
+  min-width: 220px;
+}
+
+.geld-desc-menu .geld-quick-review__menu-item {
+  align-items: center;
+  text-decoration: none;
+}
+
+.geld-desc-menu .geld-quick-review__menu-visual {
+  padding-top: 0;
+}
+
+.geld-desc-menu .geld-quick-review__menu-item[data-danger],
+.geld-desc-menu .geld-quick-review__menu-item[data-danger] .geld-quick-review__menu-visual {
+  color: var(--fgColor-danger, #d1242f);
+}
+
+.geld-desc-menu .geld-quick-review__menu-item[data-danger]:is(:hover, :focus-visible) {
+  background: var(--control-danger-bgColor-hover, rgba(255, 235, 233, 0.64));
+}
+
+.geld-desc-menu__divider {
+  height: 1px;
+  margin: 4px -6px;
+  background: var(--borderColor-muted, #d1d9e0b3);
+}
+
 /* The merge box: the method, the commit GitHub would write (editable), and GitHub's bypass checkbox when that is the only way. */
 .geld-quick-review__method[hidden],
 .geld-quick-review__commit[hidden],
