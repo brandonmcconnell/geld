@@ -143,6 +143,19 @@ function watchDisabled(section: Element): void {
   disabledWatch = { section, observer };
 }
 
+/**
+ * GitHub's merge in the recommended action turned green, before paint and before Geld's controls have mounted: drawn
+ * grey first, it changed colour under the reader a moment later. Only `data-variant` is written, which React's
+ * hydration leaves as it finds it, so this need not wait for the section to hydrate as the nodes Geld adds there do.
+ */
+export function greenOverviewMerges(): Element | null {
+  const section = document.querySelector(SECTION);
+  if (section === null) return null;
+  greenMerges(section);
+  watchDisabled(section);
+  return section;
+}
+
 function isDisabled(button: HTMLButtonElement): boolean {
   return button.disabled || button.getAttribute('aria-disabled') === 'true' || button.getAttribute('data-inactive') === 'true';
 }
@@ -153,15 +166,11 @@ function isDisabled(button: HTMLButtonElement): boolean {
  * with `method` (GitHub's default until the reader picks another from its caret).
  */
 export function syncOverviewMerge(merge: OverviewMerge | null, method: MergeMethod, handlers: OverviewMergeHandlers): void {
-  const section = document.querySelector(SECTION);
+  const section = greenOverviewMerges();
   // Its buttons and Geld's beside them are React's nodes, not to be touched before React has hydrated them (`react-hydration.ts`).
   if (section !== null && !subtreeSettled(section)) return;
   const buttons = section === null ? [] : viewStatusButtons(section);
   for (const button of buttons) iconify(button);
-  if (section !== null) {
-    greenMerges(section);
-    watchDisabled(section);
-  }
   const anchor = buttons[0] ?? null;
   const row = anchor?.closest('[data-testid="for-you-item-row"]') ?? null;
   const existing = document.querySelector<HTMLElement>(`[${ATTR_MERGE}]`);
