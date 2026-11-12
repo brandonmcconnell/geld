@@ -88,7 +88,9 @@ describe('attachment lightbox integration', () => {
     expect(click(video).defaultPrevented).toBe(false);
     const button = main.querySelector('button');
     if (!button) throw new Error('Missing expand button');
-    expect(click(button).defaultPrevented).toBe(true);
+    const mark = button.querySelector('svg');
+    if (!mark) throw new Error('Missing Geld mark');
+    expect(click(mark).defaultPrevented).toBe(true);
     await vi.waitFor(() => expect(mount).toHaveBeenCalledOnce());
     expect(mount.mock.calls[0]?.[0]).toEqual([expect.objectContaining({ kind: 'video', src: 'https://github.com/user-attachments/assets/movie' })]);
     removeAttachmentLightbox();

@@ -157,7 +157,7 @@ function MediaSlide({ item, index, total, playing, active, fit, zoomRef, onZoom,
   return <Lightbox.Slide className="geld-lightbox__slide">
     <Lightbox.Item index={index} caption={item.alt} aria-label={`${index + 1} of ${total}`} aria-roledescription="slide">
       <Lightbox.Zoom ref={zoomRef} className="geld-lightbox__zoom-surface" scrollToZoom={item.kind === 'image'}
-        maxZoom={Math.max(4, Math.min(16, item.width / fit.width))}
+        zoomStep={1.25} wheelSensitivity={500} maxZoom={Math.max(4, Math.min(16, item.width / fit.width))}
         onZoomChange={(zoom) => { if (active) onZoom(zoom); }}>
         <Lightbox.Media width={item.width} height={item.height} className="geld-lightbox__media" style={{ width: fit.width }}>
           <MediaContent item={item} playing={active && playing} onSize={onSize} />

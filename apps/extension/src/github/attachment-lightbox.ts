@@ -1,6 +1,7 @@
 import { collectAttachmentMedia, MEDIA_ATTRIBUTE, mediaSurface, readAttachmentMedia } from './attachment-media';
 import type { AttachmentMedia } from './attachment-media';
 import { createElement, isOwnElement, OWN_UI_ATTRIBUTE } from './dom';
+import { brandMark } from './review/brand';
 
 interface Enhancement {
   readonly restore: () => void;
@@ -89,8 +90,8 @@ function enhance(item: AttachmentMedia): Enhancement {
   if (element instanceof HTMLVideoElement) {
     button = createElement('button', {
       type: 'button', class: 'geld-media-open', [OWN_UI_ATTRIBUTE]: '', 'data-geld-lightbox-open': '',
-      'aria-label': 'Open video in lightbox', 'aria-haspopup': 'dialog',
-    }, ['Expand video']);
+      'aria-label': 'Expand video with Geld', 'aria-haspopup': 'dialog',
+    }, [brandMark('geld-media-open__brand'), 'Expand video']);
     element.after(button);
   } else {
     if (item.image) element.setAttribute('data-geld-lightbox-image', '');

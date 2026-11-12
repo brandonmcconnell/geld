@@ -9847,15 +9847,65 @@ a[data-geld-lightbox-media] {
 }
 
 .geld-media-open {
+  --geld-media-button-bg: light-dark(oklch(0.21 0.01 260), oklch(0.93 0.005 260));
+  --geld-media-button-cut: 10px;
+  position: relative;
+  isolation: isolate;
   display: inline-flex;
-  margin: 6px 0;
-  padding: 4px 8px;
-  color: var(--fgColor-muted, #656d76);
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  gap: 8px;
+  min-height: 44px;
+  margin: 8px 0;
+  padding: 0 20px;
+  color: light-dark(oklch(0.985 0 0), oklch(0.18 0.01 260));
   background: transparent;
-  border: 1px solid var(--borderColor-default, #d1d9e0);
-  border-radius: 6px;
-  font: inherit;
+  border: 1px solid transparent;
+  border-radius: 0;
+  font: 500 0.95rem/1 var(--fontStack-system, sans-serif);
+  white-space: nowrap;
+  user-select: none;
   cursor: pointer;
+}
+
+.geld-media-open::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--geld-media-button-bg);
+  clip-path: polygon(var(--geld-media-button-cut) 0, 100% 0, 100% calc(100% - var(--geld-media-button-cut)), calc(100% - var(--geld-media-button-cut)) 100%, 0 100%, 0 var(--geld-media-button-cut));
+  transition: background-color 150ms ease-out, clip-path 150ms ease-out;
+  pointer-events: none;
+}
+
+.geld-media-open:hover {
+  --geld-media-button-cut: 13px;
+}
+
+.geld-media-open:hover::before {
+  background: color-mix(in oklab, var(--geld-media-button-bg) 85%, transparent);
+}
+
+.geld-media-open:focus-visible {
+  outline: 2px solid var(--fgColor-accent, #0969da);
+  outline-offset: 3px;
+}
+
+.geld-media-open__brand,
+.geld-media-open__brand svg {
+  display: block;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .geld-media-open::before {
+    transition: none;
+  }
 }
 
 .geld-lightbox-host {
