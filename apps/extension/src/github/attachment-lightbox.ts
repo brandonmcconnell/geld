@@ -1,160 +1,149 @@
-import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
-import { attachmentVideoUrl, createAttachmentVideo } from './attachment-video';
-import { createAttachmentViewer } from './attachment-viewer';
-import { ICON_LINK_EXTERNAL, ICON_X } from './ui/icons';
+import { collectAttachmentMedia, MEDIA_ATTRIBUTE, mediaSurface, readAttachmentMedia } from './attachment-media';
+import type { AttachmentMedia } from './attachment-media';
+import { createElement, isOwnElement, OWN_UI_ATTRIBUTE } from './dom';
 
-const IMAGE_ATTRIBUTE = 'data-geld-lightbox-image';
-const IMAGE_PATH = /\.(?:avif|gif|jpe?g|png|svg|webp)$/i;
-let activePath: string | null = null;
-let closeDialog: (() => void) | null = null;
-const videoButtons = new Map<HTMLVideoElement, HTMLButtonElement>();
-
-function isConversation(): boolean {
-  return /^\/[^/]+\/[^/]+\/(?:issues|pull)\/\d+(?:\/|$)/.test(window.location.pathname);
+interface Enhancement {
+  readonly restore: () => void;
+  readonly button: HTMLButtonElement | null;
 }
 
-function attachmentLink(image: HTMLImageElement): HTMLAnchorElement | null {
-  if (image.closest('.markdown-body') === null) return null;
-  const link = image.closest('a');
-  if (!(link instanceof HTMLAnchorElement) || link.hasAttribute('download')) return null;
-  let url: URL;
-  try {
-    url = new URL(link.href);
-  } catch {
+const enhancements = new Map<HTMLElement, Enhancement>();
+let enabled = false;
+let activePath: string | null = null;
+let disposeViewer: (() => void) | null = null;
+let request = 0;
+let observer: MutationObserver | null = null;
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+function observeMedia(): void {
+  if (observer) return;
+  observer = new MutationObserver((records) => {
+    const changed = records.some((record) => !isOwnElement(record.target) && (record.type === 'attributes'
+      || [...record.addedNodes, ...record.removedNodes].some((node) => node instanceof Element && !isOwnElement(node)
+        && (node.matches('img, video, a[href]') || node.querySelector('img, video, a[href]')))));
+    if (!changed || refreshTimer !== null) return;
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null;
+      if (enabled) applyAttachmentLightbox();
+    }, 50);
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'srcset', 'href', 'poster', 'hidden'] });
+}
+
+function dismiss(): void {
+  request++;
+  disposeViewer?.();
+  disposeViewer = null;
+}
+
+async function show(item: AttachmentMedia): Promise<void> {
+  dismiss();
+  const current = request;
+  const group = mediaSurface(item.element);
+  const items = group ? collectAttachmentMedia(group) : [item];
+  const index = items.findIndex((candidate) => candidate.element === item.element);
+  if (index < 0) return;
+  const { mountAttachmentViewer } = await import('./attachment-viewer');
+  if (!enabled || request !== current || !item.element.isConnected) return;
+  disposeViewer = mountAttachmentViewer(items, index, () => {
+    disposeViewer = null;
+  });
+}
+
+function clickedMedia(target: Element): AttachmentMedia | null {
+  const button = target.closest('[data-geld-lightbox-open]');
+  if (button) {
+    for (const [element, enhancement] of enhancements) if (enhancement.button === button) return readAttachmentMedia(element);
     return null;
   }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
-  if (url.hostname === 'user-images.githubusercontent.com' || url.hostname === 'private-user-images.githubusercontent.com') return link;
-  if (url.hostname === 'raw.githubusercontent.com' || url.hostname === 'media.githubusercontent.com') return IMAGE_PATH.test(url.pathname) ? link : null;
-  if (url.origin !== window.location.origin) return null;
-  return /^\/(?:user-attachments\/(?:assets|files)\/|[^/]+\/[^/]+\/(?:assets|files)\/)/.test(url.pathname)
-    || (/^\/[^/]+\/[^/]+\/(?:blob|raw)\//.test(url.pathname) && IMAGE_PATH.test(url.pathname)) ? link : null;
-}
-
-/** GitHub names every upload "image" (older uploads "Image"), which says nothing a dialog title should. */
-function titleFor(image: HTMLImageElement): string {
-  const alt = image.alt.trim();
-  return alt === '' || /^image$/i.test(alt) ? 'Image' : alt;
-}
-
-interface LightboxViewer {
-  readonly stage: HTMLElement;
-  readonly controls?: HTMLElement;
-  readonly mount?: () => void;
-  readonly dispose: () => void;
-}
-
-function show(viewer: LightboxViewer, title: string, href: string, trigger: HTMLElement): void {
-  closeDialog?.();
-  const titleId = `geld-lightbox-title-${Date.now()}`;
-  const dialog = createElement('dialog', {
-    class: 'geld-lightbox',
-    [OWN_UI_ATTRIBUTE]: '',
-    'aria-labelledby': titleId,
-  });
-  const close = createElement('button', {
-    type: 'button', class: 'geld-lightbox__close', 'aria-label': 'Close', title: 'Close (Esc)',
-  }, [svgFromString(ICON_X)]);
-  const original = createElement('a', {
-    class: 'btn btn-sm geld-lightbox__original', href, target: '_blank', rel: 'noopener noreferrer',
-  }, ['Open original', svgFromString(ICON_LINK_EXTERNAL)]);
-  dialog.append(
-    createElement('header', { class: 'geld-lightbox__header' }, [
-      createElement('h1', { class: 'geld-lightbox__title', id: titleId }, [title]),
-      ...(viewer.controls === undefined ? [original] : []),
-      close,
-    ]),
-    createElement('div', { class: 'geld-lightbox__body' }, [viewer.stage]),
-  );
-  if (viewer.controls) {
-    dialog.append(createElement('footer', { class: 'geld-lightbox__footer' }, [viewer.controls, original]));
-  }
-  const dismiss = (): void => {
-    if (closeDialog !== dismiss) return;
-    closeDialog = null;
-    viewer.dispose();
-    if (dialog.open) dialog.close();
-    dialog.remove();
-    if (trigger.isConnected) trigger.focus({ preventScroll: true });
-  };
-  close.addEventListener('click', dismiss);
-  dialog.addEventListener('click', (event) => {
-    if (event.target === dialog) dismiss();
-  });
-  dialog.addEventListener('cancel', (event) => {
-    event.preventDefault();
-    dismiss();
-  });
-  dialog.addEventListener('close', dismiss, { once: true });
-  document.body.append(dialog);
-  closeDialog = dismiss;
-  dialog.showModal();
-  viewer.mount?.();
-  close.focus();
+  const element = target.closest(`img, [${MEDIA_ATTRIBUTE}]`) ?? target.closest('a')?.querySelector('img');
+  if (!(element instanceof HTMLElement) || element instanceof HTMLVideoElement) return null;
+  return readAttachmentMedia(element);
 }
 
 function onClick(event: MouseEvent): void {
-  if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || !isConversation()) return;
-  const target = event.target;
-  if (!(target instanceof Element)) return;
-  const image = target.closest('img') ?? target.closest('a')?.querySelector('img');
-  if (!(image instanceof HTMLImageElement)) return;
-  const link = attachmentLink(image);
-  if (link === null) return;
-  show(createAttachmentViewer(image), titleFor(image), link.href, link);
+  if (!enabled || event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || !(event.target instanceof Element)) return;
+  const item = clickedMedia(event.target);
+  if (!item) return;
   event.preventDefault();
   event.stopImmediatePropagation();
+  void show(item);
 }
 
-function enhanceVideos(): void {
-  const videos = new Set(document.querySelectorAll<HTMLVideoElement>('.markdown-body video'));
-  for (const [video, button] of videoButtons) {
-    if (!videos.has(video) || attachmentVideoUrl(video) === null || video.nextElementSibling !== button) {
-      button.remove();
-      videoButtons.delete(video);
+function onKey(event: KeyboardEvent): void {
+  if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || (event.key !== 'Enter' && event.key !== ' ')) return;
+  if (!(event.target instanceof HTMLElement) || event.target.closest('a, button, video')) return;
+  const item = clickedMedia(event.target);
+  if (!item) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  void show(item);
+}
+
+function enhance(item: AttachmentMedia): Enhancement {
+  const element = item.element;
+  const attributes = ['tabindex', 'role', 'aria-haspopup', MEDIA_ATTRIBUTE, 'data-geld-lightbox-image'];
+  const previous = attributes.map((name) => [name, element.getAttribute(name)] satisfies [string, string | null]);
+  element.setAttribute(MEDIA_ATTRIBUTE, item.kind);
+  let button: HTMLButtonElement | null = null;
+  if (element instanceof HTMLVideoElement) {
+    button = createElement('button', {
+      type: 'button', class: 'geld-media-open', [OWN_UI_ATTRIBUTE]: '', 'data-geld-lightbox-open': '',
+      'aria-label': 'Open video in lightbox', 'aria-haspopup': 'dialog',
+    }, ['Expand video']);
+    element.after(button);
+  } else {
+    if (item.image) element.setAttribute('data-geld-lightbox-image', '');
+    if (!element.closest('a, button')) {
+      element.setAttribute('tabindex', '0');
+      element.setAttribute('role', 'button');
     }
+    element.setAttribute('aria-haspopup', 'dialog');
   }
-  for (const video of videos) {
-    if (videoButtons.has(video) || attachmentVideoUrl(video) === null) continue;
-    const button = createElement('button', {
-      type: 'button', class: 'btn btn-sm geld-lightbox-trigger', 'aria-haspopup': 'dialog', [OWN_UI_ATTRIBUTE]: '',
-    }, ['Open in player']);
-    button.addEventListener('click', () => {
-      const url = attachmentVideoUrl(video);
-      if (url === null) return;
-      const summary = video.parentElement?.matches('details')
-        ? video.parentElement.querySelector(':scope > summary')?.textContent?.trim()
-        : undefined;
-      const title = video.getAttribute('aria-label')?.trim() || summary || 'Video';
-      show(createAttachmentVideo(video, url), title, url, button);
-    });
-    video.after(button);
-    videoButtons.set(video, button);
-  }
+  return {
+    button,
+    restore: () => {
+      button?.remove();
+      for (const [name, value] of previous) {
+        if (value === null) element.removeAttribute(name);
+        else element.setAttribute(name, value);
+      }
+    },
+  };
 }
 
-export function applyAttachmentLightbox(enabled = true): void {
-  if (!enabled || !isConversation()) {
+export function applyAttachmentLightbox(setting = true): void {
+  if (!setting) {
     removeAttachmentLightbox();
     return;
   }
-  if (activePath !== window.location.pathname) closeDialog?.();
+  if (activePath !== window.location.pathname) dismiss();
+  enabled = true;
   activePath = window.location.pathname;
   document.addEventListener('click', onClick, true);
-  enhanceVideos();
-  for (const image of document.querySelectorAll('.markdown-body img')) {
-    if (image instanceof HTMLImageElement) {
-      const eligible = attachmentLink(image) !== null;
-      if (eligible !== image.hasAttribute(IMAGE_ATTRIBUTE)) image.toggleAttribute(IMAGE_ATTRIBUTE, eligible);
+  document.addEventListener('keydown', onKey, true);
+  observeMedia();
+  const items = collectAttachmentMedia(document);
+  const current = new Set(items.map((item) => item.element));
+  for (const [element, enhancement] of enhancements) {
+    if (!current.has(element) || (enhancement.button && !enhancement.button.isConnected)) {
+      enhancement.restore();
+      enhancements.delete(element);
     }
   }
+  for (const item of items) if (!enhancements.has(item.element)) enhancements.set(item.element, enhance(item));
 }
 
 export function removeAttachmentLightbox(): void {
+  enabled = false;
+  observer?.disconnect();
+  observer = null;
+  if (refreshTimer !== null) clearTimeout(refreshTimer);
+  refreshTimer = null;
   document.removeEventListener('click', onClick, true);
-  closeDialog?.();
-  for (const button of videoButtons.values()) button.remove();
-  videoButtons.clear();
+  document.removeEventListener('keydown', onKey, true);
+  dismiss();
   activePath = null;
-  for (const image of document.querySelectorAll(`[${IMAGE_ATTRIBUTE}]`)) image.removeAttribute(IMAGE_ATTRIBUTE);
+  for (const enhancement of enhancements.values()) enhancement.restore();
+  enhancements.clear();
 }

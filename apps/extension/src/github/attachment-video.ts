@@ -15,6 +15,7 @@ export function createAttachmentVideo(source: HTMLVideoElement, url: string) {
     class: 'video-js vjs-big-play-centered', src: url, controls: '', playsinline: '', preload: 'metadata',
   });
   if (source.poster) video.poster = source.poster;
+  for (const track of source.querySelectorAll('track')) video.append(track.cloneNode(true));
 
   const position = source.currentTime;
   const resume = !source.paused && !source.ended;
@@ -33,6 +34,7 @@ export function createAttachmentVideo(source: HTMLVideoElement, url: string) {
       const mounted = videojs(video, {
         controls: true,
         muted: source.muted,
+        loop: source.loop,
         experimentalSvgIcons: true,
         responsive: true,
         enableSmoothSeeking: true,
@@ -49,6 +51,7 @@ export function createAttachmentVideo(source: HTMLVideoElement, url: string) {
       });
       player = mounted;
       mounted.volume(source.volume);
+      mounted.playbackRate(source.playbackRate);
       video.addEventListener('loadedmetadata', () => {
         if (position > 0 && Number.isFinite(video.duration)) video.currentTime = Math.min(position, video.duration);
       }, { once: true });

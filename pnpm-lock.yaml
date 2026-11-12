@@ -194,6 +194,9 @@ importers:
       '@geld/review':
         specifier: workspace:*
         version: link:../../packages/review
+      '@ramka/react':
+        specifier: 0.0.2
+        version: 0.0.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       dompurify:
         specifier: ^3.4.17
         version: 3.4.17
@@ -206,6 +209,12 @@ importers:
       marked:
         specifier: ^18.2.0
         version: 18.2.0
+      react:
+        specifier: ^19.2.8
+        version: 19.2.8
+      react-dom:
+        specifier: ^19.2.8
+        version: 19.2.8(react@19.2.8)
       video.js:
         specifier: 8.24.2
         version: 8.24.2
@@ -213,6 +222,12 @@ importers:
       '@types/node':
         specifier: ^26.4.1
         version: 26.4.1
+      '@types/react':
+        specifier: ^19.2.18
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: ^19.2.7
+        version: 19.2.7(@types/react@19.2.18)
       dom-accessibility-api:
         specifier: ^0.7.1
         version: 0.7.1
@@ -1893,6 +1908,12 @@ packages:
     peerDependenciesMeta:
       '@types/react':
         optional: true
+
+  '@ramka/react@0.0.2':
+    resolution: {integrity: sha512-73x8vVlRfAEo3elHXgZ8rqvILb+UIF8WNCfIFArOuHRKiPwiSsqZjihJi1KUPQRsHTrLE0TqLftE8j5SjNBqyw==}
+    peerDependencies:
+      react: '>=18'
+      react-dom: '>=18'
 
   '@rolldown/binding-android-arm-eabi@1.2.7':
     resolution: {integrity: sha512-EypzgnYCwyVY4NDHKzGmNJT5b+XaQEBniHxsMdeIQLB/tcCzZnhqrzHpZFbX9iaxx+5RiB8caATBtfvZP7zVxQ==}
@@ -6823,6 +6844,11 @@ snapshots:
       react: 19.2.8
     optionalDependencies:
       '@types/react': 19.2.18
+
+  '@ramka/react@0.0.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+    dependencies:
+      react: 19.2.8
+      react-dom: 19.2.8(react@19.2.8)
 
   '@rolldown/binding-android-arm-eabi@1.2.7':
     optional: true
