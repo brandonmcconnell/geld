@@ -20,7 +20,7 @@ import { botTitle, isOpenStatus, itemThreads, resolveBotId, threadCounts } from 
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { reactSettled } from '../react-hydration';
 import type { RevisionMarker } from './crawler';
-import { ICON_ALERT, ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_EXCLAMATION_CIRCLE_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_QUESTION, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_TRASH, ICON_TRIANGLE_DOWN, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER, ICON_EYE_CLOSED, ICON_BLOCKED } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_EXCLAMATION_CIRCLE_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_TRASH, ICON_TRIANGLE_DOWN, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER, ICON_EYE_CLOSED, ICON_BLOCKED } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checkStateOfRun, checksHealth, checksRowTone, checksSummary, checksTotal, pushRowTone, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
 import type { CheckCounts, CheckState, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -43,6 +43,7 @@ import { fitPathInto } from './path-fit';
 import { relativeTimeElement } from './time';
 import { DIGEST_VIEW_OPTIONS, digestViewLabel, viewChoice, viewLabel } from './digest-view';
 import { takeViewFocus } from './view-focus';
+import { helpTip } from './help-tip';
 import type { MissingTool } from '../../lib/feedback';
 
 export const PANEL_CLASS = 'geld-review';
@@ -1641,20 +1642,23 @@ function copyItem(list: HTMLElement, key: string, handlers: PanelHandlers, close
   list.append(createElement('div', { class: `${PANEL_CLASS}__menu-sep`, role: 'separator' }));
 }
 
-const MISSING_TOOL_LABEL: Readonly<Record<MissingTool, string>> = { 'review bot': 'Request a bot', 'coding agent': 'Request an agent' };
+const MISSING_TOOL_NOUN: Readonly<Record<MissingTool, string>> = { 'review bot': 'bot', 'coding agent': 'agent' };
 
-/** "Request a bot" / "Request an agent": the feedback page, its draft asking Geld to support the reader's own tool. */
+/** A help icon whose tip reads "Don't see your preferred bot? Request it.", the link opening the feedback page with its draft. */
 function missingToolHelp(tool: MissingTool, handlers: PanelHandlers, close: () => void, role: 'menuitem' | null = null): HTMLElement {
-  const link = createElement('button', { type: 'button', class: `${PANEL_CLASS}__help`, title: `Ask Geld to support your ${tool}`, ...(role === null ? {} : { role }) }, [
-    createElement('span', { class: `${PANEL_CLASS}__help-glyph`, 'aria-hidden': 'true' }, [icon(ICON_QUESTION)]),
-    createElement('span', { class: `${PANEL_CLASS}__help-link` }, [MISSING_TOOL_LABEL[tool]]),
-  ]);
+  const noun = MISSING_TOOL_NOUN[tool];
+  const link = createElement('button', { type: 'button', class: `${PANEL_CLASS}__help-link` }, ['Request it']);
   link.addEventListener('click', (event) => {
     event.stopPropagation();
     close();
     handlers.onMissingTool(tool);
   });
-  return link;
+  return helpTip({
+    prefix: PANEL_CLASS,
+    label: `Don\u2019t see your preferred ${noun}?`,
+    content: [`Don\u2019t see your preferred ${noun}? `, link, '.'],
+    ...(role === null ? {} : { role }),
+  });
 }
 
 function applyControl(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHandlers): HTMLElement {

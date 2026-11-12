@@ -374,7 +374,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Lines are ordered by how the bot is known (`BotPresence`): `seen` on the page (`/apps/<slug>` links in comments, the checks list and the reviewers box, payload verdicts and item sources, check runs by name, trigger comments), `declared` by the repository's `reviewBots`, `configured` by one of its own files in the repository (both from the controller's `repoBotsHint`, declared only once the config applies under the reader's `repoConfigs` choice), then `other`, the rest of the registry behind an "Other bots (N)" disclosure, since a trigger for a bot that is not installed is a public comment with a handle in it;
   with nothing pointing at any bot the registry is the list.
   Under a separator, Run ("Run Bugbot", "Run 2 bots", disabled with nothing ticked) posts one trigger comment per ticked bot in sequence and Cancel, Escape or a click outside closes.
-  Left of them stands "Request a bot", a question glyph and those words as one link (`missingToolHelp`), which opens the feedback page with a draft asking for the reader's bot (`missingToolDraft`, through `geld:open-feedback` to the background, since a content script cannot open an extension page).
+  Left of them stands a question icon alone (`missingToolHelp`, `help-tip.ts`) whose tip asks whether the reader's preferred bot is missing, its "Request it" opening the feedback page with a draft asking for it (`missingToolDraft`, through `geld:open-feedback` to the background, since a content script cannot open an extension page).
+  The tip shows on hover or focus and stays once the icon is clicked, so its link can be reached by pointer, keyboard and touch;
+  Escape or a click outside closes it, and the menu closing takes it along.
+  It is a popover in the top layer, placed from the icon: the agents' menu scrolls inside itself and the panel is a size container, so a tip positioned inside either was clipped or placed against the wrong box.
   **A request shows from the click, and says so when the bot never takes it** (`bot-requests.ts`: `botRequestStates`, `withBotRequests`;
   `visit.requests` holds this visit's clicks from the menu and Rerun, with whether the trigger posted).
   Until the bot shows a sign of life (a reaction on the trigger, any comment or edit of its own since, its check run queued, running or begun since), its pill and line wear Primer's spinner and "starting", and the verdicts read it as `running` (a record is made for a bot that never ran here), so the menu's glyph and Rerun spin too.
@@ -1586,7 +1589,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The rest wait behind "Other agents (N)", folded again whenever the menu closes, and with no agent likely every agent is listed (`likelyFirst`).
   "Open in agent" folds the same way behind "Other apps (N)": a line is likely when its agent is, and a service no agent stands for (Factory) when the pull request's links show it was used (`openTargetLikely`).
   An app on the reader's own machine is never guessed at: it counts only as the reader's choice or when the links show it was used.
-  They end, under a separator after "Open in agent", in the same link reading "Request an agent", its draft asking for a coding agent.
+  They end, under a separator after "Open in agent", in the same help icon, its tip and draft asking for a coding agent.
   Which agent leads is the `codingAgent` setting (Experiments, options page only, `auto` by default), unless the reader is the pull request's author and its related links show another agent worked on it (`recommendAgents`, `agentsInRelatedLinks`): then that one leads, except when the links name the reader's own choice too, which leads.
   With `auto` and nothing known, "Fix with…" opens the menu.
   The agent's mark stands as far from its button's left edge as from its top and bottom (`.geld-review__split-agent`).
