@@ -16,7 +16,7 @@ function TabsTab({ className, ...props }: TabsPrimitive.Tab.Props) {
     <TabsPrimitive.Tab
       data-slot="tabs-tab"
       className={cn(
-        'geld-corners geld-cut-[7px] border bg-background/60 px-3 py-1.5 text-sm whitespace-nowrap text-foreground/80 outline-none',
+        'geld-corners geld-cut-[7px] border bg-background/60 px-3 py-1 text-sm whitespace-nowrap text-foreground/80 outline-none',
         'hover:border-foreground hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50',
         'data-active:border-foreground data-active:bg-foreground data-active:text-background',
         className,
