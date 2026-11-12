@@ -191,7 +191,10 @@ async function copyMarkdown(): Promise<void> {
   try {
     if (typeof ClipboardItem === 'function') {
       // Chrome lets a write that waits on the answer through only when it is handed the promise inside the click.
-      const written = await navigator.clipboard.write([new ClipboardItem({ 'text/plain': text.then((body) => new Blob([body], { type: 'text/plain' })) })]).then(
+      const blob = text.then((body) => new Blob([body], { type: 'text/plain' }));
+      // A write refused before it reads the text leaves this rejection to nobody; the fallback below reports it.
+      blob.catch(() => undefined);
+      const written = await navigator.clipboard.write([new ClipboardItem({ 'text/plain': blob })]).then(
         () => true,
         () => false,
       );
