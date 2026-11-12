@@ -50,6 +50,7 @@ describe('nightlyView', () => {
       tone: 'ok',
       action: null,
       check: true,
+      rollbackFeedback: null,
     });
   });
 
@@ -76,6 +77,7 @@ describe('nightlyView', () => {
       tone: 'ready',
       action: { kind: 'install', label: 'Allow and install' },
       check: true,
+      rollbackFeedback: null,
     });
     const wrongFolder = nightlyView(status(blocked('folder', minutesAgo(1))), folder, '0.1.2.3301', NOW);
     expect(wrongFolder.detail).toBe('The connected folder is not the one Geld runs from. Connect it again.');
@@ -116,6 +118,7 @@ describe('nightlyView', () => {
       tone: 'error',
       action: { kind: 'retry', label: 'Try again' },
       check: true,
+      rollbackFeedback: null,
     });
   });
 
@@ -165,13 +168,15 @@ describe('nightlyView', () => {
       tone: 'ok',
       action: { kind: 'rollback', label: 'Roll back', title: 'Go back to build 3301' },
       check: true,
+      rollbackFeedback: null,
     });
     expect(nightlyView(updated, folder, '0.1.2.3305', NOW + 25 * 3_600_000).action).toBeNull();
   });
 
-  it('keeps the line after a rollback short', () => {
+  it('says a rollback worked and asks why, naming both builds for the feedback draft', () => {
     const view = nightlyView(status({ latest: release(3301), lastInstall: { from: '0.1.2.3305', to: '0.1.2.3301', at: minutesAgo(2), method: 'folder', rollback: true } }), folder, '0.1.2.3301', NOW);
-    expect(view).toMatchObject({ headline: 'Back on build 3301', detail: 'Went back 2 minutes ago' });
+    expect(view).toMatchObject({ headline: 'Back on build 3301', detail: 'Successfully rolled back.', rollbackFeedback: { from: 'build 3305', to: 'build 3301' } });
+    expect(nightlyView(status({ latest: release(3301) }), folder, '0.1.2.3301', NOW).rollbackFeedback).toBeNull();
   });
 
   it('says a rolled-back build waits for the reader', () => {

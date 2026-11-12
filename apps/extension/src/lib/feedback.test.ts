@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ContextChoice, FeedbackContext } from './feedback';
-import { feedbackIssue, reposNamedIn, ISSUE_BODY_LIMIT, parseCreatedIssue, parseDraft, refusalMessage } from './feedback';
+import { feedbackIssue, reposNamedIn, ISSUE_BODY_LIMIT, parseCreatedIssue, parseDraft, refusalMessage, rollbackDraft } from './feedback';
 
 const CONTEXT: FeedbackContext = {
   environment: '0.1.3.812 · Chrome 148 on macOS',
@@ -119,5 +119,11 @@ describe('reposNamedIn', () => {
       'https://github.com/acme/old',
       'https://github.com/acme/other',
     ]);
+  });
+});
+
+describe('rollbackDraft', () => {
+  it('names both builds in the title and leaves the words to the reader', () => {
+    expect(rollbackDraft('build 4179', 'build 4163')).toEqual({ kind: 'bug', title: 'Rolled back Geld Nightly from build 4179 to build 4163', text: '' });
   });
 });

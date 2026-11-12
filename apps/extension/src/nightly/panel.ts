@@ -1,5 +1,7 @@
 import { browser } from 'wxt/browser';
 import { ICON_SYNC } from '../github/ui/icons';
+import { countUsage } from '../lib/usage-count';
+import { wireFeedbackLink } from '../ui/feedback-link';
 import { buildLabel, nightlyView } from './view';
 import type { NightlyAction } from './view';
 import { manageUrl } from './conflicts';
@@ -32,6 +34,7 @@ const CSS = `
 .geld-nightly { --geld-nightly-amber: light-dark(oklch(0.56 0.13 65), oklch(0.82 0.14 80)); }
 .geld-nightly__status[data-tone='needs-folder'] { padding: 10px 12px; border: 1px solid color-mix(in oklch, var(--geld-nightly-amber) 55%, transparent); background: color-mix(in oklch, var(--geld-nightly-amber) 8%, transparent); }
 .geld-nightly__status[data-tone='needs-folder'] .geld-nightly__headline { color: var(--geld-nightly-amber); font-weight: 600; }
+.geld-nightly__feedback { color: var(--foreground); text-decoration: underline; text-underline-offset: 3px; }
 .geld-nightly__headrow { display: flex; align-items: center; gap: 4px; }
 .geld-nightly__check { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border: 0; background: none; color: var(--muted-foreground); cursor: pointer; }
 .geld-nightly__check:hover, .geld-nightly__check:focus-visible { color: var(--foreground); }
@@ -132,6 +135,13 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
     const view = nightlyView(state, folder, version, Date.now(), { conflict, installedIn, mode: prefs.mode });
     headline.textContent = view.headline;
     detail.textContent = localError ?? view.detail ?? '';
+    const asked = localError === null ? view.rollbackFeedback : null;
+    if (asked !== null) {
+      const link = element('a', 'geld-nightly__feedback', 'Leave feedback');
+      wireFeedbackLink(link, { rollback: asked });
+      link.addEventListener('click', () => countUsage('rollback_feedback'));
+      detail.append(' ', link, '?');
+    }
     detail.hidden = detail.textContent === '';
     check.hidden = !view.check;
     check.disabled = checking || busy;

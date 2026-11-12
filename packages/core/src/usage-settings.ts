@@ -102,6 +102,7 @@ export const USAGE_COUNTERS = [
   'status_ready',
   'status_draft',
   'status_reopen',
+  'rollback_feedback',
   'hid_tests',
   'hid_generated',
   'hid_vendored',
