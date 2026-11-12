@@ -3,7 +3,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 
 import { Tabs, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs';
-import { isNightlyTab, nightlyTabFor } from '@/lib/nightly-tabs';
+import { createTabMemory, isNightlyTab, nightlyTabFor } from '@/lib/nightly-tabs';
 import type { NightlyTab } from '@/lib/nightly-tabs';
 
 export interface BrowserTab {
@@ -29,7 +29,8 @@ function subscribe(onChange: () => void): () => void {
   };
 }
 
-const clientTab = (): NightlyTab => tabInHash() ?? nightlyTabFor(navigator.userAgent, 'brave' in navigator);
+const tabFor = createTabMemory();
+const clientTab = (): NightlyTab => tabFor(window.location.hash, () => nightlyTabFor(navigator.userAgent, 'brave' in navigator));
 const serverTab = (): NightlyTab => 'chrome';
 
 /**

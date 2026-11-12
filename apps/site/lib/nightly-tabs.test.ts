@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isNightlyTab, nightlyTabFor } from './nightly-tabs';
+import { createTabMemory, isNightlyTab, nightlyTabFor } from './nightly-tabs';
 
 const CHROME = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36';
 
@@ -23,5 +23,23 @@ describe('isNightlyTab', () => {
     expect(isNightlyTab('brave')).toBe(true);
     expect(isNightlyTab('updates')).toBe(false);
     expect(isNightlyTab(undefined)).toBe(false);
+  });
+});
+
+describe('createTabMemory', () => {
+  it('keeps the chosen browser through section anchors and Back and Forward', () => {
+    const tabFor = createTabMemory();
+    const guess = (): 'chrome' => 'chrome';
+    expect(tabFor('', guess)).toBe('chrome');
+    expect(tabFor('#brave', guess)).toBe('brave');
+    expect(tabFor('#updates', guess)).toBe('brave');
+    expect(tabFor('#brave', guess)).toBe('brave');
+    expect(tabFor('#updates', guess)).toBe('brave');
+    expect(tabFor('#firefox', guess)).toBe('firefox');
+    expect(tabFor('#trouble', guess)).toBe('firefox');
+  });
+
+  it('guesses until a tab is chosen, including on a section anchor', () => {
+    expect(createTabMemory()('#updates', () => 'safari')).toBe('safari');
   });
 });
