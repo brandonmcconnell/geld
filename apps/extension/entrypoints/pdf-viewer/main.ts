@@ -93,8 +93,9 @@ async function start(): Promise<void> {
       else message(['Geld can only show this PDF with that permission.'], downloadLink(source));
     }, () => message(['Geld could not ask for that permission here.'], downloadLink(source)));
   });
+  const hosts = origins.map((origin) => new URL(origin.replace('/*', '/')).hostname).join(' and ');
   message([
-    'GitHub keeps uploaded files on objects.githubusercontent.com.',
+    `GitHub serves this file from ${hosts}.`,
     'Allow Geld to read files there to show PDFs here. It asks once.',
   ], allow);
 }

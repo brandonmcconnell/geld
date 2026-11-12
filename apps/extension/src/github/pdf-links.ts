@@ -6,7 +6,9 @@ export interface PdfSource {
   readonly origins: readonly string[];
 }
 
-export const PDF_STORAGE_ORIGINS: readonly string[] = ['https://objects.githubusercontent.com/*', 'https://raw.githubusercontent.com/*'];
+/** An upload is served from GitHub's file storage, and github.com's raw links redirect to raw.githubusercontent.com. */
+export const UPLOAD_ORIGINS: readonly string[] = ['https://objects.githubusercontent.com/*'];
+export const RAW_ORIGINS: readonly string[] = ['https://raw.githubusercontent.com/*'];
 
 const PDF_PATH = /\.pdf$/i;
 const GITHUB = 'https://github.com';
@@ -36,9 +38,9 @@ export function pdfSourceOf(href: string, pageOrigin: string): PdfSource | null 
   const source = (origins: readonly string[]): PdfSource => ({ url: url.href, name: fileName(url), origins });
   if (url.hostname === 'raw.githubusercontent.com') return source([]);
   if (url.origin !== GITHUB) return null;
-  if (/^\/(?:user-attachments\/files|[^/]+\/[^/]+\/files)\/\d+\//.test(url.pathname)) return source(PDF_STORAGE_ORIGINS);
-  if (/^\/[^/]+\/[^/]+\/raw\//.test(url.pathname)) return source(PDF_STORAGE_ORIGINS);
-  if (/^\/[^/]+\/[^/]+\/blob\//.test(url.pathname) && url.searchParams.get('raw') === 'true') return source(PDF_STORAGE_ORIGINS);
+  if (/^\/(?:user-attachments\/files|[^/]+\/[^/]+\/files)\/\d+\//.test(url.pathname)) return source(UPLOAD_ORIGINS);
+  if (/^\/[^/]+\/[^/]+\/raw\//.test(url.pathname)) return source(RAW_ORIGINS);
+  if (/^\/[^/]+\/[^/]+\/blob\//.test(url.pathname) && url.searchParams.get('raw') === 'true') return source(RAW_ORIGINS);
   return null;
 }
 

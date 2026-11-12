@@ -1,18 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { framedByGitHub, PDF_STORAGE_ORIGINS, pdfSourceOf, pdfViewerUrl } from './pdf-links';
+import { framedByGitHub, pdfSourceOf, pdfViewerUrl, RAW_ORIGINS, UPLOAD_ORIGINS } from './pdf-links';
 
 const GITHUB = 'https://github.com';
 
 describe('pdfSourceOf', () => {
   it.each([
-    'https://github.com/user-attachments/files/34232579/Comptage.charge.CLA.pdf',
-    'https://github.com/owner/repo/files/123/manual.pdf',
-    'https://github.com/owner/repo/raw/main/docs/manual.pdf',
-    'https://github.com/owner/repo/blob/main/docs/manual.pdf?raw=true',
-  ])('reads a PDF GitHub would download, which needs its storage hosts: %s', (href) => {
+    ['https://github.com/user-attachments/files/34232579/Comptage.charge.CLA.pdf', UPLOAD_ORIGINS],
+    ['https://github.com/owner/repo/files/123/manual.pdf', UPLOAD_ORIGINS],
+    ['https://github.com/owner/repo/raw/main/docs/manual.pdf', RAW_ORIGINS],
+    ['https://github.com/owner/repo/blob/main/docs/manual.pdf?raw=true', RAW_ORIGINS],
+  ])('reads a PDF GitHub would download, asking only for the host that serves it: %s', (href, origins) => {
     const source = pdfSourceOf(href, GITHUB);
     expect(source?.url).toBe(href);
-    expect(source?.origins).toEqual(PDF_STORAGE_ORIGINS);
+    expect(source?.origins).toEqual(origins);
   });
 
   it('reads a raw.githubusercontent.com PDF, which anyone may read, with no permission to ask', () => {

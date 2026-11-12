@@ -1728,7 +1728,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `blob/…/x.pdf` pages keep GitHub's own viewer, and PDFs on other sites are left to the browser.
   The dialog frames `pdf-viewer.html`, an extension page (a web-accessible resource on github.com only), which checks the address against the same rules, reads the PDF and shows it in the browser's own PDF viewer from a `blob:` URL.
   Only the extension can read the storage hosts, which answer no cross-origin read, and making them required host permissions would disable the extension on update until each reader approved them.
-  So the page asks for `objects.githubusercontent.com` and `raw.githubusercontent.com` (within the optional `https://*/*`) the first time a PDF needs them, with an Allow button inside the frame, which Chrome accepts as the gesture;
+  So the page asks, within the optional `https://*/*`, for the one host the PDF comes from the first time it is needed (`objects.githubusercontent.com` for an upload, `raw.githubusercontent.com` for github.com's raw links, which redirect there), with an Allow button inside the frame, which Chrome accepts as the gesture;
   a `raw.githubusercontent.com` link needs nothing, since that host answers anyone.
   Escape inside the frame never reaches the dialog, so the page posts `geld:pdf-close` to the parent.
   The dialog's Download (the `download` octicon, no new tab) saves the copy the page already holds once it posts `geld:pdf-ready`, under the dialog's file name, and until then is a plain same-tab link, which downloads since GitHub serves both kinds as a download.
