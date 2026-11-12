@@ -65,7 +65,7 @@ function Slide({ item, index, total, size, onSize, zoomRef, onZoom }: {
           <p>This image could not be loaded.</p>
           <button type="button" className="btn btn-sm" onClick={() => { setFailed(false); setAttempt(attempt + 1); }}>Try again</button>
         </div>
-        : <Lightbox.Zoom ref={zoomRef} className="geld-lightbox__zoom-surface" zoomStep={1.5} wheelSensitivity={500}
+        : <Lightbox.Zoom ref={zoomRef} className="geld-lightbox__zoom-surface" zoomStep={1.5} scrollToZoom wheelSensitivity={500}
           maxZoom={Math.max(4, Math.min(16, size.width / 320))} onZoomChange={onZoom}>
           <Lightbox.Media width={size.width} height={size.height} className="geld-lightbox__media" style={{ maxWidth: size.width * 2 }}>
             <img key={attempt} className="geld-lightbox__image" src={src} alt={item.image.alt}
@@ -112,7 +112,8 @@ function Gallery({ items, initialIndex, host, onClosed }: {
     {items.map((item, i) => <Lightbox.Trigger key={item.id} id={item.id} index={i} handle={handle} render={<TriggerBridge item={item} />} />)}
     <Lightbox.Portal container={host}>
       <Lightbox.Backdrop className="geld-lightbox__backdrop" />
-      <Lightbox.Content className="geld-lightbox geld-lightbox--gallery" aria-labelledby={titleId}>
+      {/* A trackpad scroll at 1x counts as Ramka's pull to dismiss, which shrank the card and closed it under the reader. */}
+      <Lightbox.Content className="geld-lightbox geld-lightbox--gallery" aria-labelledby={titleId} pullToClose={false}>
         <header className="geld-lightbox__header">
           <h1 className="geld-lightbox__title" id={titleId}>{active.title}</h1>
           {gallery && <Lightbox.Counter className="geld-lightbox__counter">{({ current, total }) => `${current} of ${total}`}</Lightbox.Counter>}

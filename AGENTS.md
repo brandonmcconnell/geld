@@ -1732,6 +1732,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The images are a gallery per rendered body (`.markdown-body`), so one comment's screenshots never mix with another's.
   The gallery is [Ramka](https://ramka.dev) (`attachment-gallery.tsx`, `@ramka/react`, React 19), the extension's only React: zoom, pan, swipe, pinch and the morph from the inline image are Ramka's, the card, header and footer are Geld's own classes, shared with the video player's `<dialog>`.
   GitHub's link is handed to Ramka as the trigger (`TriggerBridge`), never rendered again by React, so the page's node stays where it is.
+  Ramka's pull to dismiss is off (`pullToClose={false}`): at 1x it reads a trackpad's two-finger scroll as a pull, shrinking the card, which looked like a zoom, and closing it.
+  A plain wheel or trackpad scroll zooms toward the pointer instead (`scrollToZoom`), as the viewer before Ramka did, and back to Fit, where it stops.
   The gallery's host is a manual popover, appended to the open `<dialog>` holding the image when there is one (note history): a modal dialog leaves everything outside it inert, and the top layer puts the gallery above it.
   Ramka adds its CSS as constructed stylesheets (`document.adoptedStyleSheets`) whenever the browser has them, which Firefox content scripts once refused;
   Firefox 160 takes them (gallery, zoom and arrows checked in Nov 2026), so check again there after updating Ramka.
