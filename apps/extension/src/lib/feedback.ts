@@ -34,10 +34,10 @@ export function rollbackDraft(from: string, to: string): FeedbackDraft {
   return { kind: 'bug', title: `Rolled back Geld Nightly from ${from} to ${to}`, text: '' };
 }
 
-/** What a "Not listed?" link in the digest asks Geld to support. */
+/** What a "Request a bot" or "Request an agent" link in the digest asks Geld to support. */
 export type MissingTool = 'review bot' | 'coding agent';
 
-/** The draft a "Not listed?" link opens with: the title ends where the reader types the tool's name. */
+/** The draft a "Request a bot" or "Request an agent" link opens with: the title ends where the reader types the tool's name. */
 export function missingToolDraft(tool: MissingTool): FeedbackDraft {
   return { kind: 'idea', title: 'Add support for ', text: `A ${tool} I use.\n\nWebsite or docs: ` };
 }

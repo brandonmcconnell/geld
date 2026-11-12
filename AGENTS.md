@@ -372,7 +372,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Lines are ordered by how the bot is known (`BotPresence`): `seen` on the page (`/apps/<slug>` links in comments, the checks list and the reviewers box, payload verdicts and item sources, check runs by name, trigger comments), `declared` by the repository's `reviewBots`, `configured` by one of its own files in the repository (both from the controller's `repoBotsHint`, declared only once the config applies under the reader's `repoConfigs` choice), then `other`, the rest of the registry behind an "Other bots (N)" disclosure, since a trigger for a bot that is not installed is a public comment with a handle in it;
   with nothing pointing at any bot the registry is the list.
   Under a separator, Run ("Run Bugbot", "Run 2 bots", disabled with nothing ticked) posts one trigger comment per ticked bot in sequence and Cancel, Escape or a click outside closes.
-  Left of them stands a help line, a question glyph and a "Tell us" link (`missingToolHelp`), which opens the feedback page with a draft asking for the reader's bot (`missingToolDraft`, through `geld:open-feedback` to the background, since a content script cannot open an extension page).
+  Left of them stands "Request a bot", a question glyph and those words as one link (`missingToolHelp`), which opens the feedback page with a draft asking for the reader's bot (`missingToolDraft`, through `geld:open-feedback` to the background, since a content script cannot open an extension page).
   **A request shows from the click, and says so when the bot never takes it** (`bot-requests.ts`: `botRequestStates`, `withBotRequests`;
   `visit.requests` holds this visit's clicks from the menu and Rerun, with whether the trigger posted).
   Until the bot shows a sign of life (a reaction on the trigger, any comment or edit of its own since, its check run queued, running or begun since), its pill and line wear Primer's spinner and "starting", and the verdicts read it as `running` (a record is made for a bot that never ran here), so the menu's glyph and Rerun spin too.
@@ -1565,7 +1565,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   "Copy the task" serves any other.
   The comment is posted only after a confirm that shows it, and carries the row's finding (with the findings its fix shares a problem with), the triage's suggestion and the thread link (`agentTask`).
   The menus name each agent and nothing more: commands and notes on the right read as clutter.
-  They end, under a separator, in the same help line as the Review bots row's request menu, its draft asking for a coding agent.
+  They end, under a separator, in the same link reading "Request an agent", its draft asking for a coding agent.
   Which agent leads is the `codingAgent` setting (Experiments, options page only, `auto` by default), unless the reader is the pull request's author and its related links show another agent worked on it (`recommendAgents`, `agentsInRelatedLinks`): then that one leads, except when the links name the reader's own choice too, which leads.
   With `auto` and nothing known, "Fix with…" opens the menu.
   The agent's mark stands as far from its button's left edge as from its top and bottom (`.geld-review__split-agent`).

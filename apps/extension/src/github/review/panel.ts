@@ -556,7 +556,7 @@ export interface PanelHandlers {
   readonly onDiscardSuggestion: (key: string) => void;
   /** Hand a finding (by its thread's key) to a coding agent: a comment that starts it, its own app, or the task copied. */
   readonly onHandOff: (agentId: string, how: HandOff, key: string) => void;
-  /** "Not listed?": the feedback page, its draft asking Geld to support another review bot or coding agent. */
+  /** "Request a bot" / "Request an agent": the feedback page, its draft asking Geld to support another review bot or coding agent. */
   readonly onMissingTool: (tool: MissingTool) => void;
 }
 
@@ -1557,18 +1557,20 @@ function agentItems(list: HTMLElement, key: string, triage: TriageView, handlers
   list.append(createElement('div', { class: `${PANEL_CLASS}__menu-sep`, role: 'separator' }), missingToolHelp('coding agent', handlers, close, 'menuitem'));
 }
 
-/** "Not listed? Tell us.": the feedback page, its draft asking Geld to support the reader's own tool. */
+const MISSING_TOOL_LABEL: Readonly<Record<MissingTool, string>> = { 'review bot': 'Request a bot', 'coding agent': 'Request an agent' };
+
+/** "Request a bot" / "Request an agent": the feedback page, its draft asking Geld to support the reader's own tool. */
 function missingToolHelp(tool: MissingTool, handlers: PanelHandlers, close: () => void, role: 'menuitem' | null = null): HTMLElement {
-  const link = createElement('button', { type: 'button', class: `${PANEL_CLASS}__help-link`, title: `Ask for your ${tool} to be supported`, ...(role === null ? {} : { role }) }, ['Tell us']);
+  const link = createElement('button', { type: 'button', class: `${PANEL_CLASS}__help`, title: `Ask Geld to support your ${tool}`, ...(role === null ? {} : { role }) }, [
+    createElement('span', { class: `${PANEL_CLASS}__help-glyph`, 'aria-hidden': 'true' }, [icon(ICON_QUESTION)]),
+    createElement('span', { class: `${PANEL_CLASS}__help-link` }, [MISSING_TOOL_LABEL[tool]]),
+  ]);
   link.addEventListener('click', (event) => {
     event.stopPropagation();
     close();
     handlers.onMissingTool(tool);
   });
-  return createElement('span', { class: `${PANEL_CLASS}__help`, ...(role === null ? {} : { role: 'none' }) }, [
-    createElement('span', { class: `${PANEL_CLASS}__help-glyph`, 'aria-hidden': 'true' }, [icon(ICON_QUESTION)]),
-    createElement('span', {}, ['Not listed? ', link, '.']),
-  ]);
+  return link;
 }
 
 function applyControl(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHandlers): HTMLElement {

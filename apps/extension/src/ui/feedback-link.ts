@@ -43,7 +43,7 @@ export interface FeedbackOpening {
   readonly diagnostics?: boolean;
   /** Start the draft about a Geld Nightly rollback (the panel's Leave feedback after Roll back). */
   readonly rollback?: FeedbackRollback;
-  /** Words to start an empty draft with (a "Not listed?" link in the digest). */
+  /** Words to start an empty draft with (a "Request a bot" or "Request an agent" link in the digest). */
   readonly draft?: FeedbackDraft;
 }
 

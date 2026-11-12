@@ -4404,16 +4404,21 @@ html [data-geld-person-fold-part][data-geld-person-fold-part] {
   padding: 0;
 }
 
-/* "Not listed? Tell us." at the foot of the bot and agent menus. */
+/* "Request a bot" / "Request an agent" at the foot of the bot and agent menus: glyph and words, one button. */
 .geld-review__help {
   display: flex;
   align-items: center;
   gap: 6px;
   min-height: 28px;
+  margin: 0;
   padding: 0 8px;
+  border: 0;
+  background: none;
   color: var(--geld-review-muted);
+  font: inherit;
   font-size: 12px;
   white-space: nowrap;
+  cursor: pointer;
 }
 
 .geld-review__help-glyph {
@@ -4427,16 +4432,10 @@ html [data-geld-person-fold-part][data-geld-person-fold-part] {
 }
 
 .geld-review__help-link {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: none;
   color: var(--geld-review-accent);
-  font: inherit;
-  cursor: pointer;
 }
 
-.geld-review__help-link:is(:hover, :focus-visible) {
+.geld-review__help:is(:hover, :focus-visible) .geld-review__help-link {
   text-decoration: underline;
 }
 
