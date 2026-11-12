@@ -4243,8 +4243,11 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       });
       if (findings.length === 0) return;
       const task = agentTask(findings, pullUrl);
+      // A copy or a post settles later: what it says belongs to the visit it started on, never to the next one's card.
+      const triage = visit.triage;
       const said = (text: string, copyAgain: string | null = null): void => {
-        visit.triage.handedOff = { text, copyAgain };
+        if (visit.triage !== triage) return;
+        triage.handedOff = { text, copyAgain };
         reapply();
       };
       const notCopied = (lead: string): void => said(`${lead} The browser did not take the task on the clipboard.`, key);
