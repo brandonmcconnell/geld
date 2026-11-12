@@ -32,7 +32,8 @@ const CSS = `
 .geld-nightly { --geld-nightly-amber: light-dark(oklch(0.56 0.13 65), oklch(0.82 0.14 80)); }
 .geld-nightly__status[data-tone='needs-folder'] { padding: 10px 12px; border: 1px solid color-mix(in oklch, var(--geld-nightly-amber) 55%, transparent); background: color-mix(in oklch, var(--geld-nightly-amber) 8%, transparent); }
 .geld-nightly__status[data-tone='needs-folder'] .geld-nightly__headline { color: var(--geld-nightly-amber); font-weight: 600; }
-.geld-nightly__headrow { display: flex; align-items: center; gap: 4px; }
+.geld-nightly__headrow { display: flex; align-items: center; gap: 6px; }
+.geld-nightly__from { padding: 0 5px; border: 1px solid var(--border); color: var(--muted-foreground); font-family: var(--font-mono); font-size: 11px; line-height: 16px; white-space: nowrap; }
 .geld-nightly__check { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; padding: 0; border: 0; background: none; color: var(--muted-foreground); cursor: pointer; }
 .geld-nightly__check:hover, .geld-nightly__check:focus-visible { color: var(--foreground); }
 .geld-nightly__check:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
@@ -91,8 +92,9 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
   const checkTip = element('span', 'geld-nightly__tip');
   checkTip.setAttribute('aria-hidden', 'true');
   check.append(...checkIcon.content.childNodes, checkTip);
+  const from = element('span', 'geld-nightly__from');
   const headrow = element('div', 'geld-nightly__headrow');
-  headrow.append(headline, check);
+  headrow.append(headline, from, check);
   const text = element('div', 'geld-nightly__text');
   text.append(headrow, detail);
   const action = element('button', 'geld-button geld-button--small');
@@ -123,6 +125,8 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
     }
     const view = nightlyView(state, folder, version, Date.now(), { conflict, installedIn, mode: prefs.mode });
     headline.textContent = view.headline;
+    from.textContent = view.from ?? '';
+    from.hidden = view.from === null;
     detail.textContent = localError ?? view.detail ?? '';
     detail.hidden = detail.textContent === '';
     check.hidden = !view.check;
