@@ -139,6 +139,22 @@ describe('applyCreatePullRetry', () => {
     expect(document.querySelectorAll('.geld-pull-retry')).toHaveLength(1);
   });
 
+  it('adds Trigger via API when the reader comes back signed in to Geld, without a reload', async () => {
+    background.signedIn = false;
+    page(FLASH('Pull request creation failed. Validation failed: was submitted too quickly') + FORM('Fix the nav'));
+    applyCreatePullRetry();
+    await settle();
+    const labels = (): (string | undefined)[] => [...document.querySelectorAll('.geld-pull-retry__try')].map((button) => button.textContent?.trim());
+    expect(labels()).toEqual(['Try again']);
+    background.signedIn = true;
+    window.dispatchEvent(new Event('focus'));
+    await settle();
+    expect(labels()).toEqual(['Try again', 'Trigger via API']);
+    expect(document.querySelectorAll('.geld-pull-retry__side')).toHaveLength(1);
+    applyCreatePullRetry();
+    expect(labels()).toEqual(['Try again', 'Trigger via API']);
+  });
+
   it('keeps its controls on a flash with no alert element, whose text the controls now lead', async () => {
     background.signedIn = true;
     page(

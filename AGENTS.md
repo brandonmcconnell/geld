@@ -1157,6 +1157,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   That is what GitHub's own button does after a wait, so it is named plainly, with no emblem.
   The threshold is a guess: GitHub does not publish it.
   "Trigger via API", led by Geld's emblem, is only for a reader signed in to Geld with the GitHub App as the same account the page is signed in as (`geld:api-signed-in` with the page's `meta[name="user-login"]`, answered by the background with a boolean, so the page never holds the account).
+  Signing in happens in Geld's popup or another tab, so the answer is asked again when the page regains focus or becomes visible, and the buttons are rebuilt when it changed (not while one runs).
   Geld can stay connected to one account after the browser switches to another, and a token of the first must never open a pull request for the second: `createPullRequest` checks the login again.
   Sidebar choices (reviewers, assignees, labels, a milestone, projects) have no field in the API's create request, so when the form carries any (`sidebarChoices`, by field name) the API button asks first, naming them.
   It makes the request `gh pr create` makes, `POST /repos/{owner}/{repo}/pulls`, from the background with that App's token (`createPullRequest` in `account-service.ts`, through `withToken`), on github.com only, and no form check sees it.

@@ -188,7 +188,7 @@ function sentence(text: string): string {
 
 interface Mounted {
   readonly flash: HTMLElement;
-  /** The buttons, floated into the flash's right side beside GitHub's close button, once Geld knows whether the reader is signed in. */
+  /** The buttons, floated into the flash's right side beside GitHub's close button, once Geld knows whether the reader is signed in, and rebuilt when that changes. */
   side: HTMLElement | null;
   /** The outcome and the `gh` command, under GitHub's message. */
   readonly root: HTMLElement;
@@ -248,9 +248,25 @@ function mount(failure: CreateFailure, form: HTMLFormElement): Mounted {
   );
 
   failure.alert.after(root);
-  void apiSignedIn().then((signedIn) => {
-    if (!signal.aborted) state.side = mountButtons(failure, form, state, status, signedIn);
-  });
+  // Signing in to Geld happens in its popup or another tab, so the answer is asked again whenever the page is returned to.
+  let signedIn: boolean | null = null;
+  const syncButtons = (): void => {
+    void apiSignedIn().then((now) => {
+      if (signal.aborted || state.busy || now === signedIn) return;
+      signedIn = now;
+      state.side?.remove();
+      state.side = mountButtons(failure, form, state, status, now);
+    });
+  };
+  syncButtons();
+  window.addEventListener('focus', syncButtons, { signal });
+  document.addEventListener(
+    'visibilitychange',
+    () => {
+      if (!document.hidden) syncButtons();
+    },
+    { signal },
+  );
   return state;
 }
 
