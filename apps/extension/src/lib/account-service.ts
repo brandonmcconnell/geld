@@ -424,6 +424,12 @@ async function postPull(token: string, attempt: PullAttempt): Promise<CreatePull
   return apiRefusal(response.status, answer);
 }
 
+/** Signed in with the Geld App, whose token the API retry takes. An OAuth App account only carries the gist scope. */
+export async function apiSignedIn(): Promise<boolean> {
+  const account = await accountItem.getValue();
+  return account !== null && account.auth === 'app';
+}
+
 /** The request `gh pr create` makes, with the reader's Geld App token, for a pull request GitHub's own form failed to open. */
 export async function createPullRequest(attempt: PullAttempt): Promise<CreatePullOutcome> {
   const account = await accountItem.getValue();

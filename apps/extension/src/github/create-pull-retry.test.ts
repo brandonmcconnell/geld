@@ -1,6 +1,12 @@
 // @vitest-environment happy-dom
 // @vitest-environment-options {"url":"https://github.com/"}
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const background = vi.hoisted(() => ({ signedIn: true }));
+vi.mock('wxt/browser', () => ({
+  browser: { runtime: { sendMessage: (message: { readonly type: string }) => Promise.resolve(message.type === 'geld:api-signed-in' ? background.signedIn : undefined) } },
+}));
+
 import { applyCreatePullRetry, attemptFromPage, createdPullUrl, findCreateFailure, findCreateForm, removeCreatePullRetry, waitBeforeResubmit } from './create-pull-retry';
 
 /** GitHub's flash partial (the compare page's `js-flash-template`), with the message a failed create renders in it. */
@@ -83,9 +89,14 @@ describe('createdPullUrl', () => {
 });
 
 describe('applyCreatePullRetry', () => {
-  it('offers the retry and the gh command under the flash', () => {
+  const COMMAND = "gh pr create --repo pingdotgg/t3code --base main --head theo:fix-nav --title 'Fix the nav' --body 'It broke.'";
+  const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it('offers the retry beside the close button and the gh command under the message, signed in', async () => {
+    background.signedIn = true;
     page(FLASH('Pull request creation failed. Validation failed: was submitted too quickly') + FORM('Fix the nav'));
     applyCreatePullRetry();
+    await settle();
     const root = document.querySelector('.flash-error .geld-pull-retry');
     const button = document.querySelector<HTMLElement>('.flash-error .geld-pull-retry__try');
     expect(button?.textContent?.trim()).toBe('Try with Geld');
@@ -96,9 +107,19 @@ describe('applyCreatePullRetry', () => {
     expect(tip?.textContent).toBe('Geld can reattempt this failed operation, as the gh CLI would');
     expect(tip?.querySelector('code')?.textContent).toBe('gh');
     button?.dispatchEvent(new MouseEvent('mouseleave'));
-    expect(root?.querySelector('.geld-pull-retry__command')?.textContent).toBe(
-      "gh pr create --repo pingdotgg/t3code --base main --head theo:fix-nav --title 'Fix the nav' --body 'It broke.'",
-    );
+    expect(root?.querySelector('pre.geld-pull-retry__command')?.textContent).toBe(COMMAND);
+    applyCreatePullRetry();
+    expect(document.querySelectorAll('.geld-pull-retry')).toHaveLength(1);
+    expect(document.querySelectorAll('.geld-pull-retry__try')).toHaveLength(1);
+  });
+
+  it('shows only the gh command to a reader not signed in to Geld, whose retry could not reach the API', async () => {
+    background.signedIn = false;
+    page(FLASH('Pull request creation failed. Validation failed: was submitted too quickly') + FORM('Fix the nav'));
+    applyCreatePullRetry();
+    await settle();
+    expect(document.querySelector('.geld-pull-retry__try')).toBeNull();
+    expect(document.querySelector('.geld-pull-retry__command')?.textContent).toBe(COMMAND);
     applyCreatePullRetry();
     expect(document.querySelectorAll('.geld-pull-retry')).toHaveLength(1);
   });
@@ -109,11 +130,14 @@ describe('applyCreatePullRetry', () => {
     expect(document.querySelector('.geld-pull-retry')).toBeNull();
   });
 
-  it('goes when the flash does', () => {
+  it('goes when the flash does', async () => {
+    background.signedIn = true;
     page(FLASH('Pull request creation failed. Validation failed: was submitted too quickly') + FORM('Fix the nav'));
     applyCreatePullRetry();
+    await settle();
     document.querySelector('#js-flash-container')?.remove();
     applyCreatePullRetry();
     expect(document.querySelector('.geld-pull-retry')).toBeNull();
+    expect(document.querySelector('.geld-pull-retry__try')).toBeNull();
   });
 });

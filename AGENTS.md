@@ -1152,7 +1152,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   GitHub's form carries the moment it was rendered (`timestamp`, `timestamp_secret`) and refuses one sent sooner than its threshold, which a form opened prefilled (`?expand=1&title=…`, as agent tools open it) and sent at once meets.
   After a refusal GitHub renders the form again at `/owner/repo/pull/create`, title and body kept, under a `.flash-error` whose `.js-flash-alert` begins with "Pull request creation failed."
   Geld puts a button led by its emblem on the flash's right, floated after GitHub's close button in the DOM so it stands 16px to that button's left, with Geld's own tooltip (`attachTooltipMessage`, the line counts' `.geld-tooltip`, which hangs below or flips above and renders `code` spans: "Geld can reattempt this failed operation, as the `gh` CLI would").
-  Under GitHub's message go the outcome of a retry and the same request as a `gh pr create` command with a copy button, kept in step with the form as the reader edits it.
+  Under GitHub's message go the outcome of a retry and the same request as a `gh pr create` command, a wrapping code block (never cut short) with a copy button, kept in step with the form as the reader edits it.
+  The command shows for everyone, the button only for a reader signed in to Geld with the GitHub App (`geld:api-signed-in`, answered by the background with a boolean, so the page never holds the account).
+  The resend alone is what GitHub's own button does after a wait, so without the API behind it the button would only promise more than a second click.
   Nothing is sent until the reader clicks, so it never races GitHub's own attempt, and nothing shows for a failure a second send cannot change (`isRetryableFailure`: the pull request exists, no commits between, a blank or invalid field).
   A click sends the form itself again through the reader's session (`pageFetch`, urlencoded, with the submit button GitHub would send), held until the form is `MIN_FORM_AGE_MS` (5 s) old by its own `timestamp`.
   The threshold is a guess: GitHub does not publish it.

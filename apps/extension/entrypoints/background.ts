@@ -4,7 +4,7 @@ import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
 import { parseUnifiedDiff } from '@geld/core';
 import { completeChat, decisionModelsPath, evaluateDecision, listModels, servesDecisions, TYPESAFE_API } from '@geld/review';
-import { createPullRequest, handleAccountMessage, handleFeedbackMessage, startAccountSync } from '../src/lib/account-service';
+import { apiSignedIn, createPullRequest, handleAccountMessage, handleFeedbackMessage, startAccountSync } from '../src/lib/account-service';
 import { senderMayCreatePull } from '../src/lib/create-pull';
 import { checkCatalog, startCatalogUpdates } from '../src/lib/catalog';
 import { syncEnterpriseHosts } from '../src/lib/enterprise';
@@ -21,6 +21,7 @@ import {
   isAccountActionMessage,
   isFeedbackSubmitMessage,
   isCreatePullMessage,
+  isApiSignedInMessage,
   isAiCompleteRequest,
   isAiEvaluateRequest,
   isAiModelsRequest,
@@ -569,6 +570,10 @@ export default defineBackground(() => {
     // Only the feedback page may post an issue as the reader, never a content script on a GitHub page.
     if (isFeedbackSubmitMessage(message) && sender.url?.startsWith(browser.runtime.getURL('/feedback.html')) === true) {
       void handleFeedbackMessage(message).then(sendResponse);
+      return true;
+    }
+    if (isApiSignedInMessage(message)) {
+      void apiSignedIn().then(sendResponse, () => sendResponse(false));
       return true;
     }
     // Only from github.com's own pages of the repository the pull request is opened on, where the reader was already trying to.

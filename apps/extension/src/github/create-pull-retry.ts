@@ -1,7 +1,7 @@
 import { browser } from 'wxt/browser';
 import type { CreatePullOutcome, PullAttempt } from '../lib/create-pull';
 import { CREATE_FAILED_PREFIX, ghCommand, isRetryableFailure, pullAttemptFrom } from '../lib/create-pull';
-import type { CreatePullMessage } from '../lib/messages';
+import type { ApiSignedInMessage, CreatePullMessage } from '../lib/messages';
 import { isCreatePullOutcome } from '../lib/messages';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { pageFetch } from './page-fetch';
@@ -13,8 +13,9 @@ import { attachTooltipMessage } from './ui/tooltip';
  * GitHub's compare form refuses a pull request with a flash ("Pull request creation failed. Validation failed: was
  * submitted too quickly") and renders the form again with the title and body kept. "Try with Geld" sends it again:
  * first the form itself through the reader's session, once it is old enough for GitHub's timing check, then the API
- * request `gh pr create` makes, with the reader's Geld App token where the App is installed. Nothing runs until the
- * reader asks, so it never races GitHub's own attempt.
+ * request `gh pr create` makes, with the reader's Geld App token where the App is installed. The resend alone is what
+ * GitHub's own button does after a wait, so the button is offered only to a reader signed in to Geld, whose click can
+ * reach the API; the `gh` command shows for everyone. Nothing runs until the reader asks, so it never races GitHub.
  */
 
 const ROOT_CLASS = 'geld-pull-retry';
@@ -160,9 +161,9 @@ function sentence(text: string): string {
 
 interface Mounted {
   readonly flash: HTMLElement;
-  /** The button, floated into the flash's right side beside GitHub's close button. */
-  readonly side: HTMLElement;
-  /** The outcome and the `gh` line, under GitHub's message. */
+  /** The button, floated into the flash's right side beside GitHub's close button, once the reader is known to be signed in. */
+  side: HTMLElement | null;
+  /** The outcome and the `gh` command, under GitHub's message. */
   readonly root: HTMLElement;
   readonly message: string;
   readonly listeners: AbortController;
@@ -171,20 +172,28 @@ interface Mounted {
 
 let mounted: Mounted | null = null;
 
+/** The button retries through the API, which needs the reader's Geld App sign-in: without it the button is not offered. */
+async function apiSignedIn(): Promise<boolean> {
+  if (location.origin !== 'https://github.com') return false;
+  const request: ApiSignedInMessage = { type: 'geld:api-signed-in' };
+  try {
+    const answer: unknown = await browser.runtime.sendMessage(request);
+    return answer === true;
+  } catch {
+    return false;
+  }
+}
+
 function mount(failure: CreateFailure, form: HTMLFormElement): Mounted {
   const listeners = new AbortController();
   const { signal } = listeners;
-  const mark = brandMark('geld-pull-retry__mark');
-  const label = createElement('span', {}, ['Try with Geld']);
-  const button = createElement('button', { type: 'button', class: 'btn btn-sm geld-pull-retry__try' }, [mark, label]);
-  attachTooltipMessage(button, TOOLTIP, signal);
-  const side = createElement('div', { class: 'geld-pull-retry__side', [OWN_UI_ATTRIBUTE]: '' }, [button]);
   const status = createElement('div', { class: 'geld-pull-retry__status', role: 'status' });
-  const code = createElement('code', { class: 'geld-pull-retry__command' });
+  const code = createElement('code');
   const copy = createElement('button', { type: 'button', class: 'btn-octicon geld-pull-retry__copy', 'aria-label': 'Copy command' }, [svgFromString(ICON_COPY)]);
-  const local = createElement('div', { class: 'geld-pull-retry__local' }, [createElement('span', {}, ['To run it yourself:']), code, copy]);
+  const block = createElement('div', { class: 'geld-pull-retry__block' }, [createElement('pre', { class: 'geld-pull-retry__command' }, [code]), copy]);
+  const local = createElement('div', { class: 'geld-pull-retry__local' }, [createElement('span', {}, ['To run it yourself:']), block]);
   const root = createElement('div', { class: ROOT_CLASS, [OWN_UI_ATTRIBUTE]: '' }, [status, local]);
-  const state: Mounted = { flash: failure.flash, side, root, message: failure.message, listeners, busy: false };
+  const state: Mounted = { flash: failure.flash, side: null, root, message: failure.message, listeners, busy: false };
 
   const command = (): string | null => {
     const attempt = attemptFromPage(form);
@@ -194,7 +203,6 @@ function mount(failure: CreateFailure, form: HTMLFormElement): Mounted {
     const text = command();
     local.hidden = text === null;
     code.textContent = text ?? '';
-    code.title = text ?? '';
   };
   showCommand();
   form.addEventListener('input', showCommand, { signal });
@@ -211,6 +219,21 @@ function mount(failure: CreateFailure, form: HTMLFormElement): Mounted {
     },
     { signal },
   );
+
+  failure.alert.after(root);
+  void apiSignedIn().then((signedIn) => {
+    if (signedIn && !signal.aborted) state.side = mountButton(failure, form, state, status);
+  });
+  return state;
+}
+
+function mountButton(failure: CreateFailure, form: HTMLFormElement, state: Mounted, status: HTMLElement): HTMLElement {
+  const { signal } = state.listeners;
+  const mark = brandMark('geld-pull-retry__mark');
+  const label = createElement('span', {}, ['Try with Geld']);
+  const button = createElement('button', { type: 'button', class: 'btn btn-sm geld-pull-retry__try' }, [mark, label]);
+  attachTooltipMessage(button, TOOLTIP, signal);
+  const side = createElement('div', { class: 'geld-pull-retry__side', [OWN_UI_ATTRIBUTE]: '' }, [button]);
 
   button.addEventListener(
     'click',
@@ -244,15 +267,15 @@ function mount(failure: CreateFailure, form: HTMLFormElement): Mounted {
   const close = failure.flash.querySelector('.js-flash-close, .flash-close');
   if (close !== null) close.after(side);
   else failure.alert.before(side);
-  failure.alert.after(root);
-  return state;
+  return side;
 }
 
-/** Puts "Try with Geld" under GitHub's flash while the compare page says opening the pull request failed. */
+/** Puts the `gh` command, and "Try with Geld" for a signed-in reader, under GitHub's flash while the compare page says opening the pull request failed. */
 export function applyCreatePullRetry(): void {
-  if (mounted?.busy === true && mounted.root.isConnected && mounted.side.isConnected) return;
+  const intact = mounted !== null && mounted.root.isConnected && (mounted.side === null || mounted.side.isConnected);
+  if (mounted?.busy === true && intact) return;
   const failure = findCreateFailure();
-  if (failure !== null && mounted !== null && mounted.flash === failure.flash && mounted.message === failure.message && mounted.root.isConnected && mounted.side.isConnected) return;
+  if (failure !== null && mounted !== null && intact && mounted.flash === failure.flash && mounted.message === failure.message) return;
   removeCreatePullRetry();
   const form = failure === null || !isRetryableFailure(failure.message) ? null : findCreateForm();
   if (failure === null || form === null || attemptFromPage(form) === null) return;
@@ -261,7 +284,7 @@ export function applyCreatePullRetry(): void {
 
 export function removeCreatePullRetry(): void {
   mounted?.listeners.abort();
-  mounted?.side.remove();
+  mounted?.side?.remove();
   mounted?.root.remove();
   mounted = null;
 }
