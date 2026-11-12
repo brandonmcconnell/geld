@@ -9848,22 +9848,22 @@ a[data-geld-lightbox-media] {
 
 .geld-media-open {
   --geld-media-button-bg: light-dark(oklch(0.21 0.01 260), oklch(0.93 0.005 260));
-  --geld-media-button-cut: 10px;
+  --geld-media-button-cut: 7px;
   position: relative;
   isolation: isolate;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  gap: 8px;
-  min-height: 44px;
-  margin: 8px 0;
-  padding: 0 20px;
+  gap: 6px;
+  min-height: 32px;
+  margin: 6px 0;
+  padding: 0 12px;
   color: light-dark(oklch(0.985 0 0), oklch(0.18 0.01 260));
   background: transparent;
   border: 1px solid transparent;
   border-radius: 0;
-  font: 500 0.95rem/1 var(--fontStack-system, sans-serif);
+  font: 500 0.8rem/1 var(--fontStack-system, sans-serif);
   white-space: nowrap;
   user-select: none;
   cursor: pointer;
@@ -9881,7 +9881,7 @@ a[data-geld-lightbox-media] {
 }
 
 .geld-media-open:hover {
-  --geld-media-button-cut: 13px;
+  --geld-media-button-cut: 10px;
 }
 
 .geld-media-open:hover::before {
@@ -9897,8 +9897,8 @@ a[data-geld-lightbox-media] {
 .geld-media-open__brand svg {
   display: block;
   flex-shrink: 0;
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   pointer-events: none;
 }
 
