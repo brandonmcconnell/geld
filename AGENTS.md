@@ -463,6 +463,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   **An opened conversation is a chat** (`review/chat.ts`, stylesheet section "chats").
   An item's row opens to `renderChatView`: one `.geld-review__chat` per thread container with a head (below), a pinned strip for the comment the thread came from (`threadSourceOf`: the review body holding it, else the bot's run summary, described from the crawl: avatar, "CodeRabbit's review", first line;
   it unfolds the real comment under the strip on request, moved there like the thread so it is in one place at a time, `visit.sourcesShown`), then GitHub's thread node moved whole into the body.
+  The strip's pin is the outline `pin` while closed and filled while open (`ICON_PIN_FILL`: Octicons has no `pin-fill`, so it is `pin` without its inner cutout), on the classic page and the Overview alike.
   A run summary's card is the classic comment card or, on the Overview, the `article` its id is on (`summaryCardOf`): looked up by the classic classes alone, every Overview thread whose head was a bot's summary comment (Greptile's) had no strip.
   On the Overview the thread's box takes the chat's inner bottom corners, since GitHub's reply row is an inset band to the box's edge and stood square over the chat's rounded border.
   The chat is attributes on GitHub's nodes plus CSS, never a rewrite.
