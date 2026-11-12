@@ -9,6 +9,7 @@ export interface PdfSource {
 export const PDF_STORAGE_ORIGINS: readonly string[] = ['https://objects.githubusercontent.com/*', 'https://raw.githubusercontent.com/*'];
 
 const PDF_PATH = /\.pdf$/i;
+const GITHUB = 'https://github.com';
 
 function fileName(url: URL): string {
   const last = url.pathname.split('/').filter((part) => part !== '').at(-1) ?? 'document.pdf';
@@ -30,10 +31,11 @@ export function pdfSourceOf(href: string, pageOrigin: string): PdfSource | null 
   } catch {
     return null;
   }
-  if (url.protocol !== 'https:' || !PDF_PATH.test(url.pathname)) return null;
+  // The viewer page is exposed to github.com alone, so nothing is taken over on another host.
+  if (pageOrigin !== GITHUB || url.protocol !== 'https:' || !PDF_PATH.test(url.pathname)) return null;
   const source = (origins: readonly string[]): PdfSource => ({ url: url.href, name: fileName(url), origins });
   if (url.hostname === 'raw.githubusercontent.com') return source([]);
-  if (url.origin !== pageOrigin || url.hostname !== 'github.com') return null;
+  if (url.origin !== GITHUB) return null;
   if (/^\/(?:user-attachments\/files|[^/]+\/[^/]+\/files)\/\d+\//.test(url.pathname)) return source(PDF_STORAGE_ORIGINS);
   if (/^\/[^/]+\/[^/]+\/raw\//.test(url.pathname)) return source(PDF_STORAGE_ORIGINS);
   if (/^\/[^/]+\/[^/]+\/blob\//.test(url.pathname) && url.searchParams.get('raw') === 'true') return source(PDF_STORAGE_ORIGINS);

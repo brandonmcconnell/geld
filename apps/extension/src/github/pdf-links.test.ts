@@ -38,6 +38,11 @@ describe('pdfSourceOf', () => {
 
   it('works only on github.com, the one host the viewer page is exposed to', () => {
     expect(pdfSourceOf('https://ghe.example.com/user-attachments/files/1/report.pdf', 'https://ghe.example.com')).toBeNull();
+    expect(pdfSourceOf('https://raw.githubusercontent.com/owner/repo/main/report.pdf', 'https://ghe.example.com')).toBeNull();
+  });
+
+  it('keeps a link\'s page or destination in its address', () => {
+    expect(pdfSourceOf('https://github.com/user-attachments/files/1/manual.pdf#page=12', GITHUB)?.url).toBe('https://github.com/user-attachments/files/1/manual.pdf#page=12');
   });
 
   it('hands the viewer page the PDF in its address', () => {

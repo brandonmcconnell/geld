@@ -53,7 +53,7 @@ async function show(source: PdfSource): Promise<void> {
   objectUrl = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
   const frame = element('iframe', 'pdf__frame');
   frame.title = source.name;
-  frame.src = objectUrl;
+  frame.src = objectUrl + new URL(source.url).hash;
   root?.replaceChildren(frame);
 }
 
