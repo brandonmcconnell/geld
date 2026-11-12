@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
-import type { GeldSettings, UpdateMethod, UpdateMode, UsageBrowser, UsageCounter, UsageEvent, UsagePayload } from '@geld/core';
+import type { GeldSettings, UpdateBlock, UpdateMethod, UpdateMode, UsageBrowser, UsageCounter, UsageEvent, UsagePayload } from '@geld/core';
 import { MAX_USAGE_EVENTS, USAGE_COUNTER_CAP, USAGE_MAX_AGE_MS, USAGE_PAYLOAD_VERSION, usagePeriods, usageSettingsOf } from '@geld/core';
 import { recordDiagnostic } from './diagnostics';
 import { settingsItem } from './storage';
@@ -28,6 +28,7 @@ const RECONCILE_DELAY_MS = 5_000;
 export interface NightlyUsageInfo {
   readonly mode: UpdateMode;
   readonly install: { readonly method: UpdateMethod; readonly rollback?: true; readonly trigger?: UpdateMode } | null;
+  readonly blocked: UpdateBlock | null;
 }
 
 /** A self-updating nightly build says how it came to run `version`; store builds pass none. */
@@ -131,10 +132,11 @@ async function reconcileVersion(nightly: NightlyUsageSource | null): Promise<voi
   });
 }
 
-async function ping(): Promise<void> {
+async function ping(nightly: NightlyUsageSource | null): Promise<void> {
   const now = Date.now();
   const periods = usagePeriods(now);
   const settings = await settingsItem.getValue();
+  const blocked = nightly === null ? null : ((await nightly(currentVersion()).catch(() => null))?.blocked ?? null);
   await serially(async (state) => {
     if (state.day === periods.day) return { next: state, result: undefined };
     const firstOfWeek = state.week !== periods.week;
@@ -147,6 +149,7 @@ async function ping(): Promise<void> {
       firstOfMonth: state.month !== periods.month,
       ...(firstOfWeek ? { settings: usageSettingsOf(settings) } : {}),
       ...(Object.keys(counts).length > 0 ? { counts } : {}),
+      ...(blocked === null ? {} : { blocked }),
     };
     return { next: { ...enqueue(state, event), day: periods.day, week: periods.week, month: periods.month, counts: {} }, result: undefined };
   });
@@ -238,7 +241,7 @@ export function startUsageReports(nightly: NightlyUsageSource | null): void {
   });
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name !== ALARM) return;
-    void ping()
+    void ping(nightly)
       .then(() => flushSoon(nightly))
       .catch(() => undefined);
   });
@@ -248,7 +251,7 @@ export function startUsageReports(nightly: NightlyUsageSource | null): void {
     .catch(() => undefined);
   setTimeout(() => {
     void reconcileVersion(nightly)
-      .then(ping)
+      .then(() => ping(nightly))
       .then(() => flushSoon(nightly))
       .catch(() => undefined);
   }, RECONCILE_DELAY_MS);

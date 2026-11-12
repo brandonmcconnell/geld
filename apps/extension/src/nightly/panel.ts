@@ -121,7 +121,7 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
     for (const { mode, button } of modeButtons) {
       button.setAttribute('aria-pressed', String(prefs.mode === mode));
     }
-    const view = nightlyView(state, folder, version, Date.now(), conflict, installedIn);
+    const view = nightlyView(state, folder, version, Date.now(), { conflict, installedIn, mode: prefs.mode });
     headline.textContent = view.headline;
     detail.textContent = localError ?? view.detail ?? '';
     detail.hidden = detail.textContent === '';

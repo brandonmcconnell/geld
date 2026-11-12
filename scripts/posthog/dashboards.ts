@@ -208,6 +208,18 @@ export const USAGE_DASHBOARD: DashboardSpec = {
     },
     {
       kind: 'trend',
+      name: 'Daily active Automatic nightly installs, by what holds up their update',
+      description:
+        'none: nothing waiting, or the waiting build is installing. permission: a newer build is found but the browser has not let Geld write to its folder (the reader chose Allow this time, not Allow on every visit). folder: its folder is not connected or no longer reachable.',
+      series: [{ event: 'extension_active' }],
+      where: [NIGHTLY, { key: 'nightly_mode', value: 'automatic' }],
+      breakdown: 'nightly_blocked',
+      interval: 'day',
+      from: '-60d',
+      display: 'ActionsBar',
+    },
+    {
+      kind: 'trend',
       name: 'Weekly active installs, by browser',
       description: 'Chrome, Edge and Safari. Firefox builds send nothing.',
       series: [{ event: 'extension_active' }],

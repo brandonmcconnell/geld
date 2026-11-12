@@ -96,11 +96,19 @@ describe('usage statistics', () => {
 
   it('notices a version change from the one it recorded, with a nightly build’s own account of it', async () => {
     stored.set('local:usageState', { version: '0.9.3.410', day: '2026-11-10', week: '2026-W46', month: '2026-11', queue: [] });
-    await start(async () => ({ mode: 'manual', install: { method: 'folder', trigger: 'manual' } }));
+    await start(async () => ({ mode: 'manual', install: { method: 'folder', trigger: 'manual' }, blocked: null }));
     await vi.advanceTimersByTimeAsync(6_000);
     expect(sent).toHaveLength(1);
     expect(sent[0]?.selfUpdate).toEqual({ mode: 'manual' });
     expect(sent[0]?.events).toEqual([{ name: 'extension_updated', at: expect.any(Number), version: '0.9.3.412', from: '0.9.3.410', trigger: 'manual', method: 'folder' }]);
+  });
+
+  it('says what holds up a nightly build’s waiting update', async () => {
+    stored.set('local:usageState', { version, day: '2026-11-09', week: '2026-W46', month: '2026-11', queue: [] });
+    await start(async () => ({ mode: 'automatic', install: null, blocked: 'permission' }));
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(sent[0]?.selfUpdate).toEqual({ mode: 'automatic' });
+    expect(sent[0]?.events).toEqual([expect.objectContaining({ name: 'extension_active', blocked: 'permission' })]);
   });
 
   it('counts a new week and month only on their first ping', async () => {

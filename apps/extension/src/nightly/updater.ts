@@ -4,7 +4,7 @@ import { loadBackup, loadFolderHandle, saveBackup } from './handle-store';
 import type { BuildBackup } from './handle-store';
 import { isNightlyCheckMessage, isNightlyInstallMessage, isNightlyManageMessage, isNightlyRollbackMessage } from './messages';
 import { manageUrl } from './conflicts';
-import type { NightlyInstallResult } from './messages';
+import type { InstallNeed, NightlyInstallResult } from './messages';
 import { buildOf, buildProblem, claimLock, compareVersions, LATEST_RELEASE_PAGE, LATEST_RELEASE_URL, manifestTextOf, parseChecksum, parseRelease, releaseLock, tagFromReleaseUrl } from '@geld/core/nightly';
 import type { NightlyBrowser, NightlyRelease, ZipEntry } from '@geld/core/nightly';
 import { BACKGROUND_CHECK_MINUTES, limitedUntil, navigationDue, needsDetails } from './schedule';
@@ -137,10 +137,15 @@ async function mode(): Promise<UpdateMode> {
   return (await nightlyPrefsItem.getValue()).mode;
 }
 
-/** What the usage statistics say about this build: its Update setting, and how it came to be running `version` when it wrote that build itself. */
-export async function nightlyUsage(version: string): Promise<{ readonly mode: UpdateMode; readonly install: NightlyInstall | null }> {
-  const install = (await readNightlyStatus()).lastInstall;
-  return { mode: await mode(), install: install?.to === version ? install : null };
+/**
+ * What the usage statistics say about this build: its Update setting, how it came to be running `version` when it
+ * wrote that build itself, and what holds up a newer build it found.
+ */
+export async function nightlyUsage(version: string): Promise<{ readonly mode: UpdateMode; readonly install: NightlyInstall | null; readonly blocked: InstallNeed | null }> {
+  const status = await readNightlyStatus();
+  const install = status.lastInstall;
+  const blocked = status.blocked !== null && isNewer(status) && status.latest?.version === status.blocked.version ? status.blocked.need : null;
+  return { mode: await mode(), install: install?.to === version ? install : null, blocked };
 }
 
 /** Automatic leaves alone a build the reader rolled back from, and one whose write already broke off. */
@@ -400,9 +405,12 @@ async function install(explicit: boolean): Promise<NightlyInstallResult> {
   // The manifest is written last, so a folder already naming this build holds all of it: no lock or target needed.
   if ((await versionOnDisk()) === latest.version) return sharedInstall(current, latest.version, trigger);
   const target = await installTarget();
-  if ('ok' in target) return target;
+  if ('ok' in target) {
+    if (target.need !== undefined) await patchStatus({ blocked: { version: latest.version, need: target.need, reason: target.reason, at: new Date().toISOString() } });
+    return target;
+  }
   progress = 0;
-  await showBadge(await patchStatus({ installing: latest.version, failure: null }));
+  await showBadge(await patchStatus({ installing: latest.version, failure: null, blocked: null }));
   const failed = (reason: string): NightlyFailure => ({ version: latest.version, stillOn: current, reason, at: new Date().toISOString() });
   let entries: ZipEntry[];
   try {
@@ -544,6 +552,11 @@ export function startNightly(): void {
   browser.runtime.onStartup.addListener(() => void checkForUpdate());
   browser.runtime.onInstalled.addListener(() => void checkForUpdate());
   nightlyPrefsItem.watch(() => void checkForUpdate());
+  // Connecting happens on the nightly page, whose tab holds Chrome's grant, so Automatic can install right away.
+  nightlyFolderItem.watch((next, previous) => {
+    // A reconnect answers both blockers (the picker grants access too), and Automatic's look records one again if it still holds.
+    if (next !== null && next.connectedAt !== previous?.connectedAt) void patchStatus({ blocked: null }).then(() => checkForUpdate());
+  });
   // This worker has only just started, so no install of its own is under way: one marked is left from a worker Chrome stopped mid-install.
   void settleInterrupted().then(showBadge);
   void adoptInstallerFolder();
