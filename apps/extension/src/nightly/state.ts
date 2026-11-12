@@ -110,7 +110,7 @@ export async function readNightlyStatus(): Promise<NightlyStatus> {
   return { ...EMPTY_STATUS, ...(await nightlyStatusItem.getValue()) };
 }
 
-/** Each GitHub tab's hidden-file count, kept for the worker's next start so a tab's badge can take the ↓, ! or OFF too. */
+/** Each GitHub tab's hidden-file count, kept for the worker's next start so a tab's badge can take the ! or OFF too. */
 export const nightlyTabCountsItem = /* @__PURE__ */ storage.defineItem<Readonly<Record<string, number>>>('session:nightlyTabCounts', { fallback: {} });
 
 /** The other Geld that keeps this build from running (conflicts.ts), null while it may run. */

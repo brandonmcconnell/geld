@@ -14,18 +14,18 @@ import type { NightlyFailure, NightlyInstall, NightlyStatus, NightlyWrite, Updat
 import { decode, sha256Hex, unzip } from './unzip';
 import { BUSY, folderLock, readInstallRecord, copyRunningBuild, downloadsReach, downloadsTarget, folderIsOurs, folderPermission, folderTarget, versionOnDisk } from './writers';
 import type { BuildTarget } from './writers';
-import { showIconProgress } from './icon-progress';
+import { showUpdateIcon } from './update-icon';
+import type { UpdateIcon } from './update-icon';
 
 /** Background side of nightly builds: looks for a newer release, marks the toolbar icon, installs and rolls back. */
 
 const ALARM = 'geld:nightly-check';
-const READY_COLOR = '#1a7f37';
 const FAILED_COLOR = '#cf222e';
 /** Mirrors the hidden-file badge in background.ts, which hands a nightly build's tab badges to `showTabBadge`. */
 const COUNT_COLOR = '#59636e';
 /** The reply goes out before the reload, which closes every page that asked for it. */
 const RELOAD_DELAY_MS = 300;
-/** The download's part of the spiral; writing the files into the folder is the rest. */
+/** The download's part of the green; writing the files into the folder is the rest. */
 const DOWNLOAD_SHARE = 0.7;
 
 type Failed = Extract<NightlyInstallResult, { ok: false }>;
@@ -60,36 +60,36 @@ function patchStatus(patch: Partial<NightlyStatus>): Promise<NightlyStatus> {
   return run;
 }
 
-/** An update under way is drawn into the icon instead (`icon-progress.ts`), so its ↓ goes once the install starts. */
-type Mark = '' | '↓' | '!' | 'OFF';
+/** A waiting build and an update under way are the icon's own (`update-icon.ts`), so the text badge keeps the tab's count. */
+type Mark = '' | '!' | 'OFF';
 let mark: Mark = '';
 /** The share of the update under way, null while none is. */
 let progress: number | null = null;
 
 function markOf(status: NightlyStatus, paused: boolean): Mark {
-  if (paused) return 'OFF';
-  if (status.failure?.broken === true || status.writing !== null) return '!';
-  return status.installing === null && isNewer(status) ? '↓' : '';
+  return paused ? 'OFF' : status.failure?.broken === true || status.writing !== null ? '!' : '';
 }
 
-function markColor(): string {
-  return mark === '' ? COUNT_COLOR : mark === '↓' ? READY_COLOR : FAILED_COLOR;
+function iconOf(status: NightlyStatus, paused: boolean): UpdateIcon {
+  if (paused) return { kind: 'plain' };
+  if (status.installing !== null) return { kind: 'progress', share: progress ?? 0 };
+  return markOf(status, paused) === '' && isNewer(status) ? { kind: 'ready' } : { kind: 'plain' };
 }
 
 function showProgress(share: number): void {
   progress = share;
-  showIconProgress(share);
+  showUpdateIcon({ kind: 'progress', share });
 }
 
 /**
  * A tab's own badge (its hidden-file count) hides the global one, so on GitHub, where the reader is, the
- * mark rides on the count: "3↓". The count's colour stays unless there is a mark.
+ * mark rides on the count: "3!". The count's colour stays unless there is a mark.
  */
 async function paintTab(tabId: number, count: number): Promise<void> {
   const text = mark === 'OFF' ? mark : `${count > 0 ? count : ''}${mark}`;
   await browser.action.setBadgeText({ tabId, text }).catch(() => undefined);
   if (text === '') return;
-  await browser.action.setBadgeBackgroundColor({ tabId, color: markColor() }).catch(() => undefined);
+  await browser.action.setBadgeBackgroundColor({ tabId, color: mark === '' ? COUNT_COLOR : FAILED_COLOR }).catch(() => undefined);
   await browser.action.setBadgeTextColor({ tabId, color: '#ffffff' }).catch(() => undefined);
 }
 
@@ -122,9 +122,9 @@ async function showBadge(status: NightlyStatus): Promise<void> {
   const next = markOf(status, paused);
   const changed = next !== mark;
   mark = next;
-  showIconProgress(!paused && status.installing !== null ? (progress ?? 0) : null);
+  showUpdateIcon(iconOf(status, paused));
   await browser.action.setBadgeText({ text: mark }).catch(() => undefined);
-  if (mark !== '') await browser.action.setBadgeBackgroundColor({ color: markColor() }).catch(() => undefined);
+  if (mark !== '') await browser.action.setBadgeBackgroundColor({ color: FAILED_COLOR }).catch(() => undefined);
   await browser.action.setTitle({ title: titleOf(status, ready) }).catch(() => undefined);
   if (!changed) return;
   for (const [tabId, count] of Object.entries(await nightlyTabCountsItem.getValue())) void paintTab(Number(tabId), count);
@@ -319,7 +319,7 @@ async function replace(
     return null;
   } catch (error) {
     const failure = { version, stillOn: previous.version, reason: message(error), at };
-    // The spiral starts over for the undo, so it never stands still at the share the failed write reached.
+    // The green starts over for the undo, so it never stands still at the share the failed write reached.
     showProgress(0);
     try {
       await target.write(previous.files, [...new Set([...owned, ...nextPaths])], (written, total) => showProgress(written / total));
