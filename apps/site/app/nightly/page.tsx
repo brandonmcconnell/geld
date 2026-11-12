@@ -202,7 +202,7 @@ export default function NightlyPage() {
               <strong>Manual</strong> shows a badge on the toolbar icon and an <strong>Install</strong> button in its popup.
             </li>
             <li>
-              To look right away, click <strong>Check for updates</strong> at the end of the status line in the toolbar popup.
+              To look right away, click <strong>Check for updates</strong> in the toolbar popup, under its update button. It shows once a folder is connected.
             </li>
             <li>
               Every build is checked against its published checksum before anything is written, and Geld keeps a copy of the build it replaces. A failed update

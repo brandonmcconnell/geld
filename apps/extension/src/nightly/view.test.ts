@@ -33,6 +33,13 @@ const status = (patch: Partial<NightlyStatus>): NightlyStatus => ({
 });
 
 describe('nightlyView', () => {
+  it('leads with connecting the folder until there is one, naming a build that waits on it', () => {
+    const view = nightlyView(status({ latest: release(3305) }), null, '0.1.2.3301', NOW);
+    expect(view.headline).toBe('Folder not connected');
+    expect(view.detail).toBe('Build 3305 is ready. Geld can only install builds once you connect the folder it runs from.');
+    expect(view.action).toEqual({ kind: 'connect', label: 'Connect folder' });
+  });
+
   it('is up to date and says when it last looked', () => {
     expect(nightlyView(status({ latest: release(3301), checkedAt: minutesAgo(5) }), folder, '0.1.2.3301', NOW)).toEqual({
       headline: 'Up to date',
@@ -52,7 +59,7 @@ describe('nightlyView', () => {
   it('asks for the folder before anything can install, naming the one the installer wrote', () => {
     const view = nightlyView(status({ latest: release(3305) }), null, '0.1.2.3301', NOW);
     expect(view.action?.kind).toBe('connect');
-    expect(nightlyView(status({}), null, '0.1.2.3301', NOW, null, '/Users/me/Geld Nightly/Work').detail).toBe('Connect /Users/me/Geld Nightly/Work so Geld can install builds. Pick it when Chrome asks.');
+    expect(nightlyView(status({}), null, '0.1.2.3301', NOW, null, '/Users/me/Geld Nightly/Work').detail).toBe('Geld can only install builds once you connect /Users/me/Geld Nightly/Work. Pick it when Chrome asks.');
   });
 
   it('shows an install under way', () => {
@@ -76,9 +83,9 @@ describe('nightlyView', () => {
     });
   });
 
-  it('offers Check for updates beside any action, but not while a build installs or Nightly is paused', () => {
+  it('offers Check for updates beside any action once a folder is connected, but not while a build installs or Nightly is paused', () => {
     expect(nightlyView(status({ latest: release(3305) }), folder, '0.1.2.3301', NOW).check).toBe(true);
-    expect(nightlyView(status({ latest: release(3301) }), null, '0.1.2.3301', NOW).check).toBe(true);
+    expect(nightlyView(status({ latest: release(3301) }), null, '0.1.2.3301', NOW).check).toBe(false);
     expect(nightlyView(status({ latest: release(3305), installing: '0.1.2.3305' }), folder, '0.1.2.3301', NOW).check).toBe(false);
     expect(nightlyView(status({ latest: release(3301) }), folder, '0.1.2.3301', NOW, { kind: 'stable', id: 'x' }).check).toBe(false);
   });

@@ -29,7 +29,8 @@ const CSS = `
 .geld-nightly__status[data-tone='paused'] { align-items: flex-start; flex-direction: column; padding: 10px 12px; border: 1px solid var(--destructive); }
 .geld-nightly__status[data-tone='paused'] .geld-nightly__headline { color: var(--destructive); font-weight: 600; }
 .geld-nightly__status .geld-button { flex-shrink: 0; }
-.geld-nightly__check { display: inline-flex; align-items: center; gap: 4px; vertical-align: baseline; font-size: 12px; color: var(--muted-foreground); white-space: nowrap; }
+.geld-nightly__side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+.geld-nightly__check { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted-foreground); white-space: nowrap; }
 .geld-nightly__check:hover { color: var(--foreground); }
 .geld-nightly__check svg { width: 12px; height: 12px; vertical-align: -1px !important; }
 .geld-nightly__check[aria-busy='true'] svg { animation: geld-nightly-spin 0.9s linear infinite; }
@@ -82,13 +83,15 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
   checkIcon.innerHTML = ICON_SYNC;
   const checkLabel = element('span', '', 'Check for updates');
   check.append(...checkIcon.content.childNodes, checkLabel);
-  detail.append(detailText, ' ', check);
+  detail.append(detailText);
   const text = element('div', 'geld-nightly__text');
   text.append(headline, detail);
   const action = element('button', 'geld-button geld-button--small');
   action.type = 'button';
+  const side = element('div', 'geld-nightly__side');
+  side.append(action, check);
   const status = element('div', 'geld-nightly__status');
-  status.append(text, action);
+  status.append(text, side);
   const top = element('div', 'geld-nightly__top');
   top.append(name, modes);
   host.append(top, status);
@@ -119,10 +122,11 @@ export function mountNightlyPanel(host: HTMLElement, act: ActionHandler): void {
     check.disabled = checking || busy;
     check.setAttribute('aria-busy', String(checking));
     checkLabel.textContent = checking ? 'Checking…' : 'Check for updates';
-    detail.hidden = detailText.hidden && check.hidden;
+    detail.hidden = detailText.hidden;
     status.dataset['tone'] = localError === null ? view.tone : 'error';
     current = view.action?.kind ?? null;
     action.hidden = view.action === null;
+    side.hidden = action.hidden && check.hidden;
     action.textContent = view.action?.label ?? '';
     action.classList.toggle('geld-button--primary', current === 'install' || current === 'restore');
     action.disabled = busy;

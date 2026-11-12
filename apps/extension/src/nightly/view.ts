@@ -12,7 +12,7 @@ export interface NightlyView {
   readonly detail: string | null;
   readonly tone: NightlyTone;
   readonly action: { readonly kind: NightlyAction; readonly label: string } | null;
-  /** Whether "Check for updates" ends the detail line: always, except while a build installs or Nightly is paused. */
+  /** Whether "Check for updates" sits under the action: once a folder is connected, except while a build installs or Nightly is paused. */
   readonly check: boolean;
 }
 
@@ -55,7 +55,7 @@ export function pausedView(conflict: Conflict): ViewText {
 /** `installedIn`: the folder the installer wrote, named so the reader knows what to pick when Chrome asks. */
 export function nightlyView(status: NightlyStatus, folder: NightlyFolder | null, version: string, now: number, conflict: Conflict | null = null, installedIn: string | null = null): NightlyView {
   const view = conflict === null ? viewText(status, folder, version, now, installedIn) : pausedView(conflict);
-  return { ...view, check: view.tone !== 'busy' && view.tone !== 'paused' };
+  return { ...view, check: folder !== null && view.tone !== 'busy' && view.tone !== 'paused' };
 }
 
 function viewText(status: NightlyStatus, folder: NightlyFolder | null, version: string, now: number, installedIn: string | null): ViewText {
@@ -83,10 +83,12 @@ function viewText(status: NightlyStatus, folder: NightlyFolder | null, version: 
     };
   }
   if (folder === null) {
+    const which = installedIn === null ? 'the folder it runs from' : installedIn;
+    const waiting = newer === null ? '' : `${capital(buildLabel(newer.version))} is ready. `;
     return {
-      headline: newer === null ? 'Up to date' : `${capital(buildLabel(newer.version))} is ready`,
-      detail: installedIn === null ? 'Connect the folder Geld runs from so it can install builds.' : `Connect ${installedIn} so Geld can install builds. Pick it when Chrome asks.`,
-      tone: newer === null ? 'ok' : 'ready',
+      headline: 'Folder not connected',
+      detail: `${waiting}Geld can only install builds once you connect ${which}.${installedIn === null ? '' : ' Pick it when Chrome asks.'}`,
+      tone: 'ready',
       action: { kind: 'connect', label: 'Connect folder' },
     };
   }
