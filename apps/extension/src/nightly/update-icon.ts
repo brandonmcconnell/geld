@@ -26,8 +26,9 @@ const PLATE_UNITS = 16;
 
 /**
  * `geld-logomark-grid.svg` (`M14 0H3L0 3V14H11L14 11V4H5L4 5V10…`) with the band that comes in from the right
- * edge turning down at the middle into an arrow, `…V4H7L6 5V8H4L6 10H8L10 8H8V6H12V10…`. The arrow keeps the
- * mark's 2-unit band and 2-unit gaps and cuts its head at 45°, as the mark cuts its corners.
+ * edge turning down at the middle into an arrow, `…V4H7L6 5V8H4L7 11L10 8H8V6H12V10…`. Its head's sides run
+ * at 45°, as the mark's cuts do, to a point one unit above the bottom band: only the point comes closer than
+ * the mark's 2-unit gaps, and a head that kept them all ended flat.
  */
 export const DOWNLOAD_MARK: readonly Point[] = [
   [14, 0],
@@ -41,8 +42,7 @@ export const DOWNLOAD_MARK: readonly Point[] = [
   [6, 5],
   [6, 8],
   [4, 8],
-  [6, 10],
-  [8, 10],
+  [7, 11],
   [10, 8],
   [8, 8],
   [8, 6],
@@ -74,7 +74,7 @@ export const LEGS: readonly Leg[] = [
   { from: [1, 13], to: [13, 13], inner: 2, outer: 1.5 },
   { from: [13, 13], to: [13, 5], inner: 2, outer: 1.5 },
   { from: [13, 5], to: [7, 5], inner: 2, outer: 1.5 },
-  { from: [7, 5], to: [7, 10], inner: 3, outer: 3 },
+  { from: [7, 5], to: [7, 11], inner: 3, outer: 3 },
 ];
 
 function direction(leg: Leg): Point {

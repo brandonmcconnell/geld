@@ -35,7 +35,7 @@ describe('bandPosition', () => {
       [13, 9],
       [10, 5],
       [7, 7],
-      [7, 9.9],
+      [7, 10.8],
     ].map(([x, y]) => bandPosition(x ?? 0, y ?? 0) ?? -1);
     expect(along[0]).toBeLessThan(0.5);
     for (let at = 1; at < along.length; at++) expect(along[at]).toBeGreaterThan(along[at - 1] ?? 0);
@@ -56,6 +56,12 @@ describe('bandPosition', () => {
       [11.05, 11.1],
     ] as const)
       expect(bandPosition(x, y)).toBeLessThan(37 + 3);
+  });
+
+  it('ends the arrow in a point', () => {
+    expect(bandPosition(7, 10.8)).not.toBeNull();
+    expect(bandPosition(6.5, 10.8)).toBeNull();
+    expect(bandPosition(7.5, 10.8)).toBeNull();
   });
 
   it('gives the arrow head to the last leg, not the bands beside it', () => {
