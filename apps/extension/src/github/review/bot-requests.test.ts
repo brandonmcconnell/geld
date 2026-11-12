@@ -107,8 +107,19 @@ describe('awaitingReaction', () => {
     expect(awaitingReaction([waiting, reacted], [])).toEqual([{ anchor: 'issuecomment-1', at: T0, until: T0 + ACK_GRACE_MS }]);
   });
 
-  it('leaves out bots that start silently and requests the Geld workflow answers', () => {
-    expect(awaitingReaction([trigger(T0, 'bugbot run'), trigger(T0, '/geld run greptile', undefined, 'issuecomment-3')], [])).toEqual([]);
+  it('leaves out bots that start silently', () => {
+    expect(awaitingReaction([trigger(T0, 'bugbot run')], [])).toEqual([]);
+  });
+
+  it('waits on the Geld workflow’s answer to a /geld run command, once per comment, until it reacts', () => {
+    const asked = trigger(T0, '/geld run greptile bugbot', undefined, 'issuecomment-3');
+    expect(awaitingReaction([asked], [])).toEqual([{ anchor: 'issuecomment-3', at: T0, until: T0 + ACK_GRACE_MS }]);
+    const queued: BotComment = { ...asked, reactions: [{ login: 'github-actions[bot]', emoji: 'rocket' }] };
+    const refused: BotComment = { ...asked, reactions: [{ login: 'github-actions[bot]', emoji: 'thumbs down' }] };
+    const byPerson: BotComment = { ...asked, reactions: [{ login: 'alice', emoji: 'rocket' }] };
+    expect(awaitingReaction([queued], [])).toEqual([]);
+    expect(awaitingReaction([refused], [])).toEqual([]);
+    expect(awaitingReaction([byPerson], [])).toHaveLength(1);
   });
 });
 

@@ -46,6 +46,7 @@ import { applyDiffstatSurfaces } from './diffstat-surfaces';
 import type { ListSurface } from './list-surfaces';
 import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surfaces';
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
+import { reassertDescriptionMenu } from './description-menu';
 import { applyPeoplePresence, removePeoplePresence } from './people-presence';
 import { applyCreatePullRetry, removeCreatePullRetry } from './create-pull-retry';
 import { applyBlockedListHiding, removeBlockedListHiding } from './blocked-lists';
@@ -550,6 +551,7 @@ export class GeldController {
     // The Overview's top card, which GitHub draws and re-renders between passes, dressed in its first frame, and the
     // digest back after a re-render of the column took it.
     dressOverviewNow(this.settings, this.mayDressPage());
+    if (this.mayDressPage()) reassertDescriptionMenu();
     // GitHub's skeleton back in the counts wrapper the group stands in by its fallback: out before this frame paints.
     if (this.settings.quickReview && this.currentPage !== null && quickReviewStandBusy()) this.placeQuickReview(this.currentPage, new URL(window.location.href));
     this.schedule(false);

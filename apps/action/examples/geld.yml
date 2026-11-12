@@ -9,8 +9,9 @@
 # uncomment the ai-* inputs below.
 #
 # Optional review-bot triggers: a comment `/geld run greptile` (or `bugbot`,
-# `devin`, several separated by spaces) from someone with write access starts
-# that bot through its own API, without the bot having to read the comment.
+# `devin`, several separated by spaces) from someone with write access (or
+# admin, see GELD_TRIGGER_PERMISSION) starts that bot through its own API,
+# without the bot having to read the comment.
 # Store each bot's key as a repository secret, then name that secret below.
 
 name: Geld summary
@@ -29,6 +30,9 @@ on:
   check_run:
     types: [completed]
 
+# Each job asks for what it needs; anything added later starts with nothing.
+permissions: {}
+
 env:
   # Names of repository secrets, never the keys themselves.
   # Settings > Secrets and variables > Actions holds the keys. Empty keeps that bot's usual tag comment.
@@ -37,6 +41,8 @@ env:
   GELD_BUGBOT_SECRET_NAME: ''   # e.g. CURSOR_API_KEY (Cursor Dashboard > API Keys, admin scope, Cursor Enterprise)
   GELD_DEVIN_SECRET_NAME: ''    # e.g. DEVIN_API_KEY (a Devin service user with the UseReviewManual permission)
   GELD_DEVIN_ORG_ID: ''         # optional: found from the key, needed only for an enterprise-wide Devin key
+  # Who may start a bot: write (anyone who could push) or admin (repository admins; on a personal repository, only its owner).
+  GELD_TRIGGER_PERMISSION: write
 
 jobs:
   summary:
@@ -73,9 +79,10 @@ jobs:
       github.event.issue.pull_request != null &&
       startsWith(github.event.comment.body, '/geld run')
     runs-on: ubuntu-latest
+    # Reacting to a comment on a pull request needs pull-requests: write; with issues: write alone GitHub answers 403.
     permissions:
       issues: write
-      pull-requests: read
+      pull-requests: write
       contents: read
     steps:
       - name: Start the requested review bots
@@ -90,15 +97,24 @@ jobs:
             const comment = context.payload.comment;
             const pr = context.payload.issue;
             const prUrl = pr.pull_request.html_url;
+            // The reaction is how the Geld extension learns the answer, so a failed one is worth a warning, not silence.
             const react = (content) =>
-              github.rest.reactions.createForIssueComment({ owner, repo, comment_id: comment.id, content }).catch(() => {});
+              github.rest.reactions
+                .createForIssueComment({ owner, repo, comment_id: comment.id, content })
+                .catch((error) => core.warning(`Could not react ${content} to the comment (${error.status ?? error.message}). The Geld extension reads this reaction to know the request was answered.`));
 
-            // Secrets are readable by any comment's workflow, so only people who could push may spend the bots' credits.
+            // Secrets are readable by any comment's workflow, so only people trusted with the repository may spend the bots' credits.
             if (comment.user.type === 'Bot') return core.notice('Ignored: trigger comments from bots are not run.');
-            const { data: access } = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username: comment.user.login });
-            if (access.permission !== 'admin' && access.permission !== 'write') {
+            const required = process.env.GELD_TRIGGER_PERMISSION || 'write';
+            if (required !== 'write' && required !== 'admin') {
               await react('-1');
-              return core.setFailed(`${comment.user.login} needs write access to start review bots.`);
+              return core.setFailed('GELD_TRIGGER_PERMISSION must be write or admin.');
+            }
+            const { data: access } = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username: comment.user.login });
+            const allowed = required === 'admin' ? ['admin'] : ['admin', 'write'];
+            if (!allowed.includes(access.permission)) {
+              await react('-1');
+              return core.setFailed(`${comment.user.login} needs ${required} access to start review bots.`);
             }
 
             // The whole comment, on one line: the Geld extension reads the command the same way (`geldRunBots`).

@@ -90,6 +90,19 @@ describe('attachment gallery', () => {
     dispose();
   });
 
+  it('zooms on a plain scroll, and stays open through it', async () => {
+    const dispose = openAttachmentGallery([item('a', 'https://github.com/user-attachments/assets/a', 'Only')], 0, () => undefined);
+    await settle();
+    const surface = document.querySelector('[data-ramka-zoom]');
+    for (let i = 0; i < 10; i++) {
+      surface?.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true, clientX: 400, clientY: 300 }));
+      await new Promise((resolve) => setTimeout(resolve, 16));
+    }
+    await vi.waitFor(() => expect(document.querySelector('.geld-lightbox__reset')?.textContent).not.toBe('Fit'), { timeout: 2000 });
+    expect(document.querySelector('.geld-lightbox--gallery')).not.toBeNull();
+    dispose();
+  });
+
   it('opens inside a modal dialog holding the image, so the modal never covers it', async () => {
     const dialog = document.createElement('dialog');
     document.body.append(dialog);
