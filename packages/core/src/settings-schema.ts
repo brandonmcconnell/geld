@@ -20,7 +20,7 @@ export type ListSettingKey = {
 }[keyof GeldSettings];
 
 /** Settings that pick one of a fixed set of string values. */
-export type ChoiceSettingKey = 'repoConfigs' | 'compactTimeline' | 'reviewGrouping' | 'suggestedFixes';
+export type ChoiceSettingKey = 'repoConfigs' | 'compactTimeline' | 'reviewGrouping' | 'suggestedFixes' | 'codingAgent';
 
 /** Freeform string settings (URLs, model ids). Distinct from {@link ChoiceSettingKey}. */
 export type TextSettingKey = 'aiBaseUrl' | 'aiModel' | 'aiDecisionModel';
@@ -610,6 +610,23 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
           { value: 'ai', label: 'From AI', description: 'Only fixes the consolidation model proposes (needs a gateway key).' },
           { value: 'all', label: 'Both', description: 'Bot fixes and, with AI on, proposed ones.' },
           { value: 'off', label: 'Off', description: 'Never show a suggested fix; the finding alone.' },
+        ],
+      },
+      {
+        kind: 'choice',
+        key: 'codingAgent',
+        label: 'Coding agent',
+        description:
+          'Who the AI triage offers to hand open findings to first. The others stay one click away in its menu. `Auto` recommends the agent a pull request’s links show its author used, when you are that author.',
+        popup: false,
+        surfaces: ['extension'],
+        options: [
+          { value: 'auto', label: 'Auto', description: 'The agent this pull request’s author used, when you are the author. Otherwise the menu’s order.' },
+          { value: 'cursor', label: 'Cursor', description: 'Mentions `@cursor` on the pull request to start a Cursor cloud agent.' },
+          { value: 'copilot', label: 'Copilot', description: 'Mentions `@copilot` on the pull request.' },
+          { value: 'claude', label: 'Claude', description: 'Mentions `@claude` on the pull request.' },
+          { value: 'codex', label: 'Codex', description: 'Mentions `@codex` on the pull request.' },
+          { value: 'devin', label: 'Devin', description: 'Starts a Devin session with `/devin` on the pull request.' },
         ],
       },
       {
