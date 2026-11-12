@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ContextChoice, FeedbackContext } from './feedback';
-import { feedbackIssue, reposNamedIn, ISSUE_BODY_LIMIT, parseCreatedIssue, parseDraft, refusalMessage, rollbackDraft } from './feedback';
+import { draftFromParams, draftParams, feedbackIssue, missingToolDraft, reposNamedIn, ISSUE_BODY_LIMIT, parseCreatedIssue, parseDraft, refusalMessage, rollbackDraft } from './feedback';
 
 const CONTEXT: FeedbackContext = {
   environment: '0.1.3.812 · Chrome 148 on macOS',
@@ -125,5 +125,22 @@ describe('reposNamedIn', () => {
 describe('rollbackDraft', () => {
   it('names both builds in the title and leaves the words to the reader', () => {
     expect(rollbackDraft('build 4179', 'build 4163')).toEqual({ kind: 'bug', title: 'Rolled back Geld Nightly from build 4179 to build 4163', text: '' });
+  });
+});
+
+describe('draft in the address', () => {
+  it('round-trips a draft, the title ending where the reader types the name', () => {
+    const params = new URLSearchParams();
+    draftParams(missingToolDraft('review bot'), params);
+    expect(draftFromParams(params)).toEqual({ kind: 'idea', title: 'Add support for ', text: 'A review bot I use.\n\nWebsite or docs: ' });
+  });
+
+  it('reads a title or details alone, an unknown kind as other', () => {
+    expect(draftFromParams(new URLSearchParams('title=Hi&kind=nope'))).toEqual({ kind: 'other', title: 'Hi', text: '' });
+    expect(draftFromParams(new URLSearchParams('details=Words'))).toEqual({ kind: 'other', title: '', text: 'Words' });
+  });
+
+  it('is no draft without a title or details', () => {
+    expect(draftFromParams(new URLSearchParams('kind=idea&title=%20'))).toBeNull();
   });
 });

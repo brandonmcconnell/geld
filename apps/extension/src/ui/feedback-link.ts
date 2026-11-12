@@ -1,6 +1,8 @@
 import { browser } from 'wxt/browser';
 import type { PageKind } from '../github/page';
 import { describePage } from '../github/page';
+import type { FeedbackDraft } from '../lib/feedback';
+import { draftParams } from '../lib/feedback';
 import type { FeedbackOpenMessage, FeedbackRollback } from '../lib/messages';
 
 /** "Chrome 148 on macOS", from the user agent, for the form's Browser field; blank when it cannot be told. */
@@ -41,6 +43,8 @@ export interface FeedbackOpening {
   readonly diagnostics?: boolean;
   /** Start the draft about a Geld Nightly rollback (the panel's Leave feedback after Roll back). */
   readonly rollback?: FeedbackRollback;
+  /** Words to start an empty draft with (a "Don't see yours?" link in the digest). */
+  readonly draft?: FeedbackDraft;
 }
 
 /** The extension's own feedback page, which opens the issue from the reader's account without leaving the extension. */
@@ -52,6 +56,7 @@ export function feedbackPageUrl(opening: FeedbackOpening = {}): string {
     url.searchParams.set('rollback-from', opening.rollback.from);
     url.searchParams.set('rollback-to', opening.rollback.to);
   }
+  if (opening.draft !== undefined) draftParams(opening.draft, url.searchParams);
   return url.toString();
 }
 

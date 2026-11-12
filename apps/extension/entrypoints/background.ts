@@ -30,9 +30,11 @@ import {
   isFetchFileRequest,
   isClearDiffCacheMessage,
   isUsageCountMessage,
+  isOpenFeedbackMessage,
   isOpenSettingsMessage,
   isTabStateMessage,
 } from '../src/lib/messages';
+import { openFeedback } from '../src/ui/feedback-link';
 import type { DiffPriority } from '../src/lib/messages';
 import { ensureContentScript, hostOf, tabsOnHosts } from '../src/lib/inject';
 import { grantedHosts } from '../src/lib/enterprise';
@@ -558,6 +560,10 @@ export default defineBackground(() => {
     }
     if (isOpenSettingsMessage(message)) {
       void openSettings(sender.tab?.windowId, message.section);
+      return undefined;
+    }
+    if (isOpenFeedbackMessage(message)) {
+      void openFeedback({ ...(sender.tab?.id === undefined ? {} : { tabId: sender.tab.id }), draft: message.draft }).catch(() => undefined);
       return undefined;
     }
     if (isAccountActionMessage(message)) {

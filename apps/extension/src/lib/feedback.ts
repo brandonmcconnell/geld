@@ -34,6 +34,32 @@ export function rollbackDraft(from: string, to: string): FeedbackDraft {
   return { kind: 'bug', title: `Rolled back Geld Nightly from ${from} to ${to}`, text: '' };
 }
 
+/** What a "Don't see yours?" link in the digest asks Geld to support. */
+export type MissingTool = 'review bot' | 'coding agent';
+
+/** The draft a "Don't see yours?" link opens with: the title ends where the reader types the tool's name. */
+export function missingToolDraft(tool: MissingTool): FeedbackDraft {
+  return { kind: 'idea', title: 'Add support for ', text: `A ${tool} I use.\n\nWebsite or docs: ` };
+}
+
+const TEXT_LIMIT = 10_000;
+
+/** A draft as the feedback page's address carries it (`kind`, `title`, `details`). */
+export function draftParams(draft: FeedbackDraft, params: URLSearchParams): void {
+  params.set('kind', draft.kind);
+  if (draft.title !== '') params.set('title', draft.title);
+  if (draft.text !== '') params.set('details', draft.text);
+}
+
+/** The draft the feedback page's address starts it with; `null` when it names no title or details. */
+export function draftFromParams(params: URLSearchParams): FeedbackDraft | null {
+  const title = (params.get('title') ?? '').slice(0, TITLE_LIMIT);
+  const text = (params.get('details') ?? '').slice(0, TEXT_LIMIT);
+  if (title.trim() === '' && text.trim() === '') return null;
+  const kind = params.get('kind');
+  return { kind: isFeedbackKind(kind) ? kind : 'other', title, text };
+}
+
 /** Each piece of context the reader may attach; `null` when this device has none to offer. */
 export interface FeedbackContext {
   /** Geld's version and the browser, in words. */

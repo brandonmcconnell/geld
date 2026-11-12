@@ -1,6 +1,8 @@
 import type { AnyCategoryId, ChangeTotals, ErrorReport, FileStats, RepoConfigMode, SettingsIssue, UsageCounter } from '@geld/core';
 import { isUsageCounter, parseErrorReports } from '@geld/core';
 import type { JevRequest, JevResult, ModelInfo } from '@geld/review';
+import type { FeedbackDraft } from './feedback';
+import { parseDraft } from './feedback';
 
 /** Messages exchanged between the content script, popup and background. */
 
@@ -206,6 +208,14 @@ export interface FeedbackOpenMessage {
   readonly diagnostics?: boolean;
   /** A Geld Nightly rollback the reader is saying why about, its builds in words ("build 4179"). */
   readonly rollback?: FeedbackRollback;
+  /** Words to start an empty draft with (a "Don't see yours?" link). */
+  readonly draft?: FeedbackDraft;
+}
+
+/** Content script → background: open the feedback page about the sender's tab, an empty draft started with `draft`. */
+export interface OpenFeedbackMessage {
+  readonly type: 'geld:open-feedback';
+  readonly draft: FeedbackDraft;
 }
 
 export interface FeedbackRollback {
@@ -367,8 +377,13 @@ export function isFeedbackOpenMessage(value: unknown): value is FeedbackOpenMess
     value.type === 'geld:feedback-open' &&
     (value.tabId === undefined || typeof value.tabId === 'number') &&
     (value.diagnostics === undefined || typeof value.diagnostics === 'boolean') &&
-    (value.rollback === undefined || isFeedbackRollback(value.rollback))
+    (value.rollback === undefined || isFeedbackRollback(value.rollback)) &&
+    (value.draft === undefined || parseDraft(value.draft) !== null)
   );
+}
+
+export function isOpenFeedbackMessage(value: unknown): value is OpenFeedbackMessage {
+  return isRecord(value) && value.type === 'geld:open-feedback' && parseDraft(value.draft) !== null;
 }
 
 export function isFeedbackSubmitResponse(value: unknown): value is FeedbackSubmitResponse {

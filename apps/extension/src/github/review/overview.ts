@@ -17,7 +17,8 @@ import { describePage, pullRequestStateWords } from '../page';
 import { count, mark, phase, phaseSince } from '../../lib/perf';
 import { persist } from '../../lib/context';
 import { settingsItem } from '../../lib/storage';
-import type { OpenSettingsMessage } from '../../lib/messages';
+import type { OpenFeedbackMessage, OpenSettingsMessage } from '../../lib/messages';
+import { missingToolDraft } from '../../lib/feedback';
 import { clickResolve, copyText, focusReply, resolveIfOpen, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
 import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, commitsInRow, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, revisionMarker, THREAD_SELECTOR, TIMELINE_ROW } from './crawler';
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
@@ -4194,6 +4195,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         await catchUpAfterPost();
         reapplySoon();
       });
+    },
+    onMissingTool: (tool) => {
+      const message: OpenFeedbackMessage = { type: 'geld:open-feedback', draft: missingToolDraft(tool) };
+      void browser.runtime.sendMessage(message).catch(() => undefined);
     },
     onHandOff: (agentId, how, key) => {
       const subject = subjectOf();

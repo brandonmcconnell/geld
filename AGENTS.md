@@ -372,6 +372,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Lines are ordered by how the bot is known (`BotPresence`): `seen` on the page (`/apps/<slug>` links in comments, the checks list and the reviewers box, payload verdicts and item sources, check runs by name, trigger comments), `declared` by the repository's `reviewBots`, `configured` by one of its own files in the repository (both from the controller's `repoBotsHint`, declared only once the config applies under the reader's `repoConfigs` choice), then `other`, the rest of the registry behind an "Other bots (N)" disclosure, since a trigger for a bot that is not installed is a public comment with a handle in it;
   with nothing pointing at any bot the registry is the list.
   Under a separator, Run ("Run Bugbot", "Run 2 bots", disabled with nothing ticked) posts one trigger comment per ticked bot in sequence and Cancel, Escape or a click outside closes.
+  Left of them stands a help line, a question glyph and "Let us know" (`missingToolHelp`), which opens the feedback page with a draft asking for the reader's bot (`missingToolDraft`, through `geld:open-feedback` to the background, since a content script cannot open an extension page).
   **A request shows from the click, and says so when the bot never takes it** (`bot-requests.ts`: `botRequestStates`, `withBotRequests`;
   `visit.requests` holds this visit's clicks from the menu and Rerun, with whether the trigger posted).
   Until the bot shows a sign of life (a reaction on the trigger, any comment or edit of its own since, its check run queued, running or begun since), its pill and line wear Primer's spinner and "starting", and the verdicts read it as `running` (a record is made for a bot that never ran here), so the menu's glyph and Rerun spin too.
@@ -1165,6 +1166,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The attachment checkboxes are locked for the load too, since it replaces them, and nothing in it may keep the form waiting: the per-tab timings get two seconds (`PERF_WAIT_MS`, a frozen tab answers only when it wakes) and a context that cannot be read is an empty one.
   The page address is the origin and path only, never the query: a public repository's search can still hold private words.
   The page is the GitHub tab the popup was opened on (`?tab=<id>`, read with `tabs.get`, only on a GitHub host Geld runs on).
+  The page's address can start an empty draft: `kind`, `title` and `details` (`draftParams`, `draftFromParams`), as `FeedbackOpening.draft` writes them and `geld:feedback-open` carries them to an open page.
+  A draft started that way puts the caret at the end of the title, since "Add support for " ends where the reader types the tool's name, and it never replaces words already in the draft.
   The preview shows the exact title and body (`feedbackIssue`), rendered by default and as Markdown source behind "Show markdown".
   It is rendered on the device (`src/ui/issue-markdown.ts`: `marked` with GitHub-flavoured Markdown and line breaks, then DOMPurify), never by GitHub's Markdown API, so the draft goes nowhere before it is sent.
   For the same reason the preview fetches nothing the draft names: an image is shown as its words and address, and the tags and attributes that load something (`srcset`, `style` with its `url()`, `poster`, `background`, `<picture>`, `<video>`, `<svg>`) are removed.
@@ -1562,6 +1565,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   "Copy the task" serves any other.
   The comment is posted only after a confirm that shows it, and carries the row's finding (with the findings its fix shares a problem with), the triage's suggestion and the thread link (`agentTask`).
   The menus name each agent and nothing more: commands and notes on the right read as clutter.
+  They end, under a separator, in the same help line as the Review bots row's request menu, its draft asking for a coding agent.
   Which agent leads is the `codingAgent` setting (Experiments, options page only, `auto` by default), unless the reader is the pull request's author and its related links show another agent worked on it (`recommendAgents`, `agentsInRelatedLinks`): then that one leads, except when the links name the reader's own choice too, which leads.
   With `auto` and nothing known, "Fix with…" opens the menu.
   The agent's mark stands as far from its button's left edge as from its top and bottom (`.geld-review__split-agent`).

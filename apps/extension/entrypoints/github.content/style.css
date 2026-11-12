@@ -4393,8 +4393,50 @@ html [data-geld-person-fold-part][data-geld-person-fold-part] {
 
 .geld-review__request-footer {
   display: flex;
+  align-items: center;
   gap: 8px;
   padding: 2px 2px 0;
+}
+
+.geld-review__request-footer > .geld-review__help {
+  margin-right: auto;
+  padding: 0 4px 0 6px;
+}
+
+/* "Don't see yours? Let us know." at the foot of the bot and agent menus. */
+.geld-review__help {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 8px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.geld-review__help-glyph {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.geld-review__help-glyph > .octicon {
+  width: 12px;
+  height: 12px;
+}
+
+.geld-review__help-link {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--geld-review-accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.geld-review__help-link:is(:hover, :focus-visible) {
+  text-decoration: underline;
 }
 
 .geld-review__request-run[disabled] {
