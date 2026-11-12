@@ -11222,16 +11222,15 @@ html[data-geld-on] [class*='ReactionsMenuOption'] [data-component='ActionList.It
  */
 .geld-pull-retry__side {
   display: flex;
-  gap: 8px;
   float: right;
   margin: -4px 16px -4px 0;
 }
 
-/* On a phone, floated buttons squeezed GitHub's message into a sliver: they take the close button's row instead. */
+/* On a phone the control sits at the flash's foot, under the command (moved there by `PHONE` in create-pull-retry.ts). */
 @media (max-width: 543.98px) {
   .geld-pull-retry__side {
     float: none;
-    margin: -4px 0 12px;
+    margin: 12px 0 0;
   }
 }
 
@@ -11243,6 +11242,42 @@ html[data-geld-on] [class*='ReactionsMenuOption'] [data-component='ActionList.It
 
 .geld-pull-retry__side .geld-pull-retry__try[aria-busy='true'] {
   cursor: progress;
+}
+
+/* As the Overview's merge group: GitHub's `.BtnGroup` floats its items, so the row and the caret's mark are flex. */
+.geld-pull-retry__side .geld-pull-retry__group.BtnGroup {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.geld-pull-retry__side .geld-pull-retry__caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  padding: 0;
+}
+
+/* GitHub colours every octicon in an error flash red and gives it a right margin. */
+.flash-error .geld-pull-retry__side .geld-pull-retry__caret .octicon {
+  margin: 0;
+  color: var(--fgColor-muted, #59636e);
+}
+
+.geld-pull-retry__side .geld-pull-retry__group .geld-pull-retry__main.BtnGroup-item {
+  border-right-width: 1px;
+}
+
+.geld-pull-retry__side .geld-pull-retry__group .geld-pull-retry__caret.BtnGroup-item {
+  border-left-width: 0;
+}
+
+.geld-pull-retry__menu {
+  width: 280px;
+}
+
+.geld-pull-retry__menu .geld-quick-review__menu-note {
+  white-space: normal;
 }
 
 .geld-pull-retry__mark {

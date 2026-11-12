@@ -6,7 +6,7 @@ import { isCreatePullOutcome } from '../lib/messages';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { pageFetch } from './page-fetch';
 import { brandMark } from './review/brand';
-import { ICON_CHECK, ICON_COPY, ICON_SPINNER } from './ui/icons';
+import { ICON_CHECK, ICON_COPY, ICON_SPINNER, ICON_TRIANGLE_DOWN } from './ui/icons';
 import { attachTooltipMessage } from './ui/tooltip';
 
 /**
@@ -270,22 +270,100 @@ function mount(failure: CreateFailure, form: HTMLFormElement): Mounted {
   return state;
 }
 
-/** A button led by Geld's emblem, so both read as Geld's beside GitHub's close button. */
-function retryButton(label: string, tooltip: string, signal: AbortSignal): HTMLButtonElement {
-  const button = createElement('button', { type: 'button', class: 'btn btn-sm geld-pull-retry__try' }, [brandMark('geld-pull-retry__mark'), createElement('span', {}, [label])]);
+/** Mirrors the stylesheet's phone breakpoint, where the control leaves the flash's top row for its foot. */
+const PHONE = '(max-width: 543.98px)';
+
+function retryButton(label: string, className: string, tooltip: string, signal: AbortSignal): HTMLButtonElement {
+  const button = createElement('button', { type: 'button', class: `btn btn-sm geld-pull-retry__try ${className}` }, [brandMark('geld-pull-retry__mark'), createElement('span', {}, [label])]);
   attachTooltipMessage(button, tooltip, signal);
   return button;
 }
 
-/** "Try again" always, and "Trigger via API" for a reader whose Geld App sign-in can make the request `gh` makes. */
+/** The caret's menu: what it offers besides the API, here only GitHub's own form again. */
+function openWebMenu(caret: HTMLButtonElement, signal: AbortSignal, onPick: () => void): () => void {
+  const label = createElement('span', { class: 'geld-quick-review__menu-label' }, ['Try again via GitHub Web']);
+  const note = createElement('span', { class: 'geld-quick-review__menu-note' }, [RETRY_TOOLTIP]);
+  const item = createElement('button', { type: 'button', class: 'geld-quick-review__menu-item', role: 'menuitem' }, [createElement('span', { class: 'geld-quick-review__menu-text' }, [label, note])]);
+  const element = createElement('div', { class: 'geld-quick-review__menu geld-pull-retry__menu', [OWN_UI_ATTRIBUTE]: '', role: 'menu', 'aria-label': 'More ways to try again' }, [item]);
+  const keys = new AbortController();
+  const close = (): void => {
+    if (keys.signal.aborted) return;
+    keys.abort();
+    element.remove();
+    caret.setAttribute('aria-expanded', 'false');
+  };
+  signal.addEventListener('abort', close, { signal: keys.signal });
+  item.addEventListener('click', () => {
+    close();
+    onPick();
+  });
+  caret.setAttribute('aria-expanded', 'true');
+  document.body.append(element);
+  const place = (): void => {
+    if (!caret.isConnected) {
+      close();
+      return;
+    }
+    const rect = caret.getBoundingClientRect();
+    const width = document.documentElement.clientWidth;
+    const height = document.documentElement.clientHeight;
+    const left = Math.max(8, Math.min(rect.right - element.offsetWidth, width - element.offsetWidth - 8));
+    const below = rect.bottom + 4;
+    const top = below + element.offsetHeight > height - 8 && rect.top - 4 - element.offsetHeight >= 8 ? rect.top - 4 - element.offsetHeight : below;
+    element.style.left = `${Math.round(left)}px`;
+    element.style.top = `${Math.round(top)}px`;
+  };
+  place();
+  item.focus({ preventScroll: true });
+  element.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      close();
+      caret.focus({ preventScroll: true });
+    },
+    { signal: keys.signal },
+  );
+  document.addEventListener(
+    'pointerdown',
+    (event) => {
+      const target = event.target;
+      if (target instanceof Node && (element.contains(target) || caret.contains(target))) return;
+      close();
+    },
+    { capture: true, signal: keys.signal },
+  );
+  element.addEventListener(
+    'focusout',
+    (event) => {
+      const next = event.relatedTarget;
+      if (next instanceof Node && (element.contains(next) || caret.contains(next))) return;
+      close();
+    },
+    { signal: keys.signal },
+  );
+  window.addEventListener('scroll', place, { passive: true, signal: keys.signal });
+  window.addEventListener('resize', place, { signal: keys.signal });
+  return close;
+}
+
+/**
+ * Signed out (or with no Geld App), one "Try again" that sends GitHub's form again. Signed in as the page's account, a
+ * split button: "Trigger via API", the request `gh` makes, and a caret offering "Try again via GitHub Web".
+ */
 function mountButtons(failure: CreateFailure, form: HTMLFormElement, state: Mounted, status: HTMLElement, signedIn: boolean): HTMLElement {
   const { signal } = state.listeners;
-  const again = retryButton('Try again', RETRY_TOOLTIP, signal);
-  const api = signedIn ? retryButton('Trigger via API', API_TOOLTIP, signal) : null;
-  const buttons = api === null ? [again] : [again, api];
-  const side = createElement('div', { class: 'geld-pull-retry__side', [OWN_UI_ATTRIBUTE]: '' }, buttons);
+  const main = signedIn ? retryButton('Trigger via API', 'BtnGroup-item geld-pull-retry__main', API_TOOLTIP, signal) : retryButton('Try again', '', RETRY_TOOLTIP, signal);
+  const caret = signedIn
+    ? createElement('button', { type: 'button', class: 'btn btn-sm BtnGroup-item geld-pull-retry__caret', 'aria-label': 'More ways to try again', 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, [svgFromString(ICON_TRIANGLE_DOWN)])
+    : null;
+  const controls = caret === null ? [main] : [main, caret];
+  const group = caret === null ? main : createElement('div', { class: 'BtnGroup geld-pull-retry__group' }, controls);
+  const side = createElement('div', { class: 'geld-pull-retry__side', [OWN_UI_ATTRIBUTE]: '' }, [group]);
 
-  const run = (button: HTMLButtonElement, working: string, work: (attempt: PullAttempt) => Promise<Outcome>, failed: string): void => {
+  // Whichever way it is sent, the main button shows the work, so the control keeps its place and width.
+  const run = (working: string, work: (attempt: PullAttempt) => Promise<Outcome>, failed: string): void => {
     if (state.busy) return;
     const attempt = attemptFromPage(form);
     if (attempt === null) {
@@ -293,10 +371,10 @@ function mountButtons(failure: CreateFailure, form: HTMLFormElement, state: Moun
       return;
     }
     state.busy = true;
-    const face = [...button.childNodes];
-    for (const other of buttons) other.disabled = other !== button;
-    button.setAttribute('aria-busy', 'true');
-    button.replaceChildren(svgFromString(ICON_SPINNER), createElement('span', {}, [working]));
+    const face = [...main.childNodes];
+    for (const control of controls) control.disabled = control !== main;
+    main.setAttribute('aria-busy', 'true');
+    main.replaceChildren(svgFromString(ICON_SPINNER), createElement('span', {}, [working]));
     status.textContent = '';
     const startedOn = location.href;
     void work(attempt).then((outcome) => {
@@ -308,14 +386,16 @@ function mountButtons(failure: CreateFailure, form: HTMLFormElement, state: Moun
         return;
       }
       state.busy = false;
-      for (const other of buttons) other.disabled = false;
-      button.removeAttribute('aria-busy');
-      button.replaceChildren(...face);
+      for (const control of controls) control.disabled = false;
+      main.removeAttribute('aria-busy');
+      main.replaceChildren(...face);
       status.textContent = outcome === CANCELLED ? '' : `${failed} ${sentence(outcome.message)}`;
     });
   };
-  again.addEventListener('click', () => run(again, 'Trying again…', () => resubmit(form, signal), 'Still failed.'), { signal });
-  if (api !== null) {
+  const viaWeb = (): void => run('Trying again…', () => resubmit(form, signal), 'Still failed.');
+  if (caret === null) {
+    main.addEventListener('click', viaWeb, { signal });
+  } else {
     const viaApi = async (attempt: PullAttempt): Promise<Outcome> => {
       const left = sidebarChoices(form);
       if (left.length > 0 && !window.confirm(`The API opens the pull request with its title, description and branches. ${listWords(left)} chosen here will not be set. Open it anyway?`)) {
@@ -324,13 +404,32 @@ function mountButtons(failure: CreateFailure, form: HTMLFormElement, state: Moun
       const answer = await throughApi(attempt);
       return answer.ok ? { ok: true, url: answer.url } : { ok: false, message: answer.message };
     };
-    api.addEventListener('click', () => run(api, 'Opening…', viaApi, 'The API did not open it either.'), { signal });
+    main.addEventListener('click', () => run('Opening…', viaApi, 'The API did not open it either.'), { signal });
+    let closeMenu: (() => void) | null = null;
+    caret.addEventListener(
+      'click',
+      () => {
+        if (caret.getAttribute('aria-expanded') === 'true') closeMenu?.();
+        else closeMenu = openWebMenu(caret, signal, viaWeb);
+      },
+      { signal },
+    );
   }
 
-  // GitHub's close button floats right, so a float after it stands on its left. Without one the buttons lead the flash.
-  const close = failure.flash.querySelector('.js-flash-close, .flash-close');
-  if (close !== null) close.after(side);
-  else failure.alert.before(side);
+  // GitHub's close button floats right, so a float after it stands on its left. On a phone the control goes to the
+  // flash's foot, under the command, where it has the width a float beside the message would take from the words.
+  const phone = window.matchMedia(PHONE);
+  const seat = (): void => {
+    if (phone.matches) {
+      state.root.after(side);
+      return;
+    }
+    const close = failure.flash.querySelector('.js-flash-close, .flash-close');
+    if (close !== null) close.after(side);
+    else failure.alert.before(side);
+  };
+  seat();
+  phone.addEventListener('change', seat, { signal });
   return side;
 }
 
