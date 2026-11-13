@@ -19,7 +19,7 @@ vi.mock('wxt/utils/storage', () => ({
 const sendMessage = vi.fn(async (_message: unknown): Promise<unknown> => undefined);
 vi.mock('wxt/browser', () => ({ browser: { runtime: { sendMessage: (message: unknown) => sendMessage(message) } } }));
 
-const { adoptOwnReplies, aiStateFor, fixFromComments, loadAiForPage, markSuggestionPosted, pendingReplyFor, runAi, triageNoteFor, triageSuggestions, withAi } = await import('./ai');
+const { adoptOwnReplies, aiStateFor, discardSuggestion, fixFromComments, loadAiForPage, markSuggestionPosted, pendingReplyFor, runAi, triageNoteFor, triageSuggestions, withAi } = await import('./ai');
 
 const at = '2026-11-13T14:24:02Z';
 const finding: RawComment = { anchor: 'discussion_r100', kind: 'thread', author: 'greptile-apps[bot]', body: 'The caret switch is never tested.', createdAt: at, path: 'src/a.test.ts', line: 179 };
@@ -201,5 +201,43 @@ describe('a fix asked for from a chat', () => {
     sendMessage.mockImplementation(answer(['Handle leaks']));
     await fixFromComments(meta, [review], settings, () => undefined, source, scope);
     expect(triageSuggestions(meta, settings).map(({ item }) => item.title)).toEqual(['Handle leaks']);
+  });
+
+  it('writes a thread’s fix afresh when asked again, over a current one and a discarded one', async () => {
+    await fresh();
+    const meta = metaFor([person]);
+    const answer = (code: string) => async () => ({ ok: true, model: 'm', text: JSON.stringify({ suggestions: [{ ids: [person.anchor], summary: 'Renames it.', replacement: code }] }) });
+    const ask = { threads: [person.anchor], comment: null };
+    sendMessage.mockImplementation(answer('use(count);'));
+    await fixFromComments(meta, [person], settings, () => undefined, source, ask);
+    sendMessage.mockImplementation(answer('use(total);'));
+    await fixFromComments(meta, [person], settings, () => undefined, source, ask);
+    expect(triageSuggestions(meta, settings)[0]?.entry.replacement).toEqual(['use(total);']);
+    await discardSuggestion(person.anchor);
+    expect(triageSuggestions(meta, settings)).toEqual([]);
+    sendMessage.mockImplementation(answer('use(sum);'));
+    await fixFromComments(meta, [person], settings, () => undefined, source, ask);
+    expect(triageSuggestions(meta, settings).map(({ entry }) => [entry.state, entry.replacement])).toEqual([['open', ['use(sum);']]]);
+  });
+
+  it('keeps the card up for a comment’s tasks on a pull request with no thread open', async () => {
+    await fresh();
+    const meta = metaFor([review]);
+    sendMessage.mockImplementation(async () => ({ ok: true, model: 'm', text: JSON.stringify({ findings: [{ title: 'Handle leaks', task: 'Close it.', path: null, line: null }] }) }));
+    expect(aiStateFor(meta, [review], settings).kind).toBe('nothing');
+    await fixFromComments(meta, [review], settings, () => undefined, source, { threads: [], comment: { anchor: review.anchor, author: review.author, text: review.body, threads: [] } });
+    expect(aiStateFor(meta, [review], settings).kind).not.toBe('nothing');
+  });
+
+  it('drops an answer that lands after the reader moved to another pull request', async () => {
+    await fresh();
+    const meta = metaFor([review]);
+    sendMessage.mockImplementation(async () => {
+      await new Promise<void>((resolve) => loadAiForPage('github:/o/r/pull/9', resolve));
+      return { ok: true, model: 'm', text: JSON.stringify({ findings: [{ title: 'Handle leaks', task: 'Close it.', path: null, line: null }] }) };
+    });
+    expect(await fixFromComments(meta, [review], settings, () => undefined, source, { threads: [], comment: { anchor: review.anchor, author: review.author, text: review.body, threads: [] } })).toEqual({ changed: false, failed: false });
+    expect(triageSuggestions(meta, settings)).toEqual([]);
+    expect(stored.get('local:aiRuns')).toBeUndefined();
   });
 });
