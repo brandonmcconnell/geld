@@ -157,6 +157,30 @@ describe('bar motion', () => {
     expect(inner.querySelector('[data-geld-ghost]')).toBeNull();
   });
 
+  it("clips the row at the block's resting left edge only while it slides, so nothing shows in the bar's padding", () => {
+    const inner = bar(false);
+    fakeLayout(inner);
+    inner.getBoundingClientRect = () => DOMRect.fromRect({ x: 0, y: 0, width: 800, height: 48 });
+    animateBarGroup();
+    const slidesNow = watchSlides();
+    stick(inner);
+    inner.querySelector<HTMLElement>('[data-testid="mini-header-tab-switcher-trigger"]')!.getBoundingClientRect = () => DOMRect.fromRect({ x: 16, y: 0, width: 80, height: 32 });
+    animateBarGroup();
+    expect(inner.hasAttribute('data-geld-bar-clip')).toBe(true);
+    expect(inner.style.getPropertyValue('--geld-bar-edge')).toBe('16px');
+    slidesNow()[0]?.animation.dispatchEvent(new Event('finish'));
+    expect(inner.hasAttribute('data-geld-bar-clip')).toBe(false);
+    expect(inner.style.getPropertyValue('--geld-bar-edge')).toBe('');
+
+    const entering = slidesNow().length;
+    ghostBarDepartures(unstick());
+    animateBarGroup();
+    expect(inner.hasAttribute('data-geld-bar-clip')).toBe(true);
+    slidesNow()[entering]?.animation.dispatchEvent(new Event('finish'));
+    expect(inner.hasAttribute('data-geld-bar-clip')).toBe(false);
+    expect(inner.querySelector('[data-geld-ghost]')).toBeNull();
+  });
+
   it('moves nothing when GitHub re-renders its bar with the same parts', () => {
     const inner = bar();
     fakeLayout(inner);
