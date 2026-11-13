@@ -885,6 +885,7 @@ async function main(): Promise<void> {
     if (enabledField === undefined || urlField === undefined || modelField === undefined || jevField === undefined || decisionField === undefined) return;
 
     toggleBlock(enabledField);
+    const firstAiBlock = reviewStack.children.length;
 
     /* Gateway URL: saved on Save or on choosing a preset; the model list follows after a pause. */
     const urlHead = fieldHead(urlField);
@@ -1152,6 +1153,16 @@ async function main(): Promise<void> {
     };
     toggleBlock(jevField, [jevNote, decisionBlock, jevKeyBlock]);
     reviewSwitches.push({ field: jevField, set: () => renderJevState() });
+
+    // Off, nothing under the switch is used, so it is not shown either; what was set stays for when it is on again.
+    const aiBlocks = Array.from(reviewStack.children)
+      .slice(firstAiBlock)
+      .filter((node): node is HTMLElement => node instanceof HTMLElement);
+    const showAiFields = (on: boolean): void => {
+      for (const node of aiBlocks) node.hidden = !on;
+    };
+    showAiFields(settings.aiEnabled);
+    reviewSwitches.push({ field: enabledField, set: showAiFields });
 
     /** Fetch the gateway's models when URL and key are both there; gate the model field otherwise. */
     let modelsRun = 0;

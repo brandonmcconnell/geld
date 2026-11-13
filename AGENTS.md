@@ -1535,6 +1535,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
 - **AI is two tiers behind one switch.**
   `aiEnabled` is the master switch: off, nothing is requested whatever else is set;
   on, it takes effect only once `aiBaseUrl`, `aiModel` and the gateway key (`local:aiKey`) are all there, otherwise it behaves as off (`aiConfigured`).
+  The options page hides every AI field under the switch while it is off (`showAiFields` in `renderAiFields`), keeping their values, as the decision model's fields hide under theirs: they used to stand there filled in under a switch that was off.
   `aiBaseUrl` is normalised by `normalizeAiBaseUrl` (trailing slashes and a `/v1`/`/v2`/`/typesafe` tail come off;
   every request adds its own `/v1/...`, except to a base that already ends in its own version, such as Gemini's `/v1beta/openai` — `joinUrl`'s `VERSIONED_BASE`);
   the field offers presets as plain links, one labelled line per `TextPreset.group` (Gateways: Vercel AI Gateway, OpenRouter, Cloudflare · Providers: OpenAI, Amazon Bedrock, Azure OpenAI, Google Gemini, Groq · On this computer: Ollama), kept as links rather than a combobox so every option is seen at a glance.
