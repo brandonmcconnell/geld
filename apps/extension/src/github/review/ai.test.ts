@@ -19,7 +19,7 @@ vi.mock('wxt/utils/storage', () => ({
 const sendMessage = vi.fn(async (_message: unknown): Promise<unknown> => undefined);
 vi.mock('wxt/browser', () => ({ browser: { runtime: { sendMessage: (message: unknown) => sendMessage(message) } } }));
 
-const { adoptOwnReplies, aiStateFor, loadAiForPage, markSuggestionPosted, pendingReplyFor, runAi, triageSuggestions, withAi } = await import('./ai');
+const { adoptOwnReplies, aiStateFor, fixFromComments, loadAiForPage, markSuggestionPosted, pendingReplyFor, runAi, triageNoteFor, triageSuggestions, withAi } = await import('./ai');
 
 const at = '2026-11-13T14:24:02Z';
 const finding: RawComment = { anchor: 'discussion_r100', kind: 'thread', author: 'greptile-apps[bot]', body: 'The caret switch is never tested.', createdAt: at, path: 'src/a.test.ts', line: 179 };
@@ -159,5 +159,47 @@ describe('Geld’s own suggestion reply in a fix’s thread', () => {
     expect(triageSuggestions(pushed, settings)[0]).toMatchObject({ behind: null, entry: { summary: 'Toggle in place, again.' } });
     expect(withAi(pushed).summary?.tldr).toBe('One finding: test the caret switch.');
     expect(aiStateFor(pushed, comments, settings).kind).toBe('current');
+  });
+});
+
+describe('a fix asked for from a chat', () => {
+  beforeEach(() => {
+    stored.clear();
+    sendMessage.mockReset();
+  });
+  const settings = { ...DEFAULT_SETTINGS, aiEnabled: true, aiBaseUrl: 'https://ai-gateway.vercel.sh', aiModel: 'anthropic/claude-sonnet-5' };
+  const person: RawComment = { anchor: 'discussion_r500', kind: 'thread', author: 'brandonmcconnell', body: 'Rename `x` to something readable.', createdAt: at, path: 'src/b.ts', line: 3 };
+  const review: RawComment = { anchor: 'pullrequestreview-900', kind: 'review', author: 'coderabbitai[bot]', body: 'Outside diff range comments (1): src/c.ts line 12 leaks the handle.', createdAt: at };
+  const lines = ['const x = 1;', 'export { x };', 'use(x);', 'end();'];
+  const source = { pull: { title: 't', description: '' }, target: async () => ({ path: 'src/b.ts', start: 3, end: 3, lines }) };
+  const fresh = async (): Promise<void> => {
+    await new Promise<void>((resolve) => loadAiForPage(`github:/o/r/pull/8-${Math.random()}`, resolve));
+    await new Promise<void>((resolve) => loadAiForPage('github:/o/r/pull/8', resolve));
+    stored.set('local:aiKey', 'sk-test');
+  };
+
+  it('writes a fix for a person’s thread the reader asked about, which the triage leaves alone otherwise', async () => {
+    await fresh();
+    const meta = metaFor([person]);
+    sendMessage.mockImplementation(async () => ({ ok: true, model: 'm', text: JSON.stringify({ suggestions: [{ ids: [person.anchor], summary: 'Names it `count`.', replacement: 'use(count);' }] }) }));
+    expect(await fixFromComments(meta, [person], settings, () => undefined, source, { threads: [person.anchor], comment: null })).toEqual({ changed: true, failed: false });
+    expect(triageSuggestions(meta, settings).map(({ entry }) => [entry.key, entry.replacement])).toEqual([[person.anchor, ['use(count);']]]);
+  });
+
+  it('turns what a comment asks for outside its threads into tasks for an agent, replacing that comment’s tasks from before', async () => {
+    await fresh();
+    const meta = metaFor([review]);
+    const answer = (titles: readonly string[]) => async () => ({ ok: true, model: 'm', text: JSON.stringify({ findings: titles.map((title) => ({ title, task: `Fix ${title.toLowerCase()} in \`src/c.ts\`.`, path: 'src/c.ts', line: 12 })) }) });
+    sendMessage.mockImplementation(answer(['Handle leaks', 'Docstrings missing']));
+    const scope = { threads: [], comment: { anchor: review.anchor, author: review.author, text: review.body, threads: [] } };
+    await fixFromComments(meta, [review], settings, () => undefined, source, scope);
+    const rows = triageSuggestions(meta, settings);
+    expect(rows.map(({ item }) => item.title)).toEqual(['Handle leaks', 'Docstrings missing']);
+    expect(rows[0]?.item).toMatchObject({ path: 'src/c.ts', line: 12, sources: [{ anchor: review.anchor, kind: 'review' }] });
+    expect(rows[0]?.entry.replacement).toBeNull();
+    expect(rows[0] === undefined ? null : triageNoteFor(rows[0].item)).toBe('Fix handle leaks in `src/c.ts`.');
+    sendMessage.mockImplementation(answer(['Handle leaks']));
+    await fixFromComments(meta, [review], settings, () => undefined, source, scope);
+    expect(triageSuggestions(meta, settings).map(({ item }) => item.title)).toEqual(['Handle leaks']);
   });
 });

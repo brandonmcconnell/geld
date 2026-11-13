@@ -23,8 +23,8 @@ import { clickResolve, copyText, focusReply, resolveIfOpen, isResolvable, openRe
 import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, commitsInRow, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, revisionMarker, THREAD_SELECTOR, TIMELINE_ROW } from './crawler';
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
-import { adoptOwnReplies, aiPending, aiStateFor, clearAiForPage, discardSuggestion, jevDecisionsFor, loadAiForPage, markSuggestionApplied, markSuggestionPosted, pendingReplyFor, previewDecisionKey, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi, withJevDone } from './ai';
-import type { AiState, SuggestionSource, SuggestionTarget } from './ai';
+import { adoptOwnReplies, aiPending, aiStateFor, clearAiForPage, discardSuggestion, fixFromComments, jevDecisionsFor, loadAiForPage, markSuggestionApplied, markSuggestionPosted, pendingReplyFor, previewDecisionKey, runAi, threadKeyOf, triageFixesOn, triageNoteFor, triageSuggestions, withAi, withJevDone } from './ai';
+import type { AiState, FixScope, SuggestionSource, SuggestionTarget } from './ai';
 import { applyFixes, splitOverlapping } from './apply-suggestion';
 import { agentComment, agentLikely, agentsInRelatedLinks, agentTask, CODING_AGENTS, codingAgentById, diffHunks, lineDiff, OPEN_TARGETS, openTargetById, openTargetLikely, recommendAgents } from '@geld/review';
 import type { CodingAgent, OpenTarget } from '@geld/review';
@@ -86,7 +86,7 @@ import { commitShaOf, outgoingMentions, renderMentionsView, renderQuickView, tim
 import { timelineMentionsFor } from './timeline-mentions';
 import type { MentionLine } from './quick-view';
 import { botCommentControls, chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf, threadLinesOf, parkChats, releaseParkedChats } from './chat';
-import type { ChatByline, ChatLink, ChatRerun, ChatThreadLink } from './chat';
+import type { ChatByline, ChatFix, ChatFixState, ChatLink, ChatRerun, ChatThreadLink, CommentFix, CommentFixScope } from './chat';
 import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
 import { quietClick } from './quiet-click';
@@ -216,6 +216,8 @@ interface TriageVisit {
   readonly busy: Map<string, 'fix'>;
   readonly errors: Map<string, string>;
   handedOff: HandedOff | null;
+  /** Fixes asked for from a chat, by the thread's key or the comment's anchor, and the choice a comment's was asked with. */
+  readonly chatFixes: Map<string, { readonly state: ChatFixState; readonly scope: CommentFixScope | null }>;
 }
 
 /** What the last hand-off did, said under the card, and the finding whose task to offer copying again when a copy failed. */
@@ -225,7 +227,7 @@ interface HandedOff {
 }
 
 function freshTriage(): TriageVisit {
-  return { openKey: null, collapsed: false, busy: new Map(), errors: new Map(), handedOff: null };
+  return { openKey: null, collapsed: false, busy: new Map(), errors: new Map(), handedOff: null, chatFixes: new Map() };
 }
 
 /** Each bot's trigger comments as the last pass read them: what a request recorded at a click was already there. */
@@ -2619,6 +2621,12 @@ function targetIcon(target: OpenTarget): string | null {
 
 const OVERLAP_WORDS = 'Its lines overlap another fix’s, so it was left out of that commit. Triage again to fit it to the new code.';
 
+/** Who a comment's finding came from, as the digest names them: a review bot by its name, anyone else by login. */
+function originAuthor(author: string, settings: GeldSettings): string {
+  const id = resolveBotId(author, settings.reviewBots);
+  return id === null ? author.replace(/\[bot\]$/i, '') : botTitle(id, author);
+}
+
 /** The triage card's reading: the fixes to show, who to hand the rest to, and what this visit did with them. */
 function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, prAuthor: string | null, knownBots: ReadonlySet<string>): TriageView | null {
   if (ai.kind !== 'current' && ai.kind !== 'stale' && ai.kind !== 'failed' && ai.kind !== 'running') return null;
@@ -2648,6 +2656,7 @@ function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, pr
     behind,
     busy: visit.triage.busy.get(entry.key) ?? null,
     error: visit.triage.errors.get(entry.key) ?? null,
+    from: entry.origin === undefined ? null : originAuthor(entry.origin.author, settings),
   }));
   return {
     suggestions,
@@ -2774,8 +2783,9 @@ function dressByline(byline: ChatByline, anchor: string | null): ChatByline {
 }
 
 /** Chat handlers shared by an item opened on its own and inside its round. */
-function threadHandlers(item: ReviewItem | undefined, meta: GeldPrMeta, reapply: () => void, onOpenAnchor: (anchor: string) => void): ChatHandlers {
+function threadHandlers(item: ReviewItem | undefined, meta: GeldPrMeta, reapply: () => void, onOpenAnchor: (anchor: string) => void, fixOf: ((thread: HTMLElement) => ChatFix | null) | null = null): ChatHandlers {
   return {
+    ...(fixOf === null ? {} : { fixOf }),
     pathOf: (node) => threadPathOf(node, item, meta),
     onCopy: (text) => void copyText(text),
     sourceOf: (node) => threadSourceOf(node, item, meta, reapply),
@@ -3916,6 +3926,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     progress,
     openSubKey: visit.openSubKey,
     openSources: visit.sourcesShown,
+    chatFixes: [...visit.triage.chatFixes].map(([key, fix]) => `${key}:${fix.state}:${fix.scope ?? ''}`).sort(),
     refsVersion: refsVersion(),
     editsVersion: editsVersion(),
     running: meta.bots.some((bot) => bot.verdict === 'running'),
@@ -3979,6 +3990,53 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     });
   };
   /** The reader selected the item row `key`: its conversation's anchors, as the model that drew the row knew them. */
+  /** Fixes asked for from a chat: the thread's, or a comment's own findings and its threads, written without a whole triage. */
+  const chatFixesOn = (): boolean => {
+    const kind = aiStateFor(meta, rawComments, settings).kind;
+    return kind !== 'off' && kind !== 'app' && triageFixesOn(settings);
+  };
+  const askFix = (key: string, scope: CommentFixScope | null, ask: FixScope): void => {
+    const triage = visit.triage;
+    triage.collapsed = false;
+    triage.chatFixes.set(key, { state: 'running', scope });
+    reapply();
+    const headSha = meta.headSha;
+    const source: SuggestionSource = { pull: pullIntent(), target: (item) => suggestionTarget(item, rawComments, headSha) };
+    void fixFromComments(meta, rawComments, settings, reapply, source, ask).then((run) => {
+      triage.chatFixes.set(key, { state: !run.changed ? 'idle' : run.failed ? 'failed' : 'done', scope });
+      reapply();
+    });
+  };
+  /** The open finding a thread (or a thread a comment came with) is, by any of its comments' anchors. */
+  const fixableItemAt = (anchor: string): ReviewItem | null => {
+    const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === anchor));
+    return item === undefined || !isOpenStatus(item.status) || item.path === undefined || threadKeyOf(item) === '' ? null : item;
+  };
+  const threadFixOf = (thread: HTMLElement): ChatFix | null => {
+    if (!chatFixesOn()) return null;
+    const item = fixableItemAt(threadAnchorOf(thread));
+    if (item === null) return null;
+    const key = threadKeyOf(item);
+    return { state: visit.triage.chatFixes.get(key)?.state ?? 'idle', onFix: () => askFix(key, null, { threads: [key], comment: null }) };
+  };
+  const commentFixOf = (anchor: string, author: string, links: readonly ChatThreadLink[]): CommentFix | null => {
+    if (!chatFixesOn()) return null;
+    const text = rawComments.find((comment) => comment.anchor === anchor)?.body.trim() ?? '';
+    if (text === '') return null;
+    const items = links.flatMap((link) => {
+      const item = fixableItemAt(link.anchor);
+      return item === null ? [] : [item];
+    });
+    const keys = [...new Set(items.map(threadKeyOf))];
+    const titles = links.map((link) => meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === link.anchor))?.title ?? link.preview).filter((title) => title !== '');
+    const asked = visit.triage.chatFixes.get(anchor);
+    return {
+      threads: keys.length,
+      state: asked?.state ?? 'idle',
+      scope: asked?.scope ?? null,
+      onFix: (scope) => askFix(anchor, scope, { threads: scope === 'comment' ? [] : keys, comment: scope === 'threads' ? null : { anchor, author, text, threads: titles } }),
+    };
+  };
   const seedOpenItem = (key: string): void => {
     const item = key.startsWith('item:') ? meta.items.find((entry) => itemKey(entry.id) === key) : undefined;
     visit.openItemAnchors = item === undefined ? null : { key, anchors: new Set(item.sources.map((source) => source.anchor)) };
@@ -4452,7 +4510,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           renderNoteBody(view.nested, lineNote);
         } else if (view.nested !== null && line !== null && line.anchor !== null && commentNode !== null) {
           const byline = withRerun(dressByline({ login: line.author, bot: true, avatarSrc: line.avatarSrc, time: line.time }, line.anchor), line.author, line.anchor, meta, settings, reapply, panelHandlers.onOpenAnchor);
-          renderCommentChat(view.nested, commentNode, byline, threadLinks(line.threads), panelHandlers.onOpenAnchor);
+          const links = threadLinks(line.threads);
+          renderCommentChat(view.nested, commentNode, byline, links, panelHandlers.onOpenAnchor, commentFixOf(line.anchor, line.author, links));
         } else if (visit.openSubKey !== null && (line !== null || !model.botLines.some((entry) => entry.anchor === visit.openSubKey))) {
           // A comment that left the page, or a summary no longer the bot's latest: nothing to keep open.
           visit.openSubKey = null;
@@ -4502,14 +4561,15 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           const commentNode = view.openComment === null ? null : (entryNodes.get(view.openComment) ?? (thread === null ? timelineRootOf(view.openComment) : null));
           if (view.nested !== null && thread !== null) {
             const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === openEntry?.anchor));
-            renderChatView(view.nested, [thread], threadHandlers(item, meta, reapply, panelHandlers.onOpenAnchor));
+            renderChatView(view.nested, [thread], threadHandlers(item, meta, reapply, panelHandlers.onOpenAnchor, threadFixOf));
           } else if (view.nested !== null && commentNode !== null) {
             const byline = openEntry === null ? null : withRerun(dressByline({ login: openEntry.author, bot: /\[bot\]$/i.test(openEntry.author), avatarSrc: openEntry.avatarSrc, time: openEntry.time }, openEntry.anchor), openEntry.author, openEntry.anchor, meta, settings, reapply, panelHandlers.onOpenAnchor);
             // The threads the review came with, by file, leading to their rows.
-            renderCommentChat(view.nested, commentNode, byline, threadLinks(openEntry?.threads ?? []), panelHandlers.onOpenAnchor);
+            const links = threadLinks(openEntry?.threads ?? []);
+            renderCommentChat(view.nested, commentNode, byline, links, panelHandlers.onOpenAnchor, openEntry === null ? null : commentFixOf(openEntry.anchor, openEntry.author, links));
           } else if (view.nested !== null && view.openItem !== null) {
             const item = view.openItem;
-            renderChatView(view.nested, threadNodes(item), threadHandlers(item, meta, reapply, panelHandlers.onOpenAnchor));
+            renderChatView(view.nested, threadNodes(item), threadHandlers(item, meta, reapply, panelHandlers.onOpenAnchor, threadFixOf));
           } else if (visit.openSubKey !== null && view.openItem === null && commentNode === null) {
             if (openLineStillMissing()) visit.openSubKey = null;
           } else {
@@ -4534,7 +4594,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       } else if (visit.openKey.startsWith('item:')) {
         // Each review thread as its chat: the path, the hunk, the comment it came from pinned, every message.
         const item = meta.items.find((entry) => itemKey(entry.id) === visit.openKey);
-        renderChatView(mounted.slot, item === undefined ? nodes : threadNodes(item), threadHandlers(item, meta, reapply, panelHandlers.onOpenAnchor));
+        renderChatView(mounted.slot, item === undefined ? nodes : threadNodes(item), threadHandlers(item, meta, reapply, panelHandlers.onOpenAnchor, threadFixOf));
       } else {
         // The Commits fold among these: its rows get their dates as they land.
         renderQuickView(mounted.slot, nodes, reapplySoon, { headSha: meta.headSha });
