@@ -91,7 +91,7 @@ import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
 import { quietClick } from './quiet-click';
 import { fitChips, stopFittingChips } from './fit-chips';
-import { stopWatchingBrandSelection } from './brand';
+import { stopWatchingBrandScale, stopWatchingBrandSelection } from './brand';
 import { applyHold, holdRow, readerScrolled, releaseHold, watchPanelForHold } from './hold';
 import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, dropOrphanedLoans, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 import { rememberTopCard, setTopCard } from './top-card';
@@ -4714,6 +4714,7 @@ export function teardownReviewOverview(why: 'stop' | 'leave' | 'rebuild' = 'stop
   visit.settling = null;
   stopFittingChips();
   stopWatchingBrandSelection();
+  stopWatchingBrandScale();
   unmountPanel();
   releaseParkedChats();
   closeOverviewChecks();

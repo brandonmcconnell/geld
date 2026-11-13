@@ -3193,20 +3193,23 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 }
 
 /* The strip sits on the status rows' columns: the emblem in the 16px glyph column, "Geld" in the 88px label column,
-   the meter where a row's content starts. The 14px grid emblem is centred in the glyph's 16px, at 1px per unit. */
+   the meter where a row's content starts. The emblem is about 120% of the glyphs and overhangs its 16px box, which
+   keeps "Geld" in place. `brandFit` sizes it so each of its 7 cells is whole device pixels; the fallback is 1x. */
 .geld-review__brand {
-  display: inline-flex;
+  position: relative;
+  display: inline-block;
   flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
   width: 16px;
   height: 16px;
 }
 
 .geld-review__brand svg {
+  position: absolute;
+  top: var(--geld-brand-shift, 1px);
+  left: var(--geld-brand-shift, 1px);
   display: block;
-  width: 14px;
-  height: 14px;
+  width: var(--geld-brand-size, 14px);
+  height: var(--geld-brand-size, 14px);
 }
 
 .geld-review__label.geld-review__brand-name {
@@ -3217,7 +3220,8 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 
 /* `::selection` never paints the emblem, so while selected (`syncBrandSelection`) it wears the colours the browser
    gives selected text on GitHub, which sets no selection style of its own. */
-.geld-review__brand[data-geld-selected] {
+.geld-review__brand[data-geld-selected],
+.geld-review__brand[data-geld-selected] svg {
   background-color: Highlight;
   color: HighlightText;
 }

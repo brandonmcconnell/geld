@@ -37,7 +37,7 @@ import type { ReviewerCandidate } from './reviewers';
 import type { HiddenPerson } from './hidden-people';
 import type { BlockedBy } from '../blocked-list';
 import { shapeMark } from './mark-shape';
-import { brandMark, syncNewBrandMarks, watchBrandSelection } from './brand';
+import { brandMark, syncNewBrandMarks, watchBrandScale, watchBrandSelection } from './brand';
 import { inlineText } from './inline-text';
 import { fitPathInto } from './path-fit';
 import { relativeTimeElement } from './time';
@@ -3959,6 +3959,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   seatOverviewPanel(panel);
   syncSpinners(panel);
   watchBrandSelection();
+  watchBrandScale();
   syncNewBrandMarks();
   // A card open over the old panel points at a host that just left the document.
   rehostHoverCard();
