@@ -1644,7 +1644,7 @@ function copyItem(list: HTMLElement, key: string, handlers: PanelHandlers, close
 
 const MISSING_TOOL_NOUN: Readonly<Record<MissingTool, string>> = { 'review bot': 'bot', 'coding agent': 'agent' };
 
-/** A help icon whose tip reads "Don't see your preferred bot? Request it.", the link opening the feedback page with its draft. */
+/** A help icon whose tip reads "Don't see your preferred bot? Request it", the link opening the feedback page with its draft. */
 function missingToolHelp(tool: MissingTool, handlers: PanelHandlers, close: () => void, role: 'menuitem' | null = null): HTMLElement {
   const noun = MISSING_TOOL_NOUN[tool];
   const link = createElement('button', { type: 'button', class: `${PANEL_CLASS}__help-link` }, ['Request it']);
@@ -1656,7 +1656,7 @@ function missingToolHelp(tool: MissingTool, handlers: PanelHandlers, close: () =
   return helpTip({
     prefix: PANEL_CLASS,
     label: `Don\u2019t see your preferred ${noun}?`,
-    content: [`Don\u2019t see your preferred ${noun}? `, link, '.'],
+    content: [`Don\u2019t see your preferred ${noun}? `, link],
     ...(role === null ? {} : { role }),
   });
 }
