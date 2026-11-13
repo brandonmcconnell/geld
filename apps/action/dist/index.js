@@ -33634,12 +33634,42 @@ function applyConsolidation(items, carried, outputs) {
     return carry.fix === void 0 || item.fix !== void 0 ? explained : { ...explained, fix: carry.fix };
   });
 }
-function summaryKey(items) {
-  return items.filter((item) => isOpenStatus(item.status)).map((item) => item.id).sort();
+function unthreadedFindings(meta3) {
+  const out = [];
+  for (const bot of meta3.bots) {
+    if (bot.verdict !== "findings" || bot.needsHuman === true || bot.sourceId === void 0) continue;
+    let threads = 0;
+    for (const item of meta3.items) {
+      if (!isOpenStatus(item.status) || item.sources.find((source) => source.kind === "thread")?.bot !== bot.id) continue;
+      threads += item.threads?.open ?? 1;
+    }
+    const count = bot.count === void 0 ? threads === 0 ? null : 0 : bot.count - threads;
+    if (count !== null && count <= 0) continue;
+    out.push({ id: `unthreaded:${bot.id}@${bot.sourceId}:${count ?? "?"}`, bot: bot.id, login: bot.login, count, sourceId: bot.sourceId });
+  }
+  return out;
 }
-function summaryIsCurrent(summary, items) {
+var UNTHREADED_EXCERPT_CHARS = 2e3;
+function unthreadedSource(finding, comments) {
+  const own2 = comments.find((comment) => comment.anchor === finding.sourceId);
+  if (own2 !== void 0 && own2.kind !== "thread") return own2;
+  return comments.filter((comment) => comment.kind !== "thread" && comment.author.toLowerCase() === finding.login.toLowerCase()).at(-1);
+}
+function unthreadedInputs(findings, comments) {
+  return findings.map((finding) => {
+    const name = botById(finding.bot)?.title ?? finding.login;
+    const what = finding.count === null ? "findings" : finding.count === 1 ? "1 finding" : `${finding.count} findings`;
+    const body = (unthreadedSource(finding, comments)?.body ?? "").replace(/<!--[\s\S]*?-->/g, "").replace(/\s+/g, " ").trim();
+    const context = body.length > UNTHREADED_EXCERPT_CHARS ? `${body.slice(0, UNTHREADED_EXCERPT_CHARS)}\u2026` : body;
+    return { id: finding.id, title: `${name} reports ${what} outside its review threads`, severity: "bug", status: "open", ...context === "" ? {} : { context } };
+  });
+}
+function summaryKey(items, unthreaded = []) {
+  return [...items.filter((item) => isOpenStatus(item.status)).map((item) => item.id), ...unthreaded.map((finding) => finding.id)].sort();
+}
+function summaryIsCurrent(summary, items, unthreaded = []) {
   if (summary === void 0) return false;
-  const key = summaryKey(items);
+  const key = summaryKey(items, unthreaded);
   return key.length === summary.forItems.length && key.every((id, index) => id === summary.forItems[index]);
 }
 function summaryInput(items) {
@@ -33652,8 +33682,8 @@ function summaryInput(items) {
     ...item.context === void 0 ? {} : { context: item.context }
   }));
 }
-function summaryRecord(tldr, items, updatedAt) {
-  return { tldr, updatedAt, forItems: summaryKey(items) };
+function summaryRecord(tldr, items, updatedAt, unthreaded = []) {
+  return { tldr, updatedAt, forItems: summaryKey(items, unthreaded) };
 }
 function fixVisible(fix, mode) {
   if (fix === void 0 || mode === "off") return false;
@@ -33958,6 +33988,7 @@ var SUMMARY_SYSTEM = `You write the triage of a pull request's open review feedb
 Rules:
 - At most three sentences, plain prose, no lists, no headings, no emoji.
 - Say concretely what each open finding asks for (the change, in a few words, not just its file), and whether anything blocks merging. Group findings that ask for the same kind of change.
+- An item titled as a bot's findings outside its review threads carries the bot's own review in "context" (comments outside the diff, failed checks): say what those findings ask for as you would for any other.
 - Wrap file names, paths, symbols, identifiers and code in backticks: \`attachment-viewer.tsx\`, \`parseDiff()\`.
 - When "previousTldr" is given, keep its wording where it still holds and change only what the item list requires.
 - Return JSON only: {"tldr": "..."}.`;
@@ -35484,9 +35515,11 @@ async function consolidate(ai, pending) {
   }
   return parsed.value;
 }
-async function writeTldr(ai, items, previous, now) {
-  if (previous !== void 0 && summaryIsCurrent(previous, items)) return previous;
-  const open2 = summaryInput(items);
+async function writeTldr(ai, meta3, comments, previous, now) {
+  const { items } = meta3;
+  const unthreaded = unthreadedFindings(meta3);
+  if (previous !== void 0 && summaryIsCurrent(previous, items, unthreaded)) return previous;
+  const open2 = [...summaryInput(items), ...unthreadedInputs(unthreaded, comments)];
   if (open2.length === 0) return void 0;
   const result = await completeChat({
     fetch: ai.fetch,
@@ -35510,7 +35543,7 @@ async function writeTldr(ai, items, previous, now) {
     console.warn(`AI summary ignored: ${parsed.issues.join("; ")}`);
     return previous;
   }
-  return summaryRecord(parsed.value, items, now);
+  return summaryRecord(parsed.value, items, now, unthreaded);
 }
 async function judgeAddressed(ai, items, changedPaths) {
   if (items.length === 0) return [];
@@ -35605,7 +35638,7 @@ ${loaded.headBranch ?? ""}`, { provider: "github", host: "github.com", owner: ev
   const consolidated = buildMeta(pr, { ...common, producer, generatedAt, rewritten, carried: plan.carried });
   const semantic = await judgeAddressed(ai, botOnlyForRewrite(consolidated.items), pr.changedPaths);
   const judged = buildMeta(pr, { ...common, producer, generatedAt, rewritten, carried: plan.carried, semantic });
-  const summary = await writeTldr(ai, judged.items, previous?.summary, generatedAt);
+  const summary = await writeTldr(ai, judged, rawCommentsOf(pr), previous?.summary, generatedAt);
   const meta3 = buildMeta(pr, { ...common, producer, generatedAt, rewritten, carried: plan.carried, semantic, ...summary === void 0 ? {} : { summary } });
   const body = renderSummary(meta3, { owner: event.owner, repo: event.repo, number: event.number, links: ticketLinks });
   const id = await upsertIssueComment(client, event.owner, event.repo, event.number, existing?.commentId ?? null, body);

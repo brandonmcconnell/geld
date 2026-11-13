@@ -43,6 +43,8 @@ import {
   summaryIsCurrent,
   summaryRecord,
   summaryUserPrompt,
+  unthreadedFindings,
+  unthreadedInputs,
   codeSpans,
   isBotOnly,
   isOpenStatus,
@@ -210,8 +212,8 @@ export function aiStateFor(meta: GeldPrMeta, comments: readonly RawComment[], se
   if (meta.producer.ai) return { kind: 'app', hasLocal: lastRun !== null };
   if (!aiSwitchedOn(settings)) return { kind: 'off' };
   if (inFlight.size > 0) return { kind: 'running' };
-  // The model is only ever asked about open review threads: with none, a click would ask it nothing.
-  if (summaryInput(withAi(meta).items).length === 0) return { kind: 'nothing' };
+  // The model is asked about open review threads and the findings bots report outside them: with neither, a click would ask it nothing.
+  if (summaryInput(withAi(meta).items).length === 0 && unthreadedFindings(meta).length === 0) return { kind: 'nothing' };
   if (lastRun === null) return { kind: 'ready' };
   if (lastRun.error !== undefined) return { kind: 'failed', ranAt: lastRun.ranAt, error: lastRun.error, ...(lastRun.errorStep === undefined ? {} : { step: lastRun.errorStep }) };
   const work = workFor(meta, comments, settings);
@@ -248,8 +250,8 @@ function workFor(meta: GeldPrMeta, comments: readonly RawComment[], settings: Ge
   const known = withAi(meta);
   const plan = planConsolidation(known, meta.items, { comments, wantFix: wantFix(settings), seen });
   if (plan.pending.length > 0) return 'comments';
-  const input = summaryInput(known.items);
-  if (input.length > 0 && !summaryIsCurrent(known.summary ?? summary, known.items)) return 'comments';
+  const unthreaded = unthreadedFindings(meta);
+  if ((summaryInput(known.items).length > 0 || unthreaded.length > 0) && !summaryIsCurrent(known.summary ?? summary, known.items, unthreaded)) return 'comments';
   if (!triageFixesOn(settings)) return null;
   for (const item of suggestionCandidates(meta.items)) {
     const existing = suggestionFor(threadKeyOf(item));
@@ -337,7 +339,7 @@ export function withAi(meta: GeldPrMeta): GeldPrMeta {
   const previous: GeldPrMeta = { ...meta, items: meta.items.map((item) => (rewrites.has(item.id) ? { ...item, rewritten: true } : item)) };
   const items = applyConsolidation(previous.items, new Map<string, Carried>(), [...rewrites.values()]);
   const withItems = items === meta.items ? meta : { ...meta, items };
-  if (summary !== undefined && withItems.summary === undefined && summaryIsCurrent(summary, items)) return { ...withItems, summary };
+  if (summary !== undefined && withItems.summary === undefined && summaryIsCurrent(summary, items, unthreadedFindings(meta))) return { ...withItems, summary };
   return withItems;
 }
 
@@ -405,8 +407,10 @@ export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], s
   const known: GeldPrMeta = withAi(meta);
   const plan = planConsolidation(known, meta.items, { comments, wantFix: wantFix(settings), seen });
   const pending = plan.pending;
-  const needsTldr = summaryInput(known.items).length > 0 && !summaryIsCurrent(known.summary ?? summary, known.items);
-  const needsFixes = source !== null && triageFixesOn(settings) && workFor(meta, comments, settings) !== null;
+  const unthreaded = unthreadedFindings(meta);
+  const needsTldr = (summaryInput(known.items).length > 0 || unthreaded.length > 0) && !summaryIsCurrent(known.summary ?? summary, known.items, unthreaded);
+  // Fixes are written for a thread's lines: findings outside threads are the TL;DR's alone.
+  const needsFixes = source !== null && triageFixesOn(settings) && suggestionCandidates(meta.items).length > 0 && workFor(meta, comments, settings) !== null;
   const ranAt = new Date().toISOString();
   if (pending.length === 0 && !needsTldr && !needsFixes) return { changed: false };
   countUsage('ai_triage_run');
@@ -435,12 +439,13 @@ export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], s
   }
   const items = applyConsolidation(meta.items, new Map<string, Carried>(), [...rewrites.values()]);
   if (needsTldr && failure === null) {
-    const result = await complete(settings, apiKey, SUMMARY_SYSTEM, summaryUserPrompt(summaryInput(items), summary?.tldr ?? null), SUMMARY_JSON_SCHEMA, 'geld_summary');
+    const input = [...summaryInput(items), ...unthreadedInputs(unthreaded, comments)];
+    const result = await complete(settings, apiKey, SUMMARY_SYSTEM, summaryUserPrompt(input, summary?.tldr ?? null), SUMMARY_JSON_SCHEMA, 'geld_summary');
     if (!result.ok) failure = { step: 'tldr', reason: result.reason };
     else {
       const parsed = parseSummaryOutput(result.text);
       const paths = items.flatMap((item) => (item.path === undefined ? [] : [item.path]));
-      if (parsed !== null && parsed.ok) summary = summaryRecord(codeSpans(parsed.value, paths), items, ranAt);
+      if (parsed !== null && parsed.ok) summary = summaryRecord(codeSpans(parsed.value, paths), items, ranAt, unthreaded);
       else failure = { step: 'tldr', reason: UNREADABLE };
     }
   }

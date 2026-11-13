@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RawComment } from './cluster';
 import { clusterComments } from './cluster';
-import { applyConsolidation, fixVisible, planConsolidation, summaryIsCurrent, summaryRecord } from './consolidate';
+import { applyConsolidation, fixVisible, planConsolidation, summaryIsCurrent, summaryRecord, unthreadedFindings, unthreadedInputs } from './consolidate';
 import type { GeldPrMeta } from './model';
 
 const at = '2026-09-18T10:00:00.000Z';
@@ -84,5 +84,40 @@ describe('summary freshness', () => {
     expect(summaryIsCurrent(summary, items)).toBe(true);
     expect(summaryIsCurrent(summary, items.slice(0, 1))).toBe(false);
     expect(summaryIsCurrent(undefined, items)).toBe(false);
+  });
+});
+
+describe('findings outside review threads', () => {
+  const verdict = (count: number | undefined, sourceId = 'pullrequestreview-9'): GeldPrMeta['bots'][number] => ({
+    id: 'coderabbit',
+    login: 'coderabbitai[bot]',
+    verdict: 'findings',
+    ...(count === undefined ? {} : { count }),
+    reviewedSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    sourceId,
+  });
+  const thread = bot('discussion_r3', 'coderabbitai[bot]', 'Guard the null case.', 12);
+  const withBots = (items: GeldPrMeta['items'], bots: GeldPrMeta['bots']): GeldPrMeta => ({ ...metaWith(items), bots });
+
+  it('counts what a bot reports beyond its open threads', () => {
+    expect(unthreadedFindings(withBots([], [verdict(2)]))).toEqual([{ id: 'unthreaded:coderabbit@pullrequestreview-9:2', bot: 'coderabbit', login: 'coderabbitai[bot]', count: 2, sourceId: 'pullrequestreview-9' }]);
+    expect(unthreadedFindings(withBots(clusterComments([thread]), [verdict(3)]))[0]?.count).toBe(2);
+    expect(unthreadedFindings(withBots(clusterComments([thread]), [verdict(1)]))).toEqual([]);
+  });
+
+  it('takes findings with no count and no open thread as unthreaded, and leaves resolved or human-review verdicts out', () => {
+    expect(unthreadedFindings(withBots([], [verdict(undefined)]))[0]?.count).toBeNull();
+    expect(unthreadedFindings(withBots(clusterComments([thread]), [verdict(undefined)]))).toEqual([]);
+    expect(unthreadedFindings(withBots([], [verdict(0)]))).toEqual([]);
+    expect(unthreadedFindings(withBots([], [{ ...verdict(undefined), needsHuman: true }]))).toEqual([]);
+  });
+
+  it('hands the TL;DR the bot’s own review, and makes a TL;DR written before them behind', () => {
+    const found = unthreadedFindings(withBots([], [verdict(1)]));
+    const review: RawComment = { anchor: 'pullrequestreview-9', kind: 'review', author: 'coderabbitai[bot]', body: '<!-- marker -->Outside diff range comments (1)\n\n`src/a.ts` 10-12: handle the empty list.', createdAt: at };
+    expect(unthreadedInputs(found, [review])).toEqual([{ id: found[0]?.id, title: 'CodeRabbit reports 1 finding outside its review threads', severity: 'bug', status: 'open', context: 'Outside diff range comments (1) `src/a.ts` 10-12: handle the empty list.' }]);
+    const before = summaryRecord('Nothing open.', [], at);
+    expect(summaryIsCurrent(before, [], found)).toBe(false);
+    expect(summaryIsCurrent(summaryRecord('One finding outside the diff.', [], at, found), [], found)).toBe(true);
   });
 });

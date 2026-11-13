@@ -22,6 +22,7 @@ export const SUMMARY_SYSTEM = `You write the triage of a pull request's open rev
 Rules:
 - At most three sentences, plain prose, no lists, no headings, no emoji.
 - Say concretely what each open finding asks for (the change, in a few words, not just its file), and whether anything blocks merging. Group findings that ask for the same kind of change.
+- An item titled as a bot's findings outside its review threads carries the bot's own review in "context" (comments outside the diff, failed checks): say what those findings ask for as you would for any other.
 - Wrap file names, paths, symbols, identifiers and code in backticks: \`attachment-viewer.tsx\`, \`parseDiff()\`.
 - When "previousTldr" is given, keep its wording where it still holds and change only what the item list requires.
 - Return JSON only: {"tldr": "..."}.`;

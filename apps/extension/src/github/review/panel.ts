@@ -1347,9 +1347,9 @@ function aiButton(state: AiState, handlers: PanelHandlers): HTMLElement | null {
   const label = state.kind === 'ready' ? 'Triage with AI' : state.kind === 'nothing' ? 'Nothing to triage' : state.kind === 'running' ? 'AI is reading…' : `AI · ${ranAgo(state.ranAt)}`;
   const title =
     state.kind === 'ready'
-      ? 'Ask the model what the open threads need, with fixes to preview and apply. Kept on this device only.'
+      ? 'Ask the model what the open threads and the bots’ other findings need, with fixes to preview and apply. Kept on this device only.'
       : state.kind === 'nothing'
-        ? 'AI titles open review threads and summarizes what is still open. No review thread here is open, so there is nothing to ask it.'
+        ? 'AI titles open review threads and summarizes what is still open. No review thread is open here and no bot reports findings outside one, so there is nothing to ask it.'
         : state.kind === 'running'
         ? 'The model is reading the open threads'
         : state.kind === 'stale'

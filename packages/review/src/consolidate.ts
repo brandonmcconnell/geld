@@ -7,6 +7,7 @@
  * the TL;DR is rewritten only when the set of open items changed.
  */
 
+import { botById } from './bots';
 import type { RawComment } from './cluster';
 import { isBotOnly, sourceExcerpts } from './cluster';
 import type { GeldPrMeta, ReviewItem, ReviewSummary, SuggestedFix } from './model';
@@ -121,17 +122,66 @@ export function applyConsolidation(
   });
 }
 
-/** Sorted open item ids: the TL;DR is written for exactly this set. */
-export function summaryKey(items: readonly ReviewItem[]): readonly string[] {
-  return items
-    .filter((item) => isOpenStatus(item.status))
-    .map((item) => item.id)
-    .sort();
+/**
+ * Findings a review bot reports that no open review thread holds: CodeRabbit's outside-diff comments and failed
+ * pre-merge checks, a summary that lists findings and opened no thread. The Review bots row counts them, so the
+ * triage reads them too.
+ */
+export interface UnthreadedFinding {
+  /** Changes when the bot reports again or the count moves, so a TL;DR written before is behind. */
+  readonly id: string;
+  readonly bot: string;
+  readonly login: string;
+  /** How many the bot reports beyond its open threads; null when it gave no count. */
+  readonly count: number | null;
+  readonly sourceId: string;
 }
 
-export function summaryIsCurrent(summary: ReviewSummary | undefined, items: readonly ReviewItem[]): boolean {
+export function unthreadedFindings(meta: GeldPrMeta): readonly UnthreadedFinding[] {
+  const out: UnthreadedFinding[] = [];
+  for (const bot of meta.bots) {
+    if (bot.verdict !== 'findings' || bot.needsHuman === true || bot.sourceId === undefined) continue;
+    let threads = 0;
+    for (const item of meta.items) {
+      if (!isOpenStatus(item.status) || item.sources.find((source) => source.kind === 'thread')?.bot !== bot.id) continue;
+      threads += item.threads?.open ?? 1;
+    }
+    // With no count, open threads are taken to hold what the bot found.
+    const count = bot.count === undefined ? (threads === 0 ? null : 0) : bot.count - threads;
+    if (count !== null && count <= 0) continue;
+    out.push({ id: `unthreaded:${bot.id}@${bot.sourceId}:${count ?? '?'}`, bot: bot.id, login: bot.login, count, sourceId: bot.sourceId });
+  }
+  return out;
+}
+
+const UNTHREADED_EXCERPT_CHARS = 2000;
+
+/** The comment holding a bot's unthreaded findings: its verdict's source, or its latest summary when that source is a thread. */
+function unthreadedSource(finding: UnthreadedFinding, comments: readonly RawComment[]): RawComment | undefined {
+  const own = comments.find((comment) => comment.anchor === finding.sourceId);
+  if (own !== undefined && own.kind !== 'thread') return own;
+  return comments.filter((comment) => comment.kind !== 'thread' && comment.author.toLowerCase() === finding.login.toLowerCase()).at(-1);
+}
+
+/** The TL;DR's view of them: one entry per bot, in its own words. */
+export function unthreadedInputs(findings: readonly UnthreadedFinding[], comments: readonly RawComment[]): readonly SummaryInputItem[] {
+  return findings.map((finding) => {
+    const name = botById(finding.bot)?.title ?? finding.login;
+    const what = finding.count === null ? 'findings' : finding.count === 1 ? '1 finding' : `${finding.count} findings`;
+    const body = (unthreadedSource(finding, comments)?.body ?? '').replace(/<!--[\s\S]*?-->/g, '').replace(/\s+/g, ' ').trim();
+    const context = body.length > UNTHREADED_EXCERPT_CHARS ? `${body.slice(0, UNTHREADED_EXCERPT_CHARS)}…` : body;
+    return { id: finding.id, title: `${name} reports ${what} outside its review threads`, severity: 'bug', status: 'open', ...(context === '' ? {} : { context }) };
+  });
+}
+
+/** Sorted open item ids, and the bots' unthreaded findings: the TL;DR is written for exactly this set. */
+export function summaryKey(items: readonly ReviewItem[], unthreaded: readonly UnthreadedFinding[] = []): readonly string[] {
+  return [...items.filter((item) => isOpenStatus(item.status)).map((item) => item.id), ...unthreaded.map((finding) => finding.id)].sort();
+}
+
+export function summaryIsCurrent(summary: ReviewSummary | undefined, items: readonly ReviewItem[], unthreaded: readonly UnthreadedFinding[] = []): boolean {
   if (summary === undefined) return false;
-  const key = summaryKey(items);
+  const key = summaryKey(items, unthreaded);
   return key.length === summary.forItems.length && key.every((id, index) => id === summary.forItems[index]);
 }
 
@@ -148,8 +198,8 @@ export function summaryInput(items: readonly ReviewItem[]): readonly SummaryInpu
     }));
 }
 
-export function summaryRecord(tldr: string, items: readonly ReviewItem[], updatedAt: string): ReviewSummary {
-  return { tldr, updatedAt, forItems: summaryKey(items) };
+export function summaryRecord(tldr: string, items: readonly ReviewItem[], updatedAt: string, unthreaded: readonly UnthreadedFinding[] = []): ReviewSummary {
+  return { tldr, updatedAt, forItems: summaryKey(items, unthreaded) };
 }
 
 /** Whether a fix should be shown under the user's preference. */
