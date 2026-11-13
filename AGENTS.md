@@ -147,7 +147,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Fresh `headSha` → render the panel from the payload (zero crawl).
   Stale/partial/missing → crawler fallback with the same layout, "Updating…" when a summary exists but is behind.
   **The panel (`review/panel.ts`, `.geld-review`) grows out of the bottom of the description card**: inserted right after the card (`[data-geld-attached]` squares its bottom corners, the panel's top ones are square too, `margin-top: -1px` shares the border), so the two read as one box.
-  Inside it borrows the merge box's checks list: a summary strip on the status rows' columns (the emblem in the glyph column, `brandMark`: `assets/brand/geld-logomark-grid.svg` at 1px per unit in `currentColor`, so one weight serves both themes;
+  Inside it borrows the merge box's checks list: a summary strip on the status rows' columns (the emblem in the glyph column, `brandMark`: `assets/brand/geld-logomark-grid.svg` in `currentColor`, so one weight serves both themes, about 120% of the glyphs and overhanging its 16px box so "Geld" stays put, sized by `brandFit` for the screen's pixel ratio so each of its 7 cells is whole device pixels (17.5px at 2x, 16⅓ at 3x, still 14px at 1x, where the nearest sharp larger size is 21px);
   "Geld" as text in the label column;
   then the progress meter, only when there are review threads, resolved or not;
   needs-reply chip, copy), then **the status rows** (`statusRows`, in triage order: *Reviews*, *Review bots*, *Reports*, *CI checks*, *Previews*, *Deployments*;

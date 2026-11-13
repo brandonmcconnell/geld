@@ -7,8 +7,8 @@ export const ATTR_BRAND_SELECTED = 'data-geld-selected';
 const BRAND_SELECTOR = '[data-geld-brand]';
 
 /**
- * The Geld emblem in the text colour around it, so GitHub's light and dark themes recolour it. At the rows' 16px
- * glyph size it is the 14-unit grid mark at 1px per unit, which lands on whole pixels where the 24 × 25 one cannot.
+ * The Geld emblem in the text colour around it, so GitHub's light and dark themes recolour it. It is the 14-unit grid
+ * mark, which lands on whole pixels where the 24 × 25 one cannot.
  */
 export function brandMark(className: string): HTMLElement {
   const svg = svgFromString(emblem.replace(/fill="#000000"/, 'fill="currentColor"'));
@@ -44,6 +44,54 @@ export function syncBrandSelection(): void {
  */
 export function syncNewBrandMarks(): void {
   if (selecting) syncBrandSelection();
+}
+
+/** The grid mark's straight edges all fall on 2-unit steps of its 14 units: 7 cells, each needing whole device pixels. */
+const BRAND_CELLS = 7;
+/** 120% of the 14px mark, which stays in the glyph column's 16px box (mirrored in the stylesheet). */
+const BRAND_WANTED_PX = 16.8;
+const BRAND_BOX_PX = 16;
+
+export interface BrandFit {
+  /** The mark's side in CSS pixels. */
+  size: number;
+  /** Its offset from the box's top left corner, so it starts on a whole device pixel as near centred as that allows. */
+  shift: number;
+}
+
+/** The sharp size nearest 120% at this device pixel ratio: one cell is a whole number of device pixels. */
+export function brandFit(ratio: number): BrandFit {
+  const dpr = Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+  const cell = Math.max(1, Math.round((BRAND_WANTED_PX * dpr) / BRAND_CELLS));
+  const size = (cell * BRAND_CELLS) / dpr;
+  const shift = Math.round(((BRAND_BOX_PX - size) / 2) * dpr) / dpr;
+  return { size, shift };
+}
+
+let scaleQuery: MediaQueryList | null = null;
+
+function applyBrandFit(): void {
+  const { size, shift } = brandFit(window.devicePixelRatio);
+  const root = document.documentElement.style;
+  root.setProperty('--geld-brand-size', `${size}px`);
+  root.setProperty('--geld-brand-shift', `${shift}px`);
+  scaleQuery?.removeEventListener('change', applyBrandFit);
+  // Zoom and moving the window to another screen change the ratio; a query for the current one fires when it does.
+  scaleQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+  scaleQuery.addEventListener('change', applyBrandFit);
+}
+
+export function watchBrandScale(): void {
+  if (scaleQuery === null) applyBrandFit();
+}
+
+export function stopWatchingBrandScale(): void {
+  if (scaleQuery === null) return;
+  scaleQuery.removeEventListener('change', applyBrandFit);
+  scaleQuery = null;
+  const root = document.documentElement.style;
+  root.removeProperty('--geld-brand-size');
+  root.removeProperty('--geld-brand-shift');
 }
 
 /** Whether the selection last read was not collapsed; nothing is selected when a page opens. */
