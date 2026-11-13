@@ -112,7 +112,8 @@ body {
   padding-top: 4px;
 }
 
-.options__stack > .options__block:last-child {
+/* The last block shown, which is not the last child while the AI fields after their switch are hidden. */
+.options__stack > .options__block:not([hidden]):not(:has(~ .options__block:not([hidden]))) {
   padding-bottom: 0;
 }
 
