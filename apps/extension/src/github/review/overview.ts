@@ -2669,6 +2669,7 @@ function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, pr
     writing: aiPending().has('suggest') && aiPending().size === 1,
     handedOff: visit.triage.handedOff,
     resolves: settings.resolveOnFix && repoBots.resolveOnFix !== false,
+    policyPending: repoBots.resolveOnFix === 'loading',
   };
 }
 
@@ -3944,10 +3945,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       return found === undefined || replacement === null || !found.current || found.entry.state === 'applied' || visit.triage.busy.has(key) ? [] : [{ key, found, replacement, path: found.entry.path, start: found.entry.start, end: found.entry.end }];
     });
     const { batch: picked, overlapping } = splitOverlapping(candidates);
-    if (picked.length === 0) return;
+    if (picked.length === 0 || repoBots.resolveOnFix === 'loading') return;
     const triage = visit.triage;
     for (const { key } of overlapping) triage.errors.set(key, OVERLAP_WORDS);
-    const resolves = settings.resolveOnFix && repoBots.resolveOnFix !== false;
     for (const { key } of picked) {
       triage.busy.set(key, 'fix');
       triage.errors.delete(key);
@@ -3955,6 +3955,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     reapply();
     const fixes = picked.map(({ key, found, replacement }) => ({ threadAnchors: found.item.sources.map((source) => source.anchor), path: found.entry.path, replacement, summary: found.entry.summary, title: found.item.title, headSha: meta.headSha, pendingReply: pendingReplyFor(key, rawComments) }));
     void applyFixes(fixes).then(async (results) => {
+      // Read when the commit lands: the repository's config may have arrived meanwhile.
+      const resolves = settings.resolveOnFix && repoBots.resolveOnFix !== false;
       let changed = false;
       for (const [index, { key, found }] of picked.entries()) {
         triage.busy.delete(key);

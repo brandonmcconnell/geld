@@ -1003,7 +1003,8 @@ export class GeldController {
     if (page.kind !== 'pull-conversation' || repo === null || !this.settings.prOverview) return undefined;
     const resolved = this.resolvedConfig(repo);
     const declared = resolved !== null && !resolved.loading && this.repoDecision(repo) === 'use' ? declaredReviewBots(validConfigs(resolved)) : null;
-    const resolveOnFix = resolved !== null && !resolved.loading && this.repoDecision(repo) === 'use' ? repoResolvesOnFix(validConfigs(resolved)) : null;
+    const inUse = resolved !== null && this.repoDecision(repo) === 'use';
+    const resolveOnFix = !inUse ? null : resolved.loading ? 'loading' : repoResolvesOnFix(validConfigs(resolved));
     return { declared, configured: this.repoConfigs.botConfigs(window.location.origin, repo).found, apiTriggers: this.apiTriggers(repo), resolveOnFix };
   }
 

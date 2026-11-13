@@ -641,6 +641,8 @@ export interface TriageView {
   readonly handedOff: { readonly text: string; readonly copyAgain: string | null } | null;
   /** Apply resolves the threads it answers: the `resolveOnFix` setting, and no `review.resolveOnFix: false` from the repository. */
   readonly resolves: boolean;
+  /** The repository's config is still being read, so whether Apply resolves is not known yet: Apply waits. */
+  readonly policyPending: boolean;
 }
 
 export function itemKey(id: string): string {
@@ -1543,8 +1545,8 @@ function bulkActions(triage: TriageView, handlers: PanelHandlers): HTMLElement |
   discard.addEventListener('click', () => handlers.onDiscardAll(open.map((fix) => fix.key)));
   const what = triage.resolves ? 'Post each fix as a suggestion, commit them together, and resolve their threads' : 'Post each fix as a suggestion and commit them together';
   const left = overlapping.length === 0 ? '' : `. ${overlapping.length === 1 ? 'One fix overlaps' : `${overlapping.length} fixes overlap`} another’s lines and waits for the next triage`;
-  const title = ready.length === 0 ? 'No fix here fits the head commit. Triage again first.' : `${what} (${ready.length} ${ready.length === 1 ? 'fix' : 'fixes'})${left}`;
-  const fixAll = createElement('button', { type: 'button', class: 'btn btn-sm btn-primary', title, [ATTR_FOCUS]: 'fix-all', ...(busy || ready.length === 0 ? { disabled: '' } : {}), ...(busy ? { 'aria-busy': 'true' } : {}) }, [
+  const title = triage.policyPending ? 'Reading the repository’s Geld config first' : ready.length === 0 ? 'No fix here fits the head commit. Triage again first.' : `${what} (${ready.length} ${ready.length === 1 ? 'fix' : 'fixes'})${left}`;
+  const fixAll = createElement('button', { type: 'button', class: 'btn btn-sm btn-primary', title, [ATTR_FOCUS]: 'fix-all', ...(busy || ready.length === 0 || triage.policyPending ? { disabled: '' } : {}), ...(busy ? { 'aria-busy': 'true' } : {}) }, [
     busy ? 'Applying…' : 'Apply all',
     ...(ready.length > 0 && !busy ? [createElement('span', { class: 'Counter' }, [String(ready.length)])] : []),
   ]);
@@ -1629,7 +1631,7 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
     const busy = fix.busy !== null;
     const discard = createElement('button', { type: 'button', class: 'btn btn-sm', [ATTR_FOCUS]: `fix-discard:${fix.key}`, ...(busy ? { disabled: '' } : {}) }, [icon(ICON_X), 'Discard']);
     discard.addEventListener('click', () => handlers.onDiscardSuggestion(fix.key));
-    const commit = createElement('button', { type: 'button', class: 'btn btn-sm btn-primary', title: fixWhy(fix, triage), [ATTR_FOCUS]: `fix-commit:${fix.key}`, ...(busy || !fix.current ? { disabled: '' } : {}), ...(busy ? { 'aria-busy': 'true' } : {}) }, [busy ? 'Applying…' : 'Apply']);
+    const commit = createElement('button', { type: 'button', class: 'btn btn-sm btn-primary', title: fixWhy(fix, triage), [ATTR_FOCUS]: `fix-commit:${fix.key}`, ...(busy || !fix.current || triage.policyPending ? { disabled: '' } : {}), ...(busy ? { 'aria-busy': 'true' } : {}) }, [busy ? 'Applying…' : 'Apply']);
     commit.addEventListener('click', () => handlers.onApplySuggestion(fix.key));
     body.append(createElement('div', { class: `${PANEL_CLASS}__triage-fix-actions` }, [discard, commit]));
   }
@@ -1811,12 +1813,13 @@ function missingToolHelp(tool: MissingTool, handlers: PanelHandlers, close: () =
 /** What Apply does, for its tooltip: post the suggestion, commit it, and resolve the threads it answers when that is on. */
 function fixWhy(fix: TriageSuggestionView, triage: TriageView): string {
   if (!fix.current) return `Triage again first. ${behindWords(fix)}`;
+  if (triage.policyPending) return 'Reading the repository’s Geld config first';
   const threads = fix.threads === 1 ? 'its thread' : `all ${fix.threads} threads`;
   return triage.resolves ? `Post this fix as a suggestion in the thread, commit it, and resolve ${threads}` : 'Post this fix as a suggestion in the thread and commit it';
 }
 
 function applyControl(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHandlers): HTMLElement {
-  const blocked = fix.busy !== null || !fix.current;
+  const blocked = fix.busy !== null || !fix.current || triage.policyPending;
   const main = createElement('button', { type: 'button', class: 'btn btn-sm', title: fixWhy(fix, triage), [ATTR_FOCUS]: `fix-head-apply:${fix.key}`, ...(blocked ? { disabled: '' } : {}), ...(fix.busy !== null ? { 'aria-busy': 'true' } : {}) }, [
     icon(ICON_CHECK),
     createElement('span', { class: `${PANEL_CLASS}__split-label` }, [fix.busy !== null ? 'Applying…' : 'Apply']),
