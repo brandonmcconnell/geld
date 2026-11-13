@@ -913,9 +913,10 @@ html[data-geld-tab-counts] [data-component='PageHeader']:has([class*='branchGrou
   pointer-events: none;
 }
 
-/* While the block slides, what passes its resting left edge is out of sight, not shown in the bar's padding. */
-[data-geld-bar-clip] {
-  clip-path: inset(-100vh -100vw -100vh var(--geld-bar-edge, 0px));
+/* A part carried past the edge leaves GitHub's metadata on the left: only the row's own edge may cut it off. */
+[data-geld-bar-reach] {
+  overflow: visible !important;
+  clip-path: inset(0 0 0 -100vw);
 }
 
 /* Out of the layout for the moment the block's script reads where the title stood without these parts. */

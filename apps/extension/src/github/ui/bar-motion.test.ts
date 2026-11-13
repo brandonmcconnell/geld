@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LIVE_COUNTS_STAND_IN } from '../header-stats';
 import { persistentBarStuck } from '../persistent-bar';
-import { animateBarGroup, ghostBarDepartures, isGhost, leaveGhost, motionAllowed } from './bar-motion';
+import { animateBarGroup, ghostBarDepartures, isGhost, leaveGhost, motionAllowed, PAST_EDGE_ID } from './bar-motion';
 
 const PARTS = `
   <button data-testid="mini-header-tab-switcher-trigger" id="_r_8h_" type="button">Overview</button>
@@ -65,17 +65,28 @@ interface Slide {
   readonly animation: Animation;
 }
 
-/** Every slide the block's script starts, the real animation and the translate it runs between. */
-function watchSlides(): () => Slide[] {
+/** Every animation the block's script starts, the real animation and the translate it runs between. */
+function watchAnimations(): () => (Slide & { readonly id: string })[] {
   const spy = vi.spyOn(Element.prototype, 'animate');
   return () =>
-    spy.mock.calls.flatMap(([frames], index) => {
+    spy.mock.calls.flatMap(([frames, options], index) => {
       const animation = spy.mock.results[index]?.value;
       const element = spy.mock.contexts[index];
       const list = Array.isArray(frames) ? frames : [];
       if (!(animation instanceof Animation) || !(element instanceof Element)) return [];
-      return [{ element, from: String(list[0]?.['translate']), to: String(list[1]?.['translate']), animation }];
+      const id = typeof options === 'object' ? (options.id ?? '') : '';
+      return [{ element, from: String(list[0]?.['translate']), to: String(list[1]?.['translate']), animation, id }];
     });
+}
+
+/** The block's own slides, without the parts' carries past the viewport's edge. */
+function watchSlides(): () => Slide[] {
+  const all = watchAnimations();
+  return () => all().filter((animation) => animation.id !== PAST_EDGE_ID);
+}
+
+function rightEdge(element: Element, right: number): void {
+  element.getBoundingClientRect = () => DOMRect.fromRect({ x: right - 40, y: 0, width: 40, height: 20 });
 }
 
 describe('bar motion', () => {
@@ -157,28 +168,63 @@ describe('bar motion', () => {
     expect(inner.querySelector('[data-geld-ghost]')).toBeNull();
   });
 
-  it("clips the row at the block's resting left edge only while it slides, so nothing shows in the bar's padding", () => {
+  it("carries the arriving and leaving parts past the row's edge, where the block alone left them in the bar's padding", async () => {
     const inner = bar(false);
     fakeLayout(inner);
-    inner.getBoundingClientRect = () => DOMRect.fromRect({ x: 0, y: 0, width: 800, height: 48 });
     animateBarGroup();
-    const slidesNow = watchSlides();
+    const all = watchAnimations();
     stick(inner);
-    inner.querySelector<HTMLElement>('[data-testid="mini-header-tab-switcher-trigger"]')!.getBoundingClientRect = () => DOMRect.fromRect({ x: 16, y: 0, width: 80, height: 32 });
+    // The label ends 6px before the number, which rests at 16px: started 300px left, it would show from -100 to 10.
+    rightEdge(inner.querySelector('[data-testid="mini-header-tab-switcher-trigger"]')!, 96);
+    rightEdge(inner.querySelector('[class*="navigationDivider"]')!, 110);
+    rightEdge(inner.querySelector('[data-component="StateLabel"]')!, 310);
     animateBarGroup();
-    expect(inner.hasAttribute('data-geld-bar-clip')).toBe(true);
-    expect(inner.style.getPropertyValue('--geld-bar-edge')).toBe('16px');
-    slidesNow()[0]?.animation.dispatchEvent(new Event('finish'));
-    expect(inner.hasAttribute('data-geld-bar-clip')).toBe(false);
-    expect(inner.style.getPropertyValue('--geld-bar-edge')).toBe('');
+    const arriving = all().filter((animation) => animation.id === PAST_EDGE_ID);
+    expect(arriving).toHaveLength(3);
+    expect(new Set(arriving.map((animation) => `${animation.from} → ${animation.to}`))).toEqual(new Set(['-10px 0 → 0px 0']));
+    // GitHub's metadata clips its overflow, and the label is carried out of its box on the left while it slides.
+    const metadata = inner.querySelector('[class*="metadata"]')!;
+    expect(metadata.hasAttribute('data-geld-bar-reach')).toBe(true);
+    all()
+      .find((animation) => animation.id !== PAST_EDGE_ID)
+      ?.animation.dispatchEvent(new Event('finish'));
 
-    const entering = slidesNow().length;
+    const before = all().length;
     ghostBarDepartures(unstick());
+    for (const ghost of inner.querySelectorAll('[data-geld-ghost="left"]')) rightEdge(ghost, ghost.getAttribute('data-geld-ghost-kind') === 'label' ? 310 : 100);
     animateBarGroup();
-    expect(inner.hasAttribute('data-geld-bar-clip')).toBe(true);
-    slidesNow()[entering]?.animation.dispatchEvent(new Event('finish'));
-    expect(inner.hasAttribute('data-geld-bar-clip')).toBe(false);
-    expect(inner.querySelector('[data-geld-ghost]')).toBeNull();
+    const leaving = all()
+      .slice(before)
+      .filter((animation) => animation.id === PAST_EDGE_ID);
+    expect(leaving.map((animation) => isGhost(animation.element))).toEqual([true, true, true]);
+    expect(new Set(leaving.map((animation) => `${animation.from} → ${animation.to}`))).toEqual(new Set(['0px 0 → -10px 0']));
+    expect(metadata.hasAttribute('data-geld-bar-reach')).toBe(true);
+    for (const animation of all().filter((each) => each.id === PAST_EDGE_ID)) animation.animation.cancel();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(metadata.hasAttribute('data-geld-bar-reach')).toBe(false);
+  });
+
+  it('hands a part GitHub replaces mid-slide the rest of its carry past the edge', () => {
+    const inner = bar(false);
+    fakeLayout(inner);
+    animateBarGroup();
+    const all = watchAnimations();
+    stick(inner);
+    rightEdge(inner.querySelector('[data-testid="mini-header-tab-switcher-trigger"]')!, 96);
+    rightEdge(inner.querySelector('[class*="navigationDivider"]')!, 110);
+    rightEdge(inner.querySelector('[data-component="StateLabel"]')!, 310);
+    animateBarGroup();
+    const old = inner.querySelector('[data-testid="mini-header-tab-switcher-trigger"]')!;
+    const carry = all().find((animation) => animation.id === PAST_EDGE_ID && animation.element === old)!;
+    vi.spyOn(carry.animation.effect!, 'getComputedTiming').mockReturnValue({ progress: 0.5 });
+    const fresh = document.createElement('button');
+    fresh.setAttribute('data-testid', 'mini-header-tab-switcher-trigger');
+    ghostBarDepartures(recording(() => old.replaceWith(fresh)));
+    animateBarGroup();
+    const handed = all().filter((animation) => animation.id === PAST_EDGE_ID && animation.element === fresh);
+    expect(handed.map((animation) => `${animation.from} → ${animation.to}`)).toEqual(['-5px 0 → 0px 0']);
+    expect(carry.animation.playState).toBe('idle');
   });
 
   it('moves nothing when GitHub re-renders its bar with the same parts', () => {

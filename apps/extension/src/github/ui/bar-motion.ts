@@ -17,12 +17,14 @@ const ATTR_KIND = 'data-geld-ghost-kind';
 const ATTR_SEEN = 'data-geld-ghost-seen';
 /** Out of the layout for a moment, to read where the title stood without it (the stylesheet hides it). */
 const ATTR_HOLD = 'data-geld-bar-hold';
+/** Names the animation that carries an arriving or leaving part past the viewport's edge, on top of the block's. */
+export const PAST_EDGE_ID = 'geld-bar-past-edge';
 /**
- * On the inner row while the block slides, clipping it at the block's resting left edge (`--geld-bar-edge`): the slide
- * ends with the ghosts just left of that edge, and the entering parts start there, which the bar's padding showed.
+ * On the bar's metadata (label, number, title) while a part inside it is carried past the edge: GitHub's metadata is
+ * `overflow: hidden`, and the label leaves its box on the left, so the box's own sliding edge cut it off. The stylesheet
+ * lets it overflow to the left only; the row's own `overflow: hidden` is the edge the parts disappear at.
  */
-const ATTR_CLIP = 'data-geld-bar-clip';
-const EDGE_PROPERTY = '--geld-bar-edge';
+const ATTR_REACH = 'data-geld-bar-reach';
 /** Past every exit: a ghost goes then even when nothing removed it (a hidden tab, a style change). */
 const GHOST_MS = 600;
 /**
@@ -72,6 +74,8 @@ function ghostOf(element: Element, direction: GhostDirection): HTMLElement | nul
   ghost.setAttribute(OWN_UI_ATTRIBUTE, '');
   ghost.setAttribute('aria-hidden', 'true');
   ghost.inert = true;
+  const carry = direction === 'left' ? carryNow(element) : null;
+  if (carry !== null) inheritedCarry.set(ghost, carry);
   ghost.addEventListener('animationend', (event) => {
     if (event.target === ghost) ghost.remove();
   });
@@ -117,11 +121,40 @@ export function ghostBarDepartures(records: readonly MutationRecord[]): void {
   }
 }
 
+interface Carry {
+  readonly animation: Animation;
+  readonly from: number;
+  readonly to: number;
+  readonly timing: typeof BAR_ENTER | typeof BAR_LEAVE;
+  /** The block member the part is carried out of, when it is not one itself. */
+  readonly holder: Element | null;
+}
+/** Each part's carry past the edge while it runs, so a node taking the part's place takes it over where it has got to. */
+const carrying = new Map<Element, Carry>();
+/** Where the carry of the part a ghost was cloned from had got to: the ghost leaves from there. */
+const inheritedCarry = new WeakMap<Element, number>();
+
+function carryNow(element: Element): number | null {
+  const carry = carrying.get(element);
+  if (carry === undefined) return null;
+  if (carry.animation.playState === 'finished') return carry.to;
+  const progress = carry.animation.effect?.getComputedTiming().progress;
+  return typeof progress === 'number' ? carry.from + (carry.to - carry.from) * progress : null;
+}
+
+/** GitHub replaced a part mid-slide: the new node carries on from where the old one's carry had got to. */
+function handOverCarry(old: Element, fresh: Element): void {
+  const carry = carrying.get(old);
+  const now = carryNow(old);
+  if (carry === undefined || now === null) return;
+  carry.animation.cancel();
+  carryPastEdge([fresh], () => now, carry.to, carry.timing);
+}
+
 let lastParts: Map<PartKind, Element> | null = null;
 let running: Animation[] = [];
 /** The block the running slide carries. */
 let carried: readonly Element[] = [];
-let clipped: HTMLElement | null = null;
 
 function partsOf(inner: HTMLElement): Map<PartKind, Element> {
   const parts = new Map<PartKind, Element>();
@@ -154,19 +187,36 @@ function cancelRunning(): void {
   for (const animation of running) animation.cancel();
   running = [];
   carried = [];
-  clipped?.removeAttribute(ATTR_CLIP);
-  clipped?.style.removeProperty(EDGE_PROPERTY);
-  clipped = null;
 }
 
-/** Clip the row at its block's left edge as it stands at rest, the ghosts and newcomers in place. */
-function clipAtRest(inner: HTMLElement, block: readonly HTMLElement[]): void {
-  const first = block[0];
-  if (first === undefined) return;
-  const edge = first.getBoundingClientRect().left - inner.getBoundingClientRect().left;
-  inner.style.setProperty(EDGE_PROPERTY, `${Math.max(0, edge)}px`);
-  inner.setAttribute(ATTR_CLIP, '');
-  clipped = inner;
+/**
+ * The block travels only as far as the number's new place, which leaves the parts it carries out just left of where the
+ * block rests (and starts the arriving ones there), in the bar's padding, in view. So those parts also travel by
+ * `shift`, from `from` to `to`, far enough that their right edge clears the row's left edge (GitHub clips the row there), as a group. Added to
+ * the block's own translate, and left running when a second commit takes the block's slide over.
+ */
+function carryPastEdge(parts: readonly Element[], fromOf: (part: Element) => number, to: number, timing: typeof BAR_ENTER | typeof BAR_LEAVE): void {
+  for (const part of parts) {
+    const from = fromOf(part);
+    if (Math.abs(from - to) < 0.5) continue;
+    const animation = part.animate([{ translate: `${from}px 0` }, { translate: `${to}px 0` }], { ...timing, composite: 'add', fill: to === 0 ? 'none' : 'forwards', id: PAST_EDGE_ID });
+    // A ghost's holds until the ghost goes, even under the block's newer slide.
+    animation.persist();
+    const holder = part.parentElement?.matches(PERSISTENT_BAR_INNER) === false ? part.parentElement : null;
+    holder?.setAttribute(ATTR_REACH, '');
+    carrying.set(part, { animation, from, to, timing, holder });
+    const forget = (): void => {
+      if (carrying.get(part)?.animation === animation) carrying.delete(part);
+      if (holder !== null && ![...carrying.values()].some((carry) => carry.holder === holder)) holder.removeAttribute(ATTR_REACH);
+    };
+    animation.finished.then(forget, forget);
+  }
+}
+
+/** How far past `offset` the parts must go for their right edge to clear the row's left edge, which clips them, from where they rest. */
+function edgeShift(inner: HTMLElement, parts: readonly Element[], offset: number): number {
+  const right = Math.max(...parts.map((part) => part.getBoundingClientRect().right));
+  return Number.isFinite(right) ? Math.min(0, inner.getBoundingClientRect().left - (right + offset)) : 0;
 }
 
 /**
@@ -193,6 +243,10 @@ export function animateBarGroup(): void {
   const removed = [...(before?.keys() ?? [])].filter((kind) => !now.has(kind));
   for (const ghost of fresh) if (before === null || !removed.some((kind) => ghost.getAttribute(ATTR_KIND) === kind)) ghost.remove();
   if (before === null || !motionAllowed()) return;
+  for (const [kind, part] of now) {
+    const old = before.get(kind);
+    if (old !== undefined && old !== part) handOverCarry(old, part);
+  }
   const moved = added.length > 0 || removed.length > 0;
   if (!moved && (running.length === 0 || blockOf(inner).every((element) => carried.includes(element)))) return;
   const anchor = inner.querySelector<HTMLElement>(':scope > [class*="metadata"] > [class*="number"]') ?? inner.querySelector<HTMLElement>(':scope > [class*="metadata"] > [class*="title"]');
@@ -210,17 +264,23 @@ export function animateBarGroup(): void {
   // Taking a running exit over, its ghosts are still on their way out.
   if (removed.length === 0 && (moved || ghosts.length === 0)) {
     for (const ghost of ghosts) ghost.remove();
-    slide(inner, seen - anchor.getBoundingClientRect().left, 0, BAR_ENTER, null);
+    const from = seen - anchor.getBoundingClientRect().left;
+    const shift = edgeShift(inner, newcomers, from);
+    if (slide(inner, from, 0, BAR_ENTER, null)) carryPastEdge(newcomers, () => shift, 0, BAR_ENTER);
     return;
   }
   const withGhosts = anchor.getBoundingClientRect().left;
+  const leaving = ghosts.filter((ghost) => fresh.includes(ghost));
   hold(ghosts, true);
   const without = anchor.getBoundingClientRect().left;
   hold(ghosts, false);
-  slide(inner, seen - withGhosts, without - withGhosts, BAR_LEAVE, ghosts);
+  const to = without - withGhosts;
+  const shift = edgeShift(inner, leaving, to);
+  if (slide(inner, seen - withGhosts, to, BAR_LEAVE, ghosts)) carryPastEdge(leaving, (ghost) => inheritedCarry.get(ghost) ?? 0, shift, BAR_LEAVE);
 }
 
-function slide(inner: HTMLElement, from: number, to: number, timing: typeof BAR_ENTER | typeof BAR_LEAVE, ghosts: readonly HTMLElement[] | null): void {
+/** Whether the block slides: a slide too short to see, or no animations, ends at once. */
+function slide(inner: HTMLElement, from: number, to: number, timing: typeof BAR_ENTER | typeof BAR_LEAVE, ghosts: readonly HTMLElement[] | null): boolean {
   const done = (): void => {
     // In the frame the block arrives, before paint: the ghosts go as the layout closes up under the same offset.
     for (const ghost of ghosts ?? []) ghost.remove();
@@ -228,21 +288,22 @@ function slide(inner: HTMLElement, from: number, to: number, timing: typeof BAR_
   };
   if (Math.abs(from - to) < 0.5 || typeof Element.prototype.animate !== 'function') {
     done();
-    return;
+    return false;
   }
   const block = blockOf(inner);
-  clipAtRest(inner, block);
   carried = block;
   running = block.map((element) => {
-    const animation = element.animate([{ translate: `${from}px 0` }, { translate: `${to}px 0` }], { ...timing, fill: 'forwards' });
+    // Added, not replacing, so a part's own carry past the edge stacks on it whichever was made first.
+    const animation = element.animate([{ translate: `${from}px 0` }, { translate: `${to}px 0` }], { ...timing, composite: 'add', fill: 'forwards' });
     // Taken over or cancelled, it rejects `finished`, which nothing waits on.
     animation.finished.catch(() => undefined);
     return animation;
   });
   const first = running[0];
-  if (first === undefined) return;
+  if (first === undefined) return true;
   const mine = running;
   first.addEventListener('finish', () => {
     if (running === mine) done();
   });
+  return true;
 }
