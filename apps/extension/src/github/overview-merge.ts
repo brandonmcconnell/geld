@@ -170,9 +170,10 @@ function isDisabled(button: HTMLButtonElement): boolean {
 /**
  * The Overview's recommended action, each pass and before paint (GitHub re-renders the row): "View merge status" as an
  * info button, and beside it, while GitHub would merge and shows no merge of its own there, a split button merging
- * with `method` (GitHub's default until the reader picks another from its caret).
+ * with `method` (GitHub's default until the reader picks another from its caret). While a request is out (`busy`) it
+ * stays where it is, inert, so a box its answer opens still has it to hang from and nothing is sent twice.
  */
-export function syncOverviewMerge(merge: OverviewMerge | null, method: MergeMethod, handlers: OverviewMergeHandlers): void {
+export function syncOverviewMerge(merge: OverviewMerge | null, method: MergeMethod, handlers: OverviewMergeHandlers, busy = false): void {
   const section = greenOverviewMerges();
   // Its buttons and Geld's beside them are React's nodes, not to be touched before React has hydrated them (`react-hydration.ts`).
   if (section !== null && !subtreeSettled(section)) return;
@@ -188,21 +189,45 @@ export function syncOverviewMerge(merge: OverviewMerge | null, method: MergeMeth
     return;
   }
   const signature = `${merge.kind}:${chosen}:${merge.methods.join(',')}`;
-  if (existing !== null && existing.getAttribute(ATTR_MERGE) === signature && existing.previousElementSibling === (anchor.nextElementSibling?.localName === 'tool-tip' ? anchor.nextElementSibling : anchor)) return;
+  if (existing !== null && existing.getAttribute(ATTR_MERGE) === signature && existing.previousElementSibling === (anchor.nextElementSibling?.localName === 'tool-tip' ? anchor.nextElementSibling : anchor)) {
+    setOverviewMergeBusy(busy);
+    return;
+  }
   existing?.remove();
   const control = createControl(merge, chosen, handlers, signature);
   (anchor.nextElementSibling?.localName === 'tool-tip' ? anchor.nextElementSibling : anchor).after(control);
+  setOverviewMergeBusy(busy);
 }
+
+/** The Overview's merge inert while a request is out, in place: `aria-disabled` keeps the focus a `disabled` would drop. */
+export function setOverviewMergeBusy(busy: boolean): void {
+  for (const button of document.querySelectorAll<HTMLButtonElement>(`[${ATTR_MERGE}] button`)) {
+    if (busy) button.setAttribute('aria-disabled', 'true');
+    else button.removeAttribute('aria-disabled');
+  }
+  if (busy) closeMethodMenu();
+}
+
+/** The Overview's merge control now: the one a box was opened from, or the one a re-render of GitHub's row put in its place. */
+export function liveOverviewMerge(control: HTMLElement | null): HTMLElement | null {
+  if (control === null || control.isConnected) return control;
+  return document.querySelector<HTMLElement>(`[${ATTR_MERGE}]`);
+}
+
+const isInert = (button: HTMLElement): boolean => button.getAttribute('aria-disabled') === 'true';
 
 function createControl(merge: OverviewMerge, method: MergeMethod, handlers: OverviewMergeHandlers, signature: string): HTMLElement {
   const variant = merge.kind === 'bypass' ? 'geld-overview-merge__button--danger' : 'btn-primary';
   const label = merge.kind === 'merge' ? METHOD_BUTTON[method] : KIND_BUTTON[merge.kind];
   const main = createElement('button', { type: 'button', class: `btn btn-sm ${variant} BtnGroup-item geld-overview-merge__main` }, [label]);
-  main.addEventListener('click', () => handlers.onMerge(method, control));
+  main.addEventListener('click', () => {
+    if (!isInert(main)) handlers.onMerge(method, control);
+  });
   const control = createElement('div', { class: 'BtnGroup geld-overview-merge', [OWN_UI_ATTRIBUTE]: '', [ATTR_MERGE]: signature }, [main]);
   if (merge.methods.length > 1) {
     const caret = createElement('button', { type: 'button', class: `btn btn-sm ${variant} BtnGroup-item geld-overview-merge__caret`, 'aria-label': 'Select merge method', 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, [svgFromString(ICON_TRIANGLE_DOWN)]);
     caret.addEventListener('click', () => {
+      if (isInert(caret)) return;
       if (menu !== null) closeMethodMenu();
       else openMethodMenu(caret, merge.methods, method, handlers.onMethod);
     });

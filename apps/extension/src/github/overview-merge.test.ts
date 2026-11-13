@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import type { MergeActions, MergeBox, Stack, StackMember } from './merge-actions';
-import { greenOverviewMerges, overviewMergeOf, removeOverviewMerge, syncOverviewMerge } from './overview-merge';
+import { greenOverviewMerges, liveOverviewMerge, overviewMergeOf, removeOverviewMerge, setOverviewMergeBusy, syncOverviewMerge } from './overview-merge';
 import { ATTR_HYDRATION_WATCH } from './react-hydration';
 
 const box = (over: Partial<MergeBox>): MergeBox => ({
@@ -111,6 +111,35 @@ describe('syncOverviewMerge', () => {
     expect(document.querySelector('.geld-overview-merge__caret')).toBeNull();
     syncOverviewMerge({ kind: 'auto', methods: [] }, 'SQUASH', handlers);
     expect(document.querySelector('.geld-overview-merge__main')?.textContent).toBe('Enable auto-merge');
+  });
+
+  it('stays in place while a request is out, sending nothing, and comes back when it ends', () => {
+    render('<button type="button">View merge status</button>');
+    const onMerge = vi.fn();
+    syncOverviewMerge({ kind: 'merge', methods: ['SQUASH', 'REBASE'] }, 'SQUASH', { onMerge, onMethod: vi.fn() }, true);
+    const main = document.querySelector<HTMLButtonElement>('.geld-overview-merge__main');
+    expect([...document.querySelectorAll('[data-geld-overview-merge] button')].map((button) => button.getAttribute('aria-disabled'))).toEqual(['true', 'true']);
+    main?.click();
+    expect(onMerge).not.toHaveBeenCalled();
+    setOverviewMergeBusy(false);
+    main?.click();
+    expect(onMerge).toHaveBeenCalledTimes(1);
+    syncOverviewMerge({ kind: 'merge', methods: ['SQUASH', 'REBASE'] }, 'SQUASH', { onMerge, onMethod: vi.fn() }, true);
+    expect(document.querySelector('.geld-overview-merge__main')).toBe(main);
+    expect(main?.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('finds the control a re-render put in place of the one a box was opened from', () => {
+    render('<button type="button">View merge status</button>');
+    syncOverviewMerge({ kind: 'queue', methods: [] }, 'SQUASH', handlers);
+    const first = document.querySelector<HTMLElement>('[data-geld-overview-merge]');
+    expect(liveOverviewMerge(first)).toBe(first);
+    first?.remove();
+    syncOverviewMerge({ kind: 'queue', methods: [] }, 'SQUASH', handlers);
+    const second = document.querySelector<HTMLElement>('[data-geld-overview-merge]');
+    expect(second).not.toBe(first);
+    expect(liveOverviewMerge(first)).toBe(second);
+    expect(liveOverviewMerge(null)).toBeNull();
   });
 
   it('draws GitHub’s own grey merge in its green, as GitHub draws it when all is clear, and puts the grey back on teardown', () => {
