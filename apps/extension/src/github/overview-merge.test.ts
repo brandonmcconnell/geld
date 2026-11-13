@@ -166,6 +166,19 @@ describe('syncOverviewMerge', () => {
     }
   });
 
+  // mintlify/customer-apps#7 (Nov 2026): approval required, the merge inactive and its method caret still usable.
+  it('greens the method caret with its merge and leaves both grey while GitHub blocks the merge', () => {
+    const group = (inactive: boolean): string =>
+      `<div data-component="ButtonGroup"><div><button ${inactive ? 'aria-disabled="true" data-inactive="true"' : ''} data-component="Button" type="button" data-dd-action-name="pull_requests.merge.open" data-variant="default"><span data-component="buttonContent"><span data-component="text">Merge pull request</span></span></button></div><div><button aria-disabled="false" data-component="IconButton" type="button" aria-label="Select merge method" data-dd-action-name="pull_requests.merge.open_method" data-variant="default"></button></div></div>`;
+    const variants = (): (string | null)[] => [...document.querySelectorAll('[data-component="ButtonGroup"] button')].map((button) => button.getAttribute('data-variant'));
+    render(group(true));
+    syncOverviewMerge(null, 'SQUASH', handlers);
+    expect(variants()).toEqual(['default', 'default']);
+    render(group(false));
+    syncOverviewMerge(null, 'SQUASH', handlers);
+    expect(variants()).toEqual(['primary', 'primary']);
+  });
+
   it('leaves a merge GitHub disables grey, and gives it back its grey when GitHub disables it later', () => {
     render('<button data-component="Button" data-variant="default" aria-disabled="true" type="button">Squash and merge</button>');
     syncOverviewMerge(null, 'SQUASH', handlers);

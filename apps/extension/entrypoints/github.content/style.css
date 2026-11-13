@@ -11172,9 +11172,10 @@ div:has(> [data-geld-overview-merge]) {
 
 /* GitHub's merge in the recommended action is green from its first frame (`greenMerges` in overview-merge.ts does the
    same by script): found by the action names GitHub's ButtonWithDropdown writes on both halves, under the review group's
-   hint, which is set before the content script's first await. A merge GitHub makes inactive keeps its grey. Mirrors
-   Primer React's primary variant, whose `:where()` selectors weigh one class. */
-html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']) {
+   hint, which is set before the content script's first await. The group is green only while its merge half is active:
+   GitHub keeps the method caret usable while it blocks the merge (an approval required), and a green caret stood beside
+   a grey merge (mintlify/customer-apps#7). Mirrors Primer React's primary variant, whose `:where()` selectors weigh one class. */
+html[data-geld-quick-review] section[aria-label='Recommended action'] [data-component='ButtonGroup']:has(button:is([data-dd-action-name='pull_requests.merge.open'], [data-dd-action-name='pull_requests.merge_queue.open']):not(:disabled, [aria-disabled='true'], [data-inactive='true'])) :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']) {
   --geld-merge-bg: var(--button-primary-bgColor-rest, #1f883d);
   --geld-merge-border: var(--button-primary-borderColor-rest, #1f232826);
   --geld-merge-shadow: var(--shadow-resting-small, 0 1px 1px 0 #1f23280a, 0 1px 2px 0 #1f232808);
@@ -11185,26 +11186,26 @@ html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button
   transition: none;
 }
 
-html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']):hover {
+html[data-geld-quick-review] section[aria-label='Recommended action'] [data-component='ButtonGroup']:has(button:is([data-dd-action-name='pull_requests.merge.open'], [data-dd-action-name='pull_requests.merge_queue.open']):not(:disabled, [aria-disabled='true'], [data-inactive='true'])) :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']):hover {
   --geld-merge-bg: var(--button-primary-bgColor-hover, #1c8139);
   --geld-merge-border: var(--button-primary-borderColor-hover, #1f232826);
 }
 
-html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']):is(:active, [aria-expanded='true']) {
+html[data-geld-quick-review] section[aria-label='Recommended action'] [data-component='ButtonGroup']:has(button:is([data-dd-action-name='pull_requests.merge.open'], [data-dd-action-name='pull_requests.merge_queue.open']):not(:disabled, [aria-disabled='true'], [data-inactive='true'])) :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']):is(:active, [aria-expanded='true']) {
   --geld-merge-bg: var(--button-primary-bgColor-active, #197935);
   --geld-merge-shadow: var(--button-primary-shadow-selected, inset 0 1px 0 0 #002d114d);
 }
 
-html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']):focus-visible {
+html[data-geld-quick-review] section[aria-label='Recommended action'] [data-component='ButtonGroup']:has(button:is([data-dd-action-name='pull_requests.merge.open'], [data-dd-action-name='pull_requests.merge_queue.open']):not(:disabled, [aria-disabled='true'], [data-inactive='true'])) :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']):focus-visible {
   --geld-merge-shadow: inset 0 0 0 3px var(--fgColor-onEmphasis, #ffffff);
 }
 
-html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge_queue.open'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']) [class*='Button-CounterLabel'] {
+html[data-geld-quick-review] section[aria-label='Recommended action'] [data-component='ButtonGroup']:has(button:is([data-dd-action-name='pull_requests.merge.open'], [data-dd-action-name='pull_requests.merge_queue.open']):not(:disabled, [aria-disabled='true'], [data-inactive='true'])) :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge_queue.open'])[data-variant='default'] [class*='Button-CounterLabel'] {
   background-color: var(--buttonCounter-primary-bgColor-rest, #002d1133) !important;
   color: var(--button-primary-fgColor-rest, #ffffff) !important;
 }
 
-html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge_queue.open'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']) [class*='Button-Visual'] {
+html[data-geld-quick-review] section[aria-label='Recommended action'] [data-component='ButtonGroup']:has(button:is([data-dd-action-name='pull_requests.merge.open'], [data-dd-action-name='pull_requests.merge_queue.open']):not(:disabled, [aria-disabled='true'], [data-inactive='true'])) :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge_queue.open'])[data-variant='default'] [class*='Button-Visual'] {
   color: var(--button-primary-fgColor-rest, #ffffff);
 }
 
