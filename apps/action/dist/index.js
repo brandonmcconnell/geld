@@ -3030,6 +3030,9 @@ var init_usage_settings = __esm({
       "ai_fix_applied",
       "ai_fix_discarded",
       "agent_handoff",
+      "chat_opened",
+      "chat_assistant_sent",
+      "chat_agent_sent",
       "bot_review_requested",
       "review_approve",
       "review_request_changes",
@@ -12076,7 +12079,7 @@ var init_settings_schema = __esm({
             kind: "toggle",
             key: "aiEnabled",
             label: "AI features",
-            description: "Consolidate bot findings, write the TL;DR and propose fixes with a model of your choosing. Off, nothing below is used and no request is made; on, it takes effect once a gateway URL, key and model are set.",
+            description: "Consolidate bot findings, write the TL;DR and propose fixes with a model of your choosing. Off, no request is made and its settings are hidden but kept. On, they show below, and it takes effect once a gateway URL, key and model are set.",
             popup: false,
             surfaces: ["extension"]
           },
@@ -35064,6 +35067,10 @@ var suggestOutputSchema = external_exports.object({
     })
   )
 });
+
+// ../../packages/review/src/cursor-agents.ts
+var UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+var AGENT_ID = new RegExp(`^bc-${UUID}$`, "i");
 
 // src/github.ts
 init_src2();
