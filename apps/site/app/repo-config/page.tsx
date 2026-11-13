@@ -291,7 +291,7 @@ export default function RepoConfigPage() {
           </h2>
           <p>
             How the AI triage acts here. <code>resolveOnFix</code> is <code>true</code> or <code>false</code>: when a reviewer commits one of the
-            triage&apos;s fixes with <strong>Fix</strong>, Geld resolves the threads the fix answers, unless the reviewer turned that off in their own
+            triage&apos;s fixes with <strong>Apply</strong>, Geld resolves the threads the fix answers, unless the reviewer turned that off in their own
             settings or the repository says <code>false</code> here. A repository&apos;s word wins over its organisation&apos;s, and either can only
             keep threads open: neither makes a reviewer who turned it off resolve them.
           </p>

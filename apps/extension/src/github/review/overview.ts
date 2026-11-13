@@ -3935,7 +3935,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   };
   // Asynchronous answers (the AI run's progress and end) re-apply through the mounted check, never past a teardown.
   const reapply = (): void => reapplyNow();
-  /** Fix commits the triage's fixes, several in one commit, and resolves their threads unless the reader or the repository opts out. */
+  /** Apply commits the triage's fixes, several in one commit, and resolves their threads unless the reader or the repository opts out. */
   const runFixes = (keys: readonly string[]): void => {
     const listed = triageSuggestions(meta, settings);
     const candidates = keys.flatMap((key) => {
@@ -4249,8 +4249,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       if (visit.triage.openKey === key) visit.triage.openKey = null;
       void discardSuggestion(key).then(reapply);
     },
-    onFixSuggestion: (key) => runFixes([key]),
-    onFixAll: (keys) => runFixes(keys),
+    onApplySuggestion: (key) => runFixes([key]),
+    onApplyAll: (keys) => runFixes(keys),
     onDiscardAll: (keys) => {
       for (const _key of keys) countUsage('ai_fix_discarded');
       if (visit.triage.openKey !== null && keys.includes(visit.triage.openKey)) visit.triage.openKey = null;

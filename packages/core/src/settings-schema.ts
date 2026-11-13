@@ -642,8 +642,8 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       {
         kind: 'toggle',
         key: 'resolveOnFix',
-        label: 'Resolve threads when a fix is in',
-        description: 'Fix commits the AI triage’s fix and resolves the threads it answers. Off, the threads stay open for you to resolve. A repository can turn it off for everyone with `review.resolveOnFix: false` in its `geld.yml`.',
+        label: 'Resolve threads when a fix is applied',
+        description: 'Apply commits the AI triage’s fix and resolves the threads it answers. Off, the threads stay open for you to resolve. A repository can turn it off for everyone with `review.resolveOnFix: false` in its `geld.yml`.',
         popup: false,
         surfaces: ['extension'],
       },

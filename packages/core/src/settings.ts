@@ -192,7 +192,7 @@ export interface GeldSettings {
    * author used (from its related links) when the reader is that author, else the menu's order.
    */
   readonly codingAgent: CodingAgentId;
-  /** A triage fix committed with Fix resolves the threads it answers; a repository's `review.resolveOnFix: false` turns it off there too. */
+  /** A triage fix committed with Apply resolves the threads it answers; a repository's `review.resolveOnFix: false` turns it off there too. */
   readonly resolveOnFix: boolean;
 }
 
