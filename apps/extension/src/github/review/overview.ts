@@ -25,7 +25,7 @@ import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { adoptOwnReplies, aiPending, aiStateFor, clearAiForPage, discardSuggestion, jevDecisionsFor, loadAiForPage, markSuggestionApplied, markSuggestionPosted, pendingReplyFor, previewDecisionKey, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi, withJevDone } from './ai';
 import type { AiState, SuggestionSource, SuggestionTarget } from './ai';
-import { applyFix } from './apply-suggestion';
+import { applyFixes } from './apply-suggestion';
 import { agentComment, agentLikely, agentsInRelatedLinks, agentTask, CODING_AGENTS, codingAgentById, diffHunks, lineDiff, OPEN_TARGETS, openTargetById, openTargetLikely, recommendAgents } from '@geld/review';
 import type { CodingAgent, OpenTarget } from '@geld/review';
 import { relatedLinksOnPage } from '../related-links';
@@ -213,7 +213,7 @@ interface VisitState {
 interface TriageVisit {
   openKey: string | null;
   collapsed: boolean;
-  readonly busy: Map<string, 'apply' | 'resolve'>;
+  readonly busy: Map<string, 'fix'>;
   readonly errors: Map<string, string>;
   handedOff: HandedOff | null;
 }
@@ -2666,6 +2666,7 @@ function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, pr
     // Only once the titles and the TL;DR are in: until then their own rows shimmer, and this line would name the wrong step.
     writing: aiPending().has('suggest') && aiPending().size === 1,
     handedOff: visit.triage.handedOff,
+    resolves: settings.resolveOnFix && repoBots.resolveOnFix !== false,
   };
 }
 
@@ -3932,6 +3933,45 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   };
   // Asynchronous answers (the AI run's progress and end) re-apply through the mounted check, never past a teardown.
   const reapply = (): void => reapplyNow();
+  /** Fix commits the triage's fixes, several in one commit, and resolves their threads unless the reader or the repository opts out. */
+  const runFixes = (keys: readonly string[]): void => {
+    const listed = triageSuggestions(meta, settings);
+    const picked = keys.flatMap((key) => {
+      const found = listed.find((entry) => entry.entry.key === key);
+      const replacement = found?.entry.replacement ?? null;
+      return found === undefined || replacement === null || !found.current || found.entry.state === 'applied' || visit.triage.busy.has(key) ? [] : [{ key, found, replacement }];
+    });
+    if (picked.length === 0) return;
+    const triage = visit.triage;
+    const resolves = settings.resolveOnFix && repoBots.resolveOnFix !== false;
+    for (const { key } of picked) {
+      triage.busy.set(key, 'fix');
+      triage.errors.delete(key);
+    }
+    reapply();
+    const fixes = picked.map(({ key, found, replacement }) => ({ threadAnchors: found.item.sources.map((source) => source.anchor), path: found.entry.path, replacement, summary: found.entry.summary, title: found.item.title, headSha: meta.headSha, pendingReply: pendingReplyFor(key, rawComments) }));
+    void applyFixes(fixes).then(async (results) => {
+      let changed = false;
+      for (const [index, { key, found }] of picked.entries()) {
+        triage.busy.delete(key);
+        const result = results[index];
+        if (result === undefined) continue;
+        if (!result.ok) {
+          triage.errors.set(key, result.reason);
+          if (result.reply !== undefined) await markSuggestionPosted(key, result.reply);
+          changed ||= result.posted;
+          continue;
+        }
+        changed = true;
+        countUsage('ai_fix_applied');
+        await markSuggestionApplied(key, result.replyAnchor);
+        // Only Resolve: a partner thread someone resolved meanwhile wears Unresolve, which must not be pressed.
+        if (resolves) for (const each of [found.item, ...found.partners]) if (isOpenStatus(each.status)) resolveIfOpen(threadKeyOf(each));
+      }
+      if (changed) await catchUpAfterPost();
+      reapplySoon();
+    });
+  };
   /** The reader selected the item row `key`: its conversation's anchors, as the model that drew the row knew them. */
   const seedOpenItem = (key: string): void => {
     const item = key.startsWith('item:') ? meta.items.find((entry) => itemKey(entry.id) === key) : undefined;
@@ -4205,31 +4245,15 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       if (visit.triage.openKey === key) visit.triage.openKey = null;
       void discardSuggestion(key).then(reapply);
     },
-    onApplySuggestion: (key, resolve) => {
-      const found = triageSuggestions(meta, settings).find((entry) => entry.entry.key === key);
-      if (found === undefined || found.entry.replacement === null || !found.current || visit.triage.busy.has(key)) return;
-      const replacement = found.entry.replacement;
-      const triage = visit.triage;
-      triage.busy.set(key, resolve ? 'resolve' : 'apply');
-      triage.errors.delete(key);
-      reapply();
-      const pendingReply = pendingReplyFor(key, rawComments);
-      void applyFix({ threadAnchors: found.item.sources.map((source) => source.anchor), path: found.entry.path, replacement, summary: found.entry.summary, title: found.item.title, headSha: meta.headSha, pendingReply }).then(async (result) => {
-        triage.busy.delete(key);
-        if (!result.ok) {
-          triage.errors.set(key, result.reason);
-          if (result.reply !== undefined) await markSuggestionPosted(key, result.reply);
-          if (result.posted) void catchUpAfterPost().then(reapplySoon);
-          reapplySoon();
-          return;
-        }
-        countUsage('ai_fix_applied');
-        await markSuggestionApplied(key, result.replyAnchor);
-        // Only Resolve: a partner thread someone resolved meanwhile wears Unresolve, which must not be pressed.
-        if (resolve) for (const each of [found.item, ...found.partners]) if (isOpenStatus(each.status)) resolveIfOpen(threadKeyOf(each));
-        await catchUpAfterPost();
-        reapplySoon();
-      });
+    onFixSuggestion: (key) => runFixes([key]),
+    onFixAll: (keys) => runFixes(keys),
+    onDiscardAll: (keys) => {
+      for (const _key of keys) countUsage('ai_fix_discarded');
+      if (visit.triage.openKey !== null && keys.includes(visit.triage.openKey)) visit.triage.openKey = null;
+      void (async () => {
+        for (const key of keys) await discardSuggestion(key);
+        reapply();
+      })();
     },
     onMissingTool: (tool) => {
       const message: OpenFeedbackMessage = { type: 'geld:open-feedback', draft: missingToolDraft(tool) };
