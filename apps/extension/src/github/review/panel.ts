@@ -3719,7 +3719,18 @@ export interface MountOptions {
 let pressing = false;
 /** A rebuild held back by that press, asked for again once it is released. */
 let afterPress: (() => void) | null = null;
-let pressesWatched = false;
+/** The document listeners `watchPresses` adds, aborted with the panel so a retired copy leaves none behind. */
+let pressWatch: AbortController | null = null;
+
+/**
+ * A press inside the panel is not finished: whatever would move its nodes (a rebuild, a slot redraw sending loans
+ * home) waits, and `onRelease` is asked for once it is.
+ */
+export function pressHeld(onRelease: () => void): boolean {
+  if (!pressing) return false;
+  afterPress = onRelease;
+  return true;
+}
 
 function livePanel(): HTMLElement | null {
   return document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}]`);
@@ -3737,12 +3748,20 @@ function closeTooltipsIn(panel: HTMLElement): void {
   }
 }
 
+function stopWatchingPresses(): void {
+  pressWatch?.abort();
+  pressWatch = null;
+  pressing = false;
+  afterPress = null;
+}
+
 function watchPresses(): void {
-  if (pressesWatched) return;
-  pressesWatched = true;
+  if (pressWatch !== null) return;
+  pressWatch = new AbortController();
+  const { signal } = pressWatch;
   document.addEventListener('pointerdown', (event) => {
     pressing = event.target instanceof Node && livePanel()?.contains(event.target) === true;
-  }, true);
+  }, { capture: true, signal });
   const release = (): void => {
     if (!pressing) return;
     pressing = false;
@@ -3750,8 +3769,13 @@ function watchPresses(): void {
     afterPress = null;
     held?.();
   };
-  document.addEventListener('pointerup', release, true);
-  document.addEventListener('pointercancel', release, true);
+  document.addEventListener('pointerup', release, { capture: true, signal });
+  document.addEventListener('pointercancel', release, { capture: true, signal });
+  // A release outside the window or in a hidden tab never reaches the document: the press ends with the focus.
+  window.addEventListener('blur', release, { signal });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) release();
+  }, { signal });
   // GitHub's checks list keeps focus on its rows: once focus is anywhere in the list (Escape hands it back to a ⋯),
   // a press that focuses another ⋯ has the list move focus to that ⋯'s row and scroll to it, the button slides
   // from under the pointer and no menu opens (GitHub's own page does the same). Pressed without taking focus, the
@@ -3760,11 +3784,11 @@ function watchPresses(): void {
     if (event.button !== 0 || !(event.target instanceof Element)) return;
     const button = event.target.closest('button');
     if (button !== null && button.closest(`[${ATTR_SLOT}="${CHECKS_KEY}"] li`) !== null) event.preventDefault();
-  }, true);
+  }, { capture: true, signal });
   document.addEventListener('scroll', () => {
     const panel = livePanel();
     if (panel !== null) closeTooltipsIn(panel);
-  }, { capture: true, passive: true });
+  }, { capture: true, passive: true, signal });
 }
 
 export function mountPanel(model: PanelModel, handlers: PanelHandlers, options: MountOptions = {}): MountedPanel | null {
@@ -3838,10 +3862,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     if (existing.querySelector(`.${PANEL_CLASS}__edited-wrap[open]`) !== null) return { root: existing, slot };
     // A press inside the panel not yet released: a rebuild between its pointerdown and its click moves or replaces
     // what was pressed (the worn gear, a check's ⋯), and the click is lost. Wait for the release.
-    if (pressing) {
-      afterPress = handlers.onRequestMenuClosed;
-      return { root: existing, slot };
-    }
+    if (pressHeld(handlers.onRequestMenuClosed)) return { root: existing, slot };
   }
   const card = descriptionCard();
   // On the Overview the panel stands among React's nodes: not before React has hydrated them (`react-hydration.ts`).
@@ -4111,6 +4132,7 @@ export function releasePanelPin(): void {
 }
 
 export function unmountPanel(): void {
+  stopWatchingPresses();
   releasePanelPin();
   shownProgress = 0;
   restoreAll();
