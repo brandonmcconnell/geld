@@ -1,6 +1,7 @@
 import type { AnyCategoryId, ChangeTotals, ErrorReport, FileStats, RepoConfigMode, SettingsIssue, UsageCounter } from '@geld/core';
 import { isUsageCounter, parseErrorReports } from '@geld/core';
 import type { JevRequest, JevResult, ModelInfo } from '@geld/review';
+import type { CreatePullOutcome, PullAttempt } from './create-pull';
 import type { FeedbackDraft } from './feedback';
 import { parseDraft } from './feedback';
 
@@ -232,6 +233,17 @@ export type FeedbackSubmitResponse =
   | { readonly ok: false; readonly message: string };
 
 /**
+ * Content script → background: open the pull request GitHub's compare form failed to, through the API with the
+ * reader's Geld App token, as `gh pr create` does. Taken only from a tab on that repository's own pages.
+ */
+export interface CreatePullMessage {
+  readonly type: 'geld:create-pull';
+  readonly attempt: PullAttempt;
+  /** The login GitHub's page says is signed in (`meta[name="user-login"]`): the request goes only as that same account. */
+  readonly viewer: string;
+}
+
+/**
  * Options → background: look for a newer pattern catalog right now. The
  * outcome is also published through `local:catalogStatus`, which the options
  * page watches; the response only lets the caller stop its spinner.
@@ -369,6 +381,35 @@ export function isCatalogCheckMessage(value: unknown): value is CatalogCheckMess
 
 export function isFeedbackSubmitMessage(value: unknown): value is FeedbackSubmitMessage {
   return isRecord(value) && value.type === 'geld:feedback-submit' && typeof value.title === 'string' && typeof value.body === 'string';
+}
+
+function isPullAttempt(value: unknown): value is PullAttempt {
+  return (
+    isRecord(value) &&
+    ['owner', 'repo', 'base', 'head', 'title', 'body'].every((key) => typeof value[key] === 'string') &&
+    (value.headRepo === null || typeof value.headRepo === 'string') &&
+    typeof value.draft === 'boolean'
+  );
+}
+
+/** Content script → background: whether Geld is signed in with the GitHub App as the account the page is signed in as, which the API retry needs. Answered with a boolean, never the account. */
+export interface ApiSignedInMessage {
+  readonly type: 'geld:api-signed-in';
+  readonly viewer: string;
+}
+
+export function isApiSignedInMessage(value: unknown): value is ApiSignedInMessage {
+  return isRecord(value) && value.type === 'geld:api-signed-in' && typeof value.viewer === 'string';
+}
+
+export function isCreatePullMessage(value: unknown): value is CreatePullMessage {
+  return isRecord(value) && value.type === 'geld:create-pull' && isPullAttempt(value.attempt) && typeof value.viewer === 'string';
+}
+
+export function isCreatePullOutcome(value: unknown): value is CreatePullOutcome {
+  if (!isRecord(value)) return false;
+  if (value.ok === true) return typeof value.number === 'number' && typeof value.url === 'string';
+  return value.ok === false && (value.reason === 'unavailable' || value.reason === 'refused') && typeof value.message === 'string';
 }
 
 export function isFeedbackOpenMessage(value: unknown): value is FeedbackOpenMessage {

@@ -2633,7 +2633,10 @@ button.geld-status-pill:not([aria-haspopup]) .geld-status-pill__caret {
 
 .geld-tooltip__message {
   grid-column: 1 / -1;
+  max-width: 280px;
   color: var(--fgColor-muted, #59636e);
+  /* Help text runs to a sentence or two: it wraps where a short message stays on its line. */
+  white-space: normal;
 }
 
 /*
@@ -11238,6 +11241,133 @@ html[data-geld-on] [class*='ReactionsMenuOption'] [data-component='ActionList.It
 .geld-review__msg-actions > [role='tooltip'],
 .geld-review__msg-actions > [data-component='Tooltip'] {
   position: absolute;
+}
+
+/*
+ * "Try with Geld" on the compare page's "Pull request creation failed" flash: the button floats right, after GitHub's
+ * close button in the DOM so it stands on that button's left, and the outcome and the `gh` line follow the message.
+ * GitHub's `.btn` rules load after these, hence the doubled class. The close button's 16px padding hangs over the gap
+ * by the same 16px it gives back in margin, so the margin here clears it.
+ */
+.geld-pull-retry__side {
+  display: flex;
+  gap: 8px;
+  float: right;
+  margin: -4px 16px -4px 0;
+}
+
+/* On a phone the buttons sit at the flash's foot, under the command (moved there by `PHONE` in create-pull-retry.ts). */
+@media (max-width: 543.98px) {
+  .geld-pull-retry__side {
+    float: none;
+    margin: 12px 0 0;
+  }
+}
+
+.geld-pull-retry__side .geld-pull-retry__try {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.geld-pull-retry__side .geld-pull-retry__try[aria-busy='true'] {
+  cursor: progress;
+}
+
+.geld-pull-retry__mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+}
+
+.geld-pull-retry__mark svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.geld-pull-retry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.geld-pull-retry__status:empty {
+  display: none;
+}
+
+.geld-pull-retry__local {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--fgColor-muted, #59636e);
+}
+
+.geld-pull-retry__local[hidden] {
+  display: none;
+}
+
+/*
+ * The whole command, wrapped, never cut short: it is meant to be read and copied as it stands. The copy button sits in
+ * the box's top-right corner, and the box's right padding is the button's inset, its size and an 8px gap, so no line of
+ * the command runs up to it. GitHub's `.btn-octicon` padding made the button wider than that padding allowed.
+ */
+.geld-pull-retry__block {
+  --geld-copy-inset: 4px;
+  --geld-copy-size: 28px;
+  position: relative;
+  min-width: 0;
+}
+
+.geld-pull-retry .geld-pull-retry__command {
+  margin: 0;
+  padding: 8px calc(var(--geld-copy-inset) + var(--geld-copy-size) + 8px) 8px 12px;
+  border-radius: 6px;
+  background: var(--bgColor-neutral-muted, rgba(129, 139, 152, 0.12));
+  color: var(--fgColor-default, #1f2328);
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, monospace);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.geld-pull-retry .geld-pull-retry__copy {
+  position: absolute;
+  top: var(--geld-copy-inset);
+  right: var(--geld-copy-inset);
+  display: inline-flex;
+  box-sizing: border-box;
+  width: var(--geld-copy-size);
+  height: var(--geld-copy-size);
+  margin: 0;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+/* GitHub colours every octicon in an error flash red (`.flash-error:not(.Banner) .octicon`) and gives it a right margin. */
+.flash-error .geld-pull-retry .geld-pull-retry__copy svg {
+  margin: 0;
+  color: var(--fgColor-muted, #59636e);
+}
+
+.flash-error .geld-pull-retry .geld-pull-retry__copy:hover svg {
+  color: var(--fgColor-accent, #0969da);
+}
+
+.geld-tooltip__message code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--bgColor-neutral-muted, rgba(129, 139, 152, 0.12));
+  color: var(--fgColor-default, #1f2328);
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, monospace);
+  font-size: 11px;
 }
 
 /* In the agents' menus the disclosure's chevron stands in the marks' column, so its words line up with theirs. */
