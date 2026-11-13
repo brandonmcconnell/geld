@@ -240,4 +240,29 @@ describe('a fix asked for from a chat', () => {
     expect(triageSuggestions(meta, settings)).toEqual([]);
     expect(stored.get('local:aiRuns')).toBeUndefined();
   });
+
+  it('asks again about every thread a saved fix covers, so a shared fix keeps all of them', async () => {
+    const other: RawComment = { anchor: 'discussion_r600', kind: 'thread', author: 'greptile-apps[bot]', body: 'Same rename here.', createdAt: at, path: 'src/b.ts', line: 3 };
+    const bot: RawComment = { ...person, author: 'coderabbitai[bot]' };
+    stored.set('local:aiRuns', {
+      'github:/o/r/pull/8': {
+        ranAt: at,
+        rewrites: [],
+        seen: [bot.anchor, other.anchor],
+        suggestions: [{ key: bot.anchor, threads: [bot.anchor, other.anchor], headSha: 'head1', path: 'src/b.ts', start: 3, end: 3, original: ['use(x);'], replacement: ['use(count);'], summary: 'Renames it.', state: 'open', sources: [bot.anchor, other.anchor] }],
+      },
+    });
+    await fresh();
+    const meta = metaFor([bot, other]);
+    const asked: string[][] = [];
+    sendMessage.mockImplementation(async (message: unknown) => {
+      const second: unknown = typeof message === 'object' && message !== null && 'messages' in message && Array.isArray(message.messages) ? message.messages[1] : null;
+      const user = typeof second === 'object' && second !== null && 'content' in second && typeof second.content === 'string' ? second.content : '';
+      if (user !== '') asked.push([...user.matchAll(/"id": "([^"]+)"/g)].map((match) => match[1] ?? ''));
+      return { ok: true, model: 'm', text: JSON.stringify({ suggestions: [{ ids: [bot.anchor, other.anchor], summary: 'Renames it.', replacement: 'use(total);' }] }) };
+    });
+    await fixFromComments(meta, [bot, other], settings, () => undefined, source, { threads: [bot.anchor], comment: null });
+    expect(asked).toEqual([[bot.anchor, other.anchor]]);
+    expect(triageSuggestions(meta, settings).map(({ entry }) => entry.threads)).toEqual([[bot.anchor, other.anchor]]);
+  });
 });

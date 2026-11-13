@@ -1632,6 +1632,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   This comment asks the model for what the comment asks for outside its threads (`BODY_SYSTEM`, `parseBodyOutput`: a review's findings outside the diff, failed checks, a person's request), each a row for an agent keyed `<anchor>~<n>` (`StoredSuggestion.origin`): no thread holds it to suggest in, so its band says whose comment it came from and its note says so.
   Asking again replaces that comment's rows.
   A thread asked about again is written afresh, over a current fix or a discarded one (`proposeFixes`' `only`), where the triage on its own keeps what it has.
+  A thread whose saved fix answers other threads too is asked about with them, so the fix written afresh still covers every one and Apply still resolves them all.
   A comment's open tasks keep the card up on a pull request with no thread open (`aiStateFor`: not `nothing` then).
   An answer that lands after the reader moved to another pull request is dropped, never written into that one's run (`still`, in a full triage too): the module's maps hold one pull request's run at a time.
   Neither writes the TL;DR or rewrites titles, so a click costs one or two requests, and the run's time stays the triage's.
