@@ -68,6 +68,8 @@ function ghostOf(element: Element, direction: GhostDirection): HTMLElement | nul
   ghost.setAttribute(OWN_UI_ATTRIBUTE, '');
   ghost.setAttribute('aria-hidden', 'true');
   ghost.inert = true;
+  const carry = direction === 'left' ? carryNow(element) : null;
+  if (carry !== null) inheritedCarry.set(ghost, carry);
   ghost.addEventListener('animationend', (event) => {
     if (event.target === ghost) ghost.remove();
   });
@@ -111,6 +113,34 @@ export function ghostBarDepartures(records: readonly MutationRecord[]): void {
     fragment.append(...ghosts);
     parent.insertBefore(fragment, next ?? previous?.nextSibling ?? parent.firstChild);
   }
+}
+
+interface Carry {
+  readonly animation: Animation;
+  readonly from: number;
+  readonly to: number;
+  readonly timing: typeof BAR_ENTER | typeof BAR_LEAVE;
+}
+/** Each part's carry past the edge while it runs, so a node taking the part's place takes it over where it has got to. */
+const carrying = new Map<Element, Carry>();
+/** Where the carry of the part a ghost was cloned from had got to: the ghost leaves from there. */
+const inheritedCarry = new WeakMap<Element, number>();
+
+function carryNow(element: Element): number | null {
+  const carry = carrying.get(element);
+  if (carry === undefined) return null;
+  if (carry.animation.playState === 'finished') return carry.to;
+  const progress = carry.animation.effect?.getComputedTiming().progress;
+  return typeof progress === 'number' ? carry.from + (carry.to - carry.from) * progress : null;
+}
+
+/** GitHub replaced a part mid-slide: the new node carries on from where the old one's carry had got to. */
+function handOverCarry(old: Element, fresh: Element): void {
+  const carry = carrying.get(old);
+  const now = carryNow(old);
+  if (carry === undefined || now === null) return;
+  carry.animation.cancel();
+  carryPastEdge([fresh], () => now, carry.to, carry.timing);
 }
 
 let lastParts: Map<PartKind, Element> | null = null;
@@ -157,13 +187,18 @@ function cancelRunning(): void {
  * `shift`, from `from` to `to`, far enough that their right edge clears the viewport's left edge, as a group. Added to
  * the block's own translate, and left running when a second commit takes the block's slide over.
  */
-function carryPastEdge(parts: readonly Element[], from: number, to: number, timing: typeof BAR_ENTER | typeof BAR_LEAVE): void {
-  if (Math.abs(from - to) < 0.5) return;
+function carryPastEdge(parts: readonly Element[], fromOf: (part: Element) => number, to: number, timing: typeof BAR_ENTER | typeof BAR_LEAVE): void {
   for (const part of parts) {
+    const from = fromOf(part);
+    if (Math.abs(from - to) < 0.5) continue;
     const animation = part.animate([{ translate: `${from}px 0` }, { translate: `${to}px 0` }], { ...timing, composite: 'add', fill: to === 0 ? 'none' : 'forwards', id: PAST_EDGE_ID });
     // A ghost's holds until the ghost goes, even under the block's newer slide.
     animation.persist();
-    animation.finished.catch(() => undefined);
+    carrying.set(part, { animation, from, to, timing });
+    const forget = (): void => {
+      if (carrying.get(part)?.animation === animation) carrying.delete(part);
+    };
+    animation.finished.then(forget, forget);
   }
 }
 
@@ -197,6 +232,10 @@ export function animateBarGroup(): void {
   const removed = [...(before?.keys() ?? [])].filter((kind) => !now.has(kind));
   for (const ghost of fresh) if (before === null || !removed.some((kind) => ghost.getAttribute(ATTR_KIND) === kind)) ghost.remove();
   if (before === null || !motionAllowed()) return;
+  for (const [kind, part] of now) {
+    const old = before.get(kind);
+    if (old !== undefined && old !== part) handOverCarry(old, part);
+  }
   const moved = added.length > 0 || removed.length > 0;
   if (!moved && (running.length === 0 || blockOf(inner).every((element) => carried.includes(element)))) return;
   const anchor = inner.querySelector<HTMLElement>(':scope > [class*="metadata"] > [class*="number"]') ?? inner.querySelector<HTMLElement>(':scope > [class*="metadata"] > [class*="title"]');
@@ -215,7 +254,8 @@ export function animateBarGroup(): void {
   if (removed.length === 0 && (moved || ghosts.length === 0)) {
     for (const ghost of ghosts) ghost.remove();
     const from = seen - anchor.getBoundingClientRect().left;
-    if (slide(inner, from, 0, BAR_ENTER, null)) carryPastEdge(newcomers, edgeShift(newcomers, from), 0, BAR_ENTER);
+    const shift = edgeShift(newcomers, from);
+    if (slide(inner, from, 0, BAR_ENTER, null)) carryPastEdge(newcomers, () => shift, 0, BAR_ENTER);
     return;
   }
   const withGhosts = anchor.getBoundingClientRect().left;
@@ -225,7 +265,7 @@ export function animateBarGroup(): void {
   hold(ghosts, false);
   const to = without - withGhosts;
   const shift = edgeShift(leaving, to);
-  if (slide(inner, seen - withGhosts, to, BAR_LEAVE, ghosts)) carryPastEdge(leaving, 0, shift, BAR_LEAVE);
+  if (slide(inner, seen - withGhosts, to, BAR_LEAVE, ghosts)) carryPastEdge(leaving, (ghost) => inheritedCarry.get(ghost) ?? 0, shift, BAR_LEAVE);
 }
 
 /** Whether the block slides: a slide too short to see, or no animations, ends at once. */

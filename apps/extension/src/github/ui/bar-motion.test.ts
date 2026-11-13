@@ -197,6 +197,28 @@ describe('bar motion', () => {
     expect(new Set(leaving.map((animation) => `${animation.from} → ${animation.to}`))).toEqual(new Set(['0px 0 → -10px 0']));
   });
 
+  it('hands a part GitHub replaces mid-slide the rest of its carry past the edge', () => {
+    const inner = bar(false);
+    fakeLayout(inner);
+    animateBarGroup();
+    const all = watchAnimations();
+    stick(inner);
+    rightEdge(inner.querySelector('[data-testid="mini-header-tab-switcher-trigger"]')!, 96);
+    rightEdge(inner.querySelector('[class*="navigationDivider"]')!, 110);
+    rightEdge(inner.querySelector('[data-component="StateLabel"]')!, 310);
+    animateBarGroup();
+    const old = inner.querySelector('[data-testid="mini-header-tab-switcher-trigger"]')!;
+    const carry = all().find((animation) => animation.id === PAST_EDGE_ID && animation.element === old)!;
+    vi.spyOn(carry.animation.effect!, 'getComputedTiming').mockReturnValue({ progress: 0.5 });
+    const fresh = document.createElement('button');
+    fresh.setAttribute('data-testid', 'mini-header-tab-switcher-trigger');
+    ghostBarDepartures(recording(() => old.replaceWith(fresh)));
+    animateBarGroup();
+    const handed = all().filter((animation) => animation.id === PAST_EDGE_ID && animation.element === fresh);
+    expect(handed.map((animation) => `${animation.from} → ${animation.to}`)).toEqual(['-5px 0 → 0px 0']);
+    expect(carry.animation.playState).toBe('idle');
+  });
+
   it('moves nothing when GitHub re-renders its bar with the same parts', () => {
     const inner = bar();
     fakeLayout(inner);
