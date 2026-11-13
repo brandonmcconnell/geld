@@ -648,6 +648,33 @@ summary::-webkit-details-marker {
   margin-top: 12px;
 }
 
+/* The privacy prompt (consent-banner.ts), in the popup and on the options page until it is answered. */
+.geld-consent__options {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.geld-consent__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.geld-consent__option input {
+  margin-top: 2px;
+}
+
+.geld-consent__option-text {
+  display: grid;
+  gap: 2px;
+}
+
+.geld-consent__gpc {
+  margin-top: 8px;
+}
+
 /* Account widget (popup + options header) ----------------------------------- */
 
 .geld-account {

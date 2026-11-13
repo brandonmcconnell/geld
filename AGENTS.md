@@ -2256,6 +2256,14 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Those words go only to the opt-in report (`queueErrorReports(logged, sent)`): Copy diagnostics, which the feedback form can attach to a public issue, keeps the short form, and a `content-policy` refusal sends its kind alone, since its words can quote the pull request.
   A message is cut at 600 characters (`MAX_ERROR_MESSAGE`), room for a provider's refusal.
   The privacy policy's extension section (`@geld/domain/privacy.ts`) says exactly what is sent: keep it in step with `ErrorReport`.
+- **The extension asks before it sends anything optional** (`src/ui/consent-banner.ts`, `consentDecidedAt`, Nov 2026): until the reader answers, the popup and the options page open on a privacy prompt in the dashboard's c15t banner's words ("Your work.
+  Your choices.", Opt in to all · Necessary only · Manage), covering `usageStats` and `errorReports`.
+  An answer writes both with its time (`consentPatch`), and turning either on or off in the options answers it too.
+  It is the dashboard's choice kept as settings, not c15t itself: c15t's core keeps the answer in the page's own storage and brings a backend package, while settings sync with the reader's others.
+  Global Privacy Control is honoured as a refusal (`honoured`: nothing optional, whatever was ticked), and Firefox builds, which send neither yet, never show it.
+  Usage statistics stay on until the reader answers, as before, since they carry no identifier;
+  error reports stay off until the reader opts in.
+  `consentDecidedAt` is personal (a repository config may not set it), synced like `digestViewChosenAt`, and on no settings page.
 - **Anonymous usage statistics count installs, updates and active installs with no identifier at all** (`usageStats`, General, on by default, extension only, hidden and never sent on Firefox like `errorReports`;
   `src/lib/usage-uplink.ts`, `@geld/core/usage-report.ts`, `apps/site/app/api/usage/route.ts`).
   The background notes `extension_installed` (onInstalled `install`), `extension_updated` with the version before (onInstalled `update`'s `previousVersion`, else the version it last recorded, checked 5 s after the worker starts so the browser's own word comes first) and `extension_active` once per UTC day (an hourly alarm), flagged `firstOfWeek` and `firstOfMonth` on the install's first ping of the ISO week and month.
