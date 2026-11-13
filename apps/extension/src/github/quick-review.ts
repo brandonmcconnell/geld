@@ -1947,6 +1947,12 @@ async function runStatus(state: Mounted, action: Exclude<StatusAction, 'merge'>,
   if (failed !== null && mounted === state) openConfirmBox(state, action, failed, anchor);
 }
 
+/** Every send marks the Overview's merge inert too, since its clicks wait on `sending`, and every end of one clears it. */
+function setSending(state: Mounted, sending: boolean): void {
+  state.sending = sending;
+  setOverviewMergeBusy(sending);
+}
+
 function buttonFor(state: Mounted, opener: Opener): HTMLElement | null {
   if (isReviewEvent(opener)) return state.segments[opener];
   // A box opened from the Overview's merge button belongs to that button, for its pressed look and for focus when it closes.
@@ -2154,7 +2160,7 @@ async function sendReview(state: Mounted, event: ReviewEvent, body: string): Pro
   if (headSha === null) return 'Could not read the pull request’s head commit. Reload the page and try again.';
   const pullPath = state.pullPath;
   const { url, init } = submitReviewRequest(pullPath, { body, event, headSha }, fetchNonce());
-  state.sending = true;
+  setSending(state, true);
   state.root.setAttribute('aria-busy', 'true');
   state.segments[event].setAttribute(ATTR_SENDING, '');
   window.clearTimeout(state.submittedTimer);
@@ -2175,7 +2181,7 @@ async function sendReview(state: Mounted, event: ReviewEvent, body: string): Pro
     afterSent('review', () => showSubmitted(state, pullPath, event, body));
     return null;
   } finally {
-    state.sending = false;
+    setSending(state, false);
     state.panelRefresh?.();
     state.root.removeAttribute('aria-busy');
     state.segments[event].removeAttribute(ATTR_SENDING);
@@ -2227,7 +2233,7 @@ function showSubmitted(state: Mounted, pullPath: string, event: ReviewEvent, bod
 async function sendComment(state: Mounted, text: string): Promise<string | null> {
   const pullPath = state.pullPath;
   const { url, init } = timelineCommentRequest(pullPath, text, fetchNonce());
-  state.sending = true;
+  setSending(state, true);
   state.root.setAttribute('aria-busy', 'true');
   state.segments.comment.setAttribute(ATTR_SENDING, '');
   window.clearTimeout(state.submittedTimer);
@@ -2248,7 +2254,7 @@ async function sendComment(state: Mounted, text: string): Promise<string | null>
     afterSent('comment', () => showCommented(state, pullPath, text));
     return null;
   } finally {
-    state.sending = false;
+    setSending(state, false);
     state.panelRefresh?.();
     state.root.removeAttribute('aria-busy');
     state.segments.comment.removeAttribute(ATTR_SENDING);
@@ -2444,10 +2450,10 @@ function openComposer(state: Mounted, initial: ReviewEvent, failure: string | nu
   discard.addEventListener('click', () => {
     // GitHub's own words and its own (native) confirmation, as its Discard review asks.
     if (!window.confirm('Are you sure you want to cancel? You will lose all your pending comments.')) return;
-    state.sending = true;
+    setSending(state, true);
     refresh();
     void discardPendingReview(pullPath).then((done) => {
-      state.sending = false;
+      setSending(state, false);
       state.panelRefresh?.();
       if (!done) {
         error.textContent = 'GitHub could not discard the review.';
@@ -2641,12 +2647,11 @@ async function sendAction(state: Mounted, kind: StatusAction, request: Step['req
  * Stops quietly, sending nothing more and reloading nothing, once `here` says the reader has left the page it began on.
  */
 async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Step[], done: () => void = () => undefined, here: () => boolean = () => true): Promise<{ readonly failed: string; readonly left: readonly Step[] } | null> {
-  state.sending = true;
+  setSending(state, true);
   state.root.setAttribute('aria-busy', 'true');
   window.clearTimeout(state.submittedTimer);
   state.status.textContent = ACTION_STATUS[kind];
   for (const pill of state.pills) pill.setAttribute('aria-busy', 'true');
-  setOverviewMergeBusy(true);
   const inPlace = IN_PLACE[kind];
   try {
     for (const [index, step] of steps.entries()) {
@@ -2693,11 +2698,10 @@ async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Ste
     void catchUpAfterPost();
     return null;
   } finally {
-    state.sending = false;
+    setSending(state, false);
     state.panelRefresh?.();
     state.root.removeAttribute('aria-busy');
     for (const pill of state.pills) pill.removeAttribute('aria-busy');
-    setOverviewMergeBusy(false);
     if (state.status.textContent === ACTION_STATUS[kind]) state.status.textContent = '';
   }
 }
