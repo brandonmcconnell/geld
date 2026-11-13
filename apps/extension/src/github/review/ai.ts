@@ -206,7 +206,7 @@ export type AiState =
   | { readonly kind: 'failed'; readonly ranAt: string; readonly error: string; readonly step?: AiStep };
 
 /** What a run now would read that the last one did not: new comments or threads, or commits its fixes predate. */
-export type StaleReason = 'comments' | 'commits';
+export type StaleReason = 'comments' | 'commits' | 'both';
 
 export function aiStateFor(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings): AiState {
   if (meta.producer.ai) return { kind: 'app', hasLocal: lastRun !== null };
@@ -249,18 +249,39 @@ function writtenFrom(entry: StoredSuggestion, items: readonly ReviewItem[]): boo
 function workFor(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings): StaleReason | null {
   const known = withAi(meta);
   const plan = planConsolidation(known, meta.items, { comments, wantFix: wantFix(settings), seen });
-  if (plan.pending.length > 0) return 'comments';
   const unthreaded = unthreadedFindings(meta);
-  if ((summaryInput(known.items).length > 0 || unthreaded.length > 0) && !summaryIsCurrent(known.summary ?? summary, known.items, unthreaded)) return 'comments';
-  if (!triageFixesOn(settings)) return null;
-  for (const item of suggestionCandidates(meta.items)) {
-    const existing = suggestionFor(threadKeyOf(item));
-    if (existing === undefined) return 'comments';
-    if (existing.state !== 'open') continue;
-    if (!writtenFrom(existing, [item])) return 'comments';
-    if (existing.headSha !== meta.headSha) return 'commits';
+  let comment = plan.pending.length > 0 || ((summaryInput(known.items).length > 0 || unthreaded.length > 0) && !summaryIsCurrent(known.summary ?? summary, asWrittenFor(known.items), unthreaded));
+  let commit = false;
+  if (triageFixesOn(settings)) {
+    for (const item of suggestionCandidates(meta.items)) {
+      const existing = suggestionFor(threadKeyOf(item));
+      if (existing === undefined) comment = true;
+      else if (existing.state === 'open') {
+        if (!writtenFrom(existing, [item])) comment = true;
+        if (existing.headSha !== meta.headSha) commit = true;
+      }
+    }
   }
-  return null;
+  // Both are said: a fix written for an earlier commit is the reason its Apply is greyed out, whatever else came in.
+  return comment && commit ? 'both' : commit ? 'commits' : comment ? 'comments' : null;
+}
+
+/**
+ * The findings as the TL;DR was written for them: an item's id hashes every comment in its thread, so Geld's own
+ * suggestion reply gave it a new one and the TL;DR read as behind, over a thread nobody else had written in. With
+ * only Geld's replies since the fix was written, the item keeps the id it had then.
+ */
+function asWrittenFor(items: readonly ReviewItem[]): readonly ReviewItem[] {
+  return items.map((item) => {
+    const key = threadKeyOf(item);
+    const entry = suggestionFor(key);
+    const id = entry?.itemIds?.[key];
+    if (entry === undefined || id === undefined || id === item.id || (entry.replies ?? []).length === 0) return item;
+    const own = new Set(entry.replies);
+    const read = new Set(entry.sources ?? []);
+    const anchors = anchorsOf([item]);
+    return anchors.some((anchor) => own.has(anchor)) && anchors.every((anchor) => own.has(anchor) || read.has(anchor)) ? { ...item, id } : item;
+  });
 }
 
 /** The first comment's anchor of the item's review thread: it stays when replies join, unlike the item's id. */
@@ -270,7 +291,13 @@ export function threadKeyOf(item: ReviewItem): string {
 
 /** Open bot findings on a review thread, the ones a fix can be proposed for. People's requests stay theirs to settle. */
 function suggestionCandidates(items: readonly ReviewItem[]): readonly ReviewItem[] {
-  return items.filter((item) => isOpenStatus(item.status) && isBotOnly(item) && item.path !== undefined && threadKeyOf(item) !== '');
+  return items.filter((item) => isOpenStatus(item.status) && botOnlyBesideGeld(item) && item.path !== undefined && threadKeyOf(item) !== '');
+}
+
+/** Only bots wrote in the thread, Geld's own suggestion replies aside: they are posted as the reader, but are not a person's request. */
+function botOnlyBesideGeld(item: ReviewItem): boolean {
+  const own = new Set(suggestionFor(threadKeyOf(item))?.replies ?? []);
+  return isBotOnly(own.size === 0 ? item : { ...item, sources: item.sources.filter((source) => !own.has(source.anchor)) });
 }
 
 function suggestionFor(threadKey: string): StoredSuggestion | undefined {
@@ -339,7 +366,7 @@ export function withAi(meta: GeldPrMeta): GeldPrMeta {
   const previous: GeldPrMeta = { ...meta, items: meta.items.map((item) => (rewrites.has(item.id) ? { ...item, rewritten: true } : item)) };
   const items = applyConsolidation(previous.items, new Map<string, Carried>(), [...rewrites.values()]);
   const withItems = items === meta.items ? meta : { ...meta, items };
-  if (summary !== undefined && withItems.summary === undefined && summaryIsCurrent(summary, items, unthreadedFindings(meta))) return { ...withItems, summary };
+  if (summary !== undefined && withItems.summary === undefined && summaryIsCurrent(summary, asWrittenFor(items), unthreadedFindings(meta))) return { ...withItems, summary };
   return withItems;
 }
 
@@ -408,7 +435,7 @@ export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], s
   const plan = planConsolidation(known, meta.items, { comments, wantFix: wantFix(settings), seen });
   const pending = plan.pending;
   const unthreaded = unthreadedFindings(meta);
-  const needsTldr = (summaryInput(known.items).length > 0 || unthreaded.length > 0) && !summaryIsCurrent(known.summary ?? summary, known.items, unthreaded);
+  const needsTldr = (summaryInput(known.items).length > 0 || unthreaded.length > 0) && !summaryIsCurrent(known.summary ?? summary, asWrittenFor(known.items), unthreaded);
   // Fixes are written for a thread's lines: findings outside threads are the TL;DR's alone.
   const needsFixes = source !== null && triageFixesOn(settings) && suggestionCandidates(meta.items).length > 0 && workFor(meta, comments, settings) !== null;
   const ranAt = new Date().toISOString();
@@ -445,7 +472,7 @@ export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], s
     else {
       const parsed = parseSummaryOutput(result.text);
       const paths = items.flatMap((item) => (item.path === undefined ? [] : [item.path]));
-      if (parsed !== null && parsed.ok) summary = summaryRecord(codeSpans(parsed.value, paths), items, ranAt, unthreaded);
+      if (parsed !== null && parsed.ok) summary = summaryRecord(codeSpans(parsed.value, paths), asWrittenFor(items), ranAt, unthreaded);
       else failure = { step: 'tldr', reason: UNREADABLE };
     }
   }
@@ -475,6 +502,13 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
   // Threads that own their fix first: a partner reads what became of the fix it shares.
   const owns = (item: ReviewItem): boolean => (suggestionFor(threadKeyOf(item))?.key ?? threadKeyOf(item)) === threadKeyOf(item);
   const candidates = [...suggestionCandidates(items)].sort((a, b) => Number(owns(b)) - Number(owns(a)));
+  // Read before any fix is replaced: the ids the TL;DR was written for, and Geld's replies that keep them so.
+  const writtenAs = new Map(asWrittenFor(candidates).map((item) => [threadKeyOf(item), item.id]));
+  const repliedBefore = new Map(candidates.map((item) => [threadKeyOf(item), suggestionFor(threadKeyOf(item))?.replies ?? []]));
+  const kept = (keys: readonly string[]): Partial<StoredSuggestion> => {
+    const replies = [...new Set(keys.flatMap((key) => repliedBefore.get(key) ?? []))];
+    return replies.length === 0 ? {} : { replies };
+  };
   const openThreads = new Set(candidates.map(threadKeyOf));
   for (const item of candidates) {
     const key = threadKeyOf(item);
@@ -493,7 +527,7 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
         else suggestions.set(shared.key, { ...shared, threads: shared.threads.filter((thread) => thread !== key) });
       }
       const ownNote = existing?.key === key && existing.threads.length === 1 && existing.replacement === null ? existing.summary : '';
-      suggestions.set(key, { key, threads: [key], headSha, path: item.path ?? '', start: 0, end: 0, original: [], replacement: null, summary: ownNote, state: 'open', sources: [...anchorsOf([item])] });
+      suggestions.set(key, { key, threads: [key], headSha, path: item.path ?? '', start: 0, end: 0, original: [], replacement: null, summary: ownNote, state: 'open', sources: [...anchorsOf([item])], itemIds: { [key]: writtenAs.get(key) ?? item.id }, ...kept([key]) });
       continue;
     }
     if (existing !== undefined && existing.key !== key) {
@@ -553,6 +587,8 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
         summary: codeSpans(entry.summary, paths),
         state: 'open',
         sources: [...anchorsOf(entry.ids.flatMap((id) => asked.get(id) ?? []))],
+        itemIds: Object.fromEntries(entry.ids.flatMap((id) => { const item = asked.get(id); return item === undefined ? [] : [[id, writtenAs.get(id) ?? item.id]]; })),
+        ...kept(entry.ids),
       });
     }
   }
@@ -568,6 +604,8 @@ export interface TriageSuggestion {
   readonly partners: readonly ReviewItem[];
   /** Written at the head commit from every comment its threads hold: an earlier commit or a reply since makes it stale. */
   readonly current: boolean;
+  /** Why it is not current: a commit since, or a comment in its threads it has not read. */
+  readonly behind: 'commit' | 'comments' | null;
 }
 
 /**
@@ -587,7 +625,8 @@ export function triageSuggestions(meta: GeldPrMeta, settings: GeldSettings): rea
       const partner = byThread.get(key);
       return partner === undefined ? [] : [partner];
     });
-    out.push({ entry, item, partners, current: entry.headSha === meta.headSha && writtenFrom(entry, [item, ...partners]) });
+    const behind = entry.headSha !== meta.headSha ? 'commit' : writtenFrom(entry, [item, ...partners]) ? null : 'comments';
+    out.push({ entry, item, partners, current: behind === null, behind });
   }
   return out;
 }
@@ -598,10 +637,17 @@ export function triageNoteFor(item: ReviewItem): string | null {
   return entry === undefined || entry.summary === '' ? null : entry.summary;
 }
 
-async function settle(key: string, state: StoredSuggestion['state'], anchors: readonly string[] = []): Promise<void> {
+async function settle(key: string, state: StoredSuggestion['state'], anchors: readonly string[] = [], pendingReply?: number): Promise<void> {
   const entry = suggestions.get(key);
   if (entry === undefined) return;
-  suggestions.set(key, { ...entry, state, ...(entry.sources === undefined ? {} : { sources: [...entry.sources, ...anchors] }) });
+  const { pendingReply: _reply, pendingReplyText: _text, ...rest } = entry;
+  suggestions.set(key, {
+    ...rest,
+    state,
+    ...(entry.sources === undefined ? {} : { sources: [...entry.sources, ...anchors] }),
+    ...(anchors.length === 0 ? {} : { replies: [...(entry.replies ?? []), ...anchors] }),
+    ...(pendingReply === undefined ? {} : { pendingReply }),
+  });
   // Geld's own reply in the thread is not news for the model.
   for (const anchor of anchors) seen.add(anchor);
   if (lastRun !== null) {
@@ -616,6 +662,63 @@ export function discardSuggestion(key: string): Promise<void> {
 
 export function markSuggestionApplied(key: string, replyAnchor: string | null): Promise<void> {
   return settle(key, 'applied', replyAnchor === null ? [] : [replyAnchor]);
+}
+
+/** The suggestion reply posted and its commit was refused: the reply is Geld's own, and Apply commits it rather than posting another. */
+export function markSuggestionPosted(key: string, reply: { readonly anchor: string; readonly id: number }): Promise<void> {
+  return settle(key, 'open', [reply.anchor], reply.id);
+}
+
+/** How every suggestion reply Geld posts begins (`suggestionReplyBody`). */
+const GELD_REPLY = /^Suggested fix from Geld triage\b/;
+
+/**
+ * Geld's own suggestion replies in its fixes' threads, read from the page: a reply posted on another device, or before
+ * replies were recorded, is Geld's too, so it makes neither the fix nor the TL;DR read as behind. Only a reply Geld
+ * recorded posting (`markSuggestionPosted`) is committed by the next Apply; one adopted here is not.
+ * Null when there was nothing to adopt, else the store's write.
+ */
+export function adoptOwnReplies(comments: readonly RawComment[], viewer: string): Promise<void> | null {
+  if (viewer === '' || suggestions.size === 0) return null;
+  const byAnchor = new Map(comments.map((comment) => [comment.anchor, comment]));
+  let changed = false;
+  for (const entry of [...suggestions.values()]) {
+    if (entry.state === 'discarded') continue;
+    const inThreads = entry.threads.flatMap((key) => byAnchor.get(key)?.threadAnchors ?? []);
+    const pending = entry.pendingReply === undefined || entry.pendingReplyText !== undefined ? undefined : inThreads.find((peer) => peer.anchor === `discussion_r${entry.pendingReply}`);
+    if (pending !== undefined) {
+      suggestions.set(entry.key, { ...entry, pendingReplyText: textHash(pending.body) });
+      changed = true;
+    }
+    const own = new Set(entry.replies ?? []);
+    const peers = inThreads.filter((peer) => !own.has(peer.anchor) && peer.author.toLowerCase() === viewer.toLowerCase() && GELD_REPLY.test(peer.body.trim()));
+    if (peers.length === 0) continue;
+    const found = peers.map((peer) => peer.anchor);
+    // Marked as Geld's, never taken as the one to commit: the page shows a suggestion as rendered, old and new lines
+    // together, so which fix it carries cannot be told, and a triage since may have written another.
+    const current = suggestions.get(entry.key) ?? entry;
+    suggestions.set(entry.key, {
+      ...current,
+      ...(current.sources === undefined ? {} : { sources: [...current.sources, ...found] }),
+      replies: [...own, ...found],
+    });
+    for (const anchor of found) seen.add(anchor);
+    changed = true;
+  }
+  if (!changed || lastRun === null) return null;
+  lastRun = recordOf(lastRun.ranAt, lastRun.error === undefined ? null : { reason: lastRun.error, ...(lastRun.errorStep === undefined ? {} : { step: lastRun.errorStep }) });
+  return store(lastRun);
+}
+
+/** The reply Geld posted for this fix and has not committed, while it stands in the thread in the words it was posted with. */
+export function pendingReplyFor(key: string, comments: readonly RawComment[]): number | null {
+  const entry = suggestions.get(key);
+  if (entry?.pendingReply === undefined) return null;
+  const anchor = `discussion_r${entry.pendingReply}`;
+  const reply = entry.threads.flatMap((thread) => comments.find((comment) => comment.anchor === thread)?.threadAnchors ?? []).find((peer) => peer.anchor === anchor);
+  if (reply === undefined) return null;
+  // Edited on GitHub since: what it would commit is no longer the fix in Geld's preview.
+  return entry.pendingReplyText === undefined || entry.pendingReplyText === textHash(reply.body) ? entry.pendingReply : null;
 }
 
 /** Titles the model has already rewritten for this pull request. */

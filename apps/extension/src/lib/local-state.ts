@@ -101,6 +101,14 @@ export interface StoredSuggestion {
   readonly state: 'open' | 'discarded' | 'applied';
   /** Every comment anchor of its threads the fix was written from: a reply since makes it stale. Absent in records from before. */
   readonly sources?: readonly string[];
+  /** The id each of its threads' findings had when the fix was written, which Geld's own replies change (`asWrittenFor`). */
+  readonly itemIds?: Readonly<Record<string, string>>;
+  /** Geld's own suggestion replies in the thread, which are not news for the triage. */
+  readonly replies?: readonly string[];
+  /** A suggestion reply Geld posted whose commit did not go through, committed instead of posting another. */
+  readonly pendingReply?: number;
+  /** That reply's words as the page first showed them, so a reply the reader edited since is posted afresh, not committed. */
+  readonly pendingReplyText?: string;
 }
 export const aiRunsItem = storage.defineItem<Readonly<Record<string, AiRunRecord>>>('local:aiRuns', { fallback: {} });
 export const AI_RUNS_CAP = 40;

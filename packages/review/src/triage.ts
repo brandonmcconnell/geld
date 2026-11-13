@@ -188,7 +188,9 @@ export type DiffRow = DiffLine | { readonly kind: 'gap'; readonly hidden: number
 
 /**
  * The diff as GitHub shows a hunk: `context` unchanged lines kept on each side of a change, and a longer unchanged
- * stretch between them folded into one gap row, so a fix across a wide range reads as its changes.
+ * stretch between two changes folded into one gap row, so a fix across a wide range reads as its changes. Unchanged
+ * lines before the first change and after the last are left out, not folded: the line numbers say where the snippet
+ * starts, and a gap row at an edge read as lines missing from the file.
  */
 export function diffHunks(lines: readonly DiffLine[], context = 3): readonly DiffRow[] {
   const keep = lines.map((_, index) => lines.slice(Math.max(0, index - context), index + context + 1).some((line) => line.kind !== 'context'));
@@ -200,12 +202,11 @@ export function diffHunks(lines: readonly DiffLine[], context = 3): readonly Dif
   let hidden = 0;
   lines.forEach((line, index) => {
     if (keep[index] === true) {
-      if (hidden > 0) rows.push({ kind: 'gap', hidden });
+      if (hidden > 0 && rows.length > 0) rows.push({ kind: 'gap', hidden });
       hidden = 0;
       rows.push(line);
     } else hidden += 1;
   });
-  if (hidden > 0) rows.push({ kind: 'gap', hidden });
   return rows;
 }
 
