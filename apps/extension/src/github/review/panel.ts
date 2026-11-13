@@ -1535,7 +1535,9 @@ function bulkActions(triage: TriageView, handlers: PanelHandlers): HTMLElement |
   const open = triage.suggestions.filter((fix) => fix.state === 'open');
   if (open.length < 2) return null;
   const busy = open.some((fix) => fix.busy !== null);
-  const { batch, overlapping } = splitOverlapping(open.filter((fix) => fix.kind === 'fix' && fix.current && fix.busy === null));
+  const eligible = open.filter((fix) => fix.kind === 'fix' && fix.current && fix.busy === null);
+  // Every eligible fix goes to the handler, which leaves the overlapping ones out and says why on their rows.
+  const { batch, overlapping } = splitOverlapping(eligible);
   const ready = batch.map((fix) => fix.key);
   const discard = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__triage-fix-discard-btn`, title: `Discard all ${open.length} findings from the triage`, [ATTR_FOCUS]: 'fix-discard-all', ...(busy ? { disabled: '' } : {}) }, [icon(ICON_X), 'Discard all']);
   discard.addEventListener('click', () => handlers.onDiscardAll(open.map((fix) => fix.key)));
@@ -1546,7 +1548,7 @@ function bulkActions(triage: TriageView, handlers: PanelHandlers): HTMLElement |
     busy ? 'Fixing…' : 'Fix all',
     ...(ready.length > 0 && !busy ? [createElement('span', { class: 'Counter' }, [String(ready.length)])] : []),
   ]);
-  fixAll.addEventListener('click', () => handlers.onFixAll(ready));
+  fixAll.addEventListener('click', () => handlers.onFixAll(eligible.map((fix) => fix.key)));
   return createElement('div', { class: `${PANEL_CLASS}__triage-fix-actions ${PANEL_CLASS}__triage-bulk` }, [discard, fixAll]);
 }
 
