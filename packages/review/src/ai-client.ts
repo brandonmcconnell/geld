@@ -26,7 +26,7 @@ export interface ChatCompletionOptions {
 
 export type ChatCompletionResult =
   | { readonly ok: true; readonly text: string; readonly model: string }
-  | { readonly ok: false; readonly reason: string; readonly status?: number };
+  | Refusal;
 
 /** What a gateway's `/v1/models` says about a model, beyond its id, when it says anything (Vercel and OpenRouter both do). */
 export interface ModelInfo {
@@ -132,8 +132,42 @@ export async function listModels(
 
 const MAX_PROVIDER_MESSAGE = 240;
 
-/** How a 400 words a gateway or model that cannot take a JSON schema in `response_format`. */
-const SCHEMA_REFUSED = /response_format|json_schema|structured output|schema|strict/i;
+/** How a 400 names the `response_format` it cannot take; "schema" or "strict" alone also turn up in errors about other fields. */
+const SCHEMA_REFUSED = /response_format|json_schema|structured outputs?/i;
+
+/**
+ * What kind of refusal a provider's words describe, from a fixed list: what may leave the device in an error report,
+ * where the words themselves (which can quote the request) may not.
+ */
+export type RefusalKind = 'response-format' | 'too-long' | 'model' | 'rate-limit' | 'quota' | 'key' | 'content-policy' | 'other';
+
+const REFUSAL_KINDS: ReadonlyArray<readonly [RefusalKind, RegExp]> = [
+  ['response-format', SCHEMA_REFUSED],
+  ['too-long', /context (?:length|window)|maximum .*tokens|too many tokens|too long/i],
+  ['quota', /quota|credits?|billing|insufficient (?:funds|balance)|payment/i],
+  ['rate-limit', /rate.?limit|too many requests/i],
+  ['content-policy', /content (?:policy|filter|management)|safety|moderation/i],
+  ['key', /api.?key|unauthori[sz]ed|authenticat|permission|forbidden/i],
+  // Last: most refusals name the model somewhere.
+  ['model', /model|deployment/i],
+];
+
+export function refusalKind(status: number, message: string | null): RefusalKind {
+  const words = message ?? '';
+  for (const [kind, pattern] of REFUSAL_KINDS) if (pattern.test(words)) return kind;
+  if (status === 401 || status === 403) return 'key';
+  if (status === 404) return 'model';
+  if (status === 429) return 'rate-limit';
+  return 'other';
+}
+
+export interface Refusal {
+  readonly ok: false;
+  /** Shown to the reader and kept on the device: the provider's own words included. */
+  readonly reason: string;
+  readonly status?: number;
+  readonly kind?: RefusalKind;
+}
 
 function messageIn(value: unknown): string | null {
   if (typeof value === 'string') return value.trim() === '' ? null : value;
@@ -167,13 +201,14 @@ export function providerMessage(body: string, apiKey: string): string | null {
 }
 
 /** "Completion failed (400)", then the provider's words when it gave any, as one sentence. */
-export function failureReason(lead: string, message: string | null): string {
-  if (message === null) return `${lead}.`;
-  return `${lead}: ${/[.!?…]$/.test(message) ? message : `${message}.`}`;
+export function refusalFrom(lead: string, status: number, message: string | null): Refusal {
+  const reason = message === null ? `${lead} (${status}).` : `${lead} (${status}): ${/[.!?…]$/.test(message) ? message : `${message}.`}`;
+  return { ok: false, reason, status, kind: refusalKind(status, message) };
 }
 
-function refusal(status: number, message: string | null): ChatCompletionResult {
-  return { ok: false, reason: failureReason(`Completion failed (${status})`, message), status };
+async function refusalOf(response: Response, apiKey: string): Promise<{ readonly message: string | null; readonly refusal: Refusal }> {
+  const message = providerMessage(await response.text().catch(() => ''), apiKey);
+  return { message, refusal: refusalFrom('Completion failed', response.status, message) };
 }
 
 /** The schema as an instruction, for a gateway that takes no `response_format`: the parsers read JSON with or without a fence. */
@@ -231,12 +266,11 @@ export async function completeChat(options: ChatCompletionOptions): Promise<Chat
       });
     let response = await post(body);
     if (!response.ok) {
-      const status = response.status;
-      const message = providerMessage(await response.text().catch(() => ''), options.apiKey);
-      const schemaRefused = status === 400 && options.jsonSchema !== undefined && message !== null && SCHEMA_REFUSED.test(message);
-      if (!schemaRefused) return refusal(status, message);
+      const first = await refusalOf(response, options.apiKey);
+      const schemaRefused = response.status === 400 && options.jsonSchema !== undefined && first.message !== null && SCHEMA_REFUSED.test(first.message);
+      if (!schemaRefused) return first.refusal;
       response = await post({ ...base, messages: withSchemaInPrompt(options.messages, options.jsonSchema) });
-      if (!response.ok) return refusal(status, message);
+      if (!response.ok) return (await refusalOf(response, options.apiKey)).refusal;
     }
     const payload: unknown = await response.json();
     if (!isRecord(payload) || !Array.isArray(payload.choices))

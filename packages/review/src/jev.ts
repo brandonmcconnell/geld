@@ -1,5 +1,5 @@
-import type { FetchLike } from './ai-client';
-import { failureReason, joinUrl, providerMessage } from './ai-client';
+import type { FetchLike, Refusal } from './ai-client';
+import { joinUrl, providerMessage, refusalFrom } from './ai-client';
 
 /**
  * TypeSafe's Jev is a System One model: it evaluates one piece of state
@@ -45,7 +45,7 @@ export interface JevRequest {
 
 export type JevResult =
   | { readonly ok: true; readonly model: string; readonly answers: Readonly<Record<string, JevAnswer>> }
-  | { readonly ok: false; readonly reason: string };
+  | Refusal;
 
 const JEV_ID = /(^|[/:@-])jev(\b|[-.])/i;
 const UNPINNED_JEV_ID = /(^|\/)jev(-latest)?$/i;
@@ -277,7 +277,7 @@ export async function evaluateDecision(options: EvaluateOptions): Promise<JevRes
     });
     if (!response.ok) {
       const message = providerMessage(await response.text().catch(() => ''), options.apiKey);
-      return { ok: false, reason: failureReason(`Decision request failed (${response.status})`, message) };
+      return refusalFrom('Decision request failed', response.status, message);
     }
     const body: unknown = await response.json();
     const parsed = openai === null ? parseJevResponse(body) : parseOpenAiDecisions(body, openai.names);

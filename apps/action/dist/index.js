@@ -33072,8 +33072,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       runsBeforeAsk.delete(id);
       continue;
     }
-    const refusal2 = refusalReason(comment.body);
-    if (refusal2 !== null) {
+    const refusal = refusalReason(comment.body);
+    if (refusal !== null) {
       reported(id, comment);
       for (const at of [comment.createdAt, comment.editedAt]) {
         const time3 = at === void 0 ? NaN : Date.parse(at);
@@ -33085,7 +33085,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       if (!threadRuns.has(id) && prior !== void 0) threadRuns.set(id, prior);
       const reviewed = threadRuns.has(id) || existing2?.sourceId !== void 0 && (existing2.verdict === "clean" || existing2.verdict === "findings");
       if (reviewed) continue;
-      byId.set(id, { id, login: comment.author, verdict: "failed", reviewedSha: headSha, ...existing2?.checkName === void 0 ? {} : { checkName: existing2.checkName }, sourceId: comment.anchor, reason: refusal2 });
+      byId.set(id, { id, login: comment.author, verdict: "failed", reviewedSha: headSha, ...existing2?.checkName === void 0 ? {} : { checkName: existing2.checkName }, sourceId: comment.anchor, reason: refusal });
       continue;
     }
     if (isStatusLineComment(comment.body)) {
@@ -33288,8 +33288,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   for (const [id, refusedSha] of refusedRuns) {
     const record4 = byId.get(id);
     if (record4 === void 0 || record4.verdict === "running") continue;
-    const refusal2 = record4.verdict === "failed" && record4.reason !== void 0;
-    byId.set(id, { ...record4, runJudged: true, ...refusal2 || record4.reviewedSha !== refusedSha ? {} : { reviewedSha: UNKNOWN_SHA } });
+    const refusal = record4.verdict === "failed" && record4.reason !== void 0;
+    byId.set(id, { ...record4, runJudged: true, ...refusal || record4.reviewedSha !== refusedSha ? {} : { reviewedSha: UNKNOWN_SHA } });
   }
   return [...byId.values()];
 }
@@ -34109,7 +34109,25 @@ function contentOf(value) {
   return joined === "" ? null : joined;
 }
 var MAX_PROVIDER_MESSAGE = 240;
-var SCHEMA_REFUSED = /response_format|json_schema|structured output|schema|strict/i;
+var SCHEMA_REFUSED = /response_format|json_schema|structured outputs?/i;
+var REFUSAL_KINDS = [
+  ["response-format", SCHEMA_REFUSED],
+  ["too-long", /context (?:length|window)|maximum .*tokens|too many tokens|too long/i],
+  ["quota", /quota|credits?|billing|insufficient (?:funds|balance)|payment/i],
+  ["rate-limit", /rate.?limit|too many requests/i],
+  ["content-policy", /content (?:policy|filter|management)|safety|moderation/i],
+  ["key", /api.?key|unauthori[sz]ed|authenticat|permission|forbidden/i],
+  // Last: most refusals name the model somewhere.
+  ["model", /model|deployment/i]
+];
+function refusalKind(status, message) {
+  const words = message ?? "";
+  for (const [kind, pattern] of REFUSAL_KINDS) if (pattern.test(words)) return kind;
+  if (status === 401 || status === 403) return "key";
+  if (status === 404) return "model";
+  if (status === 429) return "rate-limit";
+  return "other";
+}
 function messageIn(value) {
   if (typeof value === "string") return value.trim() === "" ? null : value;
   if (Array.isArray(value)) return messageIn(value[0]);
@@ -34133,12 +34151,13 @@ function providerMessage(body, apiKey) {
   if (text === "") return null;
   return text.length > MAX_PROVIDER_MESSAGE ? `${text.slice(0, MAX_PROVIDER_MESSAGE - 1)}\u2026` : text;
 }
-function failureReason(lead, message) {
-  if (message === null) return `${lead}.`;
-  return `${lead}: ${/[.!?…]$/.test(message) ? message : `${message}.`}`;
+function refusalFrom(lead, status, message) {
+  const reason = message === null ? `${lead} (${status}).` : `${lead} (${status}): ${/[.!?…]$/.test(message) ? message : `${message}.`}`;
+  return { ok: false, reason, status, kind: refusalKind(status, message) };
 }
-function refusal(status, message) {
-  return { ok: false, reason: failureReason(`Completion failed (${status})`, message), status };
+async function refusalOf(response, apiKey) {
+  const message = providerMessage(await response.text().catch(() => ""), apiKey);
+  return { message, refusal: refusalFrom("Completion failed", response.status, message) };
 }
 function withSchemaInPrompt(messages, schema) {
   const instruction = `Answer with one JSON object and nothing else, matching this JSON Schema:
@@ -34184,12 +34203,11 @@ async function completeChat(options) {
     });
     let response = await post(body);
     if (!response.ok) {
-      const status = response.status;
-      const message2 = providerMessage(await response.text().catch(() => ""), options.apiKey);
-      const schemaRefused = status === 400 && options.jsonSchema !== void 0 && message2 !== null && SCHEMA_REFUSED.test(message2);
-      if (!schemaRefused) return refusal(status, message2);
+      const first2 = await refusalOf(response, options.apiKey);
+      const schemaRefused = response.status === 400 && options.jsonSchema !== void 0 && first2.message !== null && SCHEMA_REFUSED.test(first2.message);
+      if (!schemaRefused) return first2.refusal;
       response = await post({ ...base, messages: withSchemaInPrompt(options.messages, options.jsonSchema) });
-      if (!response.ok) return refusal(status, message2);
+      if (!response.ok) return (await refusalOf(response, options.apiKey)).refusal;
     }
     const payload = await response.json();
     if (!isRecord10(payload) || !Array.isArray(payload.choices))

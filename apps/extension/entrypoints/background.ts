@@ -3,6 +3,7 @@ import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
 import { aiGatewayLabel, parseUnifiedDiff } from '@geld/core';
+import type { Refusal } from '@geld/review';
 import { completeChat, decisionModelsPath, evaluateDecision, listModels, servesDecisions, TYPESAFE_API } from '@geld/review';
 import { apiSignedIn, createPullRequest, handleAccountMessage, handleFeedbackMessage, startAccountSync } from '../src/lib/account-service';
 import { senderMayCreatePull } from '../src/lib/create-pull';
@@ -53,9 +54,19 @@ const MAX_FILE_BYTES = 256 * 1024;
 
 const BUILT_IN_HOSTS = ['github.com', 'patch-diff.githubusercontent.com'];
 
-/** A request the AI gateway refused, as one of Geld's errors: in Copy diagnostics, and scrubbed in error reports for readers who send them. */
-function reportAiFailure(step: string, baseUrl: string, reason: string): void {
-  reportError('background:ai', `AI ${step} via ${aiGatewayLabel(baseUrl)}: ${reason}`);
+/**
+ * A request the AI gateway refused. Copy diagnostics keeps the gateway's own words; the error report, which readers
+ * may send, says only what kind of refusal it was, since the words can quote the request. A failure with no status
+ * is one of Geld's own fixed reasons (a timeout, an empty answer) and is reported as it is.
+ */
+function reportAiFailure(step: string, baseUrl: string, failure: Refusal): void {
+  const where = `AI ${step} via ${aiGatewayLabel(baseUrl)}`;
+  if (failure.status === undefined) {
+    reportError('background:ai', `${where}: ${failure.reason}`);
+    return;
+  }
+  recordDiagnostic({ kind: 'ai', subject: where, outcome: failure.reason, status: failure.status });
+  reportError('background:ai', `${where}: refused (${failure.status}, ${failure.kind ?? 'other'})`);
 }
 
 /** github.com, its diff host, and any Enterprise servers the user configured. */
@@ -635,7 +646,7 @@ export default defineBackground(() => {
         if (denied !== null) return { ok: false as const, reason: denied };
         if (message.apiKey.trim() === '') return { ok: false as const, reason: message.baseUrl === TYPESAFE_API ? 'No TypeSafe key.' : 'No API key.' };
         const result = await evaluateDecision({ fetch, baseUrl: message.baseUrl, apiKey: message.apiKey, request: message.request, timeoutMs: 20_000 });
-        if (!result.ok) reportAiFailure('decision', message.baseUrl, result.reason);
+        if (!result.ok) reportAiFailure('decision', message.baseUrl, result);
         return result;
       })().then(sendResponse);
       return true;
@@ -655,7 +666,7 @@ export default defineBackground(() => {
           ...(message.jsonSchema === undefined ? {} : { jsonSchema: message.jsonSchema }),
           ...(message.schemaName === undefined ? {} : { schemaName: message.schemaName }),
         });
-        if (!result.ok) reportAiFailure(message.schemaName ?? 'completion', message.baseUrl, result.reason);
+        if (!result.ok) reportAiFailure(message.schemaName ?? 'completion', message.baseUrl, result);
         return result;
       })().then(sendResponse);
       return true;
