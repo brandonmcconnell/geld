@@ -843,6 +843,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
  The first agent's thread opens first when the reader's `codingAgent` is Cursor or automatic, and discovery never switches a thread the reader picked or started typing in.
  **The assistant** streams through the reader's gateway (`streamChat`, `stream: true`, read with `SseParser`, and a gateway that answers with one JSON completion is read too), with `assistantSystemPrompt` laying out the title, description, review threads and changed files (`flowFiles`), read when each message is sent.
  The composer's model picker starts on `aiModel` and lists the gateway's language models from `local:aiGateway`, the choice kept in `local:chatModels`, and the chat is kept per pull request in `local:assistantChats` (20 pull requests, 60 turns).
+ Every tab sends its chat to the background to save (`geld:chat-save`, `saveAssistantChat`, one write at a time): two tabs rewriting the stored map together each dropped the other's chat.
+ The assistant's reading of the pull request is kept per pull request (`lastPullReading`), since the description and the flow's files are not on the other tabs the sidebar stays open on.
+ An open sidebar reads its setup again when a key or the gateway's model list changes in local storage, and when the window regains focus, which is how a permission granted in the options shows.
+ Every answer it waits on is dropped once the sidebar has closed or opened again since it asked (`session`), so a slow reply never lands in another pull request's sidebar.
  **A Cursor agent's thread is the agent's own conversation, natively, not an iframe** (read from Cursor's API docs and OpenAPI files, Nov 2026).
  History is v0's `GET /v0/agents/{id}/conversation`, since v1 keeps only each run's final reply (`conversationFromRuns` is the fallback should v0 go).
  A message is v1's `POST /v1/agents/{id}/runs`: a follow-up with the picked model, or `delivery: "steer"` with nothing else while a run is under way, when the composer reads "Steer".

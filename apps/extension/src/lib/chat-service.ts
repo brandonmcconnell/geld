@@ -24,9 +24,10 @@ import {
 } from '@geld/review';
 import { browser } from 'wxt/browser';
 import { hasGatewayPermission } from './ai-gateway';
-import type { ChatPortEvent, ChatPortRequest, CursorRequest } from './chat-messages';
+import type { AssistantChatSave, ChatPortEvent, ChatPortRequest, CursorRequest } from './chat-messages';
 import { CHAT_PORT, CURSOR_ORIGIN, isChatPortRequest } from './chat-messages';
-import { aiKeyItem, cursorKeyItem } from './local-state';
+import type { StoredChat } from './local-state';
+import { ASSISTANT_CHATS_CAP, ASSISTANT_TURNS_CAP, aiKeyItem, assistantChatsItem, cursorKeyItem } from './local-state';
 import { settingsItem } from './storage';
 
 /** Agents read for one pull request at most: its linked ones, then the newest the API lists for it. */
@@ -174,6 +175,26 @@ async function streamAssistant(id: string, model: string, messages: Extract<Chat
   post(result.ok ? { type: 'done', id, model: result.model } : { type: 'failed', id, reason: result.reason });
 }
 
+let chatWrites: Promise<void> = Promise.resolve();
+
+/**
+ * Saves one pull request's assistant chat. Every tab sends its chat here rather than rewriting the stored map itself:
+ * two tabs finishing replies together each read the same map, and the second write dropped the first tab's chat.
+ */
+export function saveAssistantChat(save: AssistantChatSave): Promise<void> {
+  chatWrites = chatWrites
+    .then(async () => {
+      const all = await assistantChatsItem.getValue();
+      const turns = save.turns.slice(-ASSISTANT_TURNS_CAP);
+      const rest = Object.entries(all).filter(([key]) => key !== save.key);
+      const kept: [string, StoredChat][] = turns.length === 0 ? rest : [...rest, [save.key, { at: new Date().toISOString(), turns }]];
+      kept.sort((a, b) => a[1].at.localeCompare(b[1].at));
+      await assistantChatsItem.setValue(Object.fromEntries(kept.slice(-ASSISTANT_CHATS_CAP)));
+    })
+    .catch(() => undefined);
+  return chatWrites;
+}
+
 /** Ports from GitHub tabs only: the sidebar is a content script's, and nothing else of Geld's streams. */
 export function startChatPorts(): void {
   browser.runtime.onConnect.addListener((port) => {
@@ -217,9 +238,12 @@ export function startChatPorts(): void {
           if (watching?.agentId === message.agentId) return;
           unwatch();
           if (!isCursorAgentId(message.agentId)) return;
-          const controller = new AbortController();
-          watching = { agentId: message.agentId, controller };
-          void watchAgent(message.agentId, controller.signal, post);
+          const current = { agentId: message.agentId, controller: new AbortController() };
+          watching = current;
+          // A watch that ended by itself (`done`, a refusal) lets the next one for the same agent open; an older watch never clears a newer.
+          void watchAgent(message.agentId, current.controller.signal, post).finally(() => {
+            if (watching === current) watching = null;
+          });
           return;
         }
         case 'unwatch':

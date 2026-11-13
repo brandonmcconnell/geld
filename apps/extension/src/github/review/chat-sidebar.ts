@@ -18,10 +18,10 @@ import { assistantSystemPrompt, botAppAvatar, botById, isEvaluationModel, isRunA
 import { browser } from 'wxt/browser';
 import type { Browser } from 'wxt/browser';
 import { persist } from '../../lib/context';
-import type { ChatPortRequest, ChatTurnMessage, CursorRequest, CursorStatusReply } from '../../lib/chat-messages';
+import type { AssistantChatSave, ChatPortRequest, ChatTurnMessage, CursorRequest, CursorStatusReply } from '../../lib/chat-messages';
 import { CHAT_PING_MS, CHAT_PORT, isChatPortEvent, isCursorConversationReply, isCursorFindReply, isCursorModelsReply, isCursorSendReply, isCursorStatusReply } from '../../lib/chat-messages';
-import type { ChatModels, StoredChat } from '../../lib/local-state';
-import { ASSISTANT_CHATS_CAP, ASSISTANT_TURNS_CAP, aiGatewayItem, aiKeyItem, assistantChatsItem, chatModelsItem } from '../../lib/local-state';
+import type { ChatModels } from '../../lib/local-state';
+import { aiGatewayItem, aiKeyItem, assistantChatsItem, chatModelsItem } from '../../lib/local-state';
 import type { OpenSettingsMessage } from '../../lib/messages';
 import { countUsage } from '../../lib/usage-count';
 import { renderIssueMarkdown } from '../../ui/issue-markdown';
@@ -105,6 +105,10 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 const reloadTimers = new Map<string, ReturnType<typeof setTimeout>>();
 let renderFrame = 0;
 let opener: HTMLElement | null = null;
+/** Bumped on every open and close: an answer that arrives for an earlier sidebar, or another pull request's, is dropped. */
+let session = 0;
+/** Local keys whose change can enable the chat: the gateway key and its model list, the Cursor key. Their values are never read here. */
+const SETUP_KEYS = ['aiKey', 'aiGateway', 'cursorApiKey'];
 
 export function chatOpen(): boolean {
   return ui !== null;
@@ -116,6 +120,7 @@ function markChatButtons(): void {
 
 /** The digest's latest reading of the page. An open sidebar takes in agents newly linked; a different pull request closes it. */
 export function setChatContext(next: ChatPageContext): void {
+  const aiBefore = context === null ? null : JSON.stringify(context.ai);
   context = next;
   if (ui === null) return;
   if (loadedKey !== next.pageKey) {
@@ -124,7 +129,18 @@ export function setChatContext(next: ChatPageContext): void {
   }
   let added = false;
   for (const linked of next.linkedAgents) added = ensureAgent(linked.id, linked.href) || added;
-  if (added) scheduleRender();
+  if (aiBefore !== JSON.stringify(next.ai)) void readLocalState().then(scheduleRender);
+  else if (added) scheduleRender();
+}
+
+/** The reader may have set the chat up meanwhile (a key saved in the options, the browser's permission granted): read it all again. */
+function refreshSetup(): void {
+  void readLocalState().then(scheduleRender);
+  void discoverAgents();
+}
+
+function onStorageChanged(changes: Readonly<Record<string, unknown>>, area: string): void {
+  if (area === 'local' && SETUP_KEYS.some((key) => key in changes)) refreshSetup();
 }
 
 /** After a navigation: a sidebar opened on another pull request closes. */
@@ -139,6 +155,7 @@ export function toggleChat(from: HTMLElement | null = null): void {
 
 function openChat(from: HTMLElement | null): void {
   if (context === null) return;
+  session += 1;
   opener = from;
   if (loadedKey !== context.pageKey) {
     loadedKey = context.pageKey;
@@ -159,13 +176,21 @@ function openChat(from: HTMLElement | null): void {
   markChatButtons();
   ui.input.focus({ preventScroll: true });
   countUsage('chat_opened');
+  // While the conversation is on the page: the sidebar stays open on the pull request's other tabs, which do not hold it.
+  context.pull();
   void readLocalState().then(scheduleRender);
   void discoverAgents();
   pollTimer = setInterval(pollIdleAgent, IDLE_POLL_MS);
+  browser.storage.onChanged.addListener(onStorageChanged);
+  // A permission granted in the options leaves storage as it was: coming back to the page is the moment to look again.
+  window.addEventListener('focus', refreshSetup);
 }
 
 export function closeChat(): void {
   if (ui === null) return;
+  session += 1;
+  browser.storage.onChanged.removeListener(onStorageChanged);
+  window.removeEventListener('focus', refreshSetup);
   const returnTo = opener?.isConnected === true ? opener : document.querySelector<HTMLElement>('[data-geld-focus="chat"]');
   ui.root.remove();
   ui = null;
@@ -194,7 +219,9 @@ function ensureAgent(id: string, href: string): boolean {
 }
 
 async function readLocalState(): Promise<void> {
+  const epoch = session;
   const [key, gateway, models] = await Promise.all([aiKeyItem.getValue(), aiGatewayItem.getValue(), chatModelsItem.getValue()]);
+  if (epoch !== session) return;
   assistantKeySet = key.trim() !== '';
   chosenModels = models;
   gatewayModels = gateway === null || context === null || gateway.baseUrl !== context.ai.baseUrl ? [] : gateway.models.filter((id) => !isEvaluationModel(id, gateway.details?.[id]?.type) && !isEvaluationModel(id));
@@ -297,12 +324,13 @@ function onPortMessage(message: unknown): void {
 /* ------------------------------------------------------------------------- */
 
 async function discoverAgents(): Promise<void> {
+  const epoch = session;
   const reply = await askCursor({ type: 'geld:cursor', action: 'status' });
+  if (epoch !== session || ui === null || context === null) return;
   cursorStatus = isCursorStatusReply(reply) ? reply : null;
-  if (ui === null || context === null) return;
   if (cursorStatus?.connected === true && cursorStatus.permitted) {
     const found = await askCursor({ type: 'geld:cursor', action: 'find', prUrl: context.prUrl, ids: context.linkedAgents.map((linked) => linked.id) });
-    if (ui === null) return;
+    if (epoch !== session || ui === null) return;
     if (isCursorFindReply(found) && found.ok) {
       for (const agent of found.agents) {
         ensureAgent(agent.id, agent.url);
@@ -328,7 +356,9 @@ async function loadAgent(id: string, quiet = false): Promise<void> {
     thread.loading = true;
     scheduleRender();
   }
+  const epoch = session;
   const reply = await askCursor({ type: 'geld:cursor', action: 'conversation', agentId: id });
+  if (epoch !== session || agents.get(id) !== thread) return;
   thread.loading = false;
   if (!isCursorConversationReply(reply)) {
     thread.error = 'Geld could not read this conversation.';
@@ -389,7 +419,8 @@ function scheduleReload(id: string): void {
 function pollIdleAgent(): void {
   if (ui === null || document.hidden || active === ASSISTANT) return;
   const thread = agents.get(active);
-  if (thread === undefined || !thread.loaded || thread.sending || agentRunning(thread.live, thread.readStatus)) return;
+  // A run only the stream would report on is left to it, while the stream is open; any other thread is read again.
+  if (thread === undefined || !thread.loaded || thread.sending || (agentRunning(thread.live, thread.readStatus) && watchedAgent === thread.id && port !== null)) return;
   void loadAgent(thread.id, true);
 }
 
@@ -420,8 +451,10 @@ async function sendAgent(thread: AgentThread, text: string): Promise<void> {
   thread.sending = true;
   scheduleRender();
   const model = running ? null : selectedModel() || null;
+  const epoch = session;
   const reply = await askCursor({ type: 'geld:cursor', action: 'send', agentId: thread.id, text, model, steer: running });
   thread.sending = false;
+  if (epoch !== session || agents.get(thread.id) !== thread) return;
   if (!isCursorSendReply(reply) || !reply.ok) {
     const reason = isCursorSendReply(reply) && !reply.ok ? reply.reason : 'Cursor could not be reached.';
     thread.turns = thread.turns.map((turn) => (turn.id === user.id ? { ...turn, error: reason } : turn));
@@ -517,15 +550,8 @@ async function loadAssistantChat(key: string): Promise<void> {
 function saveAssistantChat(): void {
   const key = loadedKey;
   if (key === null) return;
-  const turns = assistantTurns.filter((turn) => !turn.streaming && turn.text !== '').slice(-ASSISTANT_TURNS_CAP).map((turn) => ({ role: turn.role, text: turn.text }));
-  persist(
-    assistantChatsItem.getValue().then((all) => {
-      const rest = Object.entries(all).filter(([each]) => each !== key);
-      const kept: [string, StoredChat][] = turns.length === 0 ? rest : [...rest, [key, { at: new Date().toISOString(), turns }]];
-      kept.sort((a, b) => a[1].at.localeCompare(b[1].at));
-      return assistantChatsItem.setValue(Object.fromEntries(kept.slice(-ASSISTANT_CHATS_CAP)));
-    }),
-  );
+  const save: AssistantChatSave = { type: 'geld:chat-save', key, turns: assistantTurns.filter((turn) => !turn.streaming && turn.text !== '').map((turn) => ({ role: turn.role, text: turn.text })) };
+  persist(browser.runtime.sendMessage(save));
 }
 
 function clearAssistantChat(): void {
@@ -623,7 +649,8 @@ function selectThread(id: string): void {
   chose = true;
   if (id !== ASSISTANT) {
     const thread = agents.get(id);
-    if (thread !== undefined && !thread.loaded && !thread.loading) void loadAgent(id);
+    // A thread read before is read again: its run may have ended, or gone on unwatched while another thread was shown.
+    if (thread !== undefined && !thread.loading) void loadAgent(id, thread.loaded);
   }
   render();
   scrollToEnd(true);

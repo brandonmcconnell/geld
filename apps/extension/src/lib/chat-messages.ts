@@ -91,6 +91,23 @@ export function isCursorModelsReply(value: unknown): value is CursorModelsReply 
   return isRecord(value) && (isFailure(value) || (value.ok === true && isModels(value.models)));
 }
 
+/** Page → background: one pull request's assistant chat to keep, written by the background alone. Empty turns forget it. */
+export interface AssistantChatSave {
+  readonly type: 'geld:chat-save';
+  readonly key: string;
+  readonly turns: readonly { readonly role: 'user' | 'assistant'; readonly text: string }[];
+}
+
+export function isAssistantChatSave(value: unknown): value is AssistantChatSave {
+  return (
+    isRecord(value) &&
+    value.type === 'geld:chat-save' &&
+    typeof value.key === 'string' &&
+    Array.isArray(value.turns) &&
+    value.turns.every((turn) => isRecord(turn) && typeof turn.text === 'string' && (turn.role === 'user' || turn.role === 'assistant'))
+  );
+}
+
 export interface ChatTurnMessage {
   readonly role: 'system' | 'user' | 'assistant';
   readonly content: string;

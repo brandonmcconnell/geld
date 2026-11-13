@@ -98,6 +98,7 @@ import { rememberTopCard, setTopCard } from './top-card';
 import { closeOverviewChecks, isOverviewPage, OVERVIEW_FOR_YOU, OVERVIEW_ITEM, openCollapsedThreads, openOverviewChecks, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, showAllOverviewComments } from './overview-page';
 import { pageFetch } from '../page-fetch';
 import { closeFlow, flowFiles, openFlowDialog } from './flow';
+import type { ChatFile } from '@geld/review';
 import type { ChatPageContext } from './chat-sidebar';
 import { closeChat, setChatContext, syncChatToPage, toggleChat } from './chat-sidebar';
 import { countUsage } from '../../lib/usage-count';
@@ -2600,17 +2601,37 @@ function chatContextFor(pullPath: string, meta: GeldPrMeta, settings: GeldSettin
     ai: { enabled: settings.aiEnabled, baseUrl: settings.aiBaseUrl, model: settings.aiModel },
     pull: () => {
       const intent = pullIntent();
+      const files = flowFiles(pullPath).map((file) => ({ path: file.path, additions: file.additions, deletions: file.deletions, ...(file.hiddenAs === null ? {} : { hidden: file.hiddenAs }) }));
+      // The sidebar stays open on the pull request's other tabs, where neither the description nor the flow's files are on the page.
+      const kept = lastPullReading?.pullPath === pullPath ? lastPullReading : null;
+      const reading: PullReading = {
+        pullPath,
+        title: intent.title === '' ? (kept?.title ?? '') : intent.title,
+        description: descriptionBody() === null ? (kept?.description ?? '') : intent.description,
+        files: files.length === 0 ? (kept?.files ?? []) : files,
+      };
+      lastPullReading = reading;
       return {
         url,
-        title: intent.title,
+        title: reading.title,
         author: prAuthor,
-        description: intent.description,
+        description: reading.description,
         findings: meta.items.map((item) => ({ title: item.title, ...(item.path === undefined ? {} : { path: item.path }), ...(item.line === undefined ? {} : { line: item.line }), open: isOpenStatus(item.status), authors: authorLabels(item) })),
-        files: flowFiles(pullPath).map((file) => ({ path: file.path, additions: file.additions, deletions: file.deletions, ...(file.hiddenAs === null ? {} : { hidden: file.hiddenAs }) })),
+        files: reading.files,
       };
     },
   };
 }
+
+interface PullReading {
+  readonly pullPath: string;
+  readonly title: string;
+  readonly description: string;
+  readonly files: readonly ChatFile[];
+}
+
+/** The chat's last reading of the pull request, for the tabs that do not show what it read. */
+let lastPullReading: PullReading | null = null;
 
 function pullIntent(): SuggestionSource['pull'] {
   const heading = document.querySelector('.js-issue-title, [data-component="PH_Title"] .markdown-title, h1 bdi.markdown-title, h1 .markdown-title');
