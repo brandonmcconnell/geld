@@ -104,6 +104,11 @@ export interface GeldSettings {
   readonly errorReports: boolean;
   /** Send anonymous usage statistics (installs, updates, one daily ping with the version) to geld.sh. On by default. */
   readonly usageStats: boolean;
+  /**
+   * When the reader answered the extension's privacy prompt (`usageStats` and `errorReports`, from the prompt or by
+   * turning either on or off in the options), as an ISO time. Empty until then, which is what shows the prompt.
+   */
+  readonly consentDecidedAt: string;
   /** GitHub Enterprise Server hostnames Geld also runs on (permission granted by the user). */
   readonly enterpriseHosts: readonly string[];
   /**
@@ -245,6 +250,17 @@ export function digestViewOf(settings: Pick<GeldSettings, 'prOverview' | 'compac
 }
 
 /** The settings that make `view`, chosen at `at` (ISO). A folded timeline keeps its depth (`minimal` stays). */
+/** What the reader allows Geld to send: the two optional categories of the privacy prompt. */
+export interface ConsentChoice {
+  readonly usageStats: boolean;
+  readonly errorReports: boolean;
+}
+
+/** A privacy choice as the settings it writes, its time recorded so the prompt shows no more. */
+export function consentPatch(choice: ConsentChoice, at: string): Pick<GeldSettings, 'usageStats' | 'errorReports' | 'consentDecidedAt'> {
+  return { usageStats: choice.usageStats, errorReports: choice.errorReports, consentDecidedAt: at };
+}
+
 export function digestViewPatch(settings: Pick<GeldSettings, 'compactTimeline'>, view: DigestView, at: string): Pick<GeldSettings, 'prOverview' | 'compactTimeline' | 'digestViewChosenAt'> {
   const folded: CompactTimelineMode = settings.compactTimeline === 'off' ? 'compact' : settings.compactTimeline;
   if (view === 'github') return { prOverview: false, compactTimeline: settings.compactTimeline, digestViewChosenAt: at };
@@ -279,6 +295,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   prOverview: true,
   compactTimeline: 'compact',
   digestViewChosenAt: '',
+  consentDecidedAt: '',
   reviewGrouping: 'type',
   collapseDescription: true,
   attachmentLightbox: true,
@@ -544,6 +561,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     prOverview: bool(record, 'prOverview', DEFAULT_SETTINGS.prOverview),
     compactTimeline: isCompactTimelineMode(record.compactTimeline) ? record.compactTimeline : DEFAULT_SETTINGS.compactTimeline,
     digestViewChosenAt: typeof record.digestViewChosenAt === 'string' ? record.digestViewChosenAt : DEFAULT_SETTINGS.digestViewChosenAt,
+    consentDecidedAt: typeof record.consentDecidedAt === 'string' ? record.consentDecidedAt : DEFAULT_SETTINGS.consentDecidedAt,
     reviewGrouping: isReviewGrouping(record.reviewGrouping) ? record.reviewGrouping : DEFAULT_SETTINGS.reviewGrouping,
     collapseDescription: bool(record, 'collapseDescription', DEFAULT_SETTINGS.collapseDescription),
     attachmentLightbox: bool(record, 'attachmentLightbox', DEFAULT_SETTINGS.attachmentLightbox),

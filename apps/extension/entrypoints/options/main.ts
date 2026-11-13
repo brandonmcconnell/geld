@@ -67,6 +67,7 @@ import { mountAccountWidget } from '../../src/ui/account-widget';
 import { polyfillCornerShape } from '../../src/ui/corner-shape';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
 import { installErrorCapture } from '../../src/lib/error-capture';
+import { mountConsentBanner } from '../../src/ui/consent-banner';
 
 installErrorCapture('options');
 
@@ -182,6 +183,7 @@ function requireCategoryFields(): { readonly categoriesField: CategoriesField; r
 
 async function main(): Promise<void> {
   let settings = await settingsItem.getValue();
+  mountConsentBanner(requireElement('consent', HTMLDivElement), settings);
   // The active pattern catalog: bundled, or the newer signed copy the background fetched.
   let cachedCatalog = await catalogItem.getValue();
   let catalog: Catalog = catalogFromCache(cachedCatalog);
@@ -210,8 +212,10 @@ async function main(): Promise<void> {
       help.id = `${field.key}-help`;
       const button = switchButton(field.key, settings[field.key], label.id, help.id);
       host.append(el('div', 'geld-row', [el('div', '', [label, help]), button]));
+      // Turning either of the privacy prompt's settings on or off answers the prompt too.
+      const answers = field.key === 'usageStats' || field.key === 'errorReports';
       const bound = bindSwitch(button, settings[field.key], async (value) => {
-        settings = await settingsItem.patch({ [field.key]: value });
+        settings = await settingsItem.patch({ [field.key]: value, ...(answers ? { consentDecidedAt: new Date().toISOString() } : {}) });
         saved('Saved', 'success');
       });
       toggleSwitches.push({ field, set: bound.set });
