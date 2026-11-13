@@ -8,12 +8,13 @@
 
 import { createElement, svgFromString } from '../dom';
 import type { RefDetails, RefState } from './refs';
-import { ICON_CHECK, ICON_COMMENT_DISCUSSION, ICON_GIT_COMPARE, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_ISSUE_CLOSED, ICON_ISSUE_OPENED, ICON_LINK, ICON_SKIP, ICON_X } from '../ui/icons';
+import { ICON_BOOKMARK, ICON_CHECK, ICON_COMMENT_DISCUSSION, ICON_EYE, ICON_GIT_BRANCH, ICON_GIT_COMPARE, ICON_GIT_MERGE, ICON_GIT_MERGE_QUEUE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_HISTORY, ICON_ISSUE_CLOSED, ICON_ISSUE_OPENED, ICON_KEY, ICON_LINK, ICON_LOCK, ICON_MILESTONE, ICON_PENCIL, ICON_PERSON, ICON_SKIP, ICON_TAG, ICON_TRASH, ICON_X } from '../ui/icons';
 import { openMinimized } from './chat';
 import { commitDate } from './commit-dates';
 import { overviewNewestFirst } from './overview-page';
 import { compareHome, homeOf, onRestore, teleportInto } from './teleport';
 import { referenceLinksIn } from './references';
+import { eventText, type EventPart } from './timeline-events';
 import { relativeTimeElement } from './time';
 
 /**
@@ -492,6 +493,75 @@ export function renderMentionsView(slot: HTMLElement, nodes: readonly HTMLElemen
   section('What this PR mentions', outgoing);
   slot.replaceChildren(wrap);
   if (wrap.childElementCount === 0) slot.append(createElement('p', { class: 'geld-review__qv-empty' }, ['Not loaded on this page yet.']));
+}
+
+/** One of the pull request's own events, read from timeline data rather than a row of the page's. */
+export interface EventLine {
+  /** GitHub's `eventType`, which picks the glyph its timeline badge draws. */
+  readonly type: string;
+  readonly state: 'open' | 'closed' | 'merged' | null;
+  /** The actor's picture and name, each carrying their hovercard. */
+  readonly avatar: HTMLElement | null;
+  readonly actor: HTMLElement | null;
+  readonly words: readonly EventPart[];
+  readonly at: string;
+}
+
+/** Each event's glyph, as GitHub's timeline badge draws it. */
+const EVENT_GLYPH: Readonly<Record<string, string>> = {
+  closed: ICON_GIT_PULL_REQUEST_CLOSED,
+  merged: ICON_GIT_MERGE,
+  reopened: ICON_GIT_PULL_REQUEST,
+  renamed: ICON_PENCIL,
+  assigned: ICON_PERSON,
+  unassigned: ICON_PERSON,
+  review_requested: ICON_EYE,
+  review_request_removed: ICON_EYE,
+  ready_for_review: ICON_EYE,
+  review_dismissed: ICON_X,
+  labeled: ICON_TAG,
+  unlabeled: ICON_TAG,
+  milestoned: ICON_MILESTONE,
+  demilestoned: ICON_MILESTONE,
+  locked: ICON_LOCK,
+  unlocked: ICON_KEY,
+  head_ref_deleted: ICON_GIT_BRANCH,
+  head_ref_restored: ICON_GIT_BRANCH,
+  base_ref_changed: ICON_GIT_BRANCH,
+  convert_to_draft: ICON_GIT_PULL_REQUEST_DRAFT,
+  auto_merge_enabled: ICON_GIT_MERGE,
+  auto_squash_enabled: ICON_GIT_MERGE,
+  auto_rebase_enabled: ICON_GIT_MERGE,
+  auto_merge_disabled: ICON_GIT_MERGE,
+  added_to_merge_queue: ICON_GIT_MERGE_QUEUE,
+  removed_from_merge_queue: ICON_GIT_MERGE_QUEUE,
+  referenced: ICON_BOOKMARK,
+  comment_deleted: ICON_TRASH,
+};
+
+function eventPartNode(part: EventPart): Node {
+  if (typeof part === 'string') return document.createTextNode(part);
+  if ('code' in part) return createElement('code', { class: 'geld-review__event-ref' }, [part.code]);
+  if ('removed' in part) return createElement('del', { class: 'geld-review__activity-was' }, [part.removed]);
+  if ('added' in part) return createElement('ins', { class: 'geld-review__activity-now' }, [part.added]);
+  return createElement('a', { class: 'geld-review__activity-user', href: `/${part.user}`, 'data-hovercard-type': 'user', 'data-hovercard-url': `/users/${encodeURIComponent(part.user)}/hovercard` }, [part.user]);
+}
+
+/**
+ * The pull request's own events as lines, on the mentions' grid: the actor's picture, the event's glyph, who did what
+ * (the only part that truncates), then when. For the Overview, whose page holds no event rows to lend.
+ */
+export function renderEventsView(slot: HTMLElement, lines: readonly EventLine[]): void {
+  const list = createElement('ul', { class: 'geld-review__mentions geld-review__activity-events', role: 'list' });
+  for (const line of lines) {
+    const words = createElement('span', { class: 'geld-review__activity-words', title: eventText(line.words) }, [...(line.actor === null ? [] : [line.actor, ' ']), ...line.words.map(eventPartNode)]);
+    const what = createElement('span', { class: 'geld-review__mention-link' }, [createElement('span', { class: 'geld-review__mention-state', 'aria-hidden': 'true' }, [svgFromString(EVENT_GLYPH[line.type] ?? ICON_HISTORY)]), words]);
+    const row = createElement('li', { class: 'geld-review__mention', ...(line.state === null ? {} : { 'data-state': line.state }) }, [line.avatar ?? createElement('span', { class: 'geld-review__mention-who', 'aria-hidden': 'true' }), what]);
+    if (line.at !== '') row.append(relativeTimeElement(line.at, 'geld-review__time'));
+    list.append(row);
+  }
+  slot.replaceChildren(list);
+  if (lines.length === 0) slot.append(createElement('p', { class: 'geld-review__qv-empty' }, ['Not loaded on this page yet.']));
 }
 
 /** Who wrote the description, for the lines of what it mentions. */

@@ -8682,6 +8682,40 @@ a.geld-review__rerun:hover {
   white-space: nowrap;
 }
 
+/* An event line (the Overview's events, read from data): who in bold, then what they did, in one truncating line. */
+.geld-review__activity-words {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-review__activity-actor {
+  color: var(--fgColor-default, var(--color-fg-default));
+  font-weight: 600;
+}
+
+.geld-review__activity-user {
+  color: var(--fgColor-default, var(--color-fg-default));
+  font-weight: 500;
+}
+
+:is(.geld-review__activity-actor, .geld-review__activity-user):hover {
+  color: var(--fgColor-accent, var(--color-accent-fg, #0969da));
+}
+
+.geld-review__activity-was {
+  color: var(--fgColor-muted, var(--color-fg-muted));
+}
+
+.geld-review__activity-now {
+  color: var(--fgColor-default, var(--color-fg-default));
+  font-weight: 500;
+  text-decoration: none;
+}
+
 .geld-review__mention > .geld-review__time {
   flex: 0 0 auto;
   margin-left: auto;

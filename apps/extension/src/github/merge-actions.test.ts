@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MergeActions, MergeSubmission } from './merge-actions';
-import { actionErrorText, partialMayWait, autoMergeRequest, awaitMergedState, bypassBeside, isStackRequest, mergeRequestStatusUrl, settleStackMerge, stackMergeId, stackMergeState, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict, embeddedPullRequestCreated, embeddedStack, methodHint, prefetchMergeBox, readMergeActions, rememberMethod } from './merge-actions';
+import { actionErrorText, partialMayWait, autoMergeRequest, awaitMergedState, bypassBeside, isStackRequest, mergeRequestStatusUrl, settleStackMerge, stackMergeId, stackMergeState, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict, embeddedPullRequestBranches, embeddedPullRequestCreated, embeddedStack, methodHint, prefetchMergeBox, readMergeActions, rememberMethod } from './merge-actions';
 
 /** A `page_data/merge_box` answer as GitHub gave it on brandonmcconnell/geld#74 (Oct 2026), trimmed. */
 function payload(overrides: { readonly state?: string; readonly draft?: boolean; readonly canClose?: boolean; readonly canBypass?: boolean; readonly direct?: string; readonly stacked?: boolean; readonly queue?: string; readonly queued?: boolean; readonly auto?: boolean; readonly autoOn?: boolean; readonly email?: string; readonly emails?: readonly string[] | null; readonly conflict?: boolean; readonly methodStatus?: string } = {}): unknown {
@@ -314,6 +314,13 @@ describe('when the page says the pull request was opened', () => {
     expect(embeddedPullRequestCreated('/other/repo/pull/467', root)).toBeNull();
     root.innerHTML = script({ pullRequest: { number: 466, createdTime: 'soon' }, repository: { ownerLogin: 'o', name: 'r' } });
     expect(embeddedPullRequestCreated('/o/r/pull/466', root)).toBeNull();
+  });
+
+  it('reads the base and head branch names, for the Overview’s event lines', () => {
+    const root = document.createElement('div');
+    root.innerHTML = script({ pullRequest: { number: 466, baseBranch: 'main', headBranch: 'agents/nested' }, repository: { ownerLogin: 'o', name: 'r' } });
+    expect(embeddedPullRequestBranches('/o/r/pull/466', root)).toEqual({ base: 'main', head: 'agents/nested' });
+    expect(embeddedPullRequestBranches('/o/r/pull/467', root)).toEqual({ base: null, head: null });
   });
 });
 
