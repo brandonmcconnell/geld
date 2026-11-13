@@ -192,6 +192,8 @@ export interface GeldSettings {
    * author used (from its related links) when the reader is that author, else the menu's order.
    */
   readonly codingAgent: CodingAgentId;
+  /** A triage fix committed with Fix resolves the threads it answers; a repository's `review.resolveOnFix: false` turns it off there too. */
+  readonly resolveOnFix: boolean;
 }
 
 /** Ids shared with `@geld/review`'s coding agent registry (`CODING_AGENTS`), which keys its entries by them. */
@@ -294,6 +296,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   aiDecisionModel: '',
   suggestedFixes: 'bots',
   codingAgent: 'auto',
+  resolveOnFix: true,
 };
 
 /**
@@ -559,6 +562,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     aiDecisionModel: typeof record.aiDecisionModel === 'string' ? record.aiDecisionModel.trim() : DEFAULT_SETTINGS.aiDecisionModel,
     suggestedFixes: isSuggestedFixMode(record.suggestedFixes) ? record.suggestedFixes : DEFAULT_SETTINGS.suggestedFixes,
     codingAgent: isCodingAgentId(record.codingAgent) ? record.codingAgent : DEFAULT_SETTINGS.codingAgent,
+    resolveOnFix: bool(record, 'resolveOnFix', DEFAULT_SETTINGS.resolveOnFix),
   };
 }
 

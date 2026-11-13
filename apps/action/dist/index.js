@@ -2728,7 +2728,8 @@ function normalizeSettings(value) {
     aiJev: bool(record4, "aiJev", DEFAULT_SETTINGS.aiJev),
     aiDecisionModel: typeof record4.aiDecisionModel === "string" ? record4.aiDecisionModel.trim() : DEFAULT_SETTINGS.aiDecisionModel,
     suggestedFixes: isSuggestedFixMode(record4.suggestedFixes) ? record4.suggestedFixes : DEFAULT_SETTINGS.suggestedFixes,
-    codingAgent: isCodingAgentId(record4.codingAgent) ? record4.codingAgent : DEFAULT_SETTINGS.codingAgent
+    codingAgent: isCodingAgentId(record4.codingAgent) ? record4.codingAgent : DEFAULT_SETTINGS.codingAgent,
+    resolveOnFix: bool(record4, "resolveOnFix", DEFAULT_SETTINGS.resolveOnFix)
   };
 }
 function normalizeHost(input3) {
@@ -2841,7 +2842,8 @@ var init_settings = __esm({
       aiJev: false,
       aiDecisionModel: "",
       suggestedFixes: "bots",
-      codingAgent: "auto"
+      codingAgent: "auto",
+      resolveOnFix: true
     };
     SETTINGS_STORAGE_KEY = "sync:settings";
     CATEGORY_ORDER = CATEGORY_IDS;
@@ -2991,7 +2993,8 @@ var init_usage_settings = __esm({
       "attachmentLightbox",
       "relatedLinks",
       "aiEnabled",
-      "aiJev"
+      "aiJev",
+      "resolveOnFix"
     ];
     USAGE_CHOICES = {
       compactTimeline: COMPACT_TIMELINE_MODES,
@@ -3690,7 +3693,8 @@ var init_settings_validate = __esm({
       "attachmentLightbox",
       "relatedLinks",
       "aiEnabled",
-      "aiJev"
+      "aiJev",
+      "resolveOnFix"
     ];
   }
 });
@@ -11323,7 +11327,13 @@ function collectRepoConfigIssues(value, catalog = BUNDLED_CATALOG, path = "$", k
   checkCategoryPatterns(issues, at("categoryPatterns"), value.categoryPatterns);
   checkCustomCategories(issues, at("customCategories"), value.customCategories);
   checkReviewBots(issues, at("reviewBots"), value.reviewBots, knownBots);
-  if (value.review !== void 0 && (!isRecord8(value.review) || typeof value.review.ai !== "boolean")) issues.push({ path: at("review.ai"), message: "Expected a boolean AI policy." });
+  if (value.review !== void 0) {
+    if (!isRecord8(value.review)) issues.push({ path: at("review"), message: `Expected a mapping with \`ai\` or \`resolveOnFix\`, got ${describeValue(value.review)}.` });
+    else {
+      if (value.review.ai !== void 0 && typeof value.review.ai !== "boolean") issues.push({ path: at("review.ai"), message: "Expected a boolean AI policy." });
+      if (value.review.resolveOnFix !== void 0 && typeof value.review.resolveOnFix !== "boolean") issues.push({ path: at("review.resolveOnFix"), message: `Expected true or false, got ${describeValue(value.review.resolveOnFix)}.` });
+    }
+  }
   if (value.issueTracker !== void 0 && !parseIssueTracker(value.issueTracker)) issues.push({ path: at("issueTracker"), message: "Expected a supported tracker, allowed keys and an HTTPS origin." });
   return issues;
 }
@@ -11365,9 +11375,17 @@ function parseRepoConfig(text, catalog = BUNDLED_CATALOG, knownBots = null) {
       customCategories: normalized.customCategories,
       reviewBots: reviewBotsOf(value),
       ...issueTracker ? { issueTracker } : {},
-      ...isRecord8(value.review) && typeof value.review.ai === "boolean" ? { review: { ai: value.review.ai } } : {}
+      ...reviewPolicyOf(value.review)
     }
   };
+}
+function reviewPolicyOf(value) {
+  if (!isRecord8(value)) return {};
+  const review = {
+    ...typeof value.ai === "boolean" ? { ai: value.ai } : {},
+    ...typeof value.resolveOnFix === "boolean" ? { resolveOnFix: value.resolveOnFix } : {}
+  };
+  return Object.keys(review).length === 0 ? {} : { review };
 }
 function isEmptyRepoConfig(config2) {
   return Object.keys(config2.categories).length === 0 && Object.keys(config2.groups).length === 0 && Object.values(config2.categoryPatterns).every((lines2) => lines2 === void 0 || lines2.length === 0) && config2.customCategories.length === 0 && config2.reviewBots.length === 0 && config2.review === void 0 && config2.issueTracker === void 0;
@@ -11376,6 +11394,11 @@ function declaredReviewBots(configs) {
   const ids = [];
   for (const config2 of configs) for (const id of config2.reviewBots) if (!ids.includes(id)) ids.push(id);
   return ids;
+}
+function repoResolvesOnFix(configs) {
+  let said = null;
+  for (const config2 of configs) if (config2.review?.resolveOnFix !== void 0) said = config2.review.resolveOnFix;
+  return said;
 }
 function appendPatterns(base, extra) {
   const merged = { ...base };
@@ -11437,6 +11460,7 @@ function describeRepoConfig(config2) {
   const patterns = Object.values(config2.categoryPatterns).reduce((sum, lines2) => sum + (lines2?.length ?? 0), 0) + config2.customCategories.reduce((sum, custom2) => sum + custom2.patterns.length, 0);
   if (patterns > 0) parts2.push(`${patterns} ${patterns === 1 ? "pattern" : "patterns"}`);
   if (config2.reviewBots.length > 0) parts2.push(`${config2.reviewBots.length} review ${config2.reviewBots.length === 1 ? "bot" : "bots"}`);
+  if (config2.review?.resolveOnFix === false) parts2.push("fixes leave threads open");
   return parts2.length === 0 ? "no changes" : parts2.join(", ");
 }
 var import_yaml, REPO_CONFIG_PATH, ORG_CONFIG_REPO, ORG_CONFIG_PATHS, EMPTY_REPO_CONFIG, ALLOWED_KEYS, BOT_ID, PERSONAL_KEYS, SCOPE_RESET;
@@ -12074,6 +12098,14 @@ var init_settings_schema = __esm({
           },
           {
             kind: "toggle",
+            key: "resolveOnFix",
+            label: "Resolve threads when a fix is in",
+            description: "Fix commits the AI triage\u2019s fix and resolves the threads it answers. Off, the threads stay open for you to resolve. A repository can turn it off for everyone with `review.resolveOnFix: false` in its `geld.yml`.",
+            popup: false,
+            surfaces: ["extension"]
+          },
+          {
+            kind: "toggle",
             key: "aiEnabled",
             label: "AI features",
             description: "Consolidate bot findings, write the TL;DR and propose fixes with a model of your choosing. Off, no request is made and its settings are hidden but kept. On, they show below, and it takes effect once a gateway URL, key and model are set.",
@@ -12461,6 +12493,7 @@ __export(src_exports, {
   readRemoteValidated: () => readRemoteValidated,
   recognizeTickets: () => recognizeTickets,
   repoFromPathname: () => repoFromPathname,
+  repoResolvesOnFix: () => repoResolvesOnFix,
   resolveCatalog: () => resolveCatalog,
   resolveCustomPatterns: () => resolveCustomPatterns,
   scrubErrorText: () => scrubErrorText,
