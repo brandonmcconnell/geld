@@ -344,6 +344,12 @@ async function loadAgent(id: string, quiet = false): Promise<void> {
     if (!running || watchedAgent !== id) thread.live = IDLE_LIVE;
     thread.loaded = true;
     if (running) watch(id);
+    // Idle, the stream is let go: reopened later without its last event id it would play the finished run again. The
+    // idle poll watches anew once a run started elsewhere shows.
+    else if (watchedAgent === id) {
+      watchedAgent = null;
+      post({ type: 'unwatch' });
+    }
   }
   if (cursorModels === null) void loadCursorModels();
   scheduleRender();
@@ -705,6 +711,7 @@ function renderLog(view: Sidebar): void {
           if (!canSend()) return;
           sendAssistant(prompt);
           render();
+          ui?.input.focus({ preventScroll: true });
         });
         return button;
       });
