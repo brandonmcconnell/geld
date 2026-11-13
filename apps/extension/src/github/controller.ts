@@ -753,6 +753,7 @@ export class GeldController {
    * offset GitHub aimed for and held there while the files around it settle.
    */
   private followTreePick(target: Element): void {
+    if (!this.mayDressPage()) return;
     const row = target.closest('li[role="treeitem"]');
     if (row === null) return;
     const view = legacyAdapter.read() ?? reactAdapter.read();
@@ -777,32 +778,31 @@ export class GeldController {
     let stopped = false;
     const stop = (): void => {
       stopped = true;
-    };
-    this.cancelAlign = stop;
-    const options: AddEventListenerOptions = { passive: true, once: true };
-    const release = (): void => {
       window.removeEventListener('wheel', stop);
       window.removeEventListener('touchstart', stop);
       window.removeEventListener('keydown', stop);
       if (this.cancelAlign === stop) this.cancelAlign = null;
     };
+    this.cancelAlign = stop;
+    const options: AddEventListenerOptions = { passive: true, once: true };
     const frame = (): void => {
-      if (stopped) return release();
+      if (stopped) return;
       const y = window.scrollY;
       if (y !== last) {
         moved = true;
         still = 0;
         last = y;
       } else still += 1;
-      if (!moved && performance.now() - began > TREE_SCROLL_START_MS) return release();
+      if (!moved && performance.now() - began > TREE_SCROLL_START_MS) return stop();
       if (moved && still >= TREE_SCROLL_STILL_FRAMES) {
-        release();
+        stop();
         onLanded(y);
         return;
       }
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(() => {
+      if (stopped) return;
       // Listened for from the next frame: the keydown that picked the file is still being dispatched.
       window.addEventListener('wheel', stop, options);
       window.addEventListener('touchstart', stop, options);
@@ -1831,9 +1831,13 @@ export class GeldController {
     const scrollMargin = offset ?? (Number.parseFloat(getComputedStyle(first).scrollMarginTop) || 0);
     const deadline = performance.now() + holdMs;
     let stableChecks = 0;
-    let userScrolled = false;
+    let stopped = false;
     const stop = (): void => {
-      userScrolled = true;
+      stopped = true;
+      window.removeEventListener('wheel', stop);
+      window.removeEventListener('touchstart', stop);
+      window.removeEventListener('keydown', stop);
+      if (this.cancelAlign === stop) this.cancelAlign = null;
     };
     this.cancelAlign = stop;
     const options: AddEventListenerOptions = { passive: true, once: true };
@@ -1842,13 +1846,9 @@ export class GeldController {
     window.addEventListener('keydown', stop, options);
 
     const check = (): void => {
+      if (stopped) return;
       const target = live();
-      if (userScrolled || performance.now() > deadline || target === null) {
-        window.removeEventListener('wheel', stop);
-        window.removeEventListener('touchstart', stop);
-        window.removeEventListener('keydown', stop);
-        return;
-      }
+      if (performance.now() > deadline || target === null) return stop();
       const drift = target.getBoundingClientRect().top - scrollMargin;
       if (Math.abs(drift) > 4) {
         stableChecks = 0;
@@ -1858,7 +1858,7 @@ export class GeldController {
       } else if (settleWhenStable && (stableChecks += 1) >= 3) {
         // A plain list is settled once it has stayed put; a virtualised one mounts more rows above at any moment
         // until the hold ends, so a quiet half-second there proves nothing.
-        return;
+        return stop();
       }
       setTimeout(check, 150);
     };
@@ -2232,6 +2232,8 @@ export class GeldController {
 
   /** `rebuild`: the page is dressed again right after, so the digest keeps what the reader opened and unfolded. */
   private teardown(rebuild = false): void {
+    this.cancelAlign?.();
+    this.cancelAlign = null;
     document.documentElement.removeAttribute(ATTR_DRESSED);
     // A rebuild stands the counts in the tab row again at once: GitHub's beside the branch names would show for a frame.
     if (!rebuild) setTabCounts(false);
