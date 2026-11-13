@@ -1,0 +1,191 @@
+name: TestFlight
+
+# Uploads every release's Mac app to App Store Connect, so TestFlight testers get each push to main, with automatic
+# updates on, the way Geld Nightly updates itself in Chromium browsers. Safari extensions ship inside an app, so
+# TestFlight is the only way a Safari build can update itself.
+#
+# When it runs: after every successful CI run on main (CI publishes a release when the extension changed), and on
+# demand. A release App Store Connect already has is skipped on a Linux runner before any macOS minutes are spent.
+#
+# Who gets the build:
+#   - Internal testers (App Store Connect users on the team, up to 100): every build, as soon as Apple has processed
+#     it, with no review, through an internal group with automatic distribution on (set up in App Store Connect).
+#   - External testers (anyone with the public link, up to 10,000): the groups named in the repository variable
+#     TESTFLIGHT_GROUPS (comma-separated). Every release is its own App Store version (scripts/safari-version.mjs),
+#     so each build goes to TestFlight App Review first; Apple takes at most six submissions a day and testers get the
+#     build once it is approved. A refusal is a warning: the build is still uploaded and the next release goes out.
+#
+# The App Store job in publish.yml finds the build already uploaded and submits it as it is.
+#
+# Secrets: the Safari ones publish.yml uses (APPLE_ASC_KEY_ID, APPLE_ASC_ISSUER_ID, APPLE_ASC_PRIVATE_KEY,
+# APPLE_CERTIFICATE_P12, APPLE_CERTIFICATE_PASSWORD, APPLE_TEAM_ID). See apps/extension/store/PUBLISHING.md.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Release tag to upload (empty = latest release)'
+        required: false
+        default: ''
+
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Find the release
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.pick.outputs.tag }}
+      version: ${{ steps.pick.outputs.version }}
+      build: ${{ steps.pick.outputs.build }}
+      upload: ${{ steps.known.outputs.upload }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Pick the release
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED: ${{ inputs.release }}
+        run: |
+          tag="$REQUESTED"
+          if [ -z "$tag" ]; then tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName); fi
+          package_version="${tag#v}"; package_version="${package_version%%-build.*}"
+          build="${tag##*build.}"
+          version=$(node apps/extension/scripts/safari-version.mjs "$package_version" "$build")
+          echo "Release $tag: App Store version $version, build $build"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+      - name: Check App Store Connect for this build
+        id: known
+        env:
+          ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.APPLE_ASC_PRIVATE_KEY }}
+          CERT: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+        run: |
+          if [ -z "$ASC_KEY_ID" ] || [ -z "$CERT" ]; then
+            echo "::warning title=TestFlight::Skipped: Apple credentials are not configured (see apps/extension/store/PUBLISHING.md)."
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version="${{ steps.pick.outputs.version }}"; build="${{ steps.pick.outputs.build }}"
+          known=$(node apps/extension/scripts/publish/asc-build-exists.mjs sh.geld.safari "$version" "$build" || echo "unknown")
+          echo "App Store Connect already has build $version ($build): $known"
+          if [ "$known" = "exists" ]; then
+            echo "::notice title=TestFlight::Skipped: App Store Connect already has build $version ($build)."
+            echo "upload=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "upload=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  upload:
+    name: Upload to TestFlight
+    needs: check
+    if: needs.check.outputs.upload == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.check.outputs.tag }}
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          FONTAWESOME_PACKAGE_TOKEN: ${{ secrets.FONTAWESOME_PACKAGE_TOKEN }}
+      # The store flavour at the release's build number, as publish.yml builds it: TestFlight updates the app, so the
+      # build needs none of Geld Nightly's own updater.
+      - env:
+          WXT_GELD_APP_CLIENT_ID: ${{ vars.WXT_GELD_APP_CLIENT_ID }}
+          GELD_BUILD_NUMBER: ${{ needs.check.outputs.build }}
+        run: pnpm --filter @geld/extension safari:sync
+      - name: Import signing certificate
+        env:
+          P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          P12_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$P12" | base64 --decode > cert.p12
+          security create-keychain -p ci build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p ci build.keychain
+          security import cert.p12 -k build.keychain -P "$P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/xcodebuild
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
+      # Archived and exported exactly as publish.yml does (see the comments there on why the archive is signed ad hoc).
+      - name: Archive and export the App Store package
+        env:
+          ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.APPLE_ASC_PRIVATE_KEY }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        working-directory: apps/extension/safari/Geld
+        run: |
+          mkdir -p ~/.private_keys && echo "$ASC_PRIVATE_KEY" | base64 --decode > ~/.private_keys/AuthKey_$ASC_KEY_ID.p8
+          xcodebuild -project Geld.xcodeproj -scheme "Geld (macOS)" -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -archivePath build/Geld.xcarchive archive \
+            DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="-" PROVISIONING_PROFILE_SPECIFIER=""
+          cat > ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>export</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>signingStyle</key><string>automatic</string>
+          </dict></plist>
+          EOF
+          xcodebuild -exportArchive -archivePath build/Geld.xcarchive -exportOptionsPlist ExportOptions.plist -exportPath build/export \
+            -allowProvisioningUpdates -authenticationKeyPath ~/.private_keys/AuthKey_$ASC_KEY_ID.p8 \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          ls -1 build/export
+      # pilot uploads the package and waits for Apple to process it. Internal groups with automatic distribution get
+      # it then; the external groups in TESTFLIGHT_GROUPS get it after TestFlight App Review.
+      - name: Upload and distribute
+        env:
+          ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          GROUPS: ${{ vars.TESTFLIGHT_GROUPS }}
+          TAG: ${{ needs.check.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+          FASTLANE_HIDE_CHANGELOG: '1'
+        working-directory: apps/extension/safari/Geld
+        run: |
+          jq -n --arg k "$ASC_KEY_ID" --arg i "$ASC_ISSUER_ID" --rawfile p ~/.private_keys/AuthKey_$ASC_KEY_ID.p8 \
+            '{key_id:$k, issuer_id:$i, key:$p, in_house:false}' > asc-key.json
+          # What to Test: the release's notes, within TestFlight's 4,000 characters.
+          changelog=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body | head -c 3800)
+          [ -z "$changelog" ] && changelog="Geld $TAG"
+          distribute=(--skip_submission true)
+          if [ -n "$GROUPS" ]; then distribute=(--distribute_external true --groups "$GROUPS" --notify_external_testers true); fi
+          set +e
+          fastlane pilot upload \
+            --api_key_path asc-key.json \
+            --app_identifier sh.geld.safari --app_platform osx \
+            --pkg "$(ls build/export/*.pkg | head -n 1)" \
+            --changelog "$changelog" \
+            --uses_non_exempt_encryption false \
+            "${distribute[@]}" 2>&1 | tee pilot.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" != "0" ] && grep -qiE "bundle version must be higher|already been used|has already been uploaded|redundant binary" pilot.log; then
+            echo "::notice title=TestFlight::Skipped: App Store Connect already has build ${TAG##*build.}."
+            exit 0
+          fi
+          # Uploaded, but TestFlight App Review did not take it (a review still running, the daily limit): internal
+          # testers have it, and the next release goes to external testers.
+          if [ "$code" != "0" ] && grep -qiE "Successfully uploaded|Successfully finished processing" pilot.log; then
+            echo "::warning title=TestFlight::Build uploaded, but not sent to external testers. Internal testers have it; the next release is sent as usual. See the log for Apple's answer."
+            exit 0
+          fi
+          [ "$code" = "0" ] && echo "::notice title=TestFlight::Build $TAG uploaded${GROUPS:+ and sent to $GROUPS}."
+          exit $code

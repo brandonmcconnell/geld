@@ -57,6 +57,11 @@ the repository variable `SAFARI_AUTO_PUBLISH=false` keeps Safari to manual runs.
 Until then new Safari code needed a new `package.json` version, so Safari lagged the other stores by weeks.
 **Apple asked for the physical-Mac recording once, for the new app** (its Guideline 2.1 "Information Needed - New App Submission" of Sep 30, 2026, answered Oct 31 and approved Nov 9), never per version, and the job no longer gates on it: `SAFARI_REVIEW_VIDEO_URL`, `SAFARI_REVIEW_VIDEO_VERSION` and `SAFARI_REVIEW_TEST_DEVICE` are optional, set together once, and while set the notes cite the recording and the job downloads and attaches it to every submission, since `fastlane deliver` deletes a version's attachment when given none;
 unset, the notes (`safari-review-notes.mjs`) name the recording the first review was given, which App Review keeps in the app's messages.
+**Safari's nightly is TestFlight** (`.github/workflows/testflight.yml`, Nov 2026): a Safari extension ships inside an app, so no updater of Geld's own can replace it, but TestFlight with automatic updates on does.
+After every successful CI run on `main` it uploads the latest release's Mac app (the store flavour, built from the release tag), checking App Store Connect on a Linux runner first so a release it has costs no macOS minutes.
+Internal testers get each build once Apple has processed it, and the external groups in the repository variable `TESTFLIGHT_GROUPS` after TestFlight App Review, which every build meets since each release is its own version (at most six a day, a refusal only a warning).
+The App Store job then finds the build uploaded and submits it as it is (`--skip_binary_upload --build_number`), unless `asc-store-version-state.mjs` says the version is already with App Review or on the store.
+geld.sh/nightly's Safari tab offers the public link once `TESTFLIGHT_URL` (`apps/site/lib/downloads.ts`) is set.
 The pattern catalog is signed and committed by CI on push (`GELD_CATALOG_PRIVATE_KEY` to sign, `CATALOG_DEPLOY_KEY` — a write deploy key — to push, with "Deploy keys" on the ruleset bypass list).
 Zips built by CI carry a four-part version (`package.json` version + run number, via `GELD_BUILD_NUMBER` in `wxt.config.ts`), so no bump commit is needed between store releases.
 Credentials and listing assets: `apps/extension/store/PUBLISHING.md`.
