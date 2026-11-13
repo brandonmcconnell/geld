@@ -167,6 +167,11 @@ function openChat(from: HTMLElement | null): void {
     chose = false;
     void loadAssistantChat(context.pageKey);
   }
+  // Requests from the sidebar before are dropped when they answer, so nothing may still read as under way.
+  for (const thread of agents.values()) {
+    thread.loading = false;
+    thread.sending = false;
+  }
   for (const linked of context.linkedAgents) ensureAgent(linked.id, linked.href);
   if (!chose && context.preferCursor && context.linkedAgents[0] !== undefined) active = context.linkedAgents[0].id;
   ui = buildSidebar();
@@ -358,8 +363,9 @@ async function loadAgent(id: string, quiet = false): Promise<void> {
   }
   const epoch = session;
   const reply = await askCursor({ type: 'geld:cursor', action: 'conversation', agentId: id });
-  if (epoch !== session || agents.get(id) !== thread) return;
+  // A reading made for an earlier sidebar is dropped, but its thread is not left marked busy, or it would never be read again.
   thread.loading = false;
+  if (epoch !== session || agents.get(id) !== thread) return;
   if (!isCursorConversationReply(reply)) {
     thread.error = 'Geld could not read this conversation.';
   } else if (!reply.ok) {
