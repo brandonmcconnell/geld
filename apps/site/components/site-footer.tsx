@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { ExternalLink } from '@/components/external-link';
 import { Logomark } from '@/components/logo';
+import { PrivacySettingsButton } from '@/components/privacy-controls';
 import { ThemeMenu } from '@/components/theme-menu';
 import { AUTHOR, ISSUES_URL, LICENSE_URL, NAV_LINKS, REPO_URL } from '@/lib/site';
 import { EXTENSION_VERSION } from '@/lib/version';
@@ -53,6 +54,7 @@ export function SiteFooter() {
       </div>
       <div className="container-site flex flex-col gap-2 border-t py-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
         <p>© {AUTHOR.name}. Not affiliated with GitHub.</p>
+        <PrivacySettingsButton className="self-start text-xs text-muted-foreground transition-colors hover:text-foreground sm:self-auto" />
       </div>
     </footer>
   );

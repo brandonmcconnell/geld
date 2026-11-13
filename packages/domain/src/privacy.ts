@@ -1,5 +1,5 @@
 export const PRIVACY_CONTACT = 'privacy@geld.sh';
-export const PRIVACY_UPDATED = 'November 10, 2026';
+export const PRIVACY_UPDATED = 'November 13, 2026';
 export const PRIVACY_SECTIONS: readonly {
   readonly id: string;
   readonly title: string;
@@ -61,6 +61,7 @@ export const PRIVACY_SECTIONS: readonly {
     title: 'Optional measurement and your choices',
     paragraphs: [
       'Optional analytics loads only after you opt in to measurement. You can opt in to all optional categories, cancel, or manage categories individually. Optional categories start off. Global Privacy Control is treated as a refusal. You can change your choice using Privacy settings in the footer.',
+      'On geld.sh, measurement records the pages you visit, the links and buttons you click, how far you scroll, the page that sent you and your approximate region, which PostHog derives from your IP address. It keeps an anonymous identifier in your browser so a return visit is counted as one, and records no session replays. Your choice is kept in this browser, and Privacy settings in the site’s footer changes it.',
       'Without measurement, Geld does not collect optional visits, feature usage, setup funnel events, navigation patterns or struggle signals. The product features and feature flags continue to work. When enabled, measurement uses normalized routes, excludes private repository identities, masks text and inputs by default and strips sensitive content before sending events. The extension’s anonymous usage statistics, described under Using the extension without an account, are separate from this measurement and are turned off in the extension’s own options.',
     ],
   },
