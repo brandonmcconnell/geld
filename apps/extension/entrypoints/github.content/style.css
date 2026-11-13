@@ -3524,23 +3524,9 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   font-size: 85%;
 }
 
-.geld-review__triage-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 16px 8px 38px;
-  padding: 4px 4px 4px 10px;
-  border-radius: 6px;
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.geld-review__triage-line[data-tone='attention'] {
-  background: light-dark(var(--geld-review-attention-bg), color-mix(in srgb, var(--geld-review-attention-fg) 14%, var(--geld-review-bg)));
-}
-
-.geld-review__triage-line[data-tone='danger'] {
-  background: light-dark(var(--geld-review-danger-bg), color-mix(in srgb, var(--geld-review-danger-fg) 14%, var(--geld-review-bg)));
+/* The card's own border ends a run that failed with nothing else to show. */
+.geld-review__triage > .geld-review__ai-notice:last-child {
+  border-bottom: 0;
 }
 
 .geld-review__triage-writing {
@@ -3889,15 +3875,10 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 }
 
 @container geld-review (width <= 640px) {
-  .geld-review__triage-line,
   .geld-review__triage-fixes,
   .geld-review__triage-writing,
   .geld-review__triage-status {
     margin-left: 16px;
-  }
-
-  .geld-review__triage-line {
-    flex-wrap: wrap;
   }
 
   .geld-review__triage-fix-place,

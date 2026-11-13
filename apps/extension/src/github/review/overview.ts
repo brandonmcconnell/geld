@@ -2662,7 +2662,8 @@ function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, pr
     recommended: pick.recommended === null || pick.reason === null ? null : { id: pick.recommended.id, reason: pick.reason },
     openKey: visit.triage.openKey,
     collapsed: visit.triage.collapsed,
-    writing: aiPending().has('suggest'),
+    // Only once the titles and the TL;DR are in: until then their own rows shimmer, and this line would name the wrong step.
+    writing: aiPending().has('suggest') && aiPending().size === 1,
     handedOff: visit.triage.handedOff,
   };
 }

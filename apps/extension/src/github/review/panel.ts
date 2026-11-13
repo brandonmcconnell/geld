@@ -25,6 +25,7 @@ import { authorLabels, botDetail, botHealth, checkStateOfRun, checksHealth, chec
 import type { CheckCounts, CheckState, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
 import type { AiState } from './ai';
+import type { AiStep } from '../../lib/local-state';
 import type { BotRequestState } from './bot-requests';
 import { requestDetail, requestSentence } from './bot-requests';
 import { formatSyncAge } from '../../ui/sync-age';
@@ -1356,7 +1357,7 @@ function aiButton(state: AiState, handlers: PanelHandlers): HTMLElement | null {
             ? 'Commits landed since the model proposed its fixes here. Run it again to check them against the new code.'
             : 'Comments or threads arrived since the model last ran here. Run it again for the new ones.'
           : state.kind === 'failed'
-            ? `The last run could not get an answer: ${state.error}`
+            ? aiFailureText(state)
             : 'Nothing new to triage since it ran. Show or hide the triage.';
   // `aria-disabled` rather than `disabled` for nothing-to-triage: a disabled button gets no hover, and the title is the explanation.
   const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__ai-btn`, 'data-state': state.kind, 'aria-label': `${label}. ${title}`, title, [ATTR_FOCUS]: 'ai', ...(state.kind === 'running' ? { 'aria-busy': 'true', disabled: '' } : state.kind === 'nothing' ? { 'aria-disabled': 'true' } : {}) }, [
@@ -1375,19 +1376,32 @@ function aiButton(state: AiState, handlers: PanelHandlers): HTMLElement | null {
  * own run. Copy uses no dashes or semicolons.
  */
 function aiNotice(state: AiState, handlers: PanelHandlers): HTMLElement | null {
-  const notice = (text: string, action: string, onAction: () => void, tone: 'attention' | 'danger' | 'accent'): HTMLElement => {
-    const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__ai-notice-btn` }, [action]);
-    button.addEventListener('click', onAction);
-    return createElement('div', { class: `${PANEL_CLASS}__ai-notice`, 'data-tone': tone, role: 'status' }, [
-      createElement('span', { class: `${PANEL_CLASS}__ai-notice-glyph`, 'aria-hidden': 'true' }, [icon(ICON_SPARKLE_FILL)]),
-      createElement('span', { class: `${PANEL_CLASS}__ai-notice-text` }, [text]),
-      button,
-    ]);
-  };
   if (state.kind === 'app' && state.hasLocal) {
-    return notice('This repository now writes its digest with Geld AI through its GitHub Action. The digest you see is that one. Clear the run kept on this device to keep it that way.', 'Clear my local run', () => handlers.onClearAi(), 'accent');
+    return aiNoticeRow('This repository now writes its digest with Geld AI through its GitHub Action. The digest you see is that one. Clear the run kept on this device to keep it that way.', 'Clear my local run', () => handlers.onClearAi(), 'accent');
   }
   return null;
+}
+
+/** A full-width row about AI with the one button that acts on it: the panel's notices and the triage's failed or stale run. */
+function aiNoticeRow(text: string, action: string, onAction: () => void, tone: 'attention' | 'danger' | 'accent', focusKey?: string): HTMLElement {
+  const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__ai-notice-btn`, ...(focusKey === undefined ? {} : { [ATTR_FOCUS]: focusKey }) }, [action]);
+  button.addEventListener('click', onAction);
+  return createElement('div', { class: `${PANEL_CLASS}__ai-notice`, 'data-tone': tone, role: 'status' }, [
+    createElement('span', { class: `${PANEL_CLASS}__ai-notice-glyph`, 'aria-hidden': 'true' }, [icon(tone === 'danger' ? ICON_ALERT : ICON_SPARKLE_FILL)]),
+    createElement('span', { class: `${PANEL_CLASS}__ai-notice-text` }, [text]),
+    button,
+  ]);
+}
+
+const FAILED_STEP: Readonly<Record<AiStep, string>> = {
+  findings: 'title the findings',
+  tldr: 'write the summary',
+  fixes: 'propose fixes',
+};
+
+/** "Geld AI could not propose fixes just now. Completion failed (400): …" */
+function aiFailureText(state: Extract<AiState, { readonly kind: 'failed' }>): string {
+  return `Geld AI could not ${state.step === undefined ? 'get an answer' : FAILED_STEP[state.step]} ${ranAgo(state.ranAt)}. ${state.error}`;
 }
 
 /**
@@ -1407,6 +1421,11 @@ function triageCard(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
   }
   if (triage?.collapsed === true && state.kind === 'current') return null;
   const card = createElement('div', { class: `${PANEL_CLASS}__triage`, 'aria-label': 'Geld AI triage', role: 'region' });
+  if (state.kind === 'failed') card.append(aiNoticeRow(aiFailureText(state), 'Try again', () => handlers.onRunAi(), 'danger', 'triage-rerun'));
+  else if (state.kind === 'stale') {
+    const text = state.reason === 'commits' ? `New commits since the triage ${ranAgo(state.ranAt)}. Its fixes may no longer fit.` : `New comments or threads since the triage ${ranAgo(state.ranAt)}.`;
+    card.append(aiNoticeRow(text, 'Triage what is new', () => handlers.onRunAi(), 'attention', 'triage-rerun'));
+  }
   if (summary !== null) card.append(triageText(summary, tldrPending));
   else if (tldrPending || state.kind === 'running')
     card.append(
@@ -1418,17 +1437,6 @@ function triageCard(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
         ]),
       ]),
     );
-  if (state.kind === 'stale' || state.kind === 'failed') {
-    const text =
-      state.kind === 'failed'
-        ? `Geld AI could not get an answer ${ranAgo(state.ranAt)}: ${state.error}`
-        : state.reason === 'commits'
-          ? `New commits since the triage ${ranAgo(state.ranAt)}. Its fixes may no longer fit.`
-          : `New comments or threads since the triage ${ranAgo(state.ranAt)}.`;
-    const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__ai-notice-btn`, [ATTR_FOCUS]: 'triage-rerun' }, [state.kind === 'failed' ? 'Try again' : 'Triage what is new']);
-    button.addEventListener('click', () => handlers.onRunAi());
-    card.append(createElement('div', { class: `${PANEL_CLASS}__triage-line`, 'data-tone': state.kind === 'failed' ? 'danger' : 'attention', role: 'status' }, [createElement('span', { class: `${PANEL_CLASS}__ai-notice-text` }, [text]), button]));
-  }
   if (triage !== null) {
     if (triage.suggestions.length > 0) {
       const list = createElement('ul', { class: `${PANEL_CLASS}__triage-fixes`, role: 'list', 'aria-label': 'Suggested fixes' });
