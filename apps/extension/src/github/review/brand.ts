@@ -1,25 +1,137 @@
 import emblem from '../../../../../assets/brand/geld-logomark-grid.svg?raw';
+import emblem100 from '../../../../../assets/brand/digest-emblem/1x.svg?raw';
+import emblem125 from '../../../../../assets/brand/digest-emblem/1.25x.svg?raw';
+import emblem150 from '../../../../../assets/brand/digest-emblem/1.5x.svg?raw';
+import emblem175 from '../../../../../assets/brand/digest-emblem/1.75x.svg?raw';
+import emblem200 from '../../../../../assets/brand/digest-emblem/2x.svg?raw';
+import emblem225 from '../../../../../assets/brand/digest-emblem/2.25x.svg?raw';
+import emblem250 from '../../../../../assets/brand/digest-emblem/2.5x.svg?raw';
+import emblem300 from '../../../../../assets/brand/digest-emblem/3x.svg?raw';
+import emblem350 from '../../../../../assets/brand/digest-emblem/3.5x.svg?raw';
+import emblem400 from '../../../../../assets/brand/digest-emblem/4x.svg?raw';
 import { svgFromString } from '../dom';
 
 /** Set while the selection holds the emblem, so the stylesheet can invert it as selected text inverts. */
 export const ATTR_BRAND_SELECTED = 'data-geld-selected';
 
 const BRAND_SELECTOR = '[data-geld-brand]';
+const ATTR_FITTED = 'data-geld-brand-fitted';
+
+/** One drawing of `assets/brand/digest-emblem/`, its viewBox in device pixels. */
+export interface EmblemArt {
+  ratio: number;
+  width: number;
+  height: number;
+  svg: string;
+}
+
+function art(ratio: number, svg: string): EmblemArt {
+  const box = /viewBox="0 0 (\d+) (\d+)"/.exec(svg);
+  return { ratio, width: Number(box?.[1] ?? 0), height: Number(box?.[2] ?? 0), svg };
+}
+
+export const DIGEST_EMBLEMS: readonly EmblemArt[] = [
+  art(1, emblem100),
+  art(1.25, emblem125),
+  art(1.5, emblem150),
+  art(1.75, emblem175),
+  art(2, emblem200),
+  art(2.25, emblem225),
+  art(2.5, emblem250),
+  art(3, emblem300),
+  art(3.5, emblem350),
+  art(4, emblem400),
+];
+
+/** The height the digest's drawings are made for, in CSS pixels, in the glyph column's 16px box (`.geld-review__brand`). */
+const EMBLEM_PX = 18;
+const EMBLEM_BOX_PX = 16;
+/** Past this from 18px no drawing fits, as when zoomed far out, and the nearest is scaled to 18px instead. */
+const EMBLEM_SLACK_PX = 2.5;
+
+export interface EmblemFit {
+  art: EmblemArt;
+  /** Size and offset from the box's top left corner, in CSS pixels. */
+  width: number;
+  height: number;
+  left: number;
+  top: number;
+}
 
 /**
- * The Geld emblem in the text colour around it, so GitHub's light and dark themes recolour it. It is the 14-unit grid
- * mark, which lands on whole pixels where the 24 × 25 one cannot.
+ * The drawing whose device pixels come nearest 18 CSS pixels at this ratio, shown at one device pixel per unit, so every
+ * straight edge is a whole pixel, and placed on a whole device pixel as near the box's centre as that allows.
  */
-export function brandMark(className: string): HTMLElement {
-  const svg = svgFromString(emblem.replace(/fill="#000000"/, 'fill="currentColor"'));
+export function emblemFit(ratio: number, arts: readonly EmblemArt[] = DIGEST_EMBLEMS): EmblemFit {
+  const dpr = Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+  const off = (candidate: EmblemArt): number => Math.abs(candidate.height / dpr - EMBLEM_PX);
+  const best = arts.reduce((nearest, candidate) => (off(candidate) < off(nearest) ? candidate : nearest));
+  if (off(best) > EMBLEM_SLACK_PX) {
+    const height = EMBLEM_PX;
+    const width = (best.width * height) / best.height;
+    return { art: best, width, height, left: (EMBLEM_BOX_PX - width) / 2, top: (EMBLEM_BOX_PX - height) / 2 };
+  }
+  const place = (size: number): number => Math.round((EMBLEM_BOX_PX * dpr - size) / 2) / dpr;
+  return { art: best, width: best.width / dpr, height: best.height / dpr, left: place(best.width), top: place(best.height) };
+}
+
+function drawn(source: string): SVGElement {
+  const svg = svgFromString(source.replace(/fill="#000000"/, 'fill="currentColor"'));
   for (const name of ['role', 'aria-label']) svg.removeAttribute(name);
   svg.setAttribute('aria-hidden', 'true');
   svg.setAttribute('focusable', 'false');
+  return svg;
+}
+
+function fittedEmblem(): SVGElement {
+  const fit = emblemFit(window.devicePixelRatio);
+  const svg = drawn(fit.art.svg);
+  svg.style.setProperty('width', `${fit.width}px`);
+  svg.style.setProperty('height', `${fit.height}px`);
+  svg.style.setProperty('left', `${fit.left}px`);
+  svg.style.setProperty('top', `${fit.top}px`);
+  return svg;
+}
+
+/**
+ * The Geld emblem in the text colour around it, so GitHub's light and dark themes recolour it. `fitted` draws the
+ * digest's own pixel art for the screen's ratio (`emblemFit`); otherwise it is the 14-unit grid mark, which lands on
+ * whole pixels at 14px where the 24 × 25 one cannot.
+ */
+export function brandMark(className: string, options: { fitted?: boolean } = {}): HTMLElement {
   const mark = document.createElement('span');
   mark.className = className;
   mark.setAttribute('data-geld-brand', '');
-  mark.append(svg);
+  if (options.fitted === true) {
+    mark.setAttribute(ATTR_FITTED, '');
+    mark.append(fittedEmblem());
+  } else {
+    mark.append(drawn(emblem));
+  }
   return mark;
+}
+
+let scaleQuery: MediaQueryList | null = null;
+
+function refitEmblems(): void {
+  for (const mark of document.querySelectorAll(`[${ATTR_FITTED}]`)) mark.replaceChildren(fittedEmblem());
+  armScaleQuery();
+}
+
+function armScaleQuery(): void {
+  scaleQuery?.removeEventListener('change', refitEmblems);
+  // Zoom and moving the window to another screen change the ratio; a query for the current one fires when it does.
+  scaleQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+  scaleQuery.addEventListener('change', refitEmblems);
+}
+
+export function watchBrandScale(): void {
+  if (scaleQuery === null) armScaleQuery();
+}
+
+export function stopWatchingBrandScale(): void {
+  scaleQuery?.removeEventListener('change', refitEmblems);
+  scaleQuery = null;
 }
 
 /**
@@ -44,54 +156,6 @@ export function syncBrandSelection(): void {
  */
 export function syncNewBrandMarks(): void {
   if (selecting) syncBrandSelection();
-}
-
-/** The grid mark's straight edges all fall on 2-unit steps of its 14 units: 7 cells, each needing whole device pixels. */
-const BRAND_CELLS = 7;
-/** 120% of the 14px mark, which stays in the glyph column's 16px box (mirrored in the stylesheet). */
-const BRAND_WANTED_PX = 16.8;
-const BRAND_BOX_PX = 16;
-
-export interface BrandFit {
-  /** The mark's side in CSS pixels. */
-  size: number;
-  /** Its offset from the box's top left corner, so it starts on a whole device pixel as near centred as that allows. */
-  shift: number;
-}
-
-/** The sharp size nearest 120% at this device pixel ratio: one cell is a whole number of device pixels. */
-export function brandFit(ratio: number): BrandFit {
-  const dpr = Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
-  const cell = Math.max(1, Math.round((BRAND_WANTED_PX * dpr) / BRAND_CELLS));
-  const size = (cell * BRAND_CELLS) / dpr;
-  const shift = Math.round(((BRAND_BOX_PX - size) / 2) * dpr) / dpr;
-  return { size, shift };
-}
-
-let scaleQuery: MediaQueryList | null = null;
-
-function applyBrandFit(): void {
-  const { size, shift } = brandFit(window.devicePixelRatio);
-  const root = document.documentElement.style;
-  root.setProperty('--geld-brand-size', `${size}px`);
-  root.setProperty('--geld-brand-shift', `${shift}px`);
-  scaleQuery?.removeEventListener('change', applyBrandFit);
-  // Zoom and moving the window to another screen change the ratio; a query for the current one fires when it does.
-  scaleQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
-  scaleQuery.addEventListener('change', applyBrandFit);
-}
-
-export function watchBrandScale(): void {
-  if (scaleQuery === null) applyBrandFit();
-}
-
-export function stopWatchingBrandScale(): void {
-  if (scaleQuery === null) return;
-  scaleQuery.removeEventListener('change', applyBrandFit);
-  scaleQuery = null;
-  const root = document.documentElement.style;
-  root.removeProperty('--geld-brand-size');
-  root.removeProperty('--geld-brand-shift');
 }
 
 /** Whether the selection last read was not collapsed; nothing is selected when a page opens. */

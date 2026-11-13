@@ -3814,7 +3814,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   const waiting = model.meta.items.filter((item) => item.status === 'needs-reply').length;
 
   /* Summary strip, on the status rows' columns: the emblem as the glyph, "Geld" as the label, then the meter once there are threads to measure. */
-  const summary = createElement('div', { class: `${PANEL_CLASS}__summary` }, [brandMark(`${PANEL_CLASS}__brand`), createElement('span', { class: `${PANEL_CLASS}__label ${PANEL_CLASS}__brand-name` }, ['Geld'])]);
+  const summary = createElement('div', { class: `${PANEL_CLASS}__summary` }, [brandMark(`${PANEL_CLASS}__brand`, { fitted: true }), createElement('span', { class: `${PANEL_CLASS}__label ${PANEL_CLASS}__brand-name` }, ['Geld'])]);
   if (total > 0) summary.append(progressMeter(doneCount, total, 'thread'));
   if (waiting > 0) summary.append(createElement('span', { class: `${PANEL_CLASS}__chip`, 'data-tone': 'attention' }, [`${waiting} need${waiting === 1 ? 's' : ''} a reply`]));
   // GitHub's revision marker, said here instead of as a timeline row: a button to that diff (the marker's own
