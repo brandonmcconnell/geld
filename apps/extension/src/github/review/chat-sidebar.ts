@@ -10,11 +10,13 @@
  *
  * Every request goes through the background, which holds the keys. What
  * streams (the assistant's reply, the agent's live turn) comes over one port
- * that closes with the sidebar.
+ * that closes with the sidebar. This module holds the state and builds a plain
+ * view of it (`ChatView`); the React view in `src/chat` renders that view in a
+ * shadow root and calls the actions back.
  */
 
 import type { CursorAgent, CursorModel, PullChatContext } from '@geld/review';
-import { assistantSystemPrompt, botAppAvatar, botById, isEvaluationModel, isRunActive } from '@geld/review';
+import { assistantSystemPrompt, isEvaluationModel, isRunActive } from '@geld/review';
 import { browser } from 'wxt/browser';
 import type { Browser } from 'wxt/browser';
 import { persist } from '../../lib/context';
@@ -23,14 +25,14 @@ import { CHAT_PING_MS, CHAT_PORT, isChatPortEvent, isCursorConversationReply, is
 import type { ChatModels } from '../../lib/local-state';
 import { aiGatewayItem, aiKeyItem, assistantChatsItem, chatModelsItem } from '../../lib/local-state';
 import type { OpenSettingsMessage } from '../../lib/messages';
+import { reportError } from '../../lib/error-capture';
 import { countUsage } from '../../lib/usage-count';
-import { renderIssueMarkdown } from '../../ui/issue-markdown';
-import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
-import { ICON_CHECK, ICON_LINK_EXTERNAL, ICON_PAPER_AIRPLANE, ICON_SPARKLE_FILL, ICON_SPINNER, ICON_TRASH, ICON_X } from '../ui/icons';
+import { loadChatUi } from '../../chat/loader';
+import type { ChatHost } from '../../chat/mount';
+import type { ChatActions, ChatBodyView, ChatComposerView, ChatModelOption, ChatTabView, ChatTurnView, ChatView } from '../../chat/view';
 import type { AgentLive, ChatTurn } from './chat-threads';
 import { agentLiveStep, agentRunning, chatTurn, IDLE_LIVE, turnsFromHistory } from './chat-threads';
 
-const CLASS = 'geld-chat';
 const ASSISTANT = 'assistant';
 /** An idle agent's conversation is read again this often while its thread is shown, for messages sent from Cursor. */
 const IDLE_POLL_MS = 30_000;
@@ -73,19 +75,8 @@ interface AgentThread {
   sending: boolean;
 }
 
-interface Sidebar {
-  readonly root: HTMLElement;
-  readonly tabs: HTMLElement;
-  readonly clear: HTMLButtonElement;
-  readonly bar: HTMLElement;
-  readonly log: HTMLElement;
-  readonly input: HTMLTextAreaElement;
-  readonly model: HTMLSelectElement;
-  readonly send: HTMLButtonElement;
-}
-
 let context: ChatPageContext | null = null;
-let ui: Sidebar | null = null;
+let host: ChatHost | null = null;
 let loadedKey: string | null = null;
 let active = ASSISTANT;
 /** The reader picked a thread themselves, so discovery never switches it under them. */
@@ -103,7 +94,10 @@ let port: Browser.runtime.Port | null = null;
 let pingTimer: ReturnType<typeof setInterval> | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 const reloadTimers = new Map<string, ReturnType<typeof setTimeout>>();
-let renderFrame = 0;
+let emitFrame = 0;
+let draftEmpty = true;
+const listeners = new Set<() => void>();
+let view: ChatView | null = null;
 let opener: HTMLElement | null = null;
 /** Bumped on every open and close: an answer that arrives for an earlier sidebar, or another pull request's, is dropped. */
 let session = 0;
@@ -111,31 +105,31 @@ let session = 0;
 const SETUP_KEYS = ['aiKey', 'aiGateway', 'cursorApiKey'];
 
 export function chatOpen(): boolean {
-  return ui !== null;
+  return host !== null;
 }
 
 function markChatButtons(): void {
-  for (const button of document.querySelectorAll('[data-geld-focus="chat"]')) button.setAttribute('aria-pressed', String(ui !== null));
+  for (const button of document.querySelectorAll('[data-geld-focus="chat"]')) button.setAttribute('aria-pressed', String(host !== null));
 }
 
 /** The digest's latest reading of the page. An open sidebar takes in agents newly linked; a different pull request closes it. */
 export function setChatContext(next: ChatPageContext): void {
   const aiBefore = context === null ? null : JSON.stringify(context.ai);
   context = next;
-  if (ui === null) return;
+  if (host === null) return;
   if (loadedKey !== next.pageKey) {
     closeChat();
     return;
   }
   let added = false;
   for (const linked of next.linkedAgents) added = ensureAgent(linked.id, linked.href) || added;
-  if (aiBefore !== JSON.stringify(next.ai)) void readLocalState().then(scheduleRender);
-  else if (added) scheduleRender();
+  if (aiBefore !== JSON.stringify(next.ai)) void readLocalState().then(emit);
+  else if (added) emit();
 }
 
 /** The reader may have set the chat up meanwhile (a key saved in the options, the browser's permission granted): read it all again. */
 function refreshSetup(): void {
-  void readLocalState().then(scheduleRender);
+  void readLocalState().then(emit);
   void discoverAgents();
 }
 
@@ -145,16 +139,27 @@ function onStorageChanged(changes: Readonly<Record<string, unknown>>, area: stri
 
 /** After a navigation: a sidebar opened on another pull request closes. */
 export function syncChatToPage(): void {
-  if (ui !== null && context !== null && !location.pathname.startsWith(context.pullPath)) closeChat();
+  if (host !== null && context !== null && !location.pathname.startsWith(context.pullPath)) closeChat();
 }
 
 export function toggleChat(from: HTMLElement | null = null): void {
-  if (ui !== null) closeChat();
-  else openChat(from);
+  if (host !== null) closeChat();
+  else if (!opening) void openChat(from);
 }
 
-function openChat(from: HTMLElement | null): void {
+/** The view's script loads ahead of the click when the reader heads for the Chat button. */
+export function warmChat(): void {
+  void loadChatUi();
+}
+
+let opening = false;
+
+async function openChat(from: HTMLElement | null): Promise<void> {
   if (context === null) return;
+  opening = true;
+  const ui = await loadChatUi();
+  opening = false;
+  if (ui === null || context === null || host !== null) return;
   session += 1;
   opener = from;
   if (loadedKey !== context.pageKey) {
@@ -174,16 +179,16 @@ function openChat(from: HTMLElement | null): void {
   }
   for (const linked of context.linkedAgents) ensureAgent(linked.id, linked.href);
   if (!chose && context.preferCursor && context.linkedAgents[0] !== undefined) active = context.linkedAgents[0].id;
-  ui = buildSidebar();
+  draftEmpty = true;
+  view = null;
+  host = ui.mountChat({ subscribe, getView, actions: ACTIONS, onError: (error) => reportError('content:chat', error) });
   document.documentElement.setAttribute('data-geld-chat-open', '');
-  document.body.append(ui.root);
-  render();
   markChatButtons();
-  ui.input.focus({ preventScroll: true });
+  host.focusComposer();
   countUsage('chat_opened');
   // While the conversation is on the page: the sidebar stays open on the pull request's other tabs, which do not hold it.
   context.pull();
-  void readLocalState().then(scheduleRender);
+  void readLocalState().then(emit);
   void discoverAgents();
   pollTimer = setInterval(pollIdleAgent, IDLE_POLL_MS);
   browser.storage.onChanged.addListener(onStorageChanged);
@@ -192,21 +197,21 @@ function openChat(from: HTMLElement | null): void {
 }
 
 export function closeChat(): void {
-  if (ui === null) return;
+  if (host === null) return;
   session += 1;
   browser.storage.onChanged.removeListener(onStorageChanged);
   window.removeEventListener('focus', refreshSetup);
   const returnTo = opener?.isConnected === true ? opener : document.querySelector<HTMLElement>('[data-geld-focus="chat"]');
-  ui.root.remove();
-  ui = null;
+  host.unmount();
+  host = null;
   document.documentElement.removeAttribute('data-geld-chat-open');
   markChatButtons();
   if (pollTimer !== null) clearInterval(pollTimer);
   pollTimer = null;
   for (const timer of reloadTimers.values()) clearTimeout(timer);
   reloadTimers.clear();
-  if (renderFrame !== 0) cancelAnimationFrame(renderFrame);
-  renderFrame = 0;
+  if (emitFrame !== 0) cancelAnimationFrame(emitFrame);
+  emitFrame = 0;
   disconnectPort();
   if (assistantStream !== null) {
     const id = assistantStream;
@@ -267,8 +272,8 @@ function ensurePort(): Browser.runtime.Port {
     }
     const watched = watchedAgent;
     watchedAgent = null;
-    if (ui !== null && watched !== null) setTimeout(() => watchIfRunning(watched), 1000);
-    scheduleRender();
+    if (host !== null && watched !== null) setTimeout(() => watchIfRunning(watched), 1000);
+    emit();
   });
   pingTimer = setInterval(() => post({ type: 'ping' }), CHAT_PING_MS);
   return opened;
@@ -321,7 +326,7 @@ function onPortMessage(message: unknown): void {
       break;
     }
   }
-  scheduleRender();
+  emit();
 }
 
 /* ------------------------------------------------------------------------- */
@@ -331,11 +336,11 @@ function onPortMessage(message: unknown): void {
 async function discoverAgents(): Promise<void> {
   const epoch = session;
   const reply = await askCursor({ type: 'geld:cursor', action: 'status' });
-  if (epoch !== session || ui === null || context === null) return;
+  if (epoch !== session || host === null || context === null) return;
   cursorStatus = isCursorStatusReply(reply) ? reply : null;
   if (cursorStatus?.connected === true && cursorStatus.permitted) {
     const found = await askCursor({ type: 'geld:cursor', action: 'find', prUrl: context.prUrl, ids: context.linkedAgents.map((linked) => linked.id) });
-    if (epoch !== session || ui === null) return;
+    if (epoch !== session || host === null) return;
     if (isCursorFindReply(found) && found.ok) {
       for (const agent of found.agents) {
         ensureAgent(agent.id, agent.url);
@@ -343,10 +348,10 @@ async function discoverAgents(): Promise<void> {
         if (thread !== undefined) thread.agent = agent;
       }
       const first = found.agents[0];
-      if (!chose && context.preferCursor && first !== undefined && active === ASSISTANT && ui.input.value === '' && assistantTurns.length === 0) active = first.id;
+      if (!chose && context.preferCursor && first !== undefined && active === ASSISTANT && draftEmpty && assistantTurns.length === 0) active = first.id;
     }
   }
-  scheduleRender();
+  emit();
   if (active !== ASSISTANT) void loadAgent(active);
 }
 
@@ -359,7 +364,7 @@ async function loadAgent(id: string, quiet = false): Promise<void> {
   if (thread === undefined || !cursorUsable()) return;
   if (!quiet) {
     thread.loading = true;
-    scheduleRender();
+    emit();
   }
   const epoch = session;
   const reply = await askCursor({ type: 'geld:cursor', action: 'conversation', agentId: id });
@@ -388,14 +393,14 @@ async function loadAgent(id: string, quiet = false): Promise<void> {
     }
   }
   if (cursorModels === null) void loadCursorModels();
-  scheduleRender();
+  emit();
 }
 
 async function loadCursorModels(): Promise<void> {
   cursorModels = [];
   const reply = await askCursor({ type: 'geld:cursor', action: 'models' });
   if (isCursorModelsReply(reply) && reply.ok) cursorModels = reply.models;
-  scheduleRender();
+  emit();
 }
 
 function watch(id: string): void {
@@ -423,7 +428,7 @@ function scheduleReload(id: string): void {
 }
 
 function pollIdleAgent(): void {
-  if (ui === null || document.hidden || active === ASSISTANT) return;
+  if (host === null || document.hidden || active === ASSISTANT) return;
   const thread = agents.get(active);
   // A run only the stream would report on is left to it, while the stream is open; any other thread is read again.
   if (thread === undefined || !thread.loaded || thread.sending || (agentRunning(thread.live, thread.readStatus) && watchedAgent === thread.id && port !== null)) return;
@@ -455,7 +460,7 @@ async function sendAgent(thread: AgentThread, text: string): Promise<void> {
   const user = chatTurn('user', text, { local: true });
   thread.turns = [...thread.turns, user];
   thread.sending = true;
-  scheduleRender();
+  emit();
   const model = running ? null : selectedModel() || null;
   const epoch = session;
   const reply = await askCursor({ type: 'geld:cursor', action: 'send', agentId: thread.id, text, model, steer: running });
@@ -474,21 +479,18 @@ async function sendAgent(thread: AgentThread, text: string): Promise<void> {
       thread.turns = thread.turns.map((turn) => (turn.id === user.id ? { ...turn, note } : turn));
     }
   }
-  scheduleRender();
+  emit();
 }
 
-function submit(): void {
-  if (ui === null) return;
-  const text = ui.input.value.trim();
-  if (text === '' || !canSend()) return;
-  ui.input.value = '';
+function submit(raw: string): void {
+  const text = raw.trim();
+  if (host === null || text === '' || !canSend()) return;
   if (active === ASSISTANT) sendAssistant(text);
   else {
     const thread = agents.get(active);
     if (thread !== undefined) void sendAgent(thread, text);
   }
-  render();
-  scrollToEnd(true);
+  emit();
 }
 
 function canSend(): boolean {
@@ -504,42 +506,35 @@ function stopAssistant(): void {
   assistantStream = null;
   assistantTurns = assistantTurns.map((turn) => (turn.id === id ? { ...turn, streaming: false, note: 'Stopped' } : turn));
   saveAssistantChat();
-  render();
+  emit();
 }
 
 /* ------------------------------------------------------------------------- */
 /* Models                                                                      */
 /* ------------------------------------------------------------------------- */
 
-function selectedModel(): string {
-  return ui?.model.value ?? '';
-}
-
-function fillModels(model: HTMLSelectElement): void {
-  const options: { readonly value: string; readonly label: string }[] = [];
-  let selected: string;
+/** The thread's model choices, and which one the next message uses. */
+function modelChoices(): { readonly options: readonly ChatModelOption[]; readonly selected: string } {
   if (active === ASSISTANT) {
     const fallback = context?.ai.model ?? '';
     const ids = [...new Set([fallback, ...gatewayModels].filter((id) => id !== ''))];
-    for (const id of ids) options.push({ value: id, label: id === fallback ? `${id} (default)` : id });
-    selected = chosenModels.assistant !== undefined && ids.includes(chosenModels.assistant) ? chosenModels.assistant : fallback;
-  } else {
-    options.push({ value: '', label: 'Agent’s model' });
-    for (const each of cursorModels ?? []) options.push({ value: each.id, label: each.name });
-    selected = chosenModels.cursor !== undefined && options.some((option) => option.value === chosenModels.cursor) ? chosenModels.cursor : '';
+    return {
+      options: ids.map((id) => ({ value: id, label: id === fallback ? `${id} (default)` : id })),
+      selected: chosenModels.assistant !== undefined && ids.includes(chosenModels.assistant) ? chosenModels.assistant : fallback,
+    };
   }
-  const signature = JSON.stringify([options, selected]);
-  if (model.dataset.signature === signature) return;
-  model.dataset.signature = signature;
-  model.replaceChildren(...options.map((option) => createElement('option', { value: option.value }, [option.label])));
-  model.value = selected;
+  const options: ChatModelOption[] = [{ value: '', label: 'Agent’s model' }, ...(cursorModels ?? []).map((each) => ({ value: each.id, label: each.name }))];
+  return { options, selected: chosenModels.cursor !== undefined && options.some((option) => option.value === chosenModels.cursor) ? chosenModels.cursor : '' };
 }
 
-function rememberModel(): void {
-  if (ui === null) return;
-  const value = ui.model.value;
+function selectedModel(): string {
+  return modelChoices().selected;
+}
+
+function chooseModel(value: string): void {
   chosenModels = active === ASSISTANT ? { ...chosenModels, assistant: value } : { ...chosenModels, cursor: value };
   persist(chatModelsItem.setValue(chosenModels));
+  emit();
 }
 
 /* ------------------------------------------------------------------------- */
@@ -550,7 +545,7 @@ async function loadAssistantChat(key: string): Promise<void> {
   const stored = (await assistantChatsItem.getValue())[key];
   if (stored === undefined || loadedKey !== key || assistantTurns.length > 0) return;
   assistantTurns = stored.turns.map((turn) => chatTurn(turn.role, turn.text));
-  scheduleRender();
+  emit();
 }
 
 function saveAssistantChat(): void {
@@ -564,89 +559,32 @@ function clearAssistantChat(): void {
   if (assistantStream !== null) stopAssistant();
   assistantTurns = [];
   saveAssistantChat();
-  render();
-  ui?.input.focus();
+  emit();
+  host?.focusComposer();
 }
 
 /* ------------------------------------------------------------------------- */
-/* Rendering                                                                   */
+/* The view                                                                    */
 /* ------------------------------------------------------------------------- */
 
-function icon(markup: string): SVGElement {
-  return svgFromString(markup);
-}
-
-const CURSOR_MARK = ((): string | null => {
-  const bot = botById('bugbot');
-  return bot === null ? null : botAppAvatar(bot, 40);
-})();
-
-function cursorMark(): HTMLElement {
-  return CURSOR_MARK === null ? createElement('span', { class: `${CLASS}__mark` }) : createElement('img', { class: `${CLASS}__mark`, src: CURSOR_MARK, alt: '', width: '16', height: '16' });
-}
-
-function buildSidebar(): Sidebar {
-  const tabs = createElement('div', { class: `${CLASS}__tabs`, role: 'tablist', 'aria-label': 'Conversations' });
-  const clear = createElement('button', { type: 'button', class: `${CLASS}__icon`, 'aria-label': 'Clear this chat', title: 'Clear this chat' }, [icon(ICON_TRASH)]);
-  clear.addEventListener('click', clearAssistantChat);
-  const close = createElement('button', { type: 'button', class: `${CLASS}__icon`, 'aria-label': 'Close chat', title: 'Close chat' }, [icon(ICON_X)]);
-  close.addEventListener('click', () => closeChat());
-  const head = createElement('div', { class: `${CLASS}__head` }, [tabs, clear, close]);
-  const bar = createElement('div', { class: `${CLASS}__bar` });
-  const log = createElement('div', { class: `${CLASS}__log`, role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions text' });
-  const input = createElement('textarea', { class: `${CLASS}__input`, rows: '3', 'aria-label': 'Message' });
-  input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
-      event.preventDefault();
-      submit();
-    }
-  });
-  input.addEventListener('input', () => updateComposer());
-  const model = createElement('select', { class: `${CLASS}__model`, 'aria-label': 'Model' });
-  model.addEventListener('change', rememberModel);
-  const send = createElement('button', { type: 'submit', class: `${CLASS}__send` });
-  const form = createElement('form', { class: `${CLASS}__composer` }, [input, createElement('div', { class: `${CLASS}__composer-row` }, [model, send])]);
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-    if (active === ASSISTANT && assistantStream !== null) stopAssistant();
-    else submit();
-  });
-  const root = createElement('aside', { class: CLASS, [OWN_UI_ATTRIBUTE]: '', 'aria-label': 'Geld chat' }, [head, bar, log, form]);
-  root.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && !event.isComposing && !(event.target instanceof HTMLSelectElement)) {
-      event.stopPropagation();
-      closeChat();
-    }
-  });
-  return { root, tabs, clear, bar, log, input, model, send };
-}
-
-function scheduleRender(): void {
-  if (ui === null || renderFrame !== 0) return;
-  renderFrame = requestAnimationFrame(() => {
-    renderFrame = 0;
-    render();
+/** Coalesces a burst of changes (a reply streaming in) into one new view per frame. */
+function emit(): void {
+  if (host === null || emitFrame !== 0) return;
+  emitFrame = requestAnimationFrame(() => {
+    emitFrame = 0;
+    view = null;
+    for (const listener of listeners) listener();
   });
 }
 
-function nearEnd(log: HTMLElement): boolean {
-  return log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }
 
-function scrollToEnd(force: boolean): void {
-  if (ui === null) return;
-  if (force || nearEnd(ui.log)) ui.log.scrollTop = ui.log.scrollHeight;
-}
-
-function render(): void {
-  if (ui === null) return;
-  const follow = nearEnd(ui.log);
-  renderTabs(ui);
-  renderBar(ui);
-  renderLog(ui);
-  ui.clear.hidden = active !== ASSISTANT || assistantTurns.length === 0;
-  updateComposer();
-  if (follow) scrollToEnd(true);
+function getView(): ChatView {
+  view ??= viewOf();
+  return view;
 }
 
 function selectThread(id: string): void {
@@ -658,37 +596,36 @@ function selectThread(id: string): void {
     // A thread read before is read again: its run may have ended, or gone on unwatched while another thread was shown.
     if (thread !== undefined && !thread.loading) void loadAgent(id, thread.loaded);
   }
-  render();
-  scrollToEnd(true);
-  ui?.input.focus({ preventScroll: true });
+  emit();
+  host?.focusComposer();
 }
 
-function renderTabs(view: Sidebar): void {
-  const make = (id: string, label: string, mark: Element, title: string, running: boolean): HTMLButtonElement => {
-    const selected = id === active;
-    const tab = createElement('button', { type: 'button', class: `${CLASS}__tab`, role: 'tab', 'aria-selected': String(selected), title, tabindex: selected ? '0' : '-1', 'data-thread': id }, [mark, createElement('span', { class: `${CLASS}__tab-label` }, [label])]);
-    if (running) tab.append(createElement('span', { class: `${CLASS}__live`, 'aria-label': 'Running' }));
-    tab.addEventListener('click', () => selectThread(id));
-    return tab;
-  };
-  const tabs = [make(ASSISTANT, 'Assistant', icon(ICON_SPARKLE_FILL), 'Geld’s assistant, through your AI gateway', assistantStream !== null)];
-  for (const thread of agents.values()) {
-    const name = thread.agent?.name ?? 'Cursor agent';
-    tabs.push(make(thread.id, name, cursorMark(), `Cursor agent: ${name}`, agentRunning(thread.live, thread.readStatus)));
-  }
-  const focused = document.activeElement instanceof HTMLElement && view.tabs.contains(document.activeElement) ? document.activeElement.dataset.thread : undefined;
-  view.tabs.replaceChildren(...tabs);
-  if (focused !== undefined) tabs.find((tab) => tab.dataset.thread === focused)?.focus({ preventScroll: true });
-  view.tabs.onkeydown = (event) => {
-    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
-    const index = tabs.findIndex((tab) => tab.dataset.thread === active);
-    const next = tabs[(index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
-    if (next?.dataset.thread !== undefined) {
-      selectThread(next.dataset.thread);
-      view.tabs.querySelector<HTMLElement>(`[data-thread="${next.dataset.thread}"]`)?.focus();
-    }
-  };
+function openSettings(): void {
+  const message: OpenSettingsMessage = { type: 'geld:open-settings', section: 'experiments' };
+  void browser.runtime.sendMessage(message).catch(() => undefined);
 }
+
+const ACTIONS: ChatActions = {
+  selectThread,
+  submit,
+  sendPrompt: (text) => {
+    if (active === ASSISTANT && canSend()) {
+      sendAssistant(text);
+      emit();
+    }
+    host?.focusComposer();
+  },
+  stop: stopAssistant,
+  chooseModel,
+  clear: clearAssistantChat,
+  close: () => closeChat(),
+  openSettings,
+  draftChanged: (empty) => {
+    draftEmpty = empty;
+  },
+};
+
+const QUICK_PROMPTS = ['Summarize this pull request', 'What could break?', 'What do the open threads ask for?', 'Draft a review comment'];
 
 function statusWords(thread: AgentThread): string {
   if (thread.agent?.status === 'ARCHIVED') return 'Archived';
@@ -699,139 +636,84 @@ function statusWords(thread: AgentThread): string {
   return thread.loaded ? 'Idle' : '';
 }
 
-function renderBar(view: Sidebar): void {
-  if (active === ASSISTANT) {
-    view.bar.replaceChildren(...(assistantReady() ? ['Knows this pull request’s description, threads and files'] : []));
-    view.bar.hidden = !assistantReady();
-    return;
-  }
-  const thread = agents.get(active);
-  if (thread === undefined) return;
-  view.bar.hidden = false;
-  const link = createElement('a', { class: `${CLASS}__open`, href: thread.agent?.url ?? thread.href, target: '_blank', rel: 'noreferrer' }, ['Open in Cursor', icon(ICON_LINK_EXTERNAL)]);
-  const words = statusWords(thread);
-  const parts: (Node | string)[] = [];
-  if (words !== '') parts.push(createElement('span', { class: `${CLASS}__status`, 'data-running': String(agentRunning(thread.live, thread.readStatus)) }, [words]));
-  parts.push(createElement('span', { class: `${CLASS}__bar-note` }, ['Same conversation as in Cursor']), link);
-  view.bar.replaceChildren(...parts);
+function turnView(turn: ChatTurn, author: ChatTurnView['author']): ChatTurnView {
+  return { id: turn.id, role: turn.role, author, text: turn.text, tools: turn.tools, streaming: turn.streaming, error: turn.error, note: turn.note };
 }
 
-function settingsButton(label: string): HTMLButtonElement {
-  const button = createElement('button', { type: 'button', class: 'btn btn-sm' }, [label]);
-  button.addEventListener('click', () => {
-    const message: OpenSettingsMessage = { type: 'geld:open-settings', section: 'experiments' };
-    void browser.runtime.sendMessage(message).catch(() => undefined);
-  });
-  return button;
+function tabsView(): ChatTabView[] {
+  const tabs: ChatTabView[] = [{ id: ASSISTANT, kind: 'assistant', label: 'Assistant', title: 'Geld’s assistant, through your AI gateway', running: assistantStream !== null }];
+  for (const thread of agents.values()) {
+    const name = thread.agent?.name ?? 'Cursor agent';
+    tabs.push({ id: thread.id, kind: 'cursor', label: name, title: `Cursor agent: ${name}`, running: agentRunning(thread.live, thread.readStatus) });
+  }
+  return tabs;
 }
 
-function emptyState(title: string, text: string, actions: readonly HTMLElement[] = []): HTMLElement {
-  return createElement('div', { class: `${CLASS}__empty` }, [createElement('p', { class: `${CLASS}__empty-title` }, [title]), createElement('p', {}, [text]), ...(actions.length === 0 ? [] : [createElement('div', { class: `${CLASS}__empty-actions` }, [...actions])])]);
+function assistantBody(): ChatBodyView {
+  if (!assistantReady()) {
+    return { kind: 'empty', title: 'Set up the assistant', text: 'The assistant answers through your own AI gateway. Turn on AI features and add a gateway, its key and a model in Geld’s settings.', actions: [{ kind: 'settings', label: 'Open settings' }], prompts: [] };
+  }
+  if (assistantTurns.length === 0) {
+    return { kind: 'empty', title: 'Ask about this pull request', text: 'The assistant reads its description, review threads and changed files with each question.', actions: [], prompts: QUICK_PROMPTS };
+  }
+  return { kind: 'turns', turns: assistantTurns.map((turn) => turnView(turn, 'assistant')), pending: null, notices: [] };
 }
 
-const QUICK_PROMPTS = ['Summarize this pull request', 'What could break?', 'What do the open threads ask for?', 'Draft a review comment'];
-
-function renderLog(view: Sidebar): void {
-  if (active === ASSISTANT) {
-    if (!assistantReady()) {
-      view.log.replaceChildren(emptyState('Set up the assistant', 'The assistant answers through your own AI gateway. Turn on AI features and add a gateway, its key and a model in Geld’s settings.', [settingsButton('Open settings')]));
-      return;
-    }
-    if (assistantTurns.length === 0) {
-      const prompts = QUICK_PROMPTS.map((prompt) => {
-        const button = createElement('button', { type: 'button', class: `${CLASS}__prompt` }, [prompt]);
-        button.addEventListener('click', () => {
-          if (!canSend()) return;
-          sendAssistant(prompt);
-          render();
-          ui?.input.focus({ preventScroll: true });
-        });
-        return button;
-      });
-      view.log.replaceChildren(emptyState('Ask about this pull request', 'The assistant reads its description, review threads and changed files with each question.', prompts));
-      return;
-    }
-    view.log.replaceChildren(...assistantTurns.map((turn) => turnElement(turn, 'Assistant')));
-    return;
-  }
-  const thread = agents.get(active);
-  if (thread === undefined) return;
-  const open = createElement('a', { class: 'btn btn-sm', href: thread.agent?.url ?? thread.href, target: '_blank', rel: 'noreferrer' }, ['Open in Cursor']);
-  if (cursorStatus === null && !thread.loaded) {
-    view.log.replaceChildren(loading('Connecting to Cursor…'));
-    return;
-  }
+function agentBody(thread: AgentThread): ChatBodyView {
+  const open = { kind: 'link' as const, label: 'Open in Cursor', href: thread.agent?.url ?? thread.href };
+  if (cursorStatus === null && !thread.loaded) return { kind: 'loading', text: 'Connecting to Cursor…' };
   if (!cursorUsable()) {
-    const words =
+    const text =
       cursorStatus?.connected === true
         ? 'Allow Geld to reach api.cursor.com in Geld’s settings, and this agent’s conversation shows here.'
         : 'Add a Cursor API key in Geld’s settings to read and continue this agent’s conversation here. Messages you send go into the same conversation you see in Cursor.';
-    view.log.replaceChildren(emptyState('Chat with this agent here', words, [settingsButton('Open settings'), open]));
-    return;
+    return { kind: 'empty', title: 'Chat with this agent here', text, actions: [{ kind: 'settings', label: 'Open settings' }, open], prompts: [] };
   }
-  if (thread.error !== null && !thread.loaded) {
-    view.log.replaceChildren(emptyState('Could not open this conversation', thread.error, [open]));
-    return;
+  if (thread.error !== null && !thread.loaded) return { kind: 'empty', title: 'Could not open this conversation', text: thread.error, actions: [open], prompts: [] };
+  if (thread.loading && !thread.loaded) return { kind: 'loading', text: 'Loading the conversation…' };
+  const turns = thread.turns.map((turn) => turnView(turn, 'cursor'));
+  if (thread.live.turn !== null) turns.push(turnView(thread.live.turn, 'cursor'));
+  const running = agentRunning(thread.live, thread.readStatus);
+  const pending = thread.live.turn === null && (running || thread.sending) ? (thread.sending ? 'Sending…' : 'Starting…') : null;
+  const notices = [thread.notice, thread.error].filter((notice): notice is string => notice !== null);
+  if (turns.length === 0 && pending === null && notices.length === 0) {
+    return { kind: 'empty', title: 'No messages yet', text: 'Send the agent a follow-up. It works on this pull request’s branch as it does from Cursor.', actions: [], prompts: [] };
   }
-  if (thread.loading && !thread.loaded) {
-    view.log.replaceChildren(loading('Loading the conversation…'));
-    return;
-  }
-  const nodes: HTMLElement[] = thread.turns.map((turn) => turnElement(turn, 'Cursor'));
-  if (thread.live.turn !== null) nodes.push(turnElement(thread.live.turn, 'Cursor'));
-  else if (agentRunning(thread.live, thread.readStatus) || thread.sending) nodes.push(loading(thread.sending ? 'Sending…' : 'Starting…'));
-  if (thread.notice !== null) nodes.push(createElement('p', { class: `${CLASS}__error` }, [thread.notice]));
-  if (thread.error !== null) nodes.push(createElement('p', { class: `${CLASS}__error` }, [thread.error]));
-  if (nodes.length === 0) nodes.push(emptyState('No messages yet', 'Send the agent a follow-up. It works on this pull request’s branch as it does from Cursor.'));
-  view.log.replaceChildren(...nodes);
+  return { kind: 'turns', turns, pending, notices };
 }
 
-function loading(words: string): HTMLElement {
-  return createElement('div', { class: `${CLASS}__loading` }, [icon(ICON_SPINNER), createElement('span', {}, [words])]);
-}
-
-function turnElement(turn: ChatTurn, name: string): HTMLElement {
-  const element = createElement('div', { class: `${CLASS}__turn`, 'data-role': turn.role });
-  if (turn.role === 'user') {
-    element.append(createElement('div', { class: `${CLASS}__bubble` }, [turn.text]));
-  } else {
-    element.append(createElement('div', { class: `${CLASS}__byline` }, [name === 'Cursor' ? cursorMark() : icon(ICON_SPARKLE_FILL), name]));
-    if (turn.tools.length > 0) {
-      element.append(
-        createElement(
-          'ul',
-          { class: `${CLASS}__tools` },
-          turn.tools.map((tool) => createElement('li', { 'data-done': String(tool.done) }, [icon(tool.done ? ICON_CHECK : ICON_SPINNER), createElement('span', {}, [tool.line])])),
-        ),
-      );
-    }
-    if (turn.text !== '') {
-      const body = createElement('div', { class: `${CLASS}__text markdown-body` });
-      body.append(renderIssueMarkdown(turn.text, `${CLASS}__image`));
-      element.append(body);
-    } else if (turn.streaming && turn.tools.length === 0) {
-      element.append(loading('Thinking…'));
-    }
-  }
-  if (turn.error !== null) element.append(createElement('p', { class: `${CLASS}__error` }, [turn.error]));
-  if (turn.note !== null) element.append(createElement('p', { class: `${CLASS}__note` }, [turn.note]));
-  return element;
-}
-
-function updateComposer(): void {
-  if (ui === null) return;
-  const { input, model, send } = ui;
-  const thread = active === ASSISTANT ? undefined : agents.get(active);
+function composerView(thread: AgentThread | undefined): ChatComposerView {
   const running = thread !== undefined && agentRunning(thread.live, thread.readStatus);
-  input.placeholder = active === ASSISTANT ? 'Ask about this pull request…' : running ? 'Steer the running agent…' : 'Message the agent…';
-  fillModels(model);
-  model.disabled = active === ASSISTANT ? !assistantReady() : running || !cursorUsable();
-  model.title = running ? 'A message to a running agent goes into its current turn, on the model that turn uses' : 'Model for the next reply';
   const stopping = active === ASSISTANT && assistantStream !== null;
-  const label = stopping ? 'Stop' : running ? 'Steer' : 'Send';
-  send.replaceChildren(stopping ? createElement('span', { class: `${CLASS}__stop` }) : icon(ICON_PAPER_AIRPLANE));
-  send.setAttribute('aria-label', label);
-  send.title = stopping ? 'Stop the reply' : running ? 'Send into the running turn (Enter)' : 'Send (Enter)';
-  send.disabled = !stopping && (!canSend() || input.value.trim() === '');
-  input.disabled = active === ASSISTANT ? !assistantReady() : !cursorUsable() || thread?.agent?.status === 'ARCHIVED';
+  const { options, selected } = modelChoices();
+  return {
+    placeholder: active === ASSISTANT ? 'Ask about this pull request…' : running ? 'Steer the running agent…' : 'Message the agent…',
+    models: options,
+    model: selected,
+    modelDisabled: active === ASSISTANT ? !assistantReady() : running || !cursorUsable(),
+    modelTitle: running ? 'A message to a running agent goes into its current turn, on the model that turn uses' : 'Model for the next reply',
+    mode: stopping ? 'stop' : running ? 'steer' : 'send',
+    canSend: canSend(),
+    disabled: active === ASSISTANT ? !assistantReady() : !cursorUsable() || thread?.agent?.status === 'ARCHIVED',
+  };
+}
+
+function viewOf(): ChatView {
+  const thread = active === ASSISTANT ? undefined : agents.get(active);
+  const bar =
+    thread === undefined
+      ? { text: assistantReady() ? 'Knows this pull request’s description, threads and files' : null, status: null, link: null }
+      : {
+          text: 'Same conversation as in Cursor',
+          status: statusWords(thread) === '' ? null : { words: statusWords(thread), running: agentRunning(thread.live, thread.readStatus) },
+          link: { label: 'Open in Cursor', href: thread.agent?.url ?? thread.href },
+        };
+  return {
+    tabs: tabsView(),
+    active,
+    bar,
+    body: thread === undefined ? assistantBody() : agentBody(thread),
+    canClear: active === ASSISTANT && assistantTurns.length > 0,
+    composer: composerView(thread),
+  };
 }

@@ -542,6 +542,8 @@ export interface PanelHandlers {
   readonly onFlow: () => void;
   /** Open or close the chat sidebar; the button is where focus returns when it closes. */
   readonly onChat: (from: HTMLElement) => void;
+  /** The pointer or focus reached the Chat button: its view can start loading. */
+  readonly onChatIntent: () => void;
   /** Open Geld's settings: the toolbar popup where the browser allows it, else the options page. */
   readonly onSettings: () => void;
   /** Resolve/unresolve the thread holding `anchor` (GitHub's own button). */
@@ -4033,6 +4035,8 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     createElement('span', { class: `${PANEL_CLASS}__chat-label` }, ['Chat']),
   ]);
   chat.addEventListener('click', () => handlers.onChat(chat));
+  chat.addEventListener('pointerenter', () => handlers.onChatIntent(), { once: true });
+  chat.addEventListener('focus', () => handlers.onChatIntent(), { once: true });
   tools.append(chat);
   const flow = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__flow-btn`, 'aria-label': 'Flow: how the changed files connect', title: 'How the changed files connect', [ATTR_FOCUS]: 'flow' }, [
     icon(ICON_WORKFLOW),

@@ -35,6 +35,7 @@ import {
   isBlockedUsersRequest,
   isFetchFileRequest,
   isClearDiffCacheMessage,
+  isLoadChatUiMessage,
   isUsageCountMessage,
   isOpenFeedbackMessage,
   isOpenSettingsMessage,
@@ -42,7 +43,7 @@ import {
 } from '../src/lib/messages';
 import { openFeedback } from '../src/ui/feedback-link';
 import type { DiffPriority } from '../src/lib/messages';
-import { ensureContentScript, hostOf, tabsOnHosts } from '../src/lib/inject';
+import { ensureContentScript, hostOf, injectChatUi, tabsOnHosts } from '../src/lib/inject';
 import { grantedHosts } from '../src/lib/enterprise';
 import { looksLikeHtml } from '../src/lib/http';
 import { retireDashboardSession } from '../src/lib/dashboard-session';
@@ -652,6 +653,11 @@ export default defineBackground(() => {
     // Only Geld's own pages and GitHub tabs, where the sidebar runs, may use the reader's Cursor key.
     if (isCursorRequest(message) && (sender.tab?.id !== undefined || sender.url?.startsWith(browser.runtime.getURL('/')) === true)) {
       void handleCursorRequest(message).then(sendResponse, () => sendResponse({ ok: false, reason: 'Cursor could not be reached.', code: null }));
+      return true;
+    }
+    // Only into the GitHub tab and frame that asked, where the content script that will use it runs.
+    if (isLoadChatUiMessage(message) && sender.tab?.id !== undefined) {
+      void injectChatUi(sender.tab.id, sender.frameId ?? 0).then(sendResponse);
       return true;
     }
     if (isAssistantChatSave(message) && sender.tab?.id !== undefined) {

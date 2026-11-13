@@ -100,7 +100,7 @@ import { pageFetch } from '../page-fetch';
 import { closeFlow, flowFiles, openFlowDialog } from './flow';
 import type { ChatFile } from '@geld/review';
 import type { ChatPageContext } from './chat-sidebar';
-import { closeChat, setChatContext, syncChatToPage, toggleChat } from './chat-sidebar';
+import { closeChat, setChatContext, syncChatToPage, toggleChat, warmChat } from './chat-sidebar';
 import { countUsage } from '../../lib/usage-count';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
@@ -4183,6 +4183,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     onView: (view) => chooseDigestView(view),
     onFlow: () => openFlowDialog(),
     onChat: (from) => toggleChat(from),
+    onChatIntent: () => warmChat(),
     onSettings: () => {
       const message: OpenSettingsMessage = { type: 'geld:open-settings' };
       void browser.runtime.sendMessage(message).catch(() => undefined);
