@@ -3535,6 +3535,11 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   font-size: 12px;
 }
 
+/* Under the stale or failed line the list stands as far from it as from the card's foot, not flush against it. */
+.geld-review__ai-notice + :is(.geld-review__triage-fixes, .geld-review__triage-writing, .geld-review__triage-status) {
+  margin-top: 8px;
+}
+
 .geld-review__triage-fixes {
   margin: 0 16px 8px 38px;
   padding: 0;
@@ -3559,11 +3564,12 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   border-bottom-right-radius: 5px;
 }
 
+/* Title and controls on the first line, the path on a line of its own under them, so it has the row's whole width. */
 .geld-review__triage-fix-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  min-height: 36px;
+  gap: 0 4px;
   padding: 0 4px 0 0;
 }
 
@@ -3574,8 +3580,7 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 
 .geld-review__triage-fix-toggle {
   display: flex;
-  flex: 0 1 auto;
-  max-width: 50%;
+  flex: 1 1 0;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -3616,11 +3621,15 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 /* The path, fitted in the middle (`fitPathInto`: the file name always, then as much of the start as fits), its lines and the copy button. */
 .geld-review__triage-fix-place {
   display: flex;
-  flex: 1 1 0;
+  flex: 1 0 100%;
+  order: 1;
   align-items: center;
-  min-width: 4em;
+  min-width: 0;
+  margin-top: -8px;
+  padding: 0 0 8px 34px;
   color: var(--geld-review-muted);
   font-size: 12px;
+  line-height: 20px;
   white-space: nowrap;
 }
 
@@ -3914,7 +3923,6 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
     margin-left: 16px;
   }
 
-  .geld-review__triage-fix-place,
   .geld-review__split-main:has(.octicon, .geld-review__bot-icon) .geld-review__split-label {
     display: none;
   }
