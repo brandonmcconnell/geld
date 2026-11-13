@@ -3026,6 +3026,7 @@ var init_usage_settings = __esm({
       "digest_view_changed",
       "flow_opened",
       "ai_triage_run",
+      "ai_triage_failed",
       "ai_fix_applied",
       "ai_fix_discarded",
       "agent_handoff",
@@ -11594,6 +11595,13 @@ function presetMatches(preset, value) {
   const pattern = preset.value.split(/(\{[a-z]+\})/i).map((part) => PRESET_BLANK.test(part) ? "[^/.{}\\s]+" : part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("");
   return new RegExp(`^${pattern}$`, "i").test(value);
 }
+function aiGatewayLabel(baseUrl) {
+  for (const field of textFields(fieldsFor("extension"))) {
+    if (field.key !== "aiBaseUrl") continue;
+    for (const preset of field.presets ?? []) if (presetMatches(preset, baseUrl)) return preset.label;
+  }
+  return "another gateway";
+}
 function presetGroups(presets) {
   const groups = /* @__PURE__ */ new Map();
   for (const preset of presets) {
@@ -12331,6 +12339,7 @@ __export(src_exports, {
   USAGE_TOGGLES: () => USAGE_TOGGLES,
   actionsFor: () => actionsFor,
   addTotals: () => addTotals,
+  aiGatewayLabel: () => aiGatewayLabel,
   allBuiltInTestPatterns: () => allBuiltInTestPatterns,
   allCategories: () => allCategories,
   allHosts: () => allHosts,
@@ -33063,8 +33072,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       runsBeforeAsk.delete(id);
       continue;
     }
-    const refusal = refusalReason(comment.body);
-    if (refusal !== null) {
+    const refusal2 = refusalReason(comment.body);
+    if (refusal2 !== null) {
       reported(id, comment);
       for (const at of [comment.createdAt, comment.editedAt]) {
         const time3 = at === void 0 ? NaN : Date.parse(at);
@@ -33076,7 +33085,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       if (!threadRuns.has(id) && prior !== void 0) threadRuns.set(id, prior);
       const reviewed = threadRuns.has(id) || existing2?.sourceId !== void 0 && (existing2.verdict === "clean" || existing2.verdict === "findings");
       if (reviewed) continue;
-      byId.set(id, { id, login: comment.author, verdict: "failed", reviewedSha: headSha, ...existing2?.checkName === void 0 ? {} : { checkName: existing2.checkName }, sourceId: comment.anchor, reason: refusal });
+      byId.set(id, { id, login: comment.author, verdict: "failed", reviewedSha: headSha, ...existing2?.checkName === void 0 ? {} : { checkName: existing2.checkName }, sourceId: comment.anchor, reason: refusal2 });
       continue;
     }
     if (isStatusLineComment(comment.body)) {
@@ -33279,8 +33288,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   for (const [id, refusedSha] of refusedRuns) {
     const record4 = byId.get(id);
     if (record4 === void 0 || record4.verdict === "running") continue;
-    const refusal = record4.verdict === "failed" && record4.reason !== void 0;
-    byId.set(id, { ...record4, runJudged: true, ...refusal || record4.reviewedSha !== refusedSha ? {} : { reviewedSha: UNKNOWN_SHA } });
+    const refusal2 = record4.verdict === "failed" && record4.reason !== void 0;
+    byId.set(id, { ...record4, runJudged: true, ...refusal2 || record4.reviewedSha !== refusedSha ? {} : { reviewedSha: UNKNOWN_SHA } });
   }
   return [...byId.values()];
 }
@@ -34099,39 +34108,89 @@ function contentOf(value) {
   const joined = parts2.join("");
   return joined === "" ? null : joined;
 }
+var MAX_PROVIDER_MESSAGE = 240;
+var SCHEMA_REFUSED = /response_format|json_schema|structured output|schema|strict/i;
+function messageIn(value) {
+  if (typeof value === "string") return value.trim() === "" ? null : value;
+  if (Array.isArray(value)) return messageIn(value[0]);
+  if (!isRecord10(value)) return null;
+  for (const key of ["error", "message", "detail"]) {
+    const found = messageIn(value[key]);
+    if (found !== null) return found;
+  }
+  return null;
+}
+function providerMessage(body, apiKey) {
+  let message;
+  try {
+    message = messageIn(JSON.parse(body));
+  } catch {
+    message = /^\s*</.test(body) ? null : body;
+  }
+  if (message === null) return null;
+  let text = apiKey === "" ? message : message.split(apiKey).join("<key>");
+  text = text.replace(/\b(?:sk|pk|rk|key)-[\w-]{6,}/gi, "<key>").replace(/[\w-]{32,}/g, "<token>").replace(/\s+/g, " ").trim();
+  if (text === "") return null;
+  return text.length > MAX_PROVIDER_MESSAGE ? `${text.slice(0, MAX_PROVIDER_MESSAGE - 1)}\u2026` : text;
+}
+function failureReason(lead, message) {
+  if (message === null) return `${lead}.`;
+  return `${lead}: ${/[.!?…]$/.test(message) ? message : `${message}.`}`;
+}
+function refusal(status, message) {
+  return { ok: false, reason: failureReason(`Completion failed (${status})`, message), status };
+}
+function withSchemaInPrompt(messages, schema) {
+  const instruction = `Answer with one JSON object and nothing else, matching this JSON Schema:
+${JSON.stringify(schema)}`;
+  const system = messages.findIndex((message) => message.role === "system");
+  if (system === -1) return [{ role: "system", content: instruction }, ...messages];
+  return messages.map((message, index) => index === system ? { ...message, content: `${message.content}
+
+${instruction}` } : message);
+}
 async function completeChat(options) {
   if (options.apiKey === "") return { ok: false, reason: "No API key." };
-  const body = {
+  const base = {
     model: options.model,
     messages: options.messages
   };
-  if (options.temperature !== void 0) body.temperature = options.temperature;
-  if (options.jsonSchema !== void 0) {
-    body.response_format = {
+  if (options.temperature !== void 0) base.temperature = options.temperature;
+  const body = options.jsonSchema === void 0 ? base : {
+    ...base,
+    response_format: {
       type: "json_schema",
       json_schema: {
         name: options.schemaName ?? "geld",
         strict: true,
         schema: options.jsonSchema
       }
-    };
-  }
+    }
+  };
   const controller = options.timeoutMs === void 0 ? null : new AbortController();
   const timer = controller === null || options.timeoutMs === void 0 ? null : setTimeout(() => controller.abort(), options.timeoutMs);
   const signal = options.signal && controller ? AbortSignal.any([options.signal, controller.signal]) : options.signal ?? controller?.signal ?? null;
   try {
     const fetchImpl = options.fetch;
-    const response = await fetchImpl(joinUrl(options.baseUrl, "/v1/chat/completions"), {
+    const post = (payload2) => fetchImpl(joinUrl(options.baseUrl, "/v1/chat/completions"), {
       method: "POST",
       headers: {
         authorization: `Bearer ${options.apiKey}`,
         "content-type": "application/json",
         accept: "application/json"
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload2),
       ...signal ? { signal } : {}
     });
-    if (!response.ok) return { ok: false, reason: `Completion failed (${response.status}).` };
+    let response = await post(body);
+    if (!response.ok) {
+      const status = response.status;
+      const message2 = providerMessage(await response.text().catch(() => ""), options.apiKey);
+      const schemaRefused = status === 400 && options.jsonSchema !== void 0 && message2 !== null && SCHEMA_REFUSED.test(message2);
+      if (!schemaRefused) return refusal(status, message2);
+      response = await post({ ...base, messages: withSchemaInPrompt(options.messages, options.jsonSchema) });
+      if (!response.ok) return refusal(status, message2);
+    }
     const payload = await response.json();
     if (!isRecord10(payload) || !Array.isArray(payload.choices))
       return { ok: false, reason: "Completion response was empty." };
