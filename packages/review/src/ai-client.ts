@@ -181,7 +181,7 @@ function messageIn(value: unknown): string | null {
   return null;
 }
 
-/** What a provider said about a refused request, short, with the key and anything key-shaped taken out. */
+/** What a provider said about a refused request, whole, with the key and anything key-shaped taken out; `refusalFrom` shortens it for the reason. */
 export function providerMessage(body: string, apiKey: string): string | null {
   let message: string | null;
   try {
@@ -196,13 +196,13 @@ export function providerMessage(body: string, apiKey: string): string | null {
     .replace(/[\w-]{32,}/g, '<token>')
     .replace(/\s+/g, ' ')
     .trim();
-  if (text === '') return null;
-  return text.length > MAX_PROVIDER_MESSAGE ? `${text.slice(0, MAX_PROVIDER_MESSAGE - 1)}…` : text;
+  return text === '' ? null : text;
 }
 
-/** "Completion failed (400)", then the provider's words when it gave any, as one sentence. */
+/** "Completion failed (400)", then the provider's words when it gave any, shortened, as one sentence; the kind is read from all of them. */
 export function refusalFrom(lead: string, status: number, message: string | null): Refusal {
-  const reason = message === null ? `${lead} (${status}).` : `${lead} (${status}): ${/[.!?…]$/.test(message) ? message : `${message}.`}`;
+  const shown = message === null || message.length <= MAX_PROVIDER_MESSAGE ? message : `${message.slice(0, MAX_PROVIDER_MESSAGE - 1)}…`;
+  const reason = shown === null ? `${lead} (${status}).` : `${lead} (${status}): ${/[.!?…]$/.test(shown) ? shown : `${shown}.`}`;
   return { ok: false, reason, status, kind: refusalKind(status, message) };
 }
 

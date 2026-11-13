@@ -222,6 +222,30 @@ describe('a refused completion', () => {
     expect(result).toEqual({ ok: false, reason: 'Completion failed (429): You exceeded your current quota.', status: 429, kind: 'quota' });
   });
 
+  it('reads the whole message for the response format, past the part the reason shows', async () => {
+    const long = `${'The request could not be processed as sent. '.repeat(8)}response_format is not supported for this model.`;
+    let calls = 0;
+    const result = await completeChat(
+      options(async () => {
+        calls += 1;
+        return Response.json({ error: { message: long } }, { status: 400 });
+      }),
+    );
+    expect(calls).toBe(2);
+    expect(result.ok === false && result.kind).toBe('response-format');
+    expect(result.ok === false && result.reason.length).toBeLessThan(long.length);
+  });
+
+  it('never reports a decision body it could not read in its own words', async () => {
+    const result = await evaluateDecision({
+      fetch: async () => new Response('private text the gateway echoed', { status: 200 }),
+      baseUrl: 'https://api.typesafe.ai',
+      apiKey: 'synthetic',
+      request: { model: 'jev-latest', state: 'Fixture', questions: { a: { type: 'noul', instructions: 'Yes?' } } },
+    });
+    expect(result).toEqual({ ok: false, reason: 'The decision model answered in an unexpected shape.' });
+  });
+
   it('does not ask again for a 400 that is not about the response format', async () => {
     for (const words of ["This model's maximum context length is 8192 tokens.", 'Messages require strict user/assistant alternation.', 'Tool input does not match its schema.']) {
       let calls = 0;

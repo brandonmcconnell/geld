@@ -34148,11 +34148,11 @@ function providerMessage(body, apiKey) {
   if (message === null) return null;
   let text = apiKey === "" ? message : message.split(apiKey).join("<key>");
   text = text.replace(/\b(?:sk|pk|rk|key)-[\w-]{6,}/gi, "<key>").replace(/[\w-]{32,}/g, "<token>").replace(/\s+/g, " ").trim();
-  if (text === "") return null;
-  return text.length > MAX_PROVIDER_MESSAGE ? `${text.slice(0, MAX_PROVIDER_MESSAGE - 1)}\u2026` : text;
+  return text === "" ? null : text;
 }
 function refusalFrom(lead, status, message) {
-  const reason = message === null ? `${lead} (${status}).` : `${lead} (${status}): ${/[.!?…]$/.test(message) ? message : `${message}.`}`;
+  const shown = message === null || message.length <= MAX_PROVIDER_MESSAGE ? message : `${message.slice(0, MAX_PROVIDER_MESSAGE - 1)}\u2026`;
+  const reason = shown === null ? `${lead} (${status}).` : `${lead} (${status}): ${/[.!?…]$/.test(shown) ? shown : `${shown}.`}`;
   return { ok: false, reason, status, kind: refusalKind(status, message) };
 }
 async function refusalOf(response, apiKey) {

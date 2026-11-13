@@ -279,7 +279,8 @@ export async function evaluateDecision(options: EvaluateOptions): Promise<JevRes
       const message = providerMessage(await response.text().catch(() => ''), options.apiKey);
       return refusalFrom('Decision request failed', response.status, message);
     }
-    const body: unknown = await response.json();
+    // A parse error's message can quote the body, which is the gateway's text: an unreadable body is the shape failure below.
+    const body: unknown = await response.json().catch(() => null);
     const parsed = openai === null ? parseJevResponse(body) : parseOpenAiDecisions(body, openai.names);
     if (parsed === null) return { ok: false, reason: 'The decision model answered in an unexpected shape.' };
     return { ok: true, ...parsed };
