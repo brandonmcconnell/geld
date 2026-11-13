@@ -1401,7 +1401,9 @@ function aiButton(state: AiState, handlers: PanelHandlers): HTMLElement | null {
         : state.kind === 'stale'
           ? state.reason === 'commits'
             ? 'Commits landed since the model proposed its fixes here. Run it again to check them against the new code.'
-            : 'Comments or threads arrived since the model last ran here. Run it again for the new ones.'
+            : state.reason === 'both'
+              ? 'Commits and comments landed since the model last ran here. Run it again to check its fixes against them.'
+              : 'Comments or threads arrived since the model last ran here. Run it again for the new ones.'
           : state.kind === 'failed'
             ? aiFailureText(state)
             : 'Nothing new to triage since it ran. Show or hide the triage.';
@@ -1469,7 +1471,8 @@ function triageCard(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
   const card = createElement('div', { class: `${PANEL_CLASS}__triage`, 'aria-label': 'Geld AI triage', role: 'region' });
   if (state.kind === 'failed') card.append(aiNoticeRow(aiFailureText(state), 'Try again', () => handlers.onRunAi(), 'danger', 'triage-rerun'));
   else if (state.kind === 'stale') {
-    const text = state.reason === 'commits' ? `New commits since the triage ${ranAgo(state.ranAt)}. Its fixes may no longer fit.` : `New comments or threads since the triage ${ranAgo(state.ranAt)}.`;
+    const ago = ranAgo(state.ranAt);
+    const text = state.reason === 'commits' ? `New commits since the triage ${ago}. Its fixes may no longer fit.` : state.reason === 'both' ? `New commits and comments since the triage ${ago}. Its fixes may no longer fit.` : `New comments or threads since the triage ${ago}.`;
     card.append(aiNoticeRow(text, 'Triage what is new', () => handlers.onRunAi(), 'attention', 'triage-rerun'));
   }
   if (summary !== null) card.append(triageText(summary, tldrPending));

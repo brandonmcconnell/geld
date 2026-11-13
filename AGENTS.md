@@ -1630,6 +1630,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Before, a commit refused after the reply posted left the reply unrecorded, so returning to the pull request showed "New comments or threads since the triage" over a greyed-out Apply with no reason given, and no TL;DR (geld#686).
   A reply recorded nowhere (another device, a run from before) is adopted from the page (`adoptOwnReplies`: the reader's reply opening "Suggested fix from Geld triage", `suggestionReplyBody`'s words), and the next Apply commits a reply carrying the fix's lines (`pendingReply`) rather than posting a second one.
   A fix waiting on another triage says why on its row ("Out of date") and in its note and tooltips: a commit since, or comments in its thread it has not read (`TriageSuggestion.behind`).
+  The stale line above the card names a commit since as well as new comments when both hold (`StaleReason` `both`), since the commit is what greys a fix's Apply out: it used to stop at the first reason found, comments, over a fix waiting on a commit.
   Apply and resolve then presses Resolve on every thread the fix answers.
   A refusal shows GitHub's words, and a commit refused after the reply posted says the suggestion is in the thread, where GitHub's own Commit suggestion can still take it.
   **A finding can be handed to a coding agent** (`@geld/review/coding-agents.ts`): Cursor, Copilot, Claude and Codex start from a comment that begins with their mention, Devin from `/devin` (their docs, Nov 2026).

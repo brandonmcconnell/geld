@@ -73,6 +73,15 @@ describe('Geld’s own suggestion reply in a fix’s thread', () => {
     expect(aiStateFor(metaFor(answered), answered, settings).kind).toBe('stale');
   });
 
+  it('names a new commit as well as new comments, since the commit is why the fix is greyed out', async () => {
+    await loadRun();
+    const settings = { ...DEFAULT_SETTINGS, aiEnabled: true, aiBaseUrl: 'https://ai-gateway.vercel.sh', aiModel: 'anthropic/claude-sonnet-5' };
+    const answered: RawComment[] = [{ ...finding, threadAnchors: [{ anchor: finding.anchor, kind: 'thread', author: finding.author, body: finding.body }, { anchor: 'discussion_r300', kind: 'thread', author: 'coderabbitai[bot]', body: 'Agreed, the switch is untested.' }] }];
+    const pushed = { ...metaFor(answered), headSha: 'head2' };
+    expect(aiStateFor(pushed, answered, settings)).toMatchObject({ kind: 'stale', reason: 'both' });
+    expect(aiStateFor({ ...metaFor([finding]), headSha: 'head2' }, [finding], settings)).toMatchObject({ kind: 'stale', reason: 'commits' });
+  });
+
   it('leaves another person’s reply, or one in other words, as news', async () => {
     await loadRun();
     const others: RawComment[] = [

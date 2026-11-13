@@ -206,7 +206,7 @@ export type AiState =
   | { readonly kind: 'failed'; readonly ranAt: string; readonly error: string; readonly step?: AiStep };
 
 /** What a run now would read that the last one did not: new comments or threads, or commits its fixes predate. */
-export type StaleReason = 'comments' | 'commits';
+export type StaleReason = 'comments' | 'commits' | 'both';
 
 export function aiStateFor(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings): AiState {
   if (meta.producer.ai) return { kind: 'app', hasLocal: lastRun !== null };
@@ -249,18 +249,21 @@ function writtenFrom(entry: StoredSuggestion, items: readonly ReviewItem[]): boo
 function workFor(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings): StaleReason | null {
   const known = withAi(meta);
   const plan = planConsolidation(known, meta.items, { comments, wantFix: wantFix(settings), seen });
-  if (plan.pending.length > 0) return 'comments';
   const unthreaded = unthreadedFindings(meta);
-  if ((summaryInput(known.items).length > 0 || unthreaded.length > 0) && !summaryIsCurrent(known.summary ?? summary, asWrittenFor(known.items), unthreaded)) return 'comments';
-  if (!triageFixesOn(settings)) return null;
-  for (const item of suggestionCandidates(meta.items)) {
-    const existing = suggestionFor(threadKeyOf(item));
-    if (existing === undefined) return 'comments';
-    if (existing.state !== 'open') continue;
-    if (!writtenFrom(existing, [item])) return 'comments';
-    if (existing.headSha !== meta.headSha) return 'commits';
+  let comment = plan.pending.length > 0 || ((summaryInput(known.items).length > 0 || unthreaded.length > 0) && !summaryIsCurrent(known.summary ?? summary, asWrittenFor(known.items), unthreaded));
+  let commit = false;
+  if (triageFixesOn(settings)) {
+    for (const item of suggestionCandidates(meta.items)) {
+      const existing = suggestionFor(threadKeyOf(item));
+      if (existing === undefined) comment = true;
+      else if (existing.state === 'open') {
+        if (!writtenFrom(existing, [item])) comment = true;
+        if (existing.headSha !== meta.headSha) commit = true;
+      }
+    }
   }
-  return null;
+  // Both are said: a fix written for an earlier commit is the reason its Apply is greyed out, whatever else came in.
+  return comment && commit ? 'both' : commit ? 'commits' : comment ? 'comments' : null;
 }
 
 /**
