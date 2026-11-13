@@ -122,6 +122,14 @@ describe('Macroscope', () => {
       verdict: 'failed',
       reason: 'Per-review cost limit exceeded (workspace setting)',
     });
+    // Its skip notice and a "Needs Human Approval" that only says the review did not run: the chip opens the notice,
+    // whether or not the checks are on the page (a merged pull request shows none).
+    const notice = { author: BOT, body: '<!-- MURMUR_IGNORE -->\n**Macroscope skipped reviewing this pull request.** Per-review cost limit exceeded (workspace setting).\n\nThis review would cost an estimated $26.45, which exceeds your per-review limit of $15.00.', anchor: 'issuecomment-1', createdAt: at(1) };
+    const gate = { author: BOT, body: approvability('Needs Human Approval', '\n\n**Needs human approval because:**\n- Per-review cost limit exceeded (workspace setting). Approvability relies on correctness review in order to determine eligibility'), anchor: 'issuecomment-2', createdAt: at(2) };
+    for (const checks of [[limited, check('Macroscope - Approvability Check', 'neutral', 'Needs Human Approval')], []]) {
+      expect(macroscope(checks, [notice, gate]), `${checks.length} checks`).toMatchObject({ verdict: 'failed', reason: 'Per-review cost limit exceeded (workspace setting)', sourceId: 'issuecomment-1' });
+      expect(macroscope(checks, [notice, gate])?.needsHuman, `${checks.length} checks`).toBeUndefined();
+    }
   });
 
   it('marks a request for a person that found nothing, and lets a count win over it', () => {
