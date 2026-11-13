@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { completeChat, joinUrl, listModels, providerMessage, refusalKind } from './ai-client';
+import { chatDeltaOf, completeChat, joinUrl, listModels, providerMessage, refusalKind, streamChat } from './ai-client';
 import type { ChatCompletionOptions } from './ai-client';
 import { evaluateDecision } from './jev';
 
@@ -285,4 +285,44 @@ it('leaves temperature to the provider unless the caller sets one', async () => 
   await completeChat({ ...options, temperature: 0.2 });
   expect(bodies[0]).not.toHaveProperty('temperature');
   expect(bodies[1]).toHaveProperty('temperature', 0.2);
+});
+
+describe('streamChat', () => {
+  const streamed = (chunks: readonly string[]): Response => {
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+        controller.close();
+      },
+    });
+    return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  };
+
+  it('hands each delta over as it arrives and returns the whole reply', async () => {
+    const deltas: string[] = [];
+    let sent: unknown = null;
+    const fetchImpl = async (_url: string, init?: RequestInit): Promise<Response> => {
+      sent = JSON.parse(String(init?.body));
+      return streamed(['data: {"model":"m-1","choices":[{"delta":{"role":"assistant"}}]}\n\n', 'data: {"choices":[{"delta":{"content":"Hel"}}]}\n', '\ndata: {"choices":[{"delta":{"content":"lo"}}]}\n\ndata: [DONE]\n\n']);
+    };
+    const result = await streamChat({ fetch: fetchImpl, baseUrl: 'https://gw.example', apiKey: 'k', model: 'm', messages: [{ role: 'user', content: 'hi' }], onDelta: (text) => deltas.push(text) });
+    expect(result).toEqual({ ok: true, text: 'Hello', model: 'm-1' });
+    expect(deltas).toEqual(['Hel', 'lo']);
+    expect(sent).toMatchObject({ stream: true, model: 'm' });
+  });
+
+  it('reads a gateway that ignored stream and answered with one completion', async () => {
+    const fetchImpl = async (): Promise<Response> => new Response(JSON.stringify({ model: 'm', choices: [{ message: { content: 'Whole' } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    const deltas: string[] = [];
+    expect(await streamChat({ fetch: fetchImpl, baseUrl: 'https://gw.example', apiKey: 'k', model: 'm', messages: [], onDelta: (text) => deltas.push(text) })).toEqual({ ok: true, text: 'Whole', model: 'm' });
+    expect(deltas).toEqual(['Whole']);
+  });
+
+  it('stops at an error the provider sends mid-stream', async () => {
+    const fetchImpl = async (): Promise<Response> => streamed(['data: {"choices":[{"delta":{"content":"Par"}}]}\n\n', 'data: {"error":{"message":"overloaded"}}\n\n']);
+    const result = await streamChat({ fetch: fetchImpl, baseUrl: 'https://gw.example', apiKey: 'k', model: 'm', messages: [], onDelta: () => undefined });
+    expect(result).toEqual({ ok: false, reason: 'The provider stopped the reply: overloaded' });
+    expect(chatDeltaOf({ choices: [{ delta: { content: [{ text: 'a' }, { text: 'b' }] } }] })).toBe('ab');
+  });
 });
