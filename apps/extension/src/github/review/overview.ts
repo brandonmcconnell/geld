@@ -3955,8 +3955,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     reapply();
     const fixes = picked.map(({ key, found, replacement }) => ({ threadAnchors: found.item.sources.map((source) => source.anchor), path: found.entry.path, replacement, summary: found.entry.summary, title: found.item.title, headSha: meta.headSha, pendingReply: pendingReplyFor(key, rawComments) }));
     void applyFixes(fixes).then(async (results) => {
-      // Read when the commit lands: the repository's config may have arrived meanwhile.
-      const resolves = settings.resolveOnFix && repoBots.resolveOnFix !== false;
+      // Read when the commit lands: the reader's setting may have changed and the repository's config arrived meanwhile.
+      const resolves = (lastSettings ?? settings).resolveOnFix && repoBots.resolveOnFix !== false;
       let changed = false;
       for (const [index, { key, found }] of picked.entries()) {
         triage.busy.delete(key);
