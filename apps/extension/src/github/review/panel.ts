@@ -3715,7 +3715,60 @@ export interface MountOptions {
   readonly parkChats?: (panel: Element) => HTMLElement | null;
 }
 
+/** A press that began inside the panel and has not been released yet. */
+let pressing = false;
+/** A rebuild held back by that press, asked for again once it is released. */
+let afterPress: (() => void) | null = null;
+let pressesWatched = false;
+
+function livePanel(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}]`);
+}
+
+/**
+ * GitHub's tooltips are top-layer popovers placed once, when they open: inside the panel (a check's "More actions",
+ * shown when Escape hands focus back to its ⋯) a scroll left one standing over another control.
+ */
+function closeTooltipsIn(panel: HTMLElement): void {
+  try {
+    for (const tip of panel.querySelectorAll<HTMLElement>('[data-component="Tooltip"][popover]:popover-open')) tip.hidePopover();
+  } catch {
+    // A browser without `:popover-open` has no top-layer tooltips to leave behind.
+  }
+}
+
+function watchPresses(): void {
+  if (pressesWatched) return;
+  pressesWatched = true;
+  document.addEventListener('pointerdown', (event) => {
+    pressing = event.target instanceof Node && livePanel()?.contains(event.target) === true;
+  }, true);
+  const release = (): void => {
+    if (!pressing) return;
+    pressing = false;
+    const held = afterPress;
+    afterPress = null;
+    held?.();
+  };
+  document.addEventListener('pointerup', release, true);
+  document.addEventListener('pointercancel', release, true);
+  // GitHub's checks list keeps focus on its rows: once focus is anywhere in the list (Escape hands it back to a ⋯),
+  // a press that focuses another ⋯ has the list move focus to that ⋯'s row and scroll to it, the button slides
+  // from under the pointer and no menu opens (GitHub's own page does the same). Pressed without taking focus, the
+  // button's click opens its menu, which takes focus itself.
+  document.addEventListener('mousedown', (event) => {
+    if (event.button !== 0 || !(event.target instanceof Element)) return;
+    const button = event.target.closest('button');
+    if (button !== null && button.closest(`[${ATTR_SLOT}="${CHECKS_KEY}"] li`) !== null) event.preventDefault();
+  }, true);
+  document.addEventListener('scroll', () => {
+    const panel = livePanel();
+    if (panel !== null) closeTooltipsIn(panel);
+  }, { capture: true, passive: true });
+}
+
 export function mountPanel(model: PanelModel, handlers: PanelHandlers, options: MountOptions = {}): MountedPanel | null {
+  watchPresses();
   blockedOf = model.blockedBy;
   // A rebuild (the reading ending changes the signature) must not drop the bar mid-way: the new panel takes it.
   const bar = document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}] > .${PANEL_CLASS}__reading`);
@@ -3783,6 +3836,12 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     if (existing.querySelector(`.${PANEL_CLASS}__request[open]`) !== null) return { root: existing, slot };
     // An edit history is open from a clock: a rebuild would close it and take the reader's focus. Wait.
     if (existing.querySelector(`.${PANEL_CLASS}__edited-wrap[open]`) !== null) return { root: existing, slot };
+    // A press inside the panel not yet released: a rebuild between its pointerdown and its click moves or replaces
+    // what was pressed (the worn gear, a check's ⋯), and the click is lost. Wait for the release.
+    if (pressing) {
+      afterPress = handlers.onRequestMenuClosed;
+      return { root: existing, slot };
+    }
   }
   const card = descriptionCard();
   // On the Overview the panel stands among React's nodes: not before React has hydrated them (`react-hydration.ts`).
