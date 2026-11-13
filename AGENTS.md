@@ -33,7 +33,7 @@ apps/nightly-installer/ geld-nightly — `npx geld-nightly@latest`, the optional
 packages/domain/     @geld/domain — provider-neutral contracts, access and billing rules.
 packages/providers/  @geld/providers — provider clients behind token sources.
 packages/ui/         @geld/ui — shared Base UI presentation primitives.
-assets/brand/        Logo + logomark SVGs (black and white variants), and the logomark on a pixel grid for small icons. Both apps reference these.
+assets/brand/        Logo + logomark SVGs (black and white variants), the logomark on a pixel grid for small icons, and `digest-emblem/`, the digest's emblem drawn per screen density. Both apps reference these.
 .github/workflows/   CI: `pnpm check` (typecheck + tests everywhere), `pnpm catalog:check` (generated
                      catalog and its signature are current) and `pnpm zip:all` artifacts.
 catalog/             patterns.json + patterns.sig: the signed pattern catalog installed extensions
@@ -147,7 +147,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Fresh `headSha` → render the panel from the payload (zero crawl).
   Stale/partial/missing → crawler fallback with the same layout, "Updating…" when a summary exists but is behind.
   **The panel (`review/panel.ts`, `.geld-review`) grows out of the bottom of the description card**: inserted right after the card (`[data-geld-attached]` squares its bottom corners, the panel's top ones are square too, `margin-top: -1px` shares the border), so the two read as one box.
-  Inside it borrows the merge box's checks list: a summary strip on the status rows' columns (the emblem in the glyph column, `brandMark`: `assets/brand/geld-logomark-grid.svg` in `currentColor`, so one weight serves both themes, about 120% of the glyphs and overhanging its 16px box so "Geld" stays put, sized by `brandFit` for the screen's pixel ratio so each of its 7 cells is whole device pixels (17.5px at 2x, 16⅓ at 3x, still 14px at 1x, where the nearest sharp larger size is 21px);
+  Inside it borrows the merge box's checks list: a summary strip on the status rows' columns (the emblem in the glyph column, `brandMark(…, { fitted: true })`: pixel art from `assets/brand/digest-emblem/` in `currentColor`, so one weight serves both themes, about 18px and overhanging its 16px box so "Geld" stays put, the drawing whose device pixels come nearest 18 CSS pixels at the screen's ratio, shown at one device pixel per unit (`emblemFit`, swapped when zoom or the screen changes the ratio);
   "Geld" as text in the label column;
   then the progress meter, only when there are review threads, resolved or not;
   needs-reply chip, copy), then **the status rows** (`statusRows`, in triage order: *Reviews*, *Review bots*, *Reports*, *CI checks*, *Previews*, *Deployments*;
@@ -2391,6 +2391,13 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The Mac icons keep the tile Xcode's converter drew and replace the extension's icon in its middle 60%.
   The site's 32px favicon draws the logomark at 1px per unit too.
   Change the grid mark and the white cut with the logomark, then rerun the script.
+  **The digest's emblem is drawn by hand for each screen density** (`assets/brand/digest-emblem/<ratio>x.svg`, 1x to 4x): each is the logomark's spiral redrawn in that density's device pixels for about 18 CSS pixels, with whole-pixel bands, gaps, tongue and 45° cuts kept as near the logomark's 4 : 3 : 6 as pixels allow (1x: bands 3, gaps 2, 18 × 18;
+  2x: 6 and 4, 35 × 36;
+  3x: 9 and 6, 52 × 54).
+  At 1.5x the logomark itself fits, and `1.5x.svg` is its path unchanged (pinned by `brand.test.ts`).
+  A real scale factor (Windows 125%, 150%) has Chrome place an inline SVG on whole device pixels, so one device pixel per unit is sharp at every ratio, between the drawn ones too (browser zoom), only a little larger or smaller;
+  Puppeteer's emulated `deviceScaleFactor` snaps to CSS pixels instead and blurs fractional ratios, so check those with `--force-device-scale-factor`.
+  Redraw them when the logomark changes.
 
 ## Website (apps/site)
 

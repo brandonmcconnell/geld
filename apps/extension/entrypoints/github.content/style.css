@@ -3210,8 +3210,8 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 }
 
 /* The strip sits on the status rows' columns: the emblem in the 16px glyph column, "Geld" in the 88px label column,
-   the meter where a row's content starts. The emblem is about 120% of the glyphs and overhangs its 16px box, which
-   keeps "Geld" in place. `brandFit` sizes it so each of its 7 cells is whole device pixels; the fallback is 1x. */
+   the meter where a row's content starts. The emblem, about 18px of pixel art drawn per screen ratio, overhangs its
+   16px box, which keeps "Geld" in place; `emblemFit` sets its size and offset on the svg. */
 .geld-review__brand {
   position: relative;
   display: inline-block;
@@ -3222,11 +3222,7 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 
 .geld-review__brand svg {
   position: absolute;
-  top: var(--geld-brand-shift, 1px);
-  left: var(--geld-brand-shift, 1px);
   display: block;
-  width: var(--geld-brand-size, 14px);
-  height: var(--geld-brand-size, 14px);
 }
 
 .geld-review__label.geld-review__brand-name {
