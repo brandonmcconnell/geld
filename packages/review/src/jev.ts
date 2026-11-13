@@ -1,5 +1,5 @@
-import type { FetchLike } from './ai-client';
-import { joinUrl } from './ai-client';
+import type { FetchLike, Refusal } from './ai-client';
+import { joinUrl, providerMessage, refusalFrom } from './ai-client';
 
 /**
  * TypeSafe's Jev is a System One model: it evaluates one piece of state
@@ -45,7 +45,7 @@ export interface JevRequest {
 
 export type JevResult =
   | { readonly ok: true; readonly model: string; readonly answers: Readonly<Record<string, JevAnswer>> }
-  | { readonly ok: false; readonly reason: string };
+  | Refusal;
 
 const JEV_ID = /(^|[/:@-])jev(\b|[-.])/i;
 const UNPINNED_JEV_ID = /(^|\/)jev(-latest)?$/i;
@@ -275,8 +275,12 @@ export async function evaluateDecision(options: EvaluateOptions): Promise<JevRes
       body: JSON.stringify(openai === null ? options.request : openai.body),
       ...(controller === null ? {} : { signal: controller.signal }),
     });
-    if (!response.ok) return { ok: false, reason: `Decision request failed (${response.status}).` };
-    const body: unknown = await response.json();
+    if (!response.ok) {
+      const message = providerMessage(await response.text().catch(() => ''), options.apiKey);
+      return refusalFrom('Decision request failed', response.status, message);
+    }
+    // A parse error's message can quote the body, which is the gateway's text: an unreadable body is the shape failure below.
+    const body: unknown = await response.json().catch(() => null);
     const parsed = openai === null ? parseJevResponse(body) : parseOpenAiDecisions(body, openai.names);
     if (parsed === null) return { ok: false, reason: 'The decision model answered in an unexpected shape.' };
     return { ok: true, ...parsed };

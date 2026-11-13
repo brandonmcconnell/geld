@@ -3026,6 +3026,7 @@ var init_usage_settings = __esm({
       "digest_view_changed",
       "flow_opened",
       "ai_triage_run",
+      "ai_triage_failed",
       "ai_fix_applied",
       "ai_fix_discarded",
       "agent_handoff",
@@ -11594,6 +11595,13 @@ function presetMatches(preset, value) {
   const pattern = preset.value.split(/(\{[a-z]+\})/i).map((part) => PRESET_BLANK.test(part) ? "[^/.{}\\s]+" : part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("");
   return new RegExp(`^${pattern}$`, "i").test(value);
 }
+function aiGatewayLabel(baseUrl) {
+  for (const field of textFields(fieldsFor("extension"))) {
+    if (field.key !== "aiBaseUrl") continue;
+    for (const preset of field.presets ?? []) if (presetMatches(preset, baseUrl)) return preset.label;
+  }
+  return "another gateway";
+}
 function presetGroups(presets) {
   const groups = /* @__PURE__ */ new Map();
   for (const preset of presets) {
@@ -12331,6 +12339,7 @@ __export(src_exports, {
   USAGE_TOGGLES: () => USAGE_TOGGLES,
   actionsFor: () => actionsFor,
   addTotals: () => addTotals,
+  aiGatewayLabel: () => aiGatewayLabel,
   allBuiltInTestPatterns: () => allBuiltInTestPatterns,
   allCategories: () => allCategories,
   allHosts: () => allHosts,
@@ -34099,39 +34108,107 @@ function contentOf(value) {
   const joined = parts2.join("");
   return joined === "" ? null : joined;
 }
+var MAX_PROVIDER_MESSAGE = 240;
+var SCHEMA_REFUSED = /response_format|json_schema|structured outputs?/i;
+var REFUSAL_KINDS = [
+  ["response-format", SCHEMA_REFUSED],
+  ["too-long", /context (?:length|window)|maximum .*tokens|too many tokens|too long/i],
+  ["quota", /quota|credits?|billing|insufficient (?:funds|balance)|payment/i],
+  ["rate-limit", /rate.?limit|too many requests/i],
+  ["content-policy", /content (?:policy|filter|management)|safety|moderation/i],
+  ["key", /api.?key|unauthori[sz]ed|authenticat|permission|forbidden/i],
+  // Last: most refusals name the model somewhere.
+  ["model", /model|deployment/i]
+];
+function refusalKind(status, message) {
+  const words = message ?? "";
+  for (const [kind, pattern] of REFUSAL_KINDS) if (pattern.test(words)) return kind;
+  if (status === 401 || status === 403) return "key";
+  if (status === 404) return "model";
+  if (status === 429) return "rate-limit";
+  return "other";
+}
+function messageIn(value) {
+  if (typeof value === "string") return value.trim() === "" ? null : value;
+  if (Array.isArray(value)) return messageIn(value[0]);
+  if (!isRecord10(value)) return null;
+  for (const key of ["error", "message", "detail"]) {
+    const found = messageIn(value[key]);
+    if (found !== null) return found;
+  }
+  return null;
+}
+function providerMessage(body, apiKey) {
+  let message;
+  try {
+    message = messageIn(JSON.parse(body));
+  } catch {
+    message = /^\s*</.test(body) ? null : body;
+  }
+  if (message === null) return null;
+  let text = apiKey === "" ? message : message.split(apiKey).join("<key>");
+  text = text.replace(/\b(?:sk|pk|rk|key)-[\w-]{6,}/gi, "<key>").replace(/[\w-]{32,}/g, "<token>").replace(/\s+/g, " ").trim();
+  return text === "" ? null : text;
+}
+function refusalFrom(lead, status, message) {
+  const shown = message === null || message.length <= MAX_PROVIDER_MESSAGE ? message : `${message.slice(0, MAX_PROVIDER_MESSAGE - 1)}\u2026`;
+  const reason = shown === null ? `${lead} (${status}).` : `${lead} (${status}): ${/[.!?…]$/.test(shown) ? shown : `${shown}.`}`;
+  return { ok: false, reason, status, kind: refusalKind(status, message) };
+}
+async function refusalOf(response, apiKey) {
+  const message = providerMessage(await response.text().catch(() => ""), apiKey);
+  return { message, refusal: refusalFrom("Completion failed", response.status, message) };
+}
+function withSchemaInPrompt(messages, schema) {
+  const instruction = `Answer with one JSON object and nothing else, matching this JSON Schema:
+${JSON.stringify(schema)}`;
+  const system = messages.findIndex((message) => message.role === "system");
+  if (system === -1) return [{ role: "system", content: instruction }, ...messages];
+  return messages.map((message, index) => index === system ? { ...message, content: `${message.content}
+
+${instruction}` } : message);
+}
 async function completeChat(options) {
   if (options.apiKey === "") return { ok: false, reason: "No API key." };
-  const body = {
+  const base = {
     model: options.model,
     messages: options.messages
   };
-  if (options.temperature !== void 0) body.temperature = options.temperature;
-  if (options.jsonSchema !== void 0) {
-    body.response_format = {
+  if (options.temperature !== void 0) base.temperature = options.temperature;
+  const body = options.jsonSchema === void 0 ? base : {
+    ...base,
+    response_format: {
       type: "json_schema",
       json_schema: {
         name: options.schemaName ?? "geld",
         strict: true,
         schema: options.jsonSchema
       }
-    };
-  }
+    }
+  };
   const controller = options.timeoutMs === void 0 ? null : new AbortController();
   const timer = controller === null || options.timeoutMs === void 0 ? null : setTimeout(() => controller.abort(), options.timeoutMs);
   const signal = options.signal && controller ? AbortSignal.any([options.signal, controller.signal]) : options.signal ?? controller?.signal ?? null;
   try {
     const fetchImpl = options.fetch;
-    const response = await fetchImpl(joinUrl(options.baseUrl, "/v1/chat/completions"), {
+    const post = (payload2) => fetchImpl(joinUrl(options.baseUrl, "/v1/chat/completions"), {
       method: "POST",
       headers: {
         authorization: `Bearer ${options.apiKey}`,
         "content-type": "application/json",
         accept: "application/json"
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload2),
       ...signal ? { signal } : {}
     });
-    if (!response.ok) return { ok: false, reason: `Completion failed (${response.status}).` };
+    let response = await post(body);
+    if (!response.ok) {
+      const first2 = await refusalOf(response, options.apiKey);
+      const schemaRefused = response.status === 400 && options.jsonSchema !== void 0 && first2.message !== null && SCHEMA_REFUSED.test(first2.message);
+      if (!schemaRefused) return first2.refusal;
+      response = await post({ ...base, messages: withSchemaInPrompt(options.messages, options.jsonSchema) });
+      if (!response.ok) return (await refusalOf(response, options.apiKey)).refusal;
+    }
     const payload = await response.json();
     if (!isRecord10(payload) || !Array.isArray(payload.choices))
       return { ok: false, reason: "Completion response was empty." };

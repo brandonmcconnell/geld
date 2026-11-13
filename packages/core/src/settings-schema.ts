@@ -153,6 +153,15 @@ export function presetMatches(preset: TextPreset, value: string): boolean {
   return new RegExp(`^${pattern}$`, 'i').test(value);
 }
 
+/** The gateway preset a URL is ("Vercel AI Gateway"), else "another gateway": a name for reports, without the account or resource a URL can hold. */
+export function aiGatewayLabel(baseUrl: string): string {
+  for (const field of textFields(fieldsFor('extension'))) {
+    if (field.key !== 'aiBaseUrl') continue;
+    for (const preset of field.presets ?? []) if (presetMatches(preset, baseUrl)) return preset.label;
+  }
+  return 'another gateway';
+}
+
 /** Presets grouped for display: one entry per group in first-seen order, ungrouped presets under `null`. */
 export function presetGroups(presets: readonly TextPreset[]): readonly { readonly group: string | null; readonly presets: readonly TextPreset[] }[] {
   const groups = new Map<string | null, TextPreset[]>();

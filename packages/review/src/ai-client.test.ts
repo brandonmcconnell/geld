@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { completeChat, joinUrl, listModels } from './ai-client';
+import { completeChat, joinUrl, listModels, providerMessage, refusalKind } from './ai-client';
 import type { ChatCompletionOptions } from './ai-client';
 import { evaluateDecision } from './jev';
 
@@ -167,6 +167,111 @@ it('calls the given fetch on its own, as a browser requires of its native fetch'
       request: { model: 'jev-latest', state: 'Fixture', questions: { a: { type: 'noul', instructions: 'Yes?' } } },
     }),
   ).toEqual({ ok: true, model: 'jev', answers: { a: { type: 'noul', noul: 0.9 } } });
+});
+
+describe('a refused completion', () => {
+  const options = (fetchImpl: ChatCompletionOptions['fetch']): ChatCompletionOptions => ({
+    fetch: fetchImpl,
+    baseUrl: 'https://ai-gateway.vercel.sh',
+    apiKey: 'sk-synthetic-secret-1234',
+    model: 'anthropic/claude-sonnet-5',
+    messages: [
+      { role: 'system', content: 'You write titles.' },
+      { role: 'user', content: '{}' },
+    ],
+    jsonSchema: { type: 'object', properties: { tldr: { type: 'string' } }, required: ['tldr'], additionalProperties: false },
+    schemaName: 'geld_summary',
+  });
+
+  it('says what the provider said, without the key', async () => {
+    const result = await completeChat(
+      options(async () => Response.json({ error: { message: 'Model not found for key sk-synthetic-secret-1234', type: 'invalid_request_error' } }, { status: 404 })),
+    );
+    expect(result).toEqual({ ok: false, reason: 'Completion failed (404): Model not found for key <key>.', status: 404, kind: 'model' });
+  });
+
+  it('keeps to the status when the answer has no words to give', async () => {
+    expect(await completeChat(options(async () => new Response('<html><body>Bad gateway</body></html>', { status: 502 })))).toEqual({ ok: false, reason: 'Completion failed (502).', status: 502, kind: 'other' });
+    expect(providerMessage(JSON.stringify([{ error: { code: 400, message: 'Invalid JSON payload received.' } }]), '')).toBe('Invalid JSON payload received.');
+  });
+
+  it('asks again with the schema in the prompt when the gateway cannot take it as a response format', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const result = await completeChat(
+      options(async (_url, init) => {
+        const body: unknown = JSON.parse(String(init?.body));
+        if (typeof body === 'object' && body !== null && !Array.isArray(body)) bodies.push(Object.fromEntries(Object.entries(body)));
+        return bodies.length === 1 ? Response.json({ error: { message: "Invalid schema for response_format 'geld_summary'" } }, { status: 400 }) : Response.json({ choices: [{ message: { content: '{"tldr":"ok"}' } }] });
+      }),
+    );
+    expect(result).toEqual({ ok: true, text: '{"tldr":"ok"}', model: 'anthropic/claude-sonnet-5' });
+    expect(bodies[0]).toHaveProperty('response_format');
+    expect(bodies[1]).not.toHaveProperty('response_format');
+    expect(JSON.stringify(bodies[1]?.messages)).toContain('matching this JSON Schema');
+  });
+
+  it('reports the plain request’s own refusal when it is refused too, and asks only once more', async () => {
+    let calls = 0;
+    const result = await completeChat(
+      options(async () => {
+        calls += 1;
+        return calls === 1 ? Response.json({ error: { message: 'json_schema is not supported for this model' } }, { status: 400 }) : Response.json({ error: { message: 'You exceeded your current quota' } }, { status: 429 });
+      }),
+    );
+    expect(calls).toBe(2);
+    expect(result).toEqual({ ok: false, reason: 'Completion failed (429): You exceeded your current quota.', status: 429, kind: 'quota' });
+  });
+
+  it('reads the whole message for the response format, past the part the reason shows', async () => {
+    const long = `${'The request could not be processed as sent. '.repeat(8)}response_format is not supported for this model.`;
+    let calls = 0;
+    const result = await completeChat(
+      options(async () => {
+        calls += 1;
+        return Response.json({ error: { message: long } }, { status: 400 });
+      }),
+    );
+    expect(calls).toBe(2);
+    expect(result.ok === false && result.kind).toBe('response-format');
+    expect(result.ok === false && result.reason.length).toBeLessThan(long.length);
+  });
+
+  it('never reports a decision body it could not read in its own words', async () => {
+    const result = await evaluateDecision({
+      fetch: async () => new Response('private text the gateway echoed', { status: 200 }),
+      baseUrl: 'https://api.typesafe.ai',
+      apiKey: 'synthetic',
+      request: { model: 'jev-latest', state: 'Fixture', questions: { a: { type: 'noul', instructions: 'Yes?' } } },
+    });
+    expect(result).toEqual({ ok: false, reason: 'The decision model answered in an unexpected shape.' });
+  });
+
+  it('does not ask again for a 400 that is not about the response format', async () => {
+    for (const words of ["This model's maximum context length is 8192 tokens.", 'Messages require strict user/assistant alternation.', 'Tool input does not match its schema.']) {
+      let calls = 0;
+      const result = await completeChat(
+        options(async () => {
+          calls += 1;
+          return Response.json({ error: { message: words } }, { status: 400 });
+        }),
+      );
+      expect(calls).toBe(1);
+      expect(result.ok).toBe(false);
+    }
+  });
+});
+
+describe('the kind of a refusal', () => {
+  it('reads it from the words first, then the status', () => {
+    expect(refusalKind(400, "Invalid schema for response_format 'geld_suggest'")).toBe('response-format');
+    expect(refusalKind(400, "This model's maximum context length is 8192 tokens.")).toBe('too-long');
+    expect(refusalKind(429, 'Rate limit reached for model gpt-5')).toBe('rate-limit');
+    expect(refusalKind(429, 'You exceeded your current quota')).toBe('quota');
+    expect(refusalKind(401, 'Incorrect API key provided: <key>.')).toBe('key');
+    expect(refusalKind(400, 'The model `no-such-model` does not exist')).toBe('model');
+    expect(refusalKind(403, null)).toBe('key');
+    expect(refusalKind(400, 'Invalid input near: privatePayroll = 125000')).toBe('other');
+  });
 });
 
 it('leaves temperature to the provider unless the caller sets one', async () => {
