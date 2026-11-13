@@ -132,6 +132,9 @@ const VIRTUAL_NAVIGATION_PASSES = 4;
 /** How long a revealed file is held aligned at the top while diffs above it load: a plain list, and a virtualised one. */
 const ALIGN_MS = 1500;
 const VIRTUAL_ALIGN_MS = 8000;
+/** A file picked in GitHub's tree: how long to wait for GitHub's scroll to begin, and the still frames that end it. */
+const TREE_SCROLL_START_MS = 600;
+const TREE_SCROLL_STILL_FRAMES = 6;
 
 interface ClassifiedEntry extends Classified {
   readonly entry: DiffEntry;
@@ -702,6 +705,7 @@ export class GeldController {
     const target = event.target instanceof Element ? event.target : null;
     if (target === null) return;
     if (this.searchPanel !== null) this.keepSearchPanel(target, this.currentPage.stateKey);
+    this.followTreePick(target);
     if (this.settings.groupHidden) return;
     // Read the page afresh: React re-renders tree rows, so a view captured on
     // the last pass may hold stale elements that no longer match the click.
@@ -740,6 +744,71 @@ export class GeldController {
     }
     this.activePanel.set(stateKey, opened.panel);
     this.searchPanel = null;
+  }
+
+  /**
+   * GitHub's React files view scrolls to a file picked in its tree by where the file stands at the click, but the
+   * files above it are `content-visibility: auto` boxes at estimated heights until they render, which they do during
+   * that smooth scroll: it ends hundreds or thousands of pixels short. Once it ends, the file is put back at the
+   * offset GitHub aimed for and held there while the files around it settle.
+   */
+  private followTreePick(target: Element): void {
+    const row = target.closest('li[role="treeitem"]');
+    if (row === null) return;
+    const view = legacyAdapter.read() ?? reactAdapter.read();
+    if (view === null || view.kind !== 'react' || view.virtualized) return;
+    const anchor = view.treeFiles.find((file) => file.element === row)?.anchor ?? null;
+    if (anchor === null) return;
+    const live = (): HTMLElement | null => document.getElementById(anchor);
+    const picked = live();
+    if (picked === null) return;
+    const from = picked.getBoundingClientRect().top + window.scrollY;
+    this.cancelAlign?.();
+    this.cancelAlign = null;
+    this.afterTreeScroll((landed) => this.keepAligned(live, ALIGN_MS, true, from - landed));
+  }
+
+  /** Calls `onLanded` with the scroll position once GitHub's scroll has run and stopped; never when it does not begin or the reader takes over. */
+  private afterTreeScroll(onLanded: (landed: number) => void): void {
+    const began = performance.now();
+    let last = window.scrollY;
+    let moved = false;
+    let still = 0;
+    let stopped = false;
+    const stop = (): void => {
+      stopped = true;
+    };
+    this.cancelAlign = stop;
+    const options: AddEventListenerOptions = { passive: true, once: true };
+    const release = (): void => {
+      window.removeEventListener('wheel', stop);
+      window.removeEventListener('touchstart', stop);
+      window.removeEventListener('keydown', stop);
+      if (this.cancelAlign === stop) this.cancelAlign = null;
+    };
+    const frame = (): void => {
+      if (stopped) return release();
+      const y = window.scrollY;
+      if (y !== last) {
+        moved = true;
+        still = 0;
+        last = y;
+      } else still += 1;
+      if (!moved && performance.now() - began > TREE_SCROLL_START_MS) return release();
+      if (moved && still >= TREE_SCROLL_STILL_FRAMES) {
+        release();
+        onLanded(y);
+        return;
+      }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(() => {
+      // Listened for from the next frame: the keydown that picked the file is still being dispatched.
+      window.addEventListener('wheel', stop, options);
+      window.addEventListener('touchstart', stop, options);
+      window.addEventListener('keydown', stop, options);
+      frame();
+    });
   }
 
   private markTouched(stateKey: string, path: string): void {
@@ -1754,11 +1823,12 @@ export class GeldController {
    * the target down after we aligned it. Re-align a few times while that
    * settles, but stop as soon as the user scrolls on their own. `live` names
    * the target's current element (a virtualised row can be remounted meanwhile).
+   * `offset` is where its top belongs below the viewport's, its scroll margin by default.
    */
-  private keepAligned(live: () => HTMLElement | null, holdMs: number, settleWhenStable: boolean): void {
+  private keepAligned(live: () => HTMLElement | null, holdMs: number, settleWhenStable: boolean, offset?: number): void {
     const first = live();
     if (first === null) return;
-    const scrollMargin = Number.parseFloat(getComputedStyle(first).scrollMarginTop) || 0;
+    const scrollMargin = offset ?? (Number.parseFloat(getComputedStyle(first).scrollMarginTop) || 0);
     const deadline = performance.now() + holdMs;
     let stableChecks = 0;
     let userScrolled = false;
