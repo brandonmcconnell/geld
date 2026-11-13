@@ -55,18 +55,14 @@ const MAX_FILE_BYTES = 256 * 1024;
 const BUILT_IN_HOSTS = ['github.com', 'patch-diff.githubusercontent.com'];
 
 /**
- * A request the AI gateway refused. Copy diagnostics keeps the gateway's own words; the error report, which readers
- * may send, says only what kind of refusal it was, since the words can quote the request. A failure with no status
- * is one of Geld's own fixed reasons (a timeout, an empty answer) and is reported as it is.
+ * A request the AI gateway refused, as one of Geld's errors. It says only what kind of refusal it was: the gateway's
+ * words can quote the request, and Copy diagnostics and error reports can both leave the device (feedback attaches
+ * the diagnostics to a public issue), so the words are shown to the reader in the panel alone. A failure with no
+ * status is one of Geld's own fixed reasons (a timeout, an empty answer) and is reported as it is.
  */
 function reportAiFailure(step: string, baseUrl: string, failure: Refusal): void {
   const where = `AI ${step} via ${aiGatewayLabel(baseUrl)}`;
-  if (failure.status === undefined) {
-    reportError('background:ai', `${where}: ${failure.reason}`);
-    return;
-  }
-  recordDiagnostic({ kind: 'ai', subject: where, outcome: failure.reason, status: failure.status });
-  reportError('background:ai', `${where}: refused (${failure.status}, ${failure.kind ?? 'other'})`);
+  reportError('background:ai', failure.status === undefined ? `${where}: ${failure.reason}` : `${where}: refused (${failure.status}, ${failure.kind ?? 'other'})`);
 }
 
 /** github.com, its diff host, and any Enterprise servers the user configured. */

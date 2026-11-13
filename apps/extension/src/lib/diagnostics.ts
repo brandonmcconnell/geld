@@ -9,11 +9,8 @@ import { storage } from 'wxt/utils/storage';
  */
 export interface DiagnosticEvent {
   readonly at: number;
-  /**
-   * `error`: one of Geld's own errors (`error-capture.ts`); `subject` is where it happened, `outcome` its scrubbed message.
-   * `ai`: a request the AI gateway refused, `outcome` in the gateway's own words, which stay on this device.
-   */
-  readonly kind: 'fetch' | 'worker-start' | 'rate-limit' | 'busy' | 'cache-clear' | 'inject' | 'error' | 'error-report' | 'usage-report' | 'ai';
+  /** `error`: one of Geld's own errors (`error-capture.ts`); `subject` is where it happened, `outcome` its scrubbed message. */
+  readonly kind: 'fetch' | 'worker-start' | 'rate-limit' | 'busy' | 'cache-clear' | 'inject' | 'error' | 'error-report' | 'usage-report';
   readonly subject?: string | undefined;
   /**
    * `ok`, `memory-hit`, `queued`, `rate-limited`, `signed-out`, `not-a-diff`, `http-NNN`, `too-large`, or an error
