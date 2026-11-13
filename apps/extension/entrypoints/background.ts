@@ -2,7 +2,7 @@ import { isTrackerStatusRequest,readTrackerStatuses } from '../src/lib/tracker-s
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
-import { parseUnifiedDiff } from '@geld/core';
+import { aiGatewayLabel, parseUnifiedDiff } from '@geld/core';
 import { completeChat, decisionModelsPath, evaluateDecision, listModels, servesDecisions, TYPESAFE_API } from '@geld/review';
 import { apiSignedIn, createPullRequest, handleAccountMessage, handleFeedbackMessage, startAccountSync } from '../src/lib/account-service';
 import { senderMayCreatePull } from '../src/lib/create-pull';
@@ -11,7 +11,7 @@ import { syncEnterpriseHosts } from '../src/lib/enterprise';
 import { hasGatewayPermission } from '../src/lib/ai-gateway';
 import { settingsItem } from '../src/lib/storage';
 import { diagnosticSubject, recordDiagnostic } from '../src/lib/diagnostics';
-import { installErrorCapture } from '../src/lib/error-capture';
+import { installErrorCapture, reportError } from '../src/lib/error-capture';
 import { queueErrorReports, startErrorReports } from '../src/lib/error-uplink';
 import { addUsageCount, startUsageReports } from '../src/lib/usage-uplink';
 import type { BlockedUsersResponse, FetchDiffResponse, FetchFileResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
@@ -52,6 +52,11 @@ const MAX_DIFF_BYTES = 20 * 1024 * 1024;
 const MAX_FILE_BYTES = 256 * 1024;
 
 const BUILT_IN_HOSTS = ['github.com', 'patch-diff.githubusercontent.com'];
+
+/** A request the AI gateway refused, as one of Geld's errors: in Copy diagnostics, and scrubbed in error reports for readers who send them. */
+function reportAiFailure(step: string, baseUrl: string, reason: string): void {
+  reportError('background:ai', `AI ${step} via ${aiGatewayLabel(baseUrl)}: ${reason}`);
+}
 
 /** github.com, its diff host, and any Enterprise servers the user configured. */
 async function allowedHosts(): Promise<Set<string>> {
@@ -629,7 +634,9 @@ export default defineBackground(() => {
         const denied = await hasGatewayPermission(message.baseUrl);
         if (denied !== null) return { ok: false as const, reason: denied };
         if (message.apiKey.trim() === '') return { ok: false as const, reason: message.baseUrl === TYPESAFE_API ? 'No TypeSafe key.' : 'No API key.' };
-        return evaluateDecision({ fetch, baseUrl: message.baseUrl, apiKey: message.apiKey, request: message.request, timeoutMs: 20_000 });
+        const result = await evaluateDecision({ fetch, baseUrl: message.baseUrl, apiKey: message.apiKey, request: message.request, timeoutMs: 20_000 });
+        if (!result.ok) reportAiFailure('decision', message.baseUrl, result.reason);
+        return result;
       })().then(sendResponse);
       return true;
     }
@@ -639,7 +646,7 @@ export default defineBackground(() => {
         if (denied !== null) return { ok: false as const, reason: denied };
         if (message.apiKey.trim() === '') return { ok: false as const, reason: 'No API key.' };
         if (message.model.trim() === '') return { ok: false as const, reason: 'No model selected.' };
-        return completeChat({
+        const result = await completeChat({
           fetch,
           baseUrl: message.baseUrl,
           apiKey: message.apiKey,
@@ -648,6 +655,8 @@ export default defineBackground(() => {
           ...(message.jsonSchema === undefined ? {} : { jsonSchema: message.jsonSchema }),
           ...(message.schemaName === undefined ? {} : { schemaName: message.schemaName }),
         });
+        if (!result.ok) reportAiFailure(message.schemaName ?? 'completion', message.baseUrl, result.reason);
+        return result;
       })().then(sendResponse);
       return true;
     }

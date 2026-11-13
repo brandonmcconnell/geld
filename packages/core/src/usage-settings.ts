@@ -91,6 +91,7 @@ export const USAGE_COUNTERS = [
   'digest_view_changed',
   'flow_opened',
   'ai_triage_run',
+  'ai_triage_failed',
   'ai_fix_applied',
   'ai_fix_discarded',
   'agent_handoff',

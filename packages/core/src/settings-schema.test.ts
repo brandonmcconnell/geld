@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, normalizeAiBaseUrl } from './settings';
 import {
   SETTINGS_SCHEMA,
+  aiGatewayLabel,
   fieldsFor,
   listFields,
   plainText,
@@ -116,6 +117,12 @@ describe('text presets', () => {
     expect(presetMatches(bedrock, 'https://bedrock-mantle.{region}.api.aws')).toBe(false);
     expect(presetMatches(openai, 'https://api.openai.com')).toBe(true);
     expect(presetMatches(openai, '')).toBe(false);
+  });
+
+  it('names a gateway by its preset, never by an account or resource in its URL', () => {
+    expect(aiGatewayLabel('https://ai-gateway.vercel.sh')).toBe('Vercel AI Gateway');
+    expect(aiGatewayLabel('https://api.cloudflare.com/client/v4/accounts/abc123/ai')).toBe('Cloudflare AI Gateway');
+    expect(aiGatewayLabel('https://llm.internal.acme.dev')).toBe('another gateway');
   });
 
   it('keeps groups in schema order', () => {

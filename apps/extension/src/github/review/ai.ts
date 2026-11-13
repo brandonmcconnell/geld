@@ -55,7 +55,7 @@ import {
 } from '@geld/review';
 import type { Carried } from '@geld/review';
 import { browser } from 'wxt/browser';
-import type { AiRunRecord, JevDecision, StoredSuggestion } from '../../lib/local-state';
+import type { AiRunRecord, AiStep, JevDecision, StoredSuggestion } from '../../lib/local-state';
 import { AI_RUNS_CAP, aiGatewayItem, aiKeyItem, aiRunsItem, jevDecisionsItem, jevKeyItem, jevSourceItem } from '../../lib/local-state';
 import type { AiCompleteRequest, AiEvaluateRequest } from '../../lib/messages';
 import { isAiCompleteResponse, isAiEvaluateResponse } from '../../lib/messages';
@@ -145,12 +145,17 @@ function adopt(record: AiRunRecord): void {
   for (const entry of record.suggestions ?? []) suggestions.set(entry.key, entry);
 }
 
-function recordOf(ranAt: string, error: string | null): AiRunRecord {
+interface AiFailure {
+  readonly step?: AiStep;
+  readonly reason: string;
+}
+
+function recordOf(ranAt: string, failure: AiFailure | null): AiRunRecord {
   return {
     ranAt,
     rewrites: [...rewrites.values()],
     ...(summary === undefined ? {} : { summary }),
-    ...(error === null ? {} : { error }),
+    ...(failure === null ? {} : { error: failure.reason, ...(failure.step === undefined ? {} : { errorStep: failure.step }) }),
     seen: [...seen],
     suggestions: [...suggestions.values()],
   };
@@ -196,7 +201,7 @@ export type AiState =
   | { readonly kind: 'running' }
   | { readonly kind: 'current'; readonly ranAt: string }
   | { readonly kind: 'stale'; readonly ranAt: string; readonly reason: StaleReason }
-  | { readonly kind: 'failed'; readonly ranAt: string; readonly error: string };
+  | { readonly kind: 'failed'; readonly ranAt: string; readonly error: string; readonly step?: AiStep };
 
 /** What a run now would read that the last one did not: new comments or threads, or commits its fixes predate. */
 export type StaleReason = 'comments' | 'commits';
@@ -208,7 +213,7 @@ export function aiStateFor(meta: GeldPrMeta, comments: readonly RawComment[], se
   // The model is only ever asked about open review threads: with none, a click would ask it nothing.
   if (summaryInput(withAi(meta).items).length === 0) return { kind: 'nothing' };
   if (lastRun === null) return { kind: 'ready' };
-  if (lastRun.error !== undefined) return { kind: 'failed', ranAt: lastRun.ranAt, error: lastRun.error };
+  if (lastRun.error !== undefined) return { kind: 'failed', ranAt: lastRun.ranAt, error: lastRun.error, ...(lastRun.errorStep === undefined ? {} : { step: lastRun.errorStep }) };
   const work = workFor(meta, comments, settings);
   return work === null ? { kind: 'current', ranAt: lastRun.ranAt } : { kind: 'stale', ranAt: lastRun.ranAt, reason: work };
 }
@@ -411,16 +416,16 @@ export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], s
   if (needsFixes) inFlight.add('suggest');
   onProgress();
 
-  let failure: string | null = null;
+  let failure: AiFailure | null = null;
   if (pending.length > 0) {
     const scope = await decideScope(settings, pending);
     if (scope.length > 0) {
       const result = await complete(settings, apiKey, CONSOLIDATE_SYSTEM, consolidateUserPrompt(scope), CONSOLIDATE_JSON_SCHEMA, 'geld_consolidate');
-      if (!result.ok) failure = result.reason;
+      if (!result.ok) failure = { step: 'findings', reason: result.reason };
       else {
         const parsed = parseConsolidateOutput(result.text, new Set(scope.map((item) => item.id)));
         if (parsed !== null && parsed.ok) for (const entry of parsed.value) rewrites.set(entry.id, entry);
-        else failure = 'The model answered in a shape Geld could not read.';
+        else failure = { step: 'findings', reason: UNREADABLE };
       }
     }
     // Shown to the model or judged to need nothing from it: either way, not asked again until a new comment joins.
@@ -431,23 +436,29 @@ export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], s
   const items = applyConsolidation(meta.items, new Map<string, Carried>(), [...rewrites.values()]);
   if (needsTldr && failure === null) {
     const result = await complete(settings, apiKey, SUMMARY_SYSTEM, summaryUserPrompt(summaryInput(items), summary?.tldr ?? null), SUMMARY_JSON_SCHEMA, 'geld_summary');
-    if (!result.ok) failure = result.reason;
+    if (!result.ok) failure = { step: 'tldr', reason: result.reason };
     else {
       const parsed = parseSummaryOutput(result.text);
       const paths = items.flatMap((item) => (item.path === undefined ? [] : [item.path]));
       if (parsed !== null && parsed.ok) summary = summaryRecord(codeSpans(parsed.value, paths), items, ranAt);
-      else failure = 'The model answered in a shape Geld could not read.';
+      else failure = { step: 'tldr', reason: UNREADABLE };
     }
   }
   inFlight.delete('tldr');
   onProgress();
-  if (needsFixes && source !== null && failure === null) failure = await proposeFixes(meta.headSha, items, comments, settings, apiKey, source);
+  if (needsFixes && source !== null && failure === null) {
+    const reason = await proposeFixes(meta.headSha, items, comments, settings, apiKey, source);
+    if (reason !== null) failure = { step: 'fixes', reason };
+  }
   inFlight.delete('suggest');
+  if (failure !== null) countUsage('ai_triage_failed');
   lastRun = recordOf(ranAt, failure);
   await store(lastRun);
   onProgress();
   return { changed: true };
 }
+
+const UNREADABLE = 'The model answered in a shape Geld could not read.';
 
 /**
  * Fixes for the open bot findings that have none for this commit. A fix written for an earlier commit whose lines read
@@ -516,7 +527,7 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
     const result = await complete(settings, apiKey, SUGGEST_SYSTEM, suggestUserPrompt(source.pull, inputs), SUGGEST_JSON_SCHEMA, 'geld_suggest');
     if (!result.ok) return result.reason;
     const parsed = parseSuggestOutput(result.text, inputs);
-    if (parsed === null) return 'The model answered in a shape Geld could not read.';
+    if (parsed === null) return UNREADABLE;
     const targets = new Map(batch.map(({ item, target }) => [threadKeyOf(item), target]));
     const asked = new Map(batch.map(({ item }) => [threadKeyOf(item), item]));
     const paths = items.flatMap((item) => (item.path === undefined ? [] : [item.path]));
@@ -589,7 +600,7 @@ async function settle(key: string, state: StoredSuggestion['state'], anchors: re
   // Geld's own reply in the thread is not news for the model.
   for (const anchor of anchors) seen.add(anchor);
   if (lastRun !== null) {
-    lastRun = recordOf(lastRun.ranAt, lastRun.error ?? null);
+    lastRun = recordOf(lastRun.ranAt, lastRun.error === undefined ? null : { reason: lastRun.error, ...(lastRun.errorStep === undefined ? {} : { step: lastRun.errorStep }) });
     await store(lastRun);
   }
 }

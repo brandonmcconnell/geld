@@ -67,11 +67,16 @@ export const jevDecisionsItem = storage.defineItem<Readonly<Record<string, JevDe
  * at the most recent runs. A run that failed keeps its reason so the panel can
  * say why, instead of quietly showing the reporters' wording.
  */
+/** The request of a triage run: the findings' titles, the TL;DR, the fixes. */
+export type AiStep = 'findings' | 'tldr' | 'fixes';
+
 export interface AiRunRecord {
   readonly ranAt: string;
   readonly rewrites: readonly ConsolidateOutputItem[];
   readonly summary?: ReviewSummary;
   readonly error?: string;
+  /** The request that got no usable answer; absent on runs stored before it was recorded. */
+  readonly errorStep?: AiStep;
   /** Comment anchors the model has been shown, so a finding it left as reported is not asked about (and paid for) again. */
   readonly seen?: readonly string[];
   readonly suggestions?: readonly StoredSuggestion[];
