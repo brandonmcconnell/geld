@@ -535,6 +535,12 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `data-geld-pinned` is the sidebar accordion's and is cleared each pass, which is why the chat's mark is `lone`.
   Clicking anywhere non-interactive in a row (avatars, blank) toggles it (`rowClickToggles`).
   **The CI row's gear is always present** beside the chevron: GitHub's checks list is expanded once per visit (folded away, so invisible) so the gear exists, and after a regroup React re-creates the group header, so the worn gear is swapped for the fresh one (`forgetLoan`).
+  **A click on the lent list's controls is never lost** (`watchPresses` in panel.ts, Nov 2026, found on mintlify/mint#14891).
+  GitHub's checks list keeps focus on its rows: once focus is in the list (Escape or a chosen item hands it back to a check's ⋯), pressing another ⋯ has the list move focus to that ⋯'s row and scroll to it, so the button slid from under the pointer, the release landed on the row and no menu opened, the list jumping meanwhile;
+  GitHub's own page does the same.
+  A primary press on a button in a check row of the CI slot therefore takes no focus (`mousedown` default prevented), and the click opens the menu, which takes focus itself.
+  GitHub's tooltips there ("More actions") are top-layer popovers placed once, so one left open by that focus stood over the next ⋯ after the list scrolled and took its click: tooltips in the panel take no pointer events, and any open one is closed on a scroll.
+  A panel rebuild also waits while a press that began in the panel is not yet released (`pressing`, asked for again on release through `onRequestMenuClosed`), since a rebuild between pointerdown and click re-wore the gear and lost the click.
   The Reviews reading is kept per visit (`lastReviews`) because a React re-render of the merge box can blank a pass.
   **Review rounds** (`Batch`, `buildBatches` in overview.ts): the panel's main sections group by *push*, not by author — the timeline is walked in home order, a run of commit rows with nothing between them opens a round (they are its `commits`, merged) — except that **a rewritten commit stands where it was authored, not where GitHub lists it** (`seatRewrittenCommits`): GitHub renders a PR's commit rows from the commits *as they are now*, so after a rebase (an amend, a cherry-pick) the whole list stands at the rewrite and the earlier pushes the reviews answered have no row left;
   mint#11561 read a week of push-and-review cycles as one round.

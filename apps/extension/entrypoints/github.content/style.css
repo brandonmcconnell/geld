@@ -6662,6 +6662,11 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   visibility: visible !important;
 }
 
+/* GitHub's tooltips are labels placed once in the top layer: one left behind by a scroll took the click meant for the control under it. */
+.geld-review [data-component='Tooltip'][popover] {
+  pointer-events: none !important;
+}
+
 .geld-review__gear-slot {
   display: inline-flex;
   align-items: center;
