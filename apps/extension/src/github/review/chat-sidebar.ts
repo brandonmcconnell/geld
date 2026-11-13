@@ -139,12 +139,12 @@ function onStorageChanged(changes: Readonly<Record<string, unknown>>, area: stri
 
 /** After a navigation: a sidebar opened on another pull request closes. */
 export function syncChatToPage(): void {
-  if (host !== null && context !== null && !location.pathname.startsWith(context.pullPath)) closeChat();
+  if (context !== null && !location.pathname.startsWith(context.pullPath)) closeChat();
 }
 
 export function toggleChat(from: HTMLElement | null = null): void {
   if (host !== null) closeChat();
-  else if (!opening) void openChat(from);
+  else if (openRequest === 0) void openChat(from);
 }
 
 /** The view's script loads ahead of the click when the reader heads for the Chat button. */
@@ -152,14 +152,19 @@ export function warmChat(): void {
   void loadChatUi();
 }
 
-let opening = false;
+/** The open waiting on the view's script, 0 when none: a close or a navigation meanwhile withdraws it. */
+let openRequest = 0;
+let openRequests = 0;
 
 async function openChat(from: HTMLElement | null): Promise<void> {
   if (context === null) return;
-  opening = true;
+  const { pageKey, pullPath } = context;
+  const request = ++openRequests;
+  openRequest = request;
   const ui = await loadChatUi();
-  opening = false;
-  if (ui === null || context === null || host !== null) return;
+  if (openRequest !== request) return;
+  openRequest = 0;
+  if (ui === null || context?.pageKey !== pageKey || host !== null || !location.pathname.startsWith(pullPath)) return;
   session += 1;
   opener = from;
   if (loadedKey !== context.pageKey) {
@@ -197,6 +202,7 @@ async function openChat(from: HTMLElement | null): Promise<void> {
 }
 
 export function closeChat(): void {
+  openRequest = 0;
   if (host === null) return;
   session += 1;
   browser.storage.onChanged.removeListener(onStorageChanged);
