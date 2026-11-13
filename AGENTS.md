@@ -1583,7 +1583,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   **The triage reads what the Review bots row counts, not only open threads** (`unthreadedFindings`, `unthreadedInputs` in consolidate.ts): findings a bot's latest review holds with no thread (CodeRabbit's outside-diff comments and failed pre-merge checks) are work, so the AI control is offered (`nothing` only with neither) and the TL;DR is asked about them.
   They are the verdict's own record (`BotVerdictRecord.unthreaded`: the count, the review that holds them and a digest of its words, set by `verdictsFrom` from `ParsedBotBody.unthreaded`), never the verdict's count less the threads in view, which a capped item list (`max-items`), a thread marked done by hand or threads of two bots merged into one row miscount;
   the record travels in the Action's payload too.
-  The TL;DR's input is that review's outside-diff and failed-check sections (`unthreadedExcerpt`), cut out before the length limit, since inline comments' details come first.
+  A request or a new run sets them aside with the run they belong to and brings them back wherever that run is brought back (an answered, refused, unanswered or skipped request: `setAside`, `restoreAsked`), a review with no threads included, so a rerun with nothing new leaves them standing.
+  The TL;DR's input is that review's outside-diff and failed-check sections (`unthreadedExcerpt`), cut out before the length limit, since inline comments' details come first;
+  the outside-diff section ends at the next section's heading on its own line, never at the same words inside a finding.
   Each is keyed by the bot, the review, the count and the digest, which joins the TL;DR's `forItems`, so a new review, a changed count or a rewrite in place makes the TL;DR behind;
   no fix is proposed for them, since a fix is written for a thread's lines.
   The Action's TL;DR reads them the same way.

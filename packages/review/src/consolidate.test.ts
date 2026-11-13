@@ -125,5 +125,8 @@ describe('findings outside review threads', () => {
     const prompt = `Prompt to fix all issues\n\n${'Inline comment detail. '.repeat(300)}\nFailed pre-merge checks:\n- Docstring Coverage:\n  Write docstrings.\nAfter applying the fix, run the tests.`;
     expect(unthreadedExcerpt(prompt)).toBe('Failed pre-merge checks:\n- Docstring Coverage:\n  Write docstrings.');
     expect(unthreadedExcerpt('Actionable comments posted: 1')).toBe('');
+    // A finding's own words are no section heading: the rest of the outside-diff comments stay in.
+    const outside = '> **⚠️ Outside diff range comments (2)**\n> `a.ts` 3: Preserve review details when rebuilding the page.\n> `b.ts` 9: Additional comments (in code) should be kept.\n\n<summary>🧹 Nitpick comments (1)</summary>\nRename x.\n\n<summary>📜 Review details</summary>';
+    expect(unthreadedExcerpt(outside)).toBe('Outside diff range comments (2)**\n> `a.ts` 3: Preserve review details when rebuilding the page.\n> `b.ts` 9: Additional comments (in code) should be kept.');
   });
 });

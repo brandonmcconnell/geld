@@ -32455,7 +32455,7 @@ function outsideDiffCount(text) {
   const match = /\boutside diff range comments\s*\((\d+)\)/i.exec(text);
   return match?.[1] === void 0 ? 0 : Number.parseInt(match[1], 10);
 }
-var AFTER_OUTSIDE_DIFF = /\b(?:nitpick comments|additional comments|duplicate comments|review details|prompt for all review comments|prompt to fix all issues)\b/i;
+var AFTER_OUTSIDE_DIFF = /^[^\w\n]*(?:<[^>\n]*>[^\w\n]*)*(?:(?:nitpick|additional|duplicate) comments\s*\(\d+\)|(?:review details|prompt for all review comments with ai agents|prompt to fix all issues)(?:\s*<\/[a-z]+>)*[^\w\n]*$)/im;
 function unthreadedExcerpt(text) {
   const parts2 = [];
   const outside = /\boutside diff range comments\s*\(\d+\)/i.exec(text);
@@ -33007,6 +33007,25 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   const threadRuns = /* @__PURE__ */ new Map();
   const unthreadedBy = /* @__PURE__ */ new Map();
   const runsBeforeAsk = /* @__PURE__ */ new Map();
+  const unthreadedBeforeAsk = /* @__PURE__ */ new Map();
+  const setAside = (id) => {
+    const prior = threadRuns.get(id);
+    if (prior !== void 0) runsBeforeAsk.set(id, prior);
+    const outside = unthreadedBy.get(id);
+    if (outside !== void 0) unthreadedBeforeAsk.set(id, outside);
+    threadRuns.delete(id);
+    unthreadedBy.delete(id);
+  };
+  const restoreAsked = (id) => {
+    const prior = runsBeforeAsk.get(id);
+    if (!threadRuns.has(id) && prior !== void 0) threadRuns.set(id, prior);
+    const outside = unthreadedBeforeAsk.get(id);
+    if (!unthreadedBy.has(id) && outside !== void 0) unthreadedBy.set(id, outside);
+  };
+  const forgetAsked = (id) => {
+    runsBeforeAsk.delete(id);
+    unthreadedBeforeAsk.delete(id);
+  };
   const lastEditBy = /* @__PURE__ */ new Map();
   const editedAtOf = /* @__PURE__ */ new Map();
   const countedSummaries = /* @__PURE__ */ new Set();
@@ -33047,12 +33066,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
         if (asked.id === id) continue;
         if (viaWorkflow && (workflow === "failed" || workflow === null && !Number.isNaN(at) && now - at > ACK_GRACE_MS)) continue;
         if (!viaWorkflow && !Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === "reaction" && !reactedBy(comment, asked.id)) continue;
-        if (botById(asked.id)?.resolvesThreads !== true) {
-          const prior = threadRuns.get(asked.id);
-          if (prior !== void 0) runsBeforeAsk.set(asked.id, prior);
-          threadRuns.delete(asked.id);
-          unthreadedBy.delete(asked.id);
-        }
+        if (botById(asked.id)?.resolvesThreads !== true) setAside(asked.id);
         const acknowledged = viaWorkflow ? workflow === "queued" : botById(asked.id)?.acknowledges === "reaction" && reactedBy(comment, asked.id);
         statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged, askedAt: Number.isNaN(at) ? null : at });
       }
@@ -33064,7 +33078,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       postedThreads.add(id);
       reported(id, comment);
       statusOnly.delete(id);
-      runsBeforeAsk.delete(id);
+      forgetAsked(id);
       const run2 = threadRuns.get(id);
       const open2 = (run2?.open ?? 0) + (comment.resolved ? 0 : 1);
       const openAnchor = run2?.openAnchor ?? (comment.resolved ? null : comment.anchor);
@@ -33082,9 +33096,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       const at = Number.isNaN(rewritten) ? posted : Math.max(rewritten, Number.isNaN(posted) ? rewritten : posted);
       if (!Number.isNaN(at)) answeredBy.set(id, { askedAt: statusOnly.get(id)?.at ?? (Number.isNaN(posted) ? at : posted), at, finished: !Number.isNaN(rewritten), anchor: comment.anchor });
       statusOnly.delete(id);
-      const prior = runsBeforeAsk.get(id);
-      if (!threadRuns.has(id) && prior !== void 0) threadRuns.set(id, prior);
-      runsBeforeAsk.delete(id);
+      restoreAsked(id);
+      forgetAsked(id);
       continue;
     }
     const refusal = refusalReason(comment.body);
@@ -33096,20 +33109,14 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       }
       statusOnly.delete(id);
       const existing2 = byId.get(id);
-      const prior = runsBeforeAsk.get(id);
-      if (!threadRuns.has(id) && prior !== void 0) threadRuns.set(id, prior);
+      restoreAsked(id);
       const reviewed = threadRuns.has(id) || existing2?.sourceId !== void 0 && (existing2.verdict === "clean" || existing2.verdict === "findings");
       if (reviewed) continue;
       byId.set(id, { id, login: comment.author, verdict: "failed", reviewedSha: headSha, ...existing2?.checkName === void 0 ? {} : { checkName: existing2.checkName }, sourceId: comment.anchor, reason: refusal });
       continue;
     }
     if (isStatusLineComment(comment.body)) {
-      if (botById(id)?.resolvesThreads !== true) {
-        const prior = threadRuns.get(id);
-        if (prior !== void 0) runsBeforeAsk.set(id, prior);
-        threadRuns.delete(id);
-        unthreadedBy.delete(id);
-      }
+      if (botById(id)?.resolvesThreads !== true) setAside(id);
       const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
       const triggered = commandReply(comment.body) === "started" || statusOnly.get(id)?.triggered === true;
       const pending = statusOnly.get(id);
@@ -33126,7 +33133,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     if (!isReviewShaped(parsed) && threadRuns.has(id)) {
       reported(id, comment);
       statusOnly.delete(id);
-      runsBeforeAsk.delete(id);
+      forgetAsked(id);
       continue;
     }
     reported(id, comment);
@@ -33135,7 +33142,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     else unthreadedBy.delete(id);
     if (botById(id)?.resolvesThreads !== true) threadRuns.delete(id);
     statusOnly.delete(id);
-    runsBeforeAsk.delete(id);
+    forgetAsked(id);
     const existing = byId.get(id);
     const login = comment.author;
     if (existing !== void 0) {
@@ -33189,14 +33196,14 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     if (stale && !checkIsThisRun && options.partial !== true) {
       const prior = runsBeforeAsk.get(id);
       if (prior !== void 0 && !threadRuns.has(id)) {
-        threadRuns.set(id, prior);
+        restoreAsked(id);
         continue;
       }
+      if (prior === void 0) restoreAsked(id);
     }
     const skippedThisRun = checkIsThisRun ? checkSkipped.get(id) : void 0;
     if (existing !== void 0 && skippedThisRun !== void 0) {
-      const prior = runsBeforeAsk.get(id);
-      if (prior !== void 0 && !threadRuns.has(id)) threadRuns.set(id, prior);
+      restoreAsked(id);
       const reviewed = threadRuns.has(id) || existing.sourceId !== void 0 && (existing.verdict === "clean" || existing.verdict === "findings");
       if (!reviewed && !(existing.verdict === "failed" && existing.reason !== void 0)) {
         byId.set(id, { id, login, verdict: "failed", reviewedSha: existing.reviewedSha, ...existing.checkName === void 0 ? {} : { checkName: existing.checkName }, sourceId: anchor2, reason: skippedThisRun });

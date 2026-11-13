@@ -1350,6 +1350,14 @@ describe('a bot that refuses to run', () => {
     expect(commandReply(notCompletedRaw)).toBe('done');
     expect(commandReply(notCompletedPage)).toBe('done');
     expect(isStatusLineComment(notCompletedPage)).toBe(false);
+    // A review with only findings outside the diff, then a request answered with no new review: they still stand, with
+    // the review that holds them, for the triage.
+    const outsideOnly = [
+      { author: 'coderabbitai[bot]', body: '**Actionable comments posted: 0**\n\n> **⚠️ Outside diff range comments (2)**', anchor: 'pullrequestreview-5', createdAt: '2026-10-22T20:00:00Z' },
+      { author: 'brandonmcconnell', body: '@coderabbitai review', anchor: 'issuecomment-6', createdAt: '2026-10-22T21:00:00Z' },
+      { author: 'coderabbitai[bot]', body: finishedPage, anchor: 'issuecomment-7', createdAt: '2026-10-22T21:00:05Z' },
+    ];
+    expect(verdictsFrom([], outsideOnly, 'head', [], Date.parse('2026-10-22T22:00:00Z')).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'findings', count: 2, unthreaded: { count: 2, sourceId: 'pullrequestreview-5' } });
     const before = [
       { author: 'coderabbitai[bot]', body: 'Actionable comments posted: 1', anchor: 'pullrequestreview-1', createdAt: '2026-10-22T22:49:37Z' },
       { author: 'coderabbitai[bot]', body: 'Guard the empty list.', anchor: 'discussion_r1', createdAt: '2026-10-22T22:49:36Z', resolved: true },
