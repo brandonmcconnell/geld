@@ -3634,6 +3634,13 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   cursor: pointer;
 }
 
+.geld-review__triage-fix-path {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  min-width: 0;
+}
+
 .geld-review__triage-fix-facts {
   display: inline-flex;
   flex: 0 0 auto;
@@ -3928,6 +3935,16 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 }
 
 @container geld-review (width <= 640px) {
+  /* Narrow, the counts drop to a line under the path rather than squeeze it. */
+  .geld-review__triage-fix-place {
+    flex-wrap: wrap;
+    padding-left: 10px;
+  }
+
+  .geld-review__triage-fix-path {
+    flex-basis: 100%;
+  }
+
   .geld-review__triage-fixes,
   .geld-review__triage-writing,
   .geld-review__triage-status {
