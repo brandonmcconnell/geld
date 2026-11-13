@@ -19,6 +19,12 @@ const ATTR_SEEN = 'data-geld-ghost-seen';
 const ATTR_HOLD = 'data-geld-bar-hold';
 /** Names the animation that carries an arriving or leaving part past the viewport's edge, on top of the block's. */
 export const PAST_EDGE_ID = 'geld-bar-past-edge';
+/**
+ * On the bar's metadata (label, number, title) while a part inside it is carried past the edge: GitHub's metadata is
+ * `overflow: hidden`, and the label leaves its box on the left, so the box's own sliding edge cut it off. The stylesheet
+ * lets it overflow to the left only; the row's own `overflow: hidden` is the edge the parts disappear at.
+ */
+const ATTR_REACH = 'data-geld-bar-reach';
 /** Past every exit: a ghost goes then even when nothing removed it (a hidden tab, a style change). */
 const GHOST_MS = 600;
 /**
@@ -120,6 +126,8 @@ interface Carry {
   readonly from: number;
   readonly to: number;
   readonly timing: typeof BAR_ENTER | typeof BAR_LEAVE;
+  /** The block member the part is carried out of, when it is not one itself. */
+  readonly holder: Element | null;
 }
 /** Each part's carry past the edge while it runs, so a node taking the part's place takes it over where it has got to. */
 const carrying = new Map<Element, Carry>();
@@ -184,7 +192,7 @@ function cancelRunning(): void {
 /**
  * The block travels only as far as the number's new place, which leaves the parts it carries out just left of where the
  * block rests (and starts the arriving ones there), in the bar's padding, in view. So those parts also travel by
- * `shift`, from `from` to `to`, far enough that their right edge clears the viewport's left edge, as a group. Added to
+ * `shift`, from `from` to `to`, far enough that their right edge clears the row's left edge (GitHub clips the row there), as a group. Added to
  * the block's own translate, and left running when a second commit takes the block's slide over.
  */
 function carryPastEdge(parts: readonly Element[], fromOf: (part: Element) => number, to: number, timing: typeof BAR_ENTER | typeof BAR_LEAVE): void {
@@ -194,18 +202,21 @@ function carryPastEdge(parts: readonly Element[], fromOf: (part: Element) => num
     const animation = part.animate([{ translate: `${from}px 0` }, { translate: `${to}px 0` }], { ...timing, composite: 'add', fill: to === 0 ? 'none' : 'forwards', id: PAST_EDGE_ID });
     // A ghost's holds until the ghost goes, even under the block's newer slide.
     animation.persist();
-    carrying.set(part, { animation, from, to, timing });
+    const holder = part.parentElement?.matches(PERSISTENT_BAR_INNER) === false ? part.parentElement : null;
+    holder?.setAttribute(ATTR_REACH, '');
+    carrying.set(part, { animation, from, to, timing, holder });
     const forget = (): void => {
       if (carrying.get(part)?.animation === animation) carrying.delete(part);
+      if (holder !== null && ![...carrying.values()].some((carry) => carry.holder === holder)) holder.removeAttribute(ATTR_REACH);
     };
     animation.finished.then(forget, forget);
   }
 }
 
-/** How far past `offset` the parts must go for their right edge to clear the viewport's left edge, from where they rest. */
-function edgeShift(parts: readonly Element[], offset: number): number {
+/** How far past `offset` the parts must go for their right edge to clear the row's left edge, which clips them, from where they rest. */
+function edgeShift(inner: HTMLElement, parts: readonly Element[], offset: number): number {
   const right = Math.max(...parts.map((part) => part.getBoundingClientRect().right));
-  return Number.isFinite(right) ? Math.min(0, -(right + offset)) : 0;
+  return Number.isFinite(right) ? Math.min(0, inner.getBoundingClientRect().left - (right + offset)) : 0;
 }
 
 /**
@@ -254,7 +265,7 @@ export function animateBarGroup(): void {
   if (removed.length === 0 && (moved || ghosts.length === 0)) {
     for (const ghost of ghosts) ghost.remove();
     const from = seen - anchor.getBoundingClientRect().left;
-    const shift = edgeShift(newcomers, from);
+    const shift = edgeShift(inner, newcomers, from);
     if (slide(inner, from, 0, BAR_ENTER, null)) carryPastEdge(newcomers, () => shift, 0, BAR_ENTER);
     return;
   }
@@ -264,7 +275,7 @@ export function animateBarGroup(): void {
   const without = anchor.getBoundingClientRect().left;
   hold(ghosts, false);
   const to = without - withGhosts;
-  const shift = edgeShift(leaving, to);
+  const shift = edgeShift(inner, leaving, to);
   if (slide(inner, seen - withGhosts, to, BAR_LEAVE, ghosts)) carryPastEdge(leaving, (ghost) => inheritedCarry.get(ghost) ?? 0, shift, BAR_LEAVE);
 }
 

@@ -168,7 +168,7 @@ describe('bar motion', () => {
     expect(inner.querySelector('[data-geld-ghost]')).toBeNull();
   });
 
-  it("carries the arriving and leaving parts past the viewport's edge, where the block alone left them in the bar's padding", () => {
+  it("carries the arriving and leaving parts past the row's edge, where the block alone left them in the bar's padding", async () => {
     const inner = bar(false);
     fakeLayout(inner);
     animateBarGroup();
@@ -182,6 +182,9 @@ describe('bar motion', () => {
     const arriving = all().filter((animation) => animation.id === PAST_EDGE_ID);
     expect(arriving).toHaveLength(3);
     expect(new Set(arriving.map((animation) => `${animation.from} → ${animation.to}`))).toEqual(new Set(['-10px 0 → 0px 0']));
+    // GitHub's metadata clips its overflow, and the label is carried out of its box on the left while it slides.
+    const metadata = inner.querySelector('[class*="metadata"]')!;
+    expect(metadata.hasAttribute('data-geld-bar-reach')).toBe(true);
     all()
       .find((animation) => animation.id !== PAST_EDGE_ID)
       ?.animation.dispatchEvent(new Event('finish'));
@@ -195,6 +198,11 @@ describe('bar motion', () => {
       .filter((animation) => animation.id === PAST_EDGE_ID);
     expect(leaving.map((animation) => isGhost(animation.element))).toEqual([true, true, true]);
     expect(new Set(leaving.map((animation) => `${animation.from} → ${animation.to}`))).toEqual(new Set(['0px 0 → -10px 0']));
+    expect(metadata.hasAttribute('data-geld-bar-reach')).toBe(true);
+    for (const animation of all().filter((each) => each.id === PAST_EDGE_ID)) animation.animation.cancel();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(metadata.hasAttribute('data-geld-bar-reach')).toBe(false);
   });
 
   it('hands a part GitHub replaces mid-slide the rest of its carry past the edge', () => {
