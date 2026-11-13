@@ -29,12 +29,18 @@ export function reviewReplyRequest(pullPath: string, reply: { readonly text: str
   };
 }
 
-export function applySuggestionsRequest(pullPath: string, commentId: number, message: string, headOid: string, nonce: string, idempotencyKey: string): PageRequest {
+export function applySuggestionsRequest(pullPath: string, commentIds: readonly number[], message: string, headOid: string, nonce: string, idempotencyKey: string): PageRequest {
   return {
     url: `${pullPath}/page_data/apply_review_suggestions`,
-    // The reply holds one suggestion block, the first; GitHub answers "requires a suggestion_index" without it.
-    init: { method: 'POST', credentials: 'same-origin', headers: headers(nonce, { 'Idempotency-Key': idempotencyKey }), body: JSON.stringify({ comments: [{ id: commentId, suggestionIndex: 0 }], message, expectedHeadOid: headOid }) },
+    // Each reply holds one suggestion block, the first; GitHub answers "requires a suggestion_index" without it.
+    init: { method: 'POST', credentials: 'same-origin', headers: headers(nonce, { 'Idempotency-Key': idempotencyKey }), body: JSON.stringify({ comments: commentIds.map((id) => ({ id, suggestionIndex: 0 })), message, expectedHeadOid: headOid }) },
   };
+}
+
+/** The commit's message: the finding's title for one fix, a line per finding for several. */
+export function commitMessage(titles: readonly string[]): string {
+  if (titles.length === 1) return `Apply suggestion from Geld triage\n\n${titles[0] ?? ''}`;
+  return `Apply ${titles.length} suggestions from Geld triage\n\n${titles.map((title) => `- ${title}`).join('\n')}`;
 }
 
 /** The newest review comment id in a thread's comment anchors (`discussion_r<id>`): the comment a reply answers. */
@@ -116,19 +122,38 @@ export type ApplyResult =
    */
   | { readonly ok: false; readonly reason: string; readonly posted: boolean; readonly reply?: { readonly anchor: string; readonly id: number } };
 
-export async function applyFix(fix: FixToApply): Promise<ApplyResult> {
-  const pullPath = pullPathOf(window.location.pathname);
+/** One fix's suggestion reply: the one Geld posted before, else a new one. A refusal is the fix's result. */
+async function replyFor(pullPath: string, fix: FixToApply): Promise<number | ApplyResult> {
   const inReplyTo = lastCommentId(fix.threadAnchors);
-  if (pullPath === null || inReplyTo === null) return { ok: false, reason: 'This finding has no review thread to suggest in.', posted: false };
-  let commentId = fix.pendingReply ?? null;
-  if (commentId === null) {
-    const reply = await send(reviewReplyRequest(pullPath, { text: suggestionReplyBody(fix.replacement, fix.summary), inReplyTo, path: fix.path }, fetchNonce()));
-    if (!reply.ok) return { ok: false, reason: refusalOf(reply.answer, reply.status), posted: false };
-    commentId = newestCommentId(reply.answer, inReplyTo);
-    if (commentId === null) return { ok: false, reason: 'The suggestion is in the thread. Commit it from there.', posted: true };
-  }
-  const message = `Apply suggestion from Geld triage\n\n${fix.title}`;
-  const commit = await send(applySuggestionsRequest(pullPath, commentId, message, fix.headSha, fetchNonce(), crypto.randomUUID()));
-  if (!commit.ok) return { ok: false, reason: `${refusalOf(commit.answer, commit.status)} The suggestion is in the thread.`, posted: true, reply: { anchor: `discussion_r${commentId}`, id: commentId } };
-  return { ok: true, replyAnchor: `discussion_r${commentId}` };
+  if (inReplyTo === null) return { ok: false, reason: 'This finding has no review thread to suggest in.', posted: false };
+  if (fix.pendingReply !== undefined && fix.pendingReply !== null) return fix.pendingReply;
+  const reply = await send(reviewReplyRequest(pullPath, { text: suggestionReplyBody(fix.replacement, fix.summary), inReplyTo, path: fix.path }, fetchNonce()));
+  if (!reply.ok) return { ok: false, reason: refusalOf(reply.answer, reply.status), posted: false };
+  return newestCommentId(reply.answer, inReplyTo) ?? { ok: false, reason: 'The suggestion is in the thread. Commit it from there.', posted: true };
+}
+
+/**
+ * Several fixes in one commit, as GitHub's "Add suggestion to batch": every commit moves the branch's head, and a
+ * commit sent against the head before it is refused, so fixes one after another would all but the first fail. Each
+ * fix's reply is posted (in order), then every reply that stands is committed at once. Results are in `fixes`' order.
+ */
+export async function applyFixes(fixes: readonly FixToApply[]): Promise<readonly ApplyResult[]> {
+  const pullPath = pullPathOf(window.location.pathname);
+  if (pullPath === null) return fixes.map(() => ({ ok: false, reason: 'This finding has no review thread to suggest in.', posted: false }));
+  const replies: Array<{ readonly fix: FixToApply; readonly reply: number | ApplyResult }> = [];
+  for (const fix of fixes) replies.push({ fix, reply: await replyFor(pullPath, fix) });
+  const ready = replies.flatMap(({ fix, reply }) => (typeof reply === 'number' ? [{ fix, id: reply }] : []));
+  const first = ready[0];
+  if (first === undefined) return replies.flatMap(({ reply }) => (typeof reply === 'number' ? [] : [reply]));
+  const commit = await send(applySuggestionsRequest(pullPath, ready.map((entry) => entry.id), commitMessage(ready.map((entry) => entry.fix.title)), first.fix.headSha, fetchNonce(), crypto.randomUUID()));
+  const refusal = commit.ok ? '' : `${refusalOf(commit.answer, commit.status)} The ${ready.length === 1 ? 'suggestion is' : 'suggestions are'} in the thread.`;
+  return replies.map(({ reply }): ApplyResult => {
+    if (typeof reply !== 'number') return reply;
+    const anchor = `discussion_r${reply}`;
+    return commit.ok ? { ok: true, replyAnchor: anchor } : { ok: false, reason: refusal, posted: true, reply: { anchor, id: reply } };
+  });
+}
+
+export async function applyFix(fix: FixToApply): Promise<ApplyResult> {
+  return (await applyFixes([fix]))[0] ?? { ok: false, reason: 'GitHub did not answer.', posted: false };
 }
