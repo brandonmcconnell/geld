@@ -22,6 +22,7 @@ const SECTIONS = [
   { id: 'categoryPatterns', label: 'categoryPatterns' },
   { id: 'customCategories', label: 'customCategories' },
   { id: 'reviewBots', label: 'reviewBots' },
+  { id: 'review', label: 'review' },
   { id: 'rejected', label: 'What is rejected' },
   { id: 'applied', label: 'How it is applied' },
 ] as const;
@@ -52,6 +53,9 @@ customCategories:
 reviewBots:
   - coderabbit
   - greptile
+
+review:
+  resolveOnFix: false            # reviewers resolve threads themselves
 `;
 
 /** `code` with the page's chip look, for ids and values in the tables. */
@@ -280,6 +284,18 @@ export default function RepoConfigPage() {
             </>,
           ])}
         />
+
+        <Prose>
+          <h2 id="review">
+            <code>review</code>
+          </h2>
+          <p>
+            How the AI triage acts here. <code>resolveOnFix</code> is <code>true</code> or <code>false</code>: when a reviewer commits one of the
+            triage&apos;s fixes with <strong>Fix</strong>, Geld resolves the threads the fix answers, unless the reviewer turned that off in their own
+            settings or the repository says <code>false</code> here. A repository&apos;s word wins over its organisation&apos;s, and either can only
+            keep threads open: neither makes a reviewer who turned it off resolve them.
+          </p>
+        </Prose>
 
         <Prose>
           <h2 id="rejected">What is rejected</h2>
