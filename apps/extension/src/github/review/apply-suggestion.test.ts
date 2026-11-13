@@ -1,5 +1,37 @@
-import { describe, expect, it } from 'vitest';
-import { applySuggestionsRequest, lastCommentId, newestCommentId, refusalOf, reviewReplyRequest } from './apply-suggestion';
+// @vitest-environment happy-dom
+import { describe, expect, it, vi } from 'vitest';
+
+const requests: string[] = [];
+const answers: Array<{ readonly status: number; readonly body: unknown }> = [];
+vi.mock('../page-fetch', () => ({
+  pageFetch: async (url: string): Promise<Response> => {
+    requests.push(url);
+    const next = answers.shift() ?? { status: 200, body: {} };
+    return new Response(JSON.stringify(next.body), { status: next.status });
+  },
+}));
+
+const { applyFix, applySuggestionsRequest, lastCommentId, newestCommentId, refusalOf, reviewReplyRequest } = await import('./apply-suggestion');
+
+describe('applying a fix', () => {
+  const fix = { threadAnchors: ['discussion_r100'], path: 'src/a.ts', replacement: ['x'], summary: 'Fix.', title: 'Fix it', headSha: 'abc' };
+
+  it('commits a reply it posted before rather than posting another', async () => {
+    window.history.pushState({}, '', '/o/r/pull/7');
+    requests.length = 0;
+    answers.push({ status: 200, body: {} });
+    expect(await applyFix({ ...fix, pendingReply: 200 })).toEqual({ ok: true, replyAnchor: 'discussion_r200' });
+    expect(requests).toEqual(['/o/r/pull/7/page_data/apply_review_suggestions']);
+  });
+
+  it('names the reply it posted when GitHub refuses the commit', async () => {
+    window.history.pushState({}, '', '/o/r/pull/7');
+    requests.length = 0;
+    answers.push({ status: 200, body: { thread: { commentsData: { comments: [{ databaseId: 100 }, { databaseId: 201 }] } } } }, { status: 422, body: { message: 'Head was modified' } });
+    const result = await applyFix(fix);
+    expect(result).toEqual({ ok: false, reason: 'Head was modified The suggestion is in the thread.', posted: true, reply: { anchor: 'discussion_r201', id: 201 } });
+  });
+});
 
 describe('apply-suggestion requests', () => {
   it('replies in the thread as GitHub’s reply box does', () => {

@@ -588,6 +588,8 @@ export interface TriageSuggestionView {
   readonly state: 'open' | 'applied';
   /** Written for the head commit: a fix for an earlier one may no longer fit its lines. */
   readonly current: boolean;
+  /** Why it is not current: a commit since, or a comment in its threads it has not read. */
+  readonly behind: 'commit' | 'comments' | null;
   readonly busy: 'apply' | 'resolve' | null;
   readonly error: string | null;
 }
@@ -811,6 +813,11 @@ function pointerChevron(onGo: () => void): HTMLElement {
 
 let approveIds = 0;
 const APPROVE_RETRY_MS = 5000;
+
+/** Why a fix waits on another triage, in the words its controls and notes use. */
+function behindWords(fix: TriageSuggestionView): string {
+  return fix.behind === 'commit' ? 'Written for an earlier commit. Triage again to check it against the new code.' : 'New comments in its thread since it was written. Triage again to read them.';
+}
 
 let tipIds = 0;
 
@@ -1542,6 +1549,8 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
       ? createElement('span', { class: `${PANEL_CLASS}__triage-fix-counts`, 'aria-label': `${added} added, ${removed} removed` }, [createElement('span', { 'data-kind': 'add' }, [`+${added}`]), createElement('span', { 'data-kind': 'del' }, [`−${removed}`])])
       : createElement('span', { class: `${PANEL_CLASS}__triage-fix-state`, 'data-kind': 'agent' }, ['Needs an agent']);
   const head = createElement('div', { class: `${PANEL_CLASS}__triage-fix-row` }, [toggle, place, status]);
+  // A fix that waits on another triage says so on the row, where its Apply is greyed out.
+  if (isFix && !applied && !fix.current) head.insertBefore(createElement('span', { class: `${PANEL_CLASS}__triage-fix-state`, 'data-kind': 'behind', title: behindWords(fix) }, ['Out of date']), status);
   head.addEventListener('click', (event) => {
     if (event.target instanceof Element && event.target.closest('button, a, details') !== null) return;
     handlers.onToggleSuggestion(fix.key);
@@ -1563,13 +1572,13 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
   if (isFix) body.append(diffTable(fix));
   const notes: string[] = [];
   if (fix.threads > 1) notes.push(`One change for ${fix.threads} threads reporting the same problem (${fix.reporters.join(', ')}). Resolving resolves them all.`);
-  if (isFix && !fix.current && !applied) notes.push('Written for an earlier commit. Triage again to check it against the new code.');
+  if (isFix && !fix.current && !applied) notes.push(behindWords(fix));
   if (!isFix) notes.push('A fix that fits the lines a thread is on can be applied as a suggestion. This one needs more than that, so hand it to an agent.');
   for (const note of notes) body.append(createElement('p', { class: `${PANEL_CLASS}__triage-fix-note` }, [note]));
   if (isFix && !applied) {
     const busy = fix.busy !== null;
     const blocked = busy || !fix.current;
-    const why = fix.current ? 'Post this as a suggestion in the thread and commit it to the branch' : 'Triage again first: this fix was written for an earlier commit';
+    const why = fix.current ? 'Post this as a suggestion in the thread and commit it to the branch' : `Triage again first. ${behindWords(fix)}`;
     const discard = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__triage-fix-discard-btn`, [ATTR_FOCUS]: `fix-discard:${fix.key}`, ...(busy ? { disabled: '' } : {}) }, [icon(ICON_X), 'Discard']);
     discard.addEventListener('click', () => handlers.onDiscardSuggestion(fix.key));
     const apply = createElement('button', { type: 'button', class: 'btn btn-sm', title: why, [ATTR_FOCUS]: `fix-apply:${fix.key}`, ...(blocked ? { disabled: '' } : {}), ...(fix.busy === 'apply' ? { 'aria-busy': 'true' } : {}) }, [fix.busy === 'apply' ? 'Applying…' : 'Apply']);
@@ -1749,7 +1758,7 @@ function applyControl(fix: TriageSuggestionView, triage: TriageView, handlers: P
   const blocked = fix.busy !== null || !fix.current;
   const threads = fix.threads === 1 ? 'its thread' : `all ${fix.threads} threads`;
   // The same default as the open row's primary button: the finding is settled once its fix is in.
-  const main = createElement('button', { type: 'button', class: 'btn btn-sm', title: fix.current ? `Post this fix as a suggestion in the thread, commit it, and resolve ${threads}` : 'Triage again first: this fix was written for an earlier commit', [ATTR_FOCUS]: `fix-head-apply:${fix.key}`, ...(blocked ? { disabled: '' } : {}), ...(fix.busy !== null ? { 'aria-busy': 'true' } : {}) }, [
+  const main = createElement('button', { type: 'button', class: 'btn btn-sm', title: fix.current ? `Post this fix as a suggestion in the thread, commit it, and resolve ${threads}` : `Triage again first. ${behindWords(fix)}`, [ATTR_FOCUS]: `fix-head-apply:${fix.key}`, ...(blocked ? { disabled: '' } : {}), ...(fix.busy !== null ? { 'aria-busy': 'true' } : {}) }, [
     icon(ICON_CHECK),
     createElement('span', { class: `${PANEL_CLASS}__split-label` }, [fix.busy !== null ? 'Applying…' : 'Apply & resolve']),
   ]);

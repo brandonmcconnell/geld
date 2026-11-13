@@ -23,7 +23,7 @@ import { clickResolve, copyText, focusReply, resolveIfOpen, isResolvable, openRe
 import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, commitsInRow, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, revisionMarker, THREAD_SELECTOR, TIMELINE_ROW } from './crawler';
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
-import { aiPending, aiStateFor, clearAiForPage, discardSuggestion, jevDecisionsFor, loadAiForPage, markSuggestionApplied, previewDecisionKey, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi, withJevDone } from './ai';
+import { adoptOwnReplies, aiPending, aiStateFor, clearAiForPage, discardSuggestion, jevDecisionsFor, loadAiForPage, markSuggestionApplied, markSuggestionPosted, pendingReplyFor, previewDecisionKey, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi, withJevDone } from './ai';
 import type { AiState, SuggestionSource, SuggestionTarget } from './ai';
 import { applyFix } from './apply-suggestion';
 import { agentComment, agentLikely, agentsInRelatedLinks, agentTask, CODING_AGENTS, codingAgentById, diffHunks, lineDiff, OPEN_TARGETS, openTargetById, openTargetLikely, recommendAgents } from '@geld/review';
@@ -2630,7 +2630,7 @@ function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, pr
     const agent = codingAgentById(id);
     return agent !== undefined && agentLikely(agent, settings.codingAgent, used, knownBots);
   };
-  const suggestions = triageSuggestions(meta, settings).map(({ entry, item, partners, current }) => ({
+  const suggestions = triageSuggestions(meta, settings).map(({ entry, item, partners, current, behind }) => ({
     key: entry.key,
     title: item.title,
     path: entry.path,
@@ -2643,6 +2643,7 @@ function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, pr
     threads: 1 + partners.length,
     state: entry.state === 'applied' ? ('applied' as const) : ('open' as const),
     current,
+    behind,
     busy: visit.triage.busy.get(entry.key) ?? null,
     error: visit.triage.errors.get(entry.key) ?? null,
   }));
@@ -3846,6 +3847,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
             .map((bot) => bot.id),
         );
   const iconByBot = new Map(requestable.map((bot) => [bot.id, bot.iconSrc]));
+  const adopting = adoptOwnReplies(rawComments, document.querySelector('meta[name="user-login"]')?.getAttribute('content') ?? '');
+  if (adopting !== null) void adopting.then(reapplySoon);
   const aiState = aiStateFor(meta, rawComments, settings);
   const prAuthor = prAuthorLogin();
 
@@ -4210,10 +4213,12 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       triage.busy.set(key, resolve ? 'resolve' : 'apply');
       triage.errors.delete(key);
       reapply();
-      void applyFix({ threadAnchors: found.item.sources.map((source) => source.anchor), path: found.entry.path, replacement, summary: found.entry.summary, title: found.item.title, headSha: meta.headSha }).then(async (result) => {
+      const pendingReply = pendingReplyFor(key, found.item);
+      void applyFix({ threadAnchors: found.item.sources.map((source) => source.anchor), path: found.entry.path, replacement, summary: found.entry.summary, title: found.item.title, headSha: meta.headSha, pendingReply }).then(async (result) => {
         triage.busy.delete(key);
         if (!result.ok) {
           triage.errors.set(key, result.reason);
+          if (result.reply !== undefined) await markSuggestionPosted(key, result.reply);
           if (result.posted) void catchUpAfterPost().then(reapplySoon);
           reapplySoon();
           return;

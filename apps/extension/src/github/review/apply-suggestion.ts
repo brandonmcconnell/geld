@@ -104,23 +104,31 @@ export interface FixToApply {
   readonly summary: string;
   readonly title: string;
   readonly headSha: string;
+  /** A suggestion reply Geld posted for this fix whose commit was refused: committed instead of posting another. */
+  readonly pendingReply?: number | null;
 }
 
 export type ApplyResult =
   | { readonly ok: true; readonly replyAnchor: string }
-  /** `posted`: the suggestion reply stands in the thread, so GitHub's own Commit suggestion can still take it. */
-  | { readonly ok: false; readonly reason: string; readonly posted: boolean };
+  /**
+   * `posted`: the suggestion reply stands in the thread, so GitHub's own Commit suggestion can still take it, and
+   * `reply` names it when its id was read.
+   */
+  | { readonly ok: false; readonly reason: string; readonly posted: boolean; readonly reply?: { readonly anchor: string; readonly id: number } };
 
 export async function applyFix(fix: FixToApply): Promise<ApplyResult> {
   const pullPath = pullPathOf(window.location.pathname);
   const inReplyTo = lastCommentId(fix.threadAnchors);
   if (pullPath === null || inReplyTo === null) return { ok: false, reason: 'This finding has no review thread to suggest in.', posted: false };
-  const reply = await send(reviewReplyRequest(pullPath, { text: suggestionReplyBody(fix.replacement, fix.summary), inReplyTo, path: fix.path }, fetchNonce()));
-  if (!reply.ok) return { ok: false, reason: refusalOf(reply.answer, reply.status), posted: false };
-  const commentId = newestCommentId(reply.answer, inReplyTo);
-  if (commentId === null) return { ok: false, reason: 'The suggestion is in the thread. Commit it from there.', posted: true };
+  let commentId = fix.pendingReply ?? null;
+  if (commentId === null) {
+    const reply = await send(reviewReplyRequest(pullPath, { text: suggestionReplyBody(fix.replacement, fix.summary), inReplyTo, path: fix.path }, fetchNonce()));
+    if (!reply.ok) return { ok: false, reason: refusalOf(reply.answer, reply.status), posted: false };
+    commentId = newestCommentId(reply.answer, inReplyTo);
+    if (commentId === null) return { ok: false, reason: 'The suggestion is in the thread. Commit it from there.', posted: true };
+  }
   const message = `Apply suggestion from Geld triage\n\n${fix.title}`;
   const commit = await send(applySuggestionsRequest(pullPath, commentId, message, fix.headSha, fetchNonce(), crypto.randomUUID()));
-  if (!commit.ok) return { ok: false, reason: `${refusalOf(commit.answer, commit.status)} The suggestion is in the thread.`, posted: true };
+  if (!commit.ok) return { ok: false, reason: `${refusalOf(commit.answer, commit.status)} The suggestion is in the thread.`, posted: true, reply: { anchor: `discussion_r${commentId}`, id: commentId } };
   return { ok: true, replyAnchor: `discussion_r${commentId}` };
 }

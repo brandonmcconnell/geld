@@ -3684,6 +3684,10 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   color: var(--geld-review-muted);
 }
 
+.geld-review__triage-fix-state[data-kind='behind'] {
+  color: var(--geld-review-attention-fg);
+}
+
 .geld-review__triage-fix-discard {
   flex: 0 0 auto;
   color: var(--geld-review-muted);
