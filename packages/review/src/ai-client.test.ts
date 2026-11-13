@@ -264,6 +264,7 @@ describe('a refused completion', () => {
 describe('the kind of a refusal', () => {
   it('reads it from the words first, then the status', () => {
     expect(refusalKind(400, "Invalid schema for response_format 'geld_suggest'")).toBe('response-format');
+    expect(refusalKind(400, "output_config.format.schema: Invalid schema: Enum value 'blocking' does not match declared type '['string', 'null']'")).toBe('response-format');
     expect(refusalKind(400, "This model's maximum context length is 8192 tokens.")).toBe('too-long');
     expect(refusalKind(429, 'Rate limit reached for model gpt-5')).toBe('rate-limit');
     expect(refusalKind(429, 'You exceeded your current quota')).toBe('quota');

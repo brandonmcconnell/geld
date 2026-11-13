@@ -34067,9 +34067,10 @@ var CONSOLIDATE_JSON_SCHEMA = {
         properties: {
           id: { type: "string" },
           title: { type: "string" },
-          severity: { type: ["string", "null"], enum: [...SEVERITIES, null] },
-          context: { type: ["string", "null"] },
-          fix: { type: ["string", "null"] }
+          // Nullable as `anyOf`, never `type: [..., 'null']`: Anthropic checks an enum against a type list as a whole and refuses it.
+          severity: { anyOf: [{ type: "string", enum: [...SEVERITIES] }, { type: "null" }] },
+          context: { anyOf: [{ type: "string" }, { type: "null" }] },
+          fix: { anyOf: [{ type: "string" }, { type: "null" }] }
         }
       }
     }
@@ -34156,7 +34157,7 @@ function contentOf(value) {
   return joined === "" ? null : joined;
 }
 var MAX_PROVIDER_MESSAGE = 240;
-var SCHEMA_REFUSED = /response_format|json_schema|structured outputs?/i;
+var SCHEMA_REFUSED = /response_format|json_schema|structured outputs?|output_config\.format|output_format/i;
 var REFUSAL_KINDS = [
   ["response-format", SCHEMA_REFUSED],
   ["too-long", /context (?:length|window)|maximum .*tokens|too many tokens|too long/i],
