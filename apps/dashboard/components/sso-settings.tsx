@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
-import { Button } from '@geld/ui';
+import { Button } from '@/components/button';
 const schema = z.object({
   providers: z.array(
     z.object({
@@ -151,6 +151,7 @@ export function SsoSettings({ teamId }: { readonly teamId: string }) {
           <label>
             Work email domain
             <input
+              name="domain"
               className="field"
               required
               value={domain}
@@ -161,6 +162,7 @@ export function SsoSettings({ teamId }: { readonly teamId: string }) {
           <label>
             OIDC issuer
             <input
+              name="issuer"
               className="field"
               type="url"
               required
@@ -172,6 +174,7 @@ export function SsoSettings({ teamId }: { readonly teamId: string }) {
           <label>
             Client ID
             <input
+              name="clientId"
               className="field"
               required
               value={clientId}
@@ -182,6 +185,7 @@ export function SsoSettings({ teamId }: { readonly teamId: string }) {
           <label>
             Client secret
             <input
+              name="secret"
               className="field"
               required
               type="password"

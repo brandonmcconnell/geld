@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { z } from 'zod';
-import { Button } from '@geld/ui';
+import { Button } from '@/components/button';
 const schema = z.object({
   url: z.url().optional(),
   manifest: z.record(z.string(), z.unknown()).optional(),
@@ -48,6 +48,7 @@ export function RepositoryAppSetup({
         <label className="settings-row" key={option.label}>
           <span>{option.label}</span>
           <input
+            name="option.value"
             type="checkbox"
             checked={option.value}
             disabled={option.label === 'Manage access' && managedAccess !== undefined}

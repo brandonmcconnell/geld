@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { z } from 'zod';
-import { Button } from '@geld/ui';
+import { Button } from '@/components/button';
 const previewSchema = z.object({
   deleting: z.boolean(),
   grants: z.array(z.object({ id: z.string() })),
@@ -177,6 +177,7 @@ export function TeamDestruction({ teamId, name }: { readonly teamId: string; rea
               <label>
                 Type {name} to confirm
                 <input
+                  name="confirmation"
                   className="field"
                   value={confirmation}
                   onChange={(event) => setConfirmation(event.target.value)}

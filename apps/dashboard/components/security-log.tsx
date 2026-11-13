@@ -11,12 +11,17 @@ const schema = z.object({
       outcome: z.string(),
       created_at: z.string(),
       hash: z.string().optional(),
+      actor_digest: z.string().optional(),
+      resource_type: z.string().optional(),
+      resource_id: z.string().optional(),
+      provider: z.string().optional(),
     }),
   ),
 });
 export function SecurityLog() {
   const { teams, activeTeam } = useDashboard();
   const params = useSearchParams();
+  const [query, setQuery] = useState('');
   const [team, setTeam] = useState<string | null>(null);
   const [result, setResult] = useState<{
     scope: string;
@@ -52,54 +57,109 @@ export function SecurityLog() {
   }, [selected]);
   return (
     <div className="page">
-      <p className="eyebrow">SECURITY</p>
-      <h1>Audit log</h1>
-      <p>
-        Team events are append-only, chained with signed hashes and retained for 365 days. IP addresses and user agents
-        are not collected here.
-      </p>
-      <label className="settings-row">
-        Scope
-        <select
-          aria-label="Audit log scope"
-          className="field max-w-xs"
-          value={selected}
-          onChange={(event) => setTeam(event.target.value)}
-        >
-          <option value="">My provider actions</option>
-          {teams.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      {current?.message && <p role="status">{current.message}</p>}
-      <section className="settings-card">
-        {!current ? (
-          <p role="status">Loading security records...</p>
-        ) : current.events.length ? (
-          current.events.map((event) => (
-            <div className="settings-row" key={event.id}>
-              <div>
-                <strong>{event.action}</strong>
-                <small>
-                  {' '}
-                  {event.outcome} · {new Date(event.created_at).toLocaleString()}
-                </small>
-              </div>
-              {event.hash && <code title={event.hash}>{event.hash.slice(0, 12)}</code>}
-            </div>
-          ))
-        ) : (
-          <p>No events in this scope.</p>
+      <div className="page-heading">
+        <h1>Audit log</h1>
+        {selected && (
+          <a className="text-xs underline" href={'/api/security?team=' + encodeURIComponent(selected) + '&export=true'}>
+            Export JSON
+          </a>
         )}
-      </section>
-      {selected && (
-        <a className="underline" href={`/api/security?team=${encodeURIComponent(selected)}&export=true`}>
-          Export JSON · Business and Enterprise
-        </a>
-      )}
+      </div>
+      <div className="audit-toolbar">
+        <label className="search-field">
+          <input
+            name="auditQuery"
+            aria-label="Search audit events"
+            placeholder="Search actions, resources or outcomes…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
+        <label className="toolbar-select">
+          <select
+            name="selected"
+            aria-label="Audit log scope"
+            className="field max-w-xs"
+            value={selected}
+            onChange={(event) => setTeam(event.target.value)}
+          >
+            <option value="">My provider actions</option>
+            {teams.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {current?.message && <p role="status">{current.message}</p>}
+      <div className="audit-table-scroll">
+        <table className="audit-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Action</th>
+              <th>Actor</th>
+              <th>Resource</th>
+              <th>Outcome</th>
+              <th>Record</th>
+            </tr>
+          </thead>
+          <tbody>
+            {!current ? (
+              <tr>
+                <td colSpan={6}>Loading events…</td>
+              </tr>
+            ) : (
+              current.events
+                .filter((event) =>
+                  [event.action, event.resource_type, event.resource_id, event.outcome]
+                    .join(' ')
+                    .toLowerCase()
+                    .includes(query.toLowerCase()),
+                )
+                .map((event) => (
+                  <tr key={event.id}>
+                    <td>
+                      <time dateTime={event.created_at}>
+                        {new Date(event.created_at).toLocaleString('en', {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </time>
+                    </td>
+                    <td>{event.action}</td>
+                    <td>
+                      <code>
+                        {event.actor_digest ? event.actor_digest.slice(0, 10) : selected ? 'Unavailable' : 'You'}
+                      </code>
+                    </td>
+                    <td>
+                      {event.resource_type ?? event.provider ?? 'Provider'}
+                      {event.resource_id && <small title={event.resource_id}>{event.resource_id}</small>}
+                    </td>
+                    <td>
+                      <span className="audit-outcome" data-success={event.outcome === 'success'}>
+                        {event.outcome}
+                      </span>
+                    </td>
+                    <td>
+                      <code title={event.hash ?? event.id}>{(event.hash ?? event.id).slice(0, 10)}</code>
+                    </td>
+                  </tr>
+                ))
+            )}
+            {current && !current.events.length && (
+              <tr>
+                <td colSpan={6}>No events in this scope.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <p className="audit-retention">Team records are retained for 365 days. Actor identifiers are pseudonymous.</p>
     </div>
   );
 }

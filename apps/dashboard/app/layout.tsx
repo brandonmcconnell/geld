@@ -5,6 +5,7 @@ import { GeistSans } from 'geist/font/sans';
 import { GeistMono } from 'geist/font/mono';
 import { AppShell } from '@/components/app-shell';
 import { PrivacyControls } from '@/components/privacy-controls';
+import { CornerShapePolyfill } from '@/components/corner-shape-polyfill';
 import './globals.css';
 export const metadata: Metadata = {
   title: { default: 'Geld · Review queue', template: '%s · Geld' },
@@ -15,6 +16,7 @@ export default function RootLayout({ children }: { readonly children: ReactNode 
   return (
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <body>
+        <CornerShapePolyfill />
         <Suspense
           fallback={
             <div className="page" role="status">

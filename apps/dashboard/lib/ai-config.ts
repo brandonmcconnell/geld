@@ -70,6 +70,7 @@ export async function aiConfigurations(
   );
   const rows = providersSchema.safeParse(result.rows);
   if (!rows.success) return [];
+  const customProviderEnabled = rows.data.some((row) => row.provider !== 'geld');
   const configs: AiConfiguration[] = [];
   const fallback: AiConfiguration[] = [];
   const eligibility = teamId
@@ -110,7 +111,7 @@ export async function aiConfigurations(
       const model = configured(process.env.AI_GATEWAY_MODEL);
       const baseUrl = configured(process.env.AI_GATEWAY_BASE_URL) ?? 'https://ai-gateway.vercel.sh';
       if (key && model && allowedAiUrl(baseUrl)) {
-        if (settings.data.billed)
+        if (settings.data.billed && (discover || !customProviderEnabled))
           configs.push({
             id: row.id,
             provider: 'gateway',
@@ -120,7 +121,9 @@ export async function aiConfigurations(
             geldBilled: true,
             fallback: false,
           });
-        else if (
+        if (
+          !discover &&
+          customProviderEnabled &&
           settings.data.safetyNet &&
           eligibility?.success &&
           eligibility.data.card_on_file &&

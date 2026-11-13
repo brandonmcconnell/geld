@@ -22,6 +22,7 @@ export const planFileSchema = z.object({
   status: z.enum(['added', 'deleted', 'renamed', 'modified']).default('modified'),
   binary: z.boolean(),
   hidden: z.boolean(),
+  category: z.string().nullable().optional(),
   hunks: z.array(diffHunkSchema),
 });
 export const commentSchema = z.object({
