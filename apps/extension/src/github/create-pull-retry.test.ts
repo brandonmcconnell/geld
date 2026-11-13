@@ -114,7 +114,7 @@ describe('applyCreatePullRetry', () => {
     const root = document.querySelector('.flash-error .geld-pull-retry');
     const buttons = [...document.querySelectorAll<HTMLElement>('.flash-error .geld-pull-retry__try')];
     expect(buttons.map((button) => button.textContent?.trim())).toEqual(['Try again', 'Trigger via API']);
-    expect(buttons.every((button) => button.querySelector('[data-geld-brand]') !== null)).toBe(true);
+    expect(buttons.every((button) => button.querySelector('[data-geld-brand]') === null)).toBe(true);
     expect(document.querySelector('.geld-pull-retry__side')?.previousElementSibling?.classList.contains('js-flash-close')).toBe(true);
     buttons[0]?.dispatchEvent(new MouseEvent('mouseenter'));
     expect(document.querySelector('.geld-tooltip')?.textContent).toBe("Sends GitHub's form again through your GitHub session, once its timing check allows it.");
@@ -136,7 +136,7 @@ describe('applyCreatePullRetry', () => {
     applyCreatePullRetry();
     await settle();
     expect([...document.querySelectorAll('.geld-pull-retry__try')].map((button) => button.textContent?.trim())).toEqual(['Try again']);
-    expect(document.querySelector('.geld-pull-retry__try [data-geld-brand]')).not.toBeNull();
+    expect(document.querySelector('.geld-pull-retry__try [data-geld-brand]')).toBeNull();
     expect(document.querySelector('.geld-pull-retry__command')?.textContent).toBe(COMMAND);
     applyCreatePullRetry();
     expect(document.querySelectorAll('.geld-pull-retry')).toHaveLength(1);
