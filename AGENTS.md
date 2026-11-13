@@ -1631,6 +1631,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Threads asks for a fix for each open thread it came with, as the triage writes one, and the reader's ask makes a person's thread a candidate (`AiRunRecord.asked`), where the triage on its own writes fixes for bots' threads only.
   This comment asks the model for what the comment asks for outside its threads (`BODY_SYSTEM`, `parseBodyOutput`: a review's findings outside the diff, failed checks, a person's request), each a row for an agent keyed `<anchor>~<n>` (`StoredSuggestion.origin`): no thread holds it to suggest in, so its band says whose comment it came from and its note says so.
   Asking again replaces that comment's rows.
+  A thread asked about again is written afresh, over a current fix or a discarded one (`proposeFixes`' `only`), where the triage on its own keeps what it has.
+  A comment's open tasks keep the card up on a pull request with no thread open (`aiStateFor`: not `nothing` then).
+  An answer that lands after the reader moved to another pull request is dropped, never written into that one's run (`still`, in a full triage too): the module's maps hold one pull request's run at a time.
   Neither writes the TL;DR or rewrites titles, so a click costs one or two requests, and the run's time stays the triage's.
   The control spins while the fix is written and then says it is in the triage at the top of the digest (`TriageVisit.chatFixes`, in the panel's signature so the open chat is drawn again), since Geld scrolls the page only for its three reasons.
   A row opens to its diff (`lineDiff`, folded as GitHub folds a hunk by `diffHunks`: three lines of context either side of a change, a longer unchanged stretch between two changes one gap row) with Discard (GitHub's secondary button with its X) and Apply side by side at the right.

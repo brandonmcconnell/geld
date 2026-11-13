@@ -224,7 +224,9 @@ export function aiStateFor(meta: GeldPrMeta, comments: readonly RawComment[], se
   if (!aiSwitchedOn(settings)) return { kind: 'off' };
   if (inFlight.size > 0) return { kind: 'running' };
   // The model is asked about open review threads and the findings bots report outside them: with neither, a click would ask it nothing.
-  if (summaryInput(withAi(meta).items).length === 0 && unthreadedFindings(meta).length === 0) return { kind: 'nothing' };
+  // A comment's tasks asked for from its chat stand on their own, with no thread or counted finding beside them.
+  const commentTasks = [...suggestions.values()].some((entry) => entry.origin !== undefined && entry.state === 'open');
+  if (summaryInput(withAi(meta).items).length === 0 && unthreadedFindings(meta).length === 0 && !commentTasks) return { kind: 'nothing' };
   if (lastRun === null) return { kind: 'ready' };
   if (lastRun.error !== undefined) return { kind: 'failed', ranAt: lastRun.ranAt, error: lastRun.error, ...(lastRun.errorStep === undefined ? {} : { step: lastRun.errorStep }) };
   const work = workFor(meta, comments, settings);
@@ -445,6 +447,9 @@ export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], s
   await hydrating;
   const apiKey = (await aiKeyItem.getValue()).trim();
   if (apiKey === '') return { changed: false };
+  // As for a chat's fix: answers that land after the reader moved to another pull request are dropped.
+  const page = runKey;
+  const still = (): boolean => runKey === page;
   const known: GeldPrMeta = withAi(meta);
   const plan = planConsolidation(known, meta.items, { comments, wantFix: wantFix(settings), seen });
   const pending = plan.pending;
@@ -466,6 +471,7 @@ export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], s
     const scope = await decideScope(settings, pending);
     if (scope.length > 0) {
       const result = await complete(settings, apiKey, CONSOLIDATE_SYSTEM, consolidateUserPrompt(scope), CONSOLIDATE_JSON_SCHEMA, 'geld_consolidate');
+      if (!still()) return { changed: false };
       if (!result.ok) failure = { step: 'findings', reason: result.reason };
       else {
         const parsed = parseConsolidateOutput(result.text, new Set(scope.map((item) => item.id)));
@@ -482,6 +488,7 @@ export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], s
   if (needsTldr && failure === null) {
     const input = [...summaryInput(items), ...unthreadedInputs(unthreaded, comments)];
     const result = await complete(settings, apiKey, SUMMARY_SYSTEM, summaryUserPrompt(input, summary?.tldr ?? null), SUMMARY_JSON_SCHEMA, 'geld_summary');
+    if (!still()) return { changed: false };
     if (!result.ok) failure = { step: 'tldr', reason: result.reason };
     else {
       const parsed = parseSummaryOutput(result.text);
@@ -493,9 +500,10 @@ export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], s
   inFlight.delete('tldr');
   onProgress();
   if (needsFixes && source !== null && failure === null) {
-    const reason = await proposeFixes(meta.headSha, items, comments, settings, apiKey, source);
+    const reason = await proposeFixes(meta.headSha, items, comments, settings, apiKey, source, null, still);
     if (reason !== null) failure = { step: 'fixes', reason };
   }
+  if (!still()) return { changed: false };
   inFlight.delete('suggest');
   if (failure !== null) countUsage('ai_triage_failed');
   lastRun = recordOf(ranAt, failure);
@@ -522,19 +530,23 @@ export async function fixFromComments(meta: GeldPrMeta, comments: readonly RawCo
   await hydrating;
   const apiKey = (await aiKeyItem.getValue()).trim();
   if (apiKey === '') return { changed: false, failed: false };
+  // An answer that lands after the reader moved to another pull request is that page's no longer: dropped, not written.
+  const page = runKey;
+  const still = (): boolean => runKey === page;
   for (const key of scope.threads) askedThreads.add(key);
   inFlight.add('suggest');
   onProgress();
   let failure: AiFailure | null = null;
   const items = applyConsolidation(meta.items, new Map<string, Carried>(), [...rewrites.values()]);
   if (scope.threads.length > 0) {
-    const reason = await proposeFixes(meta.headSha, items, comments, settings, apiKey, source, new Set(scope.threads));
+    const reason = await proposeFixes(meta.headSha, items, comments, settings, apiKey, source, new Set(scope.threads), still);
     if (reason !== null) failure = { step: 'fixes', reason };
   }
-  if (scope.comment !== null && failure === null) {
-    const reason = await proposeCommentFindings(meta.headSha, scope.comment, items, settings, apiKey, source.pull);
+  if (scope.comment !== null && failure === null && still()) {
+    const reason = await proposeCommentFindings(meta.headSha, scope.comment, items, settings, apiKey, source.pull, still);
     if (reason !== null) failure = { step: 'fixes', reason };
   }
+  if (!still()) return { changed: false, failed: false };
   inFlight.delete('suggest');
   countUsage(failure === null ? 'ai_comment_fix' : 'ai_triage_failed');
   // The run's own time stays: what the triage read is as old as it was, only the fixes are new.
@@ -545,8 +557,9 @@ export async function fixFromComments(meta: GeldPrMeta, comments: readonly RawCo
 }
 
 /** A comment's findings outside its threads, as rows for an agent keyed by the comment (`<anchor>~<n>`). */
-async function proposeCommentFindings(headSha: string, comment: BodyInput & { readonly anchor: string }, items: readonly ReviewItem[], settings: GeldSettings, apiKey: string, pull: SuggestPullRequest): Promise<string | null> {
+async function proposeCommentFindings(headSha: string, comment: BodyInput & { readonly anchor: string }, items: readonly ReviewItem[], settings: GeldSettings, apiKey: string, pull: SuggestPullRequest, still: () => boolean): Promise<string | null> {
   const result = await complete(settings, apiKey, BODY_SYSTEM, bodyUserPrompt(pull, comment), BODY_JSON_SCHEMA, 'geld_comment');
+  if (!still()) return null;
   if (!result.ok) return result.reason;
   const findings = parseBodyOutput(result.text);
   if (findings === null) return UNREADABLE;
@@ -578,7 +591,13 @@ async function proposeCommentFindings(headSha: string, comment: BodyInput & { re
  * the same now is carried to this one without asking; the rest are asked about together, so findings reporting one
  * problem can share a fix. Resolves with the reason when the model could not answer.
  */
-async function proposeFixes(headSha: string, items: readonly ReviewItem[], comments: readonly RawComment[], settings: GeldSettings, apiKey: string, source: SuggestionSource, only: ReadonlySet<string> | null = null): Promise<string | null> {
+/**
+ * `only`: the threads the reader asked about from a chat, written afresh whatever was there before (a current fix, one
+ * discarded), as the control promises. `still`: false once the reader has moved to another pull request, when nothing
+ * more is asked or written, since the maps now hold that one's run.
+ */
+async function proposeFixes(headSha: string, items: readonly ReviewItem[], comments: readonly RawComment[], settings: GeldSettings, apiKey: string, source: SuggestionSource, only: ReadonlySet<string> | null = null, still: () => boolean = () => true): Promise<string | null> {
+  const force = only !== null;
   const asks: Array<{ readonly item: ReviewItem; readonly target: SuggestionTarget }> = [];
   // Threads that own their fix first: a partner reads what became of the fix it shares.
   const owns = (item: ReviewItem): boolean => (suggestionFor(threadKeyOf(item))?.key ?? threadKeyOf(item)) === threadKeyOf(item);
@@ -594,10 +613,11 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
   for (const item of candidates) {
     const key = threadKeyOf(item);
     const existing = suggestionFor(key);
-    if (existing !== undefined && existing.state !== 'open') continue;
+    if (existing !== undefined && existing.state !== 'open' && !(force && existing.state === 'discarded')) continue;
     const fresh = existing !== undefined && writtenFrom(existing, [item]);
-    if (existing !== undefined && fresh && existing.headSha === headSha) continue;
+    if (!force && existing !== undefined && fresh && existing.headSha === headSha) continue;
     const target = await source.target(item);
+    if (!still()) return null;
     if (target === null) {
       // Unreadable or outdated here: this thread leaves any fix it shared and gets a placeholder of its own for this
       // commit, so the next run does not count it as behind. A shared fix written for its lines goes, and its partners
@@ -614,13 +634,13 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
     if (existing !== undefined && existing.key !== key) {
       // A partner follows the fix it shares while that fix's own thread is open and nothing new arrived in its own.
       const shared = suggestions.get(existing.key);
-      if (fresh && openThreads.has(existing.key) && shared !== undefined) continue;
+      if (!force && fresh && openThreads.has(existing.key) && shared !== undefined) continue;
       if (shared !== undefined) suggestions.set(existing.key, { ...shared, threads: shared.threads.filter((thread) => thread !== key) });
       asks.push({ item, target });
       continue;
     }
     const original = target.lines.slice(target.start - 1, target.end);
-    if (existing !== undefined && fresh && existing.key === key && existing.start === target.start && existing.end === target.end && existing.original.join('\n') === original.join('\n')) {
+    if (!force && existing !== undefined && fresh && existing.key === key && existing.start === target.start && existing.end === target.end && existing.original.join('\n') === original.join('\n')) {
       suggestions.set(key, { ...existing, headSha });
       continue;
     }
@@ -645,6 +665,7 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
       };
     });
     const result = await complete(settings, apiKey, SUGGEST_SYSTEM, suggestUserPrompt(source.pull, inputs), SUGGEST_JSON_SCHEMA, 'geld_suggest');
+    if (!still()) return null;
     if (!result.ok) return result.reason;
     const parsed = parseSuggestOutput(result.text, inputs);
     if (parsed === null) return UNREADABLE;
