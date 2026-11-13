@@ -11358,20 +11358,6 @@ html[data-geld-on] [class*='ReactionsMenuOption'] [data-component='ActionList.It
   cursor: progress;
 }
 
-.geld-pull-retry__mark {
-  display: inline-flex;
-  flex: 0 0 auto;
-  width: 14px;
-  height: 14px;
-}
-
-.geld-pull-retry__mark svg {
-  display: block;
-  width: 14px;
-  height: 14px;
-  fill: currentColor;
-}
-
 .geld-pull-retry {
   display: flex;
   flex-direction: column;
