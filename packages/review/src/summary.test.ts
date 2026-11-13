@@ -691,6 +691,43 @@ describe('bots + prompts', () => {
     expect(verdictsFrom([{ ...green, completedAt: t('2026-10-13T21:13:00Z') }], comments, 'head', [], later)[0]).toMatchObject({ verdict: 'findings', count: 0 });
   });
 
+  it('never takes a check the page saw finished before the request as the run asked for', () => {
+    // geld#671: CodeRabbit reviewed the day before, "@coderabbitai review" at 10:26:38, 👀, "Review triggered." at
+    // 10:26:44, and its check only went in progress at 10:26:54. The page had shown yesterday's green check since it
+    // opened, with no times, and read the reply as that check's clean run.
+    const t = (iso: string): string => new Date(iso).toISOString();
+    const comments = [
+      { author: 'coderabbitai[bot]', body: 'No actionable comments were generated in the recent review. 🎉', anchor: 'pullrequestreview-1', createdAt: t('2026-11-12T22:49:00Z') },
+      { author: 'brandonmcconnell', body: '@coderabbitai review', anchor: 'issuecomment-1', createdAt: t('2026-11-13T10:26:38Z') },
+      { author: 'coderabbitai[bot]', body: 'Action performed\nReview triggered.\nNote: CodeRabbit is an incremental review system and does not re-review already reviewed commits. This command is applicable only when automatic reviews are paused.', anchor: 'issuecomment-2', createdAt: t('2026-11-13T10:26:44Z') },
+    ];
+    const now = Date.parse('2026-11-13T10:26:50Z');
+    const old = { name: 'CodeRabbit', status: 'completed', conclusion: 'success', sha: 'head', detailsUrl: 'https://github.com/brandonmcconnell/geld/runs/1' };
+    const coderabbit = (checks: readonly RawCheckRun[], thread = comments) => verdictsFrom(checks, thread, 'head', [], now).find((v) => v.id === 'coderabbit');
+    expect(coderabbit([{ ...old, doneBy: t('2026-11-13T10:20:00Z') }])).toMatchObject({ verdict: 'running', sourceId: 'issuecomment-2' });
+    // The request alone, before the reply, is running too.
+    expect(coderabbit([{ ...old, doneBy: t('2026-11-13T10:20:00Z') }], comments.slice(0, 2))?.verdict).toBe('running');
+    // First seen finished after the request proves nothing: taken as the run's, as an undated check is.
+    expect(coderabbit([{ ...old, doneBy: t('2026-11-13T10:30:00Z') }])?.verdict).toBe('clean');
+    expect(coderabbit([old])?.verdict).toBe('clean');
+    // Its new check under way is the run, and so is that check once it has finished with the review posted.
+    expect(coderabbit([{ ...old, status: 'in_progress', conclusion: null, startedAt: t('2026-11-13T10:26:54Z') }])?.verdict).toBe('running');
+    const reviewed = [...comments, { author: 'coderabbitai[bot]', body: '**Actionable comments posted: 1**', anchor: 'pullrequestreview-2', createdAt: t('2026-11-13T10:31:00Z') }];
+    const finished = { ...old, startedAt: t('2026-11-13T10:26:54Z'), completedAt: t('2026-11-13T10:31:02Z') };
+    expect(verdictsFrom([finished], reviewed, 'head', [], Date.parse('2026-11-13T10:32:00Z')).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'findings', count: 1 });
+  });
+
+  it('keeps a run asked for running while its check runs, whatever else the bot posts meanwhile', () => {
+    // "bugbot run" while Cursor's security review, under the same login, posts a finding: Bugbot's run is not done.
+    const t = (iso: string): string => new Date(iso).toISOString();
+    const comments = [
+      { author: 'brandonmcconnell', body: 'bugbot run', anchor: 'issuecomment-1', createdAt: t('2026-11-13T10:00:00Z') },
+      { author: 'cursor[bot]', body: 'Severity: HIGH\nThe token is logged.', anchor: 'discussion_r1', isReviewComment: true, resolved: false, createdAt: t('2026-11-13T10:01:00Z') },
+    ];
+    const running = { name: 'Cursor Bugbot', status: 'in_progress', conclusion: null, sha: 'head', startedAt: t('2026-11-13T10:00:05Z') };
+    expect(verdictsFrom([running], comments, 'head', [], Date.parse('2026-11-13T10:02:00Z')).find((v) => v.id === 'bugbot')?.verdict).toBe('running');
+  });
+
   it('reads a run started from CI, with nothing said in the thread, from its check alone', () => {
     const running = [
       { name: 'Cursor Bugbot', status: 'in_progress', conclusion: null, sha: 'bbb' },

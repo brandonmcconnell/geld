@@ -751,6 +751,12 @@ export interface RawCheckRun {
    * completed. The report's grace (`REPORT_GRACE_MS`) runs from here.
    */
   readonly completedAt?: string;
+  /**
+   * For a finished check with neither time known, ISO: when the page first
+   * saw it already finished, so it had finished by then (run-starts.ts). A
+   * run asked for after that is not this check's.
+   */
+  readonly doneBy?: string;
 }
 
 export interface DerivedBotVerdict {
@@ -1316,6 +1322,8 @@ export function verdictsFrom(
   const checkStartedAt = new Map<string, number>();
   /** When each bot's check finished (epoch ms), when known: places the run only when its start is unknown (a commit status). */
   const checkFinishedAt = new Map<string, number>();
+  /** By when each bot's undated finished check had finished (`RawCheckRun.doneBy`). */
+  const checkDoneBy = new Map<string, number>();
   /** Bots that have posted a review thread here, resolved or not. */
   const postedThreads = new Set<string>();
   /** Bots whose check was a run the bot did not make, with the reason the check gave (`checkRefusal`). */
@@ -1366,6 +1374,9 @@ export function verdictsFrom(
     const finished = check.completedAt === undefined ? NaN : Date.parse(check.completedAt);
     if (Number.isNaN(finished)) checkFinishedAt.delete(bot.id);
     else checkFinishedAt.set(bot.id, finished);
+    const doneBy = running || check.doneBy === undefined ? NaN : Date.parse(check.doneBy);
+    if (Number.isNaN(doneBy)) checkDoneBy.delete(bot.id);
+    else checkDoneBy.set(bot.id, doneBy);
     const record: DerivedBotVerdict = {
       id: bot.id,
       login,
@@ -1636,7 +1647,7 @@ export function verdictsFrom(
   // A bot whose latest word is "starting" has a run under way or just finished: what it found before belongs to
   // an earlier run (those threads are items in their own right). The check says how this run ended; with no
   // check to go by the bot is running until it says more.
-  for (const [id, { login, anchor, at, own, acknowledged, triggered }] of statusOnly) {
+  for (const [id, { login, anchor, at, own, acknowledged, triggered, askedAt }] of statusOnly) {
     const existing = byId.get(id);
     // The bot rewrote its summary after the run was asked for: that is the report, and the summary's verdict (read
     // above, from its words as they are now) stands. Greptile re-reviews into the same comment.
@@ -1658,7 +1669,12 @@ export function verdictsFrom(
     // another bot's "Starting…" over a skipped check may be the skip itself, and must not read running for 45 minutes.
     // Whose skip it is does not change with time; the run going stale is decided below, as for a run with no check.
     const skippedBefore = id === 'coderabbit' && triggered === true && before === undefined && checkSkipped.has(id);
-    const checkIsThisRun = existing?.checkName !== undefined && !(before !== undefined && at !== null && before < at) && !skippedBefore;
+    // Undated, but the page saw it finished before the run was asked for: the run before's, however the bot then
+    // answers. CodeRabbit's "Review triggered." over yesterday's green check read clean until its new check showed (geld#671).
+    const doneBy = checkDoneBy.get(id);
+    const asked = askedAt ?? at;
+    const doneBefore = before === undefined && doneBy !== undefined && asked !== null && doneBy < asked;
+    const checkIsThisRun = existing?.checkName !== undefined && !(before !== undefined && at !== null && before < at) && !doneBefore && !skippedBefore;
     // A request that aged unanswered, with no check of its own to say how the run went: the earlier run stands
     // whole, its threads included — the request had set them aside — so a run whose findings were all resolved
     // reads "resolved" below, not as its summary's count from before they were, and a bot that only ever posted
