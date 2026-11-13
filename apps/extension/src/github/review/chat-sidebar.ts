@@ -668,7 +668,7 @@ function statusWords(thread: AgentThread): string {
 
 function renderBar(view: Sidebar): void {
   if (active === ASSISTANT) {
-    view.bar.replaceChildren(...(assistantReady() ? ['Knows this pull request’s description, threads and files. Kept on this device.'] : []));
+    view.bar.replaceChildren(...(assistantReady() ? ['Knows this pull request’s description, threads and files'] : []));
     view.bar.hidden = !assistantReady();
     return;
   }
