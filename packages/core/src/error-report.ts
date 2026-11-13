@@ -8,7 +8,8 @@
 
 export const ERROR_PAYLOAD_VERSION = 1;
 export const MAX_ERRORS_PER_PAYLOAD = 25;
-export const MAX_ERROR_MESSAGE = 300;
+/** Room for an AI provider's refusal in its own words (`reportAiFailure`), which runs past two hundred characters. */
+export const MAX_ERROR_MESSAGE = 600;
 export const MAX_STACK_FRAMES = 12;
 const MAX_FRAME = 160;
 

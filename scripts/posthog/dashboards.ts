@@ -428,4 +428,54 @@ export const FEATURES_DASHBOARD: DashboardSpec = {
   ],
 };
 
-export const DASHBOARDS: readonly DashboardSpec[] = [USAGE_DASHBOARD, FEATURES_DASHBOARD];
+const ERRORS_SQL = `
+SELECT properties.where AS where,
+  properties.message AS message,
+  sum(toInt(properties.count)) AS times,
+  count() AS reports,
+  groupUniqArray(properties.version) AS versions,
+  max(timestamp) AS last_seen
+FROM events
+WHERE event = 'extension_error'
+  AND timestamp >= now() - INTERVAL 14 DAY
+GROUP BY where, message
+ORDER BY times DESC
+LIMIT 100
+`.trim();
+
+/** Errors from readers who turned on error reports (`/api/diagnostics`), each in its own words: what failed, how often, on which versions. */
+export const ERRORS_DASHBOARD: DashboardSpec = {
+  name: 'Geld · Errors',
+  description: 'Errors from installs that send error reports (an opt-in setting), scrubbed of addresses, paths, people and page text. AI refusals carry the provider’s own words, except content-policy ones.',
+  tiles: [
+    {
+      kind: 'trend',
+      name: 'Errors per day, by where',
+      description: 'Each report counts once, however often the error repeated before it was sent.',
+      series: [{ event: 'extension_error' }],
+      breakdown: 'where',
+      interval: 'day',
+      from: '-30d',
+      display: 'ActionsBar',
+    },
+    {
+      kind: 'trend',
+      name: 'AI failures per day, by message',
+      description: 'Requests an AI gateway refused, in the provider’s words.',
+      series: [{ event: 'extension_error' }],
+      where: [{ key: 'where', value: 'background:ai' }],
+      breakdown: 'message',
+      interval: 'day',
+      from: '-30d',
+      display: 'ActionsTable',
+    },
+    {
+      kind: 'sql',
+      name: 'Errors by message (last 14 days)',
+      description: 'Every distinct error, the times it happened, the versions it came from and when it was last seen.',
+      query: ERRORS_SQL,
+    },
+  ],
+};
+
+export const DASHBOARDS: readonly DashboardSpec[] = [USAGE_DASHBOARD, FEATURES_DASHBOARD, ERRORS_DASHBOARD];

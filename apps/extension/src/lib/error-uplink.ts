@@ -55,10 +55,14 @@ function sentKey(report: ErrorReport): string {
   return `${report.where}\u0000${report.kind}\u0000${report.message}\u0000${report.stack[0] ?? ''}\u0000${report.lastAt}`;
 }
 
-export async function queueErrorReports(reports: readonly ErrorReport[]): Promise<void> {
+/**
+ * `sent` is what goes to geld.sh when it differs from what this device logs: an AI provider's words reach the error
+ * report the reader opted into, never Copy diagnostics, which the feedback form can attach to a public issue.
+ */
+export async function queueErrorReports(reports: readonly ErrorReport[], sent: readonly ErrorReport[] = reports): Promise<void> {
   for (const report of reports) recordDiagnostic({ kind: 'error', subject: report.where, outcome: report.message });
   if (!sends(await settingsItem.getValue())) return;
-  await serially(async () => queueItem.setValue(mergeErrorReports(await queueItem.getValue(), reports)));
+  await serially(async () => queueItem.setValue(mergeErrorReports(await queueItem.getValue(), sent)));
   if ((await browser.alarms.get(ALARM)) === undefined) await browser.alarms.create(ALARM, { delayInMinutes: 1 });
 }
 
