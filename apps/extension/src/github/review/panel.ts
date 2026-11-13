@@ -538,6 +538,8 @@ export interface PanelHandlers {
   readonly onView: (view: DigestView) => void;
   /** Open the Flow diagram of the changed files. */
   readonly onFlow: () => void;
+  /** Open or close the chat sidebar; the button is where focus returns when it closes. */
+  readonly onChat: (from: HTMLElement) => void;
   /** Open Geld's settings: the toolbar popup where the browser allows it, else the options page. */
   readonly onSettings: () => void;
   /** Resolve/unresolve the thread holding `anchor` (GitHub's own button). */
@@ -3835,6 +3837,12 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   const tools = createElement('div', { class: `${PANEL_CLASS}__tools` });
   const aiControl = aiButton(model.ai, handlers);
   if (aiControl !== null) tools.append(aiControl);
+  const chat = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__chat-btn`, 'aria-label': 'Chat about this pull request', 'aria-pressed': String(document.documentElement.hasAttribute('data-geld-chat-open')), title: 'Chat about this pull request, or with the agent that wrote it', [ATTR_FOCUS]: 'chat' }, [
+    icon(ICON_COMMENT_DISCUSSION),
+    createElement('span', { class: `${PANEL_CLASS}__chat-label` }, ['Chat']),
+  ]);
+  chat.addEventListener('click', () => handlers.onChat(chat));
+  tools.append(chat);
   const flow = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__flow-btn`, 'aria-label': 'Flow: how the changed files connect', title: 'How the changed files connect', [ATTR_FOCUS]: 'flow' }, [
     icon(ICON_WORKFLOW),
     createElement('span', { class: `${PANEL_CLASS}__flow-label` }, ['Flow']),

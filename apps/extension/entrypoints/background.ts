@@ -10,6 +10,8 @@ import { senderMayCreatePull } from '../src/lib/create-pull';
 import { checkCatalog, startCatalogUpdates } from '../src/lib/catalog';
 import { syncEnterpriseHosts } from '../src/lib/enterprise';
 import { hasGatewayPermission } from '../src/lib/ai-gateway';
+import { isCursorRequest } from '../src/lib/chat-messages';
+import { handleCursorRequest, startChatPorts } from '../src/lib/chat-service';
 import { settingsItem } from '../src/lib/storage';
 import { diagnosticSubject, recordDiagnostic } from '../src/lib/diagnostics';
 import { installErrorCapture, reportError } from '../src/lib/error-capture';
@@ -647,6 +649,11 @@ export default defineBackground(() => {
       })().then(sendResponse);
       return true;
     }
+    // Only Geld's own pages and GitHub tabs, where the sidebar runs, may use the reader's Cursor key.
+    if (isCursorRequest(message) && (sender.tab?.id !== undefined || sender.url?.startsWith(browser.runtime.getURL('/')) === true)) {
+      void handleCursorRequest(message).then(sendResponse, () => sendResponse({ ok: false, reason: 'Cursor could not be reached.', code: null }));
+      return true;
+    }
     if (isAiCompleteRequest(message)) {
       void (async () => {
         const denied = await hasGatewayPermission(message.baseUrl);
@@ -702,6 +709,8 @@ export default defineBackground(() => {
       .then((tab) => ensureTab(tab, 'activated'))
       .catch(() => undefined);
   });
+
+  startChatPorts();
 
   // GitHub account: keep settings in the user's secret gist when signed in.
   startAccountSync();
