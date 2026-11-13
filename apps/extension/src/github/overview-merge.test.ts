@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import type { MergeActions, MergeBox, Stack, StackMember } from './merge-actions';
-import { overviewMergeOf, removeOverviewMerge, syncOverviewMerge } from './overview-merge';
+import { greenOverviewMerges, overviewMergeOf, removeOverviewMerge, syncOverviewMerge } from './overview-merge';
+import { ATTR_HYDRATION_WATCH } from './react-hydration';
 
 const box = (over: Partial<MergeBox>): MergeBox => ({
   state: 'OPEN',
@@ -90,6 +91,20 @@ describe('syncOverviewMerge', () => {
     expect(variants()).toEqual(['primary', 'primary']);
     removeOverviewMerge();
     expect(variants()).toEqual(['default', 'default']);
+  });
+
+  it('greens GitHub’s merge before React has hydrated the section, and adds nothing of its own there until it has', () => {
+    document.documentElement.setAttribute(ATTR_HYDRATION_WATCH, '');
+    document.body.innerHTML =
+      '<react-app><section aria-label="Recommended action"><ul><li data-testid="for-you-item-row"><button data-component="Button" data-variant="default" type="button">Squash and merge</button><button type="button">View merge status</button></li></ul></section></react-app>';
+    try {
+      greenOverviewMerges();
+      expect(document.querySelector('button')?.getAttribute('data-variant')).toBe('primary');
+      syncOverviewMerge(null, 'SQUASH', handlers);
+      expect(document.querySelector('button[data-geld-merge-info]')).toBeNull();
+    } finally {
+      document.documentElement.removeAttribute(ATTR_HYDRATION_WATCH);
+    }
   });
 
   it('leaves a merge GitHub disables grey, and gives it back its grey when GitHub disables it later', () => {

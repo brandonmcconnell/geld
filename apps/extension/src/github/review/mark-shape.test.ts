@@ -5,12 +5,16 @@ const SIZE = 40;
 
 type Pixel = readonly [number, number, number, number];
 
-function picture(paint: (x: number, y: number) => Pixel): Uint8ClampedArray {
-  const data = new Uint8ClampedArray(SIZE * SIZE * 4);
-  for (let y = 0; y < SIZE; y += 1) {
-    for (let x = 0; x < SIZE; x += 1) data.set(paint(x, y), (y * SIZE + x) * 4);
+function pictureOf(size: number, paint: (x: number, y: number) => Pixel): Uint8ClampedArray {
+  const data = new Uint8ClampedArray(size * size * 4);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) data.set(paint(x, y), (y * size + x) * 4);
   }
   return data;
+}
+
+function picture(paint: (x: number, y: number) => Pixel): Uint8ClampedArray {
+  return pictureOf(SIZE, paint);
 }
 
 const CLEAR: Pixel = [0, 0, 0, 0];
@@ -27,6 +31,14 @@ const inRing = (x: number, y: number): boolean => {
   const distance = (x + 0.5 - SIZE / 2) ** 2 + (y + 0.5 - SIZE / 2) ** 2;
   return distance <= (SIZE / 2) ** 2 && distance >= (SIZE / 2 - 4) ** 2 && !(x < 4 || x >= SIZE - 4);
 };
+const inDiscOf = (size: number) => (x: number, y: number): boolean => (x + 0.5 - size / 2) ** 2 + (y + 0.5 - size / 2) ** 2 <= (size / 2) ** 2;
+const inRoundedTileOf = (size: number) => (x: number, y: number): boolean => {
+  const radius = size * 0.22;
+  const dx = Math.max(radius - (x + 0.5), x + 0.5 - (size - radius), 0);
+  const dy = Math.max(radius - (y + 0.5), y + 0.5 - (size - radius), 0);
+  return dx ** 2 + dy ** 2 <= radius ** 2;
+};
+const inEarOf = (size: number) => (x: number, y: number): boolean => x >= size * 0.7 && x < size * 0.925 && y >= size * 0.075 && y < size * 0.3;
 const inOblong = (x: number, y: number): boolean => ((x + 0.5 - SIZE / 2) / 17) ** 2 + ((y + 0.5 - SIZE / 2) / 20) ** 2 <= 1;
 
 describe('readMark', () => {
@@ -41,6 +53,20 @@ describe('readMark', () => {
 
   it('reads a disc on transparent corners as round', () => {
     expect(readMark(picture((x, y) => (inDisc(x, y) ? PURPLE : CLEAR)), SIZE, SIZE)).toEqual({ shape: 'round', ink: null, ground: null, inset: 0 });
+  });
+
+  it('reads a shape that touches every edge with free corners as a cutout, not a disc or a tile', () => {
+    const inEar = (x: number, y: number): boolean => x >= 28 && x < 37 && y >= 3 && y < 12;
+    expect(readMark(picture((x, y) => (inDisc(x, y) || inEar(x, y) ? PURPLE : CLEAR)), SIZE, SIZE).shape).toBe('cutout');
+  });
+
+  // GitHub serves an App's avatar at several sizes, and a reading that changes with the size changes the frame.
+  it.each([20, 32, 64, 80])('reads discs, rounded tiles and free-edged shapes the same at %dpx', (size) => {
+    const disc = inDiscOf(size);
+    const ear = inEarOf(size);
+    expect(readMark(pictureOf(size, (x, y) => (disc(x, y) ? PURPLE : CLEAR)), size, size).shape).toBe('round');
+    expect(readMark(pictureOf(size, (x, y) => (inRoundedTileOf(size)(x, y) ? ORANGE : CLEAR)), size, size).shape).toBe('square');
+    expect(readMark(pictureOf(size, (x, y) => (disc(x, y) || ear(x, y) ? PURPLE : CLEAR)), size, size).shape).toBe('cutout');
   });
 
   it('reads a glyph that never reaches the edges as a cutout that needs no padding', () => {
