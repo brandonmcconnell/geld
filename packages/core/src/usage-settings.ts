@@ -95,6 +95,7 @@ export const USAGE_COUNTERS = [
   'ai_triage_failed',
   'ai_fix_applied',
   'ai_fix_discarded',
+  'ai_comment_fix',
   'agent_handoff',
   'bot_review_requested',
   'review_approve',

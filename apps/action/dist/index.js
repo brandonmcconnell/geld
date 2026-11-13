@@ -3032,6 +3032,7 @@ var init_usage_settings = __esm({
       "ai_triage_failed",
       "ai_fix_applied",
       "ai_fix_discarded",
+      "ai_comment_fix",
       "agent_handoff",
       "bot_review_requested",
       "review_approve",
@@ -35142,6 +35143,16 @@ var suggestOutputSchema = external_exports.object({
       ids: external_exports.array(external_exports.string().min(1)).min(1),
       summary: external_exports.string().max(600),
       replacement: external_exports.string().max(2e4).nullish()
+    })
+  )
+});
+var bodyOutputSchema = external_exports.object({
+  findings: external_exports.array(
+    external_exports.object({
+      title: external_exports.string().max(200),
+      task: external_exports.string().max(1e3),
+      path: external_exports.string().max(500).nullish(),
+      line: external_exports.number().int().nullish()
     })
   )
 });

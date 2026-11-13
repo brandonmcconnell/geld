@@ -3644,6 +3644,10 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   min-width: 0;
 }
 
+.geld-review__triage-fix-where[data-from] {
+  font-family: var(--fontStack-sansSerif, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif);
+}
+
 .geld-review__triage-fix-facts {
   display: inline-flex;
   flex: 0 0 auto;
@@ -8387,6 +8391,34 @@ a.geld-review__rerun:hover {
 
 .geld-review__chat-threads-label {
   color: var(--geld-review-muted);
+}
+
+/* A thread chat's Fix stands in the head's actions in Rerun's box, the sparkle in the accent; a comment's stands at its foot as "Fix:" and a button group. */
+.geld-review__chat-head-actions > .geld-review__chat-fix {
+  margin-right: 4px;
+}
+
+.geld-review__chat-fix:not([data-running]) .octicon:not(.geld-spinner) {
+  color: var(--geld-review-accent);
+}
+
+.geld-review__chat-fix-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-left: var(--geld-chat-gutter);
+  font-size: 12px;
+}
+
+.geld-review__chat-fix-label,
+.geld-review__chat-fix-note {
+  color: var(--geld-review-muted);
+}
+
+.geld-review__chat-fix-row[data-state='failed'] .geld-review__chat-fix-note {
+  color: var(--fgColor-danger, var(--color-danger-fg));
 }
 
 /* 24px tall with a 1px border, a 12px glyph: 5px above and below it, so 5px on the left too — the state circle
