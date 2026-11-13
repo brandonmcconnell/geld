@@ -1544,7 +1544,6 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
     createElement('span', { class: `${PANEL_CLASS}__triage-fix-title` }, [...inlineText(fix.title)]),
   ]);
   toggle.addEventListener('click', () => handlers.onToggleSuggestion(fix.key));
-  if (fix.path !== '') fitPathInto(where, fix.path);
   // The path and its copy button stand beside the toggle, not in it: a button cannot hold another.
   const place = createElement('span', { class: `${PANEL_CLASS}__triage-fix-place` }, [where, lineText]);
   if (fix.path !== '') {
@@ -1554,6 +1553,7 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
       void handlers.onCopyPath(fix.path).then((copied) => flashTip(tipped, copied ? 'Copied' : 'Copy failed'));
     });
     place.append(tipped);
+    fitPathInto(where, fix.path, place);
   }
   const status = applied
     ? createElement('span', { class: `${PANEL_CLASS}__triage-fix-state` }, ['Applied'])
