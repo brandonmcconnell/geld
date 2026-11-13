@@ -533,13 +533,15 @@ export async function fixFromComments(meta: GeldPrMeta, comments: readonly RawCo
   // An answer that lands after the reader moved to another pull request is that page's no longer: dropped, not written.
   const page = runKey;
   const still = (): boolean => runKey === page;
-  for (const key of scope.threads) askedThreads.add(key);
+  // A thread whose saved fix it shares with others is asked about with them, so the answer still covers every one.
+  const threads = [...new Set(scope.threads.flatMap((key) => [key, ...(suggestionFor(key)?.threads ?? [])]))];
+  for (const key of threads) askedThreads.add(key);
   inFlight.add('suggest');
   onProgress();
   let failure: AiFailure | null = null;
   const items = applyConsolidation(meta.items, new Map<string, Carried>(), [...rewrites.values()]);
-  if (scope.threads.length > 0) {
-    const reason = await proposeFixes(meta.headSha, items, comments, settings, apiKey, source, new Set(scope.threads), still);
+  if (threads.length > 0) {
+    const reason = await proposeFixes(meta.headSha, items, comments, settings, apiKey, source, new Set(threads), still);
     if (reason !== null) failure = { step: 'fixes', reason };
   }
   if (scope.comment !== null && failure === null && still()) {
