@@ -10,7 +10,8 @@
  * is read by Codex but written for every agent, so it says nothing.
  */
 
-import type { BotVerdict } from './model';
+import type { BotVerdict, UnthreadedRecord } from './model';
+import { fnv1aHex } from './model';
 import type { CommentReaction } from './cluster';
 
 export interface ReviewBot {
@@ -431,6 +432,30 @@ function outsideDiffCount(text: string): number {
   return match?.[1] === undefined ? 0 : Number.parseInt(match[1], 10);
 }
 
+/** Where the outside-diff comments end: CodeRabbit's next section. */
+const AFTER_OUTSIDE_DIFF = /\b(?:nitpick comments|additional comments|duplicate comments|review details|prompt for all review comments|prompt to fix all issues)\b/i;
+
+/**
+ * The parts of a review that hold its findings with no thread (`ParsedBotBody.unthreaded`): the outside-diff comments
+ * and the failed pre-merge checks, cut out before any length limit, since inline comments' details come first and a
+ * cut from the top would keep only those. Empty when the review has neither.
+ */
+export function unthreadedExcerpt(text: string): string {
+  const parts: string[] = [];
+  const outside = /\boutside diff range comments\s*\(\d+\)/i.exec(text);
+  if (outside !== null) {
+    const rest = text.slice(outside.index + outside[0].length);
+    const end = AFTER_OUTSIDE_DIFF.exec(rest);
+    parts.push(`${outside[0]}${end === null ? rest : rest.slice(0, end.index)}`);
+  }
+  const failed = /\bfailed pre-merge checks:[^\S\n]*\n[\s\S]*?(?=\bafter applying the fix\b|```|$)/i.exec(text);
+  if (failed !== null) parts.push(failed[0]);
+  return parts
+    .map((part) => part.trim())
+    .filter((part) => part !== '')
+    .join('\n\n');
+}
+
 /**
  * CodeRabbit's failed pre-merge checks, listed in its review's fix-all prompt ("Failed pre-merge checks:" then one
  * "- Docstring Coverage:" line per check, its advice under it): findings with no thread to resolve, standing until
@@ -784,6 +809,14 @@ export interface DerivedBotVerdict {
    * "Needs a human reviewer."): nothing was found to count, so the chip says that rather than "findings".
    */
   readonly needsHuman?: true;
+  /** Findings its latest review holds with no thread to resolve (`ParsedBotBody.unthreaded`), and that review. */
+  readonly unthreaded?: UnthreadedRecord;
+}
+
+interface UnthreadedSeen {
+  readonly count: number;
+  readonly anchor: string;
+  readonly digest: string;
 }
 
 /**
@@ -1212,7 +1245,7 @@ interface ThreadRun {
   /** When the latest of these threads was posted (epoch ms), when known. */
   readonly lastAt: number | null;
   /** Findings the run's summary holds with no thread to resolve (`ParsedBotBody.unthreaded`), and that summary. */
-  readonly unthreaded?: { readonly count: number; readonly anchor: string };
+  readonly unthreaded?: UnthreadedSeen;
   /** The worst grade among the open threads (`findingSeverity`), when any of them grades itself. */
   readonly severity?: FindingSeverity;
 }
@@ -1398,7 +1431,7 @@ export function verdictsFrom(
   const statusOnly = new Map<string, { readonly login: string; readonly anchor: string; readonly at: number | null; readonly own: boolean; readonly acknowledged: boolean; readonly triggered?: boolean; readonly askedAt?: number | null }>();
   const threadRuns = new Map<string, ThreadRun>();
   /** The latest summary's findings with no thread of their own, for the run its threads go on to build. */
-  const unthreadedBy = new Map<string, { readonly count: number; readonly anchor: string }>();
+  const unthreadedBy = new Map<string, UnthreadedSeen>();
   /** The thread run a request set aside, in case the request is refused and that run is still the bot's last real one. */
   const runsBeforeAsk = new Map<string, ThreadRun>();
   /** When each bot last rewrote one of its comments: a summary edited after a run was asked for is that run's report. */
@@ -1579,7 +1612,7 @@ export function verdictsFrom(
     }
     reported(id, comment);
     if (parsed.count !== null) countedSummaries.add(comment.anchor);
-    if (parsed.unthreaded !== undefined) unthreadedBy.set(id, { count: parsed.unthreaded, anchor: comment.anchor });
+    if (parsed.unthreaded !== undefined) unthreadedBy.set(id, { count: parsed.unthreaded, anchor: comment.anchor, digest: fnv1aHex(comment.body) });
     else unthreadedBy.delete(id);
     // Macroscope's Approvability verdict follows its threads by seconds: a gate over them, not a count that replaces them.
     if (botById(id)?.resolvesThreads !== true) threadRuns.delete(id);
@@ -1858,6 +1891,13 @@ export function verdictsFrom(
     if (record === undefined || record.verdict === 'running') continue;
     const refusal = record.verdict === 'failed' && record.reason !== undefined;
     byId.set(id, { ...record, runJudged: true, ...(refusal || record.reviewedSha !== refusedSha ? {} : { reviewedSha: UNKNOWN_SHA }) });
+  }
+  // What the bot's latest review holds with no thread, as it said it: counted from the review, never from the threads
+  // the reader happens to see (a capped item list, a thread marked done by hand, threads merged into one row).
+  for (const [id, record] of byId) {
+    const seen = threadRuns.get(id)?.unthreaded ?? unthreadedBy.get(id);
+    if (record.verdict !== 'findings' || seen === undefined || seen.count <= 0) continue;
+    byId.set(id, { ...record, unthreaded: { count: seen.count, sourceId: seen.anchor, digest: seen.digest } });
   }
 
   return [...byId.values()];

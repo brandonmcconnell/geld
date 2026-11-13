@@ -1310,8 +1310,11 @@ describe('a bot that refuses to run', () => {
     expect(verdictsFrom([], mixed, 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'pullrequestreview-9' });
     const openMixed = mixed.map((comment) => (comment.anchor === 'discussion_r9' ? { ...comment, resolved: false } : comment));
     expect(verdictsFrom([], openMixed, 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'findings', count: 2, sourceId: 'discussion_r9' });
+    // The outside one is named as the review holds it, whichever comment the chip opens, for the triage to read.
+    for (const comments of [mixed, openMixed]) expect(verdictsFrom([], comments, 'head', [], now).find((v) => v.id === 'coderabbit')?.unthreaded).toMatchObject({ count: 1, sourceId: 'pullrequestreview-9' });
     const reviewedAgain = [...mixed, { author: 'coderabbitai[bot]', body: 'No actionable comments were generated in the recent review. 🎉', anchor: 'pullrequestreview-10', createdAt: '2026-10-27T10:00:00Z' }];
     expect(verdictsFrom([], reviewedAgain, 'head', [], now).find((v) => v.id === 'coderabbit')?.verdict).toBe('clean');
+    expect(verdictsFrom([], reviewedAgain, 'head', [], now).find((v) => v.id === 'coderabbit')?.unthreaded).toBeUndefined();
     // A chat reply in anyone's words ("No issues found") is not CodeRabbit's clean word: the finding stands.
     expect(parseBotBody('The fix is correct. No issues found.', 'coderabbit').clean).toBe(false);
     for (const reply of ['No actionable comments remain.', 'Thanks, 0 issues remain.', 'The fix is correct; I rate it 5/5.', 'Verdict: request changes until the guard lands.']) {

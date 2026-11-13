@@ -31943,7 +31943,8 @@ var botVerdictSchema = external_exports.object({
   sourceId: external_exports.string().min(1).optional(),
   reason: external_exports.string().min(1).optional(),
   runJudged: external_exports.literal(true).optional(),
-  needsHuman: external_exports.literal(true).optional()
+  needsHuman: external_exports.literal(true).optional(),
+  unthreaded: external_exports.object({ count: external_exports.number().int().positive(), sourceId: external_exports.string().min(1), digest: external_exports.string().min(1) }).optional()
 });
 var reviewerSchema = external_exports.object({
   login: external_exports.string().min(1),
@@ -32027,7 +32028,8 @@ function botVerdictFrom(value) {
   const sourced = value.sourceId === void 0 ? named : { ...named, sourceId: value.sourceId };
   const reasoned = value.reason === void 0 ? sourced : { ...sourced, reason: value.reason };
   const judged = value.runJudged === void 0 ? reasoned : { ...reasoned, runJudged: true };
-  return value.needsHuman === void 0 ? judged : { ...judged, needsHuman: true };
+  const human = value.needsHuman === void 0 ? judged : { ...judged, needsHuman: true };
+  return value.unthreaded === void 0 ? human : { ...human, unthreaded: { count: value.unthreaded.count, sourceId: value.unthreaded.sourceId, digest: value.unthreaded.digest } };
 }
 function metaFrom(value) {
   const meta3 = {
@@ -32452,6 +32454,19 @@ function isReviewShaped(parsed) {
 function outsideDiffCount(text) {
   const match = /\boutside diff range comments\s*\((\d+)\)/i.exec(text);
   return match?.[1] === void 0 ? 0 : Number.parseInt(match[1], 10);
+}
+var AFTER_OUTSIDE_DIFF = /\b(?:nitpick comments|additional comments|duplicate comments|review details|prompt for all review comments|prompt to fix all issues)\b/i;
+function unthreadedExcerpt(text) {
+  const parts2 = [];
+  const outside = /\boutside diff range comments\s*\(\d+\)/i.exec(text);
+  if (outside !== null) {
+    const rest = text.slice(outside.index + outside[0].length);
+    const end = AFTER_OUTSIDE_DIFF.exec(rest);
+    parts2.push(`${outside[0]}${end === null ? rest : rest.slice(0, end.index)}`);
+  }
+  const failed = /\bfailed pre-merge checks:[^\S\n]*\n[\s\S]*?(?=\bafter applying the fix\b|```|$)/i.exec(text);
+  if (failed !== null) parts2.push(failed[0]);
+  return parts2.map((part) => part.trim()).filter((part) => part !== "").join("\n\n");
 }
 function failedPreMergeCount(text) {
   if (!hasHeading(text, FIX_ALL_HEADING)) return 0;
@@ -33116,7 +33131,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     }
     reported(id, comment);
     if (parsed.count !== null) countedSummaries.add(comment.anchor);
-    if (parsed.unthreaded !== void 0) unthreadedBy.set(id, { count: parsed.unthreaded, anchor: comment.anchor });
+    if (parsed.unthreaded !== void 0) unthreadedBy.set(id, { count: parsed.unthreaded, anchor: comment.anchor, digest: fnv1aHex(comment.body) });
     else unthreadedBy.delete(id);
     if (botById(id)?.resolvesThreads !== true) threadRuns.delete(id);
     statusOnly.delete(id);
@@ -33290,6 +33305,11 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     if (record4 === void 0 || record4.verdict === "running") continue;
     const refusal = record4.verdict === "failed" && record4.reason !== void 0;
     byId.set(id, { ...record4, runJudged: true, ...refusal || record4.reviewedSha !== refusedSha ? {} : { reviewedSha: UNKNOWN_SHA } });
+  }
+  for (const [id, record4] of byId) {
+    const seen = threadRuns.get(id)?.unthreaded ?? unthreadedBy.get(id);
+    if (record4.verdict !== "findings" || seen === void 0 || seen.count <= 0) continue;
+    byId.set(id, { ...record4, unthreaded: { count: seen.count, sourceId: seen.anchor, digest: seen.digest } });
   }
   return [...byId.values()];
 }
@@ -33635,31 +33655,20 @@ function applyConsolidation(items, carried, outputs) {
   });
 }
 function unthreadedFindings(meta3) {
-  const out = [];
-  for (const bot of meta3.bots) {
-    if (bot.verdict !== "findings" || bot.needsHuman === true || bot.sourceId === void 0) continue;
-    let threads = 0;
-    for (const item of meta3.items) {
-      if (!isOpenStatus(item.status) || item.sources.find((source) => source.kind === "thread")?.bot !== bot.id) continue;
-      threads += item.threads?.open ?? 1;
-    }
-    const count = bot.count === void 0 ? threads === 0 ? null : 0 : bot.count - threads;
-    if (count !== null && count <= 0) continue;
-    out.push({ id: `unthreaded:${bot.id}@${bot.sourceId}:${count ?? "?"}`, bot: bot.id, login: bot.login, count, sourceId: bot.sourceId });
-  }
-  return out;
+  return meta3.bots.flatMap((bot) => {
+    const found = bot.unthreaded;
+    if (bot.verdict !== "findings" || found === void 0) return [];
+    return [{ id: `unthreaded:${bot.id}@${found.sourceId}:${found.count}:${found.digest}`, bot: bot.id, login: bot.login, count: found.count, sourceId: found.sourceId }];
+  });
 }
-var UNTHREADED_EXCERPT_CHARS = 2e3;
-function unthreadedSource(finding, comments) {
-  const own2 = comments.find((comment) => comment.anchor === finding.sourceId);
-  if (own2 !== void 0 && own2.kind !== "thread") return own2;
-  return comments.filter((comment) => comment.kind !== "thread" && comment.author.toLowerCase() === finding.login.toLowerCase()).at(-1);
-}
+var UNTHREADED_EXCERPT_CHARS = 4e3;
 function unthreadedInputs(findings, comments) {
   return findings.map((finding) => {
     const name = botById(finding.bot)?.title ?? finding.login;
-    const what = finding.count === null ? "findings" : finding.count === 1 ? "1 finding" : `${finding.count} findings`;
-    const body = (unthreadedSource(finding, comments)?.body ?? "").replace(/<!--[\s\S]*?-->/g, "").replace(/\s+/g, " ").trim();
+    const what = finding.count === 1 ? "1 finding" : `${finding.count} findings`;
+    const review = (comments.find((comment) => comment.anchor === finding.sourceId)?.body ?? "").replace(/<!--[\s\S]*?-->/g, "");
+    const held = unthreadedExcerpt(review);
+    const body = (held === "" ? review : held).replace(/\s+/g, " ").trim();
     const context = body.length > UNTHREADED_EXCERPT_CHARS ? `${body.slice(0, UNTHREADED_EXCERPT_CHARS)}\u2026` : body;
     return { id: finding.id, title: `${name} reports ${what} outside its review threads`, severity: "bug", status: "open", ...context === "" ? {} : { context } };
   });
