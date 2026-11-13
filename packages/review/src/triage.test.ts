@@ -63,6 +63,17 @@ describe('diffHunks', () => {
     expect(diffHunks(lineDiff(before, after)).some((row) => row.kind === 'gap')).toBe(false);
     expect(diffHunks(lineDiff(['a'], ['b']))).toHaveLength(2);
   });
+
+  it('leaves out unchanged lines before the first change and after the last, rather than folding them', () => {
+    // geld#686: a fix kept lines 174 to 179 and added after them, and "⋯ 3 unchanged lines" headed it.
+    const before = lines(6);
+    const rows = diffHunks(lineDiff(before, [...before, 'added 1', 'added 2'], 174));
+    expect(rows.some((row) => row.kind === 'gap')).toBe(false);
+    expect(rows[0]).toEqual({ kind: 'context', text: 'line 4', before: 177, after: 177 });
+    const atEnd = diffHunks(lineDiff(before, ['line 1!', ...before.slice(1)], 1));
+    expect(atEnd.some((row) => row.kind === 'gap')).toBe(false);
+    expect(atEnd.at(-1)).toEqual({ kind: 'context', text: 'line 4', before: 4, after: 4 });
+  });
 });
 
 describe('codeSpans', () => {

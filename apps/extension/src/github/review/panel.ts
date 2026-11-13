@@ -10,7 +10,7 @@
  */
 
 import type { DigestView } from '@geld/core';
-import type { BotVerdictRecord, CommentLane, DiffRow, GeldPrMeta, Preview, RawCheckRun, Report, ReportPart, ReviewItem } from '@geld/review';
+import type { BotVerdictRecord, CommentLane, DiffLine, DiffRow, GeldPrMeta, Preview, RawCheckRun, Report, ReportPart, ReviewItem } from '@geld/review';
 import { botAppAvatar, botById, previewHostById, reportsHealth } from '@geld/review';
 import type { AgentNote } from './agent-notes';
 import type { Deployment, DeploymentEntry, DeploymentState, PreviewLinks } from './deployments';
@@ -20,11 +20,13 @@ import { botTitle, isOpenStatus, itemThreads, resolveBotId, threadCounts } from 
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { reactSettled } from '../react-hydration';
 import type { RevisionMarker } from './crawler';
-import { ICON_ALERT, ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_EXCLAMATION_CIRCLE_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SPINNER, ICON_TRASH, ICON_TRIANGLE_DOWN, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER, ICON_EYE_CLOSED, ICON_BLOCKED } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_EXCLAMATION_CIRCLE_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SPINNER, ICON_X, ICON_TRIANGLE_DOWN, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER, ICON_EYE_CLOSED, ICON_BLOCKED } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checkStateOfRun, checksHealth, checksRowTone, checksSummary, checksTotal, pushRowTone, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
 import type { CheckCounts, CheckState, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
 import type { AiState } from './ai';
+import type { SyntaxPiece } from './snippet-syntax';
+import { highlightLines, snippetLanguage } from './snippet-syntax';
 import type { AiStep } from '../../lib/local-state';
 import type { BotRequestState } from './bot-requests';
 import { requestDetail, requestSentence } from './bot-requests';
@@ -556,6 +558,7 @@ export interface PanelHandlers {
   /** Commit the fix to the pull request's branch, and with `resolve` resolve every thread it answers. */
   readonly onApplySuggestion: (key: string, resolve: boolean) => void;
   readonly onDiscardSuggestion: (key: string) => void;
+  readonly onCopyPath: (path: string) => void;
   /**
    * Hand a finding (by its thread's key) on: `comment` posts what starts the agent `id`, `open` opens it in the open
    * target `id` (`OPEN_TARGETS`), `copy` copies the task for any other.
@@ -808,6 +811,42 @@ function pointerChevron(onGo: () => void): HTMLElement {
 
 let approveIds = 0;
 const APPROVE_RETRY_MS = 5000;
+
+let tipIds = 0;
+
+/**
+ * An icon button named by GitHub's own tooltip (the page's `tool-tip`, which upgrades one made here), else by its
+ * `title` on a page that has rendered no `tool-tip`: the content script's world cannot ask `customElements`.
+ */
+function withTip(button: HTMLElement, words: string): HTMLElement {
+  if (document.querySelector('tool-tip') === null) {
+    button.setAttribute('aria-label', words);
+    button.title = words;
+    return button;
+  }
+  tipIds += 1;
+  const id = `geld-tip-${tipIds}`;
+  button.id = id;
+  button.setAttribute('aria-labelledby', `${id}-tip`);
+  const tip = document.createElement('tool-tip');
+  for (const [name, value] of Object.entries({ id: `${id}-tip`, for: id, popover: 'manual', 'data-direction': 's', 'data-type': 'label', class: 'sr-only position-absolute', role: 'tooltip' })) tip.setAttribute(name, value);
+  tip.textContent = words;
+  return createElement('span', { class: `${PANEL_CLASS}__tipped` }, [button, tip]);
+}
+
+/** Say something in place of a tooltip's words for a moment ("Copied"), then put them back. */
+function flashTip(tipped: HTMLElement, words: string): void {
+  const tip = tipped.querySelector('tool-tip');
+  const target = tip ?? tipped;
+  const before = tip === null ? tipped.title : tip.textContent;
+  if (tip === null) tipped.title = words;
+  else tip.textContent = words;
+  window.setTimeout(() => {
+    if (!target.isConnected) return;
+    if (tip === null) tipped.title = before;
+    else tip.textContent = before;
+  }, 1500);
+}
 
 /**
  * "Run" on the CI row: GitHub's "Approve workflows to run", whose section the
@@ -1483,21 +1522,35 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
   const toggle = createElement('button', { type: 'button', class: `${PANEL_CLASS}__triage-fix-toggle`, 'aria-expanded': String(open), [ATTR_FOCUS]: `fix:${fix.key}` }, [
     createElement('span', { class: `${PANEL_CLASS}__triage-fix-glyph`, 'aria-hidden': 'true' }, [icon(applied ? ICON_CHECK_CIRCLE_FILL : isFix ? ICON_FILE_DIFF : ICON_ALERT)]),
     createElement('span', { class: `${PANEL_CLASS}__triage-fix-title` }, [...inlineText(fix.title)]),
-    createElement('span', { class: `${PANEL_CLASS}__triage-fix-place` }, [where, lineText]),
-    applied
-      ? createElement('span', { class: `${PANEL_CLASS}__triage-fix-state` }, ['Applied'])
-      : isFix
-        ? createElement('span', { class: `${PANEL_CLASS}__triage-fix-counts`, 'aria-label': `${added} added, ${removed} removed` }, [createElement('span', { 'data-kind': 'add' }, [`+${added}`]), createElement('span', { 'data-kind': 'del' }, [`−${removed}`])])
-        : createElement('span', { class: `${PANEL_CLASS}__triage-fix-state`, 'data-kind': 'agent' }, ['Needs an agent']),
   ]);
   toggle.addEventListener('click', () => handlers.onToggleSuggestion(fix.key));
   if (fix.path !== '') fitPathInto(where, fix.path);
-  const head = createElement('div', { class: `${PANEL_CLASS}__triage-fix-row` }, [toggle]);
+  // The path and its copy button stand beside the toggle, not in it: a button cannot hold another.
+  const place = createElement('span', { class: `${PANEL_CLASS}__triage-fix-place` }, [where, lineText]);
+  if (fix.path !== '') {
+    const copy = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__triage-fix-copy`, [ATTR_FOCUS]: `fix-copy:${fix.key}` }, [icon(ICON_COPY)]);
+    const tipped = withTip(copy, 'Copy path');
+    copy.addEventListener('click', () => {
+      handlers.onCopyPath(fix.path);
+      flashTip(tipped, 'Copied');
+    });
+    place.append(tipped);
+  }
+  const status = applied
+    ? createElement('span', { class: `${PANEL_CLASS}__triage-fix-state` }, ['Applied'])
+    : isFix
+      ? createElement('span', { class: `${PANEL_CLASS}__triage-fix-counts`, 'aria-label': `${added} added, ${removed} removed` }, [createElement('span', { 'data-kind': 'add' }, [`+${added}`]), createElement('span', { 'data-kind': 'del' }, [`−${removed}`])])
+      : createElement('span', { class: `${PANEL_CLASS}__triage-fix-state`, 'data-kind': 'agent' }, ['Needs an agent']);
+  const head = createElement('div', { class: `${PANEL_CLASS}__triage-fix-row` }, [toggle, place, status]);
+  head.addEventListener('click', (event) => {
+    if (event.target instanceof Element && event.target.closest('button, a, details') !== null) return;
+    handlers.onToggleSuggestion(fix.key);
+  });
   if (!applied) {
     const busy = fix.busy !== null;
-    const trash = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__triage-fix-discard`, 'aria-label': isFix ? 'Discard this fix' : 'Dismiss this finding from the triage', title: isFix ? 'Discard this fix' : 'Dismiss from the triage', [ATTR_FOCUS]: `fix-trash:${fix.key}`, ...(busy ? { disabled: '' } : {}) }, [icon(ICON_TRASH)]);
-    trash.addEventListener('click', () => handlers.onDiscardSuggestion(fix.key));
-    head.append(trash, isFix ? applyControl(fix, triage, handlers) : agentControl(fix.key, triage, handlers));
+    const dismiss = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__triage-fix-discard`, [ATTR_FOCUS]: `fix-trash:${fix.key}`, ...(busy ? { disabled: '' } : {}) }, [icon(ICON_X)]);
+    dismiss.addEventListener('click', () => handlers.onDiscardSuggestion(fix.key));
+    head.append(withTip(dismiss, isFix ? 'Discard this fix' : 'Dismiss from the triage'), isFix ? applyControl(fix, triage, handlers) : agentControl(fix.key, triage, handlers));
   }
   const chevron = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__chevron`, 'aria-label': open ? 'Close' : 'Open', 'aria-expanded': String(open), tabindex: '-1' }, [icon(ICON_CHEVRON_DOWN)]);
   chevron.addEventListener('click', () => handlers.onToggleSuggestion(fix.key));
@@ -1517,7 +1570,7 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
     const busy = fix.busy !== null;
     const blocked = busy || !fix.current;
     const why = fix.current ? 'Post this as a suggestion in the thread and commit it to the branch' : 'Triage again first: this fix was written for an earlier commit';
-    const discard = createElement('button', { type: 'button', class: `${PANEL_CLASS}__triage-fix-link`, [ATTR_FOCUS]: `fix-discard:${fix.key}`, ...(busy ? { disabled: '' } : {}) }, ['Discard']);
+    const discard = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__triage-fix-discard-btn`, [ATTR_FOCUS]: `fix-discard:${fix.key}`, ...(busy ? { disabled: '' } : {}) }, [icon(ICON_X), 'Discard']);
     discard.addEventListener('click', () => handlers.onDiscardSuggestion(fix.key));
     const apply = createElement('button', { type: 'button', class: 'btn btn-sm', title: why, [ATTR_FOCUS]: `fix-apply:${fix.key}`, ...(blocked ? { disabled: '' } : {}), ...(fix.busy === 'apply' ? { 'aria-busy': 'true' } : {}) }, [fix.busy === 'apply' ? 'Applying…' : 'Apply']);
     apply.addEventListener('click', () => handlers.onApplySuggestion(fix.key, false));
@@ -1534,9 +1587,26 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
   return row;
 }
 
+/** Each shown line's syntax pieces: added and unchanged lines read as the new file, removed ones as the old. */
+function diffSyntax(fix: TriageSuggestionView): ReadonlyMap<DiffLine, readonly SyntaxPiece[]> {
+  const language = snippetLanguage(fix.path);
+  const pieces = new Map<DiffLine, readonly SyntaxPiece[]>();
+  if (language === null) return pieces;
+  const shown = fix.diff.filter((row): row is DiffLine => row.kind !== 'gap');
+  for (const side of [shown.filter((line) => line.kind !== 'del'), shown.filter((line) => line.kind === 'del')]) {
+    const painted = highlightLines(side.map((line) => line.text), language);
+    side.forEach((line, index) => {
+      const found = painted?.[index];
+      if (found !== undefined) pieces.set(line, found);
+    });
+  }
+  return pieces;
+}
+
 function diffTable(fix: TriageSuggestionView): HTMLElement {
   const table = createElement('table', { class: `${PANEL_CLASS}__diff`, 'aria-label': `Change to ${fix.path}` });
   const rows = createElement('tbody');
+  const syntax = diffSyntax(fix);
   for (const line of fix.diff) {
     if (line.kind === 'gap') {
       rows.append(createElement('tr', { 'data-kind': 'gap' }, [createElement('td', { colspan: '4', class: `${PANEL_CLASS}__diff-gap` }, [`⋯ ${plural(line.hidden, 'unchanged line')}`])]));
@@ -1547,12 +1617,18 @@ function diffTable(fix: TriageSuggestionView): HTMLElement {
         createElement('td', { class: `${PANEL_CLASS}__diff-num` }, [line.before === undefined ? '' : String(line.before)]),
         createElement('td', { class: `${PANEL_CLASS}__diff-num` }, [line.after === undefined ? '' : String(line.after)]),
         createElement('td', { class: `${PANEL_CLASS}__diff-sign`, 'aria-hidden': 'true' }, [line.kind === 'add' ? '+' : line.kind === 'del' ? '−' : ' ']),
-        createElement('td', { class: `${PANEL_CLASS}__diff-code` }, [line.text === '' ? ' ' : line.text]),
+        createElement('td', { class: `${PANEL_CLASS}__diff-code` }, codeCell(line, syntax.get(line))),
       ]),
     );
   }
   table.append(rows);
   return createElement('div', { class: `${PANEL_CLASS}__diff-wrap` }, [table]);
+}
+
+function codeCell(line: DiffLine, pieces: readonly SyntaxPiece[] | undefined): readonly (Node | string)[] {
+  if (line.text === '') return [' '];
+  if (pieces === undefined || pieces.length === 0) return [line.text];
+  return pieces.map((piece) => (piece.scope === null ? piece.text : createElement('span', { 'data-syn': piece.scope }, [piece.text])));
 }
 
 function agentMark(agent: TriageAgent): HTMLElement {
@@ -1671,13 +1747,15 @@ function missingToolHelp(tool: MissingTool, handlers: PanelHandlers, close: () =
 
 function applyControl(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHandlers): HTMLElement {
   const blocked = fix.busy !== null || !fix.current;
-  const main = createElement('button', { type: 'button', class: 'btn btn-sm', title: fix.current ? 'Post this fix as a suggestion in the thread and commit it' : 'Triage again first: this fix was written for an earlier commit', [ATTR_FOCUS]: `fix-head-apply:${fix.key}`, ...(blocked ? { disabled: '' } : {}), ...(fix.busy !== null ? { 'aria-busy': 'true' } : {}) }, [
+  const threads = fix.threads === 1 ? 'its thread' : `all ${fix.threads} threads`;
+  // The same default as the open row's primary button: the finding is settled once its fix is in.
+  const main = createElement('button', { type: 'button', class: 'btn btn-sm', title: fix.current ? `Post this fix as a suggestion in the thread, commit it, and resolve ${threads}` : 'Triage again first: this fix was written for an earlier commit', [ATTR_FOCUS]: `fix-head-apply:${fix.key}`, ...(blocked ? { disabled: '' } : {}), ...(fix.busy !== null ? { 'aria-busy': 'true' } : {}) }, [
     icon(ICON_CHECK),
-    createElement('span', { class: `${PANEL_CLASS}__split-label` }, [fix.busy !== null ? 'Applying…' : 'Apply']),
+    createElement('span', { class: `${PANEL_CLASS}__split-label` }, [fix.busy !== null ? 'Applying…' : 'Apply & resolve']),
   ]);
-  main.addEventListener('click', () => handlers.onApplySuggestion(fix.key, false));
+  main.addEventListener('click', () => handlers.onApplySuggestion(fix.key, true));
   return splitButton(main, 'More ways to fix this', `fix-head-more:${fix.key}`, (list, close) => {
-    if (!blocked) list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_CHECK)]), 'Apply and resolve'], close, () => handlers.onApplySuggestion(fix.key, true)));
+    if (!blocked) list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_CHECK)]), 'Apply without resolving'], close, () => handlers.onApplySuggestion(fix.key, false)));
     copyItem(list, fix.key, handlers, close);
     agentItems(list, fix.key, triage, handlers, close, null);
   });

@@ -3574,7 +3574,8 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 
 .geld-review__triage-fix-toggle {
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
+  max-width: 50%;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -3605,7 +3606,6 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 
 .geld-review__triage-fix-title {
   flex: 0 1 auto;
-  max-width: 50%;
   min-width: 0;
   overflow: hidden;
   font-weight: 600;
@@ -3613,14 +3613,37 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   white-space: nowrap;
 }
 
-/* The path, fitted in the middle (`fitPathInto`: the file name always, then as much of the start as fits), and its lines. */
+/* The path, fitted in the middle (`fitPathInto`: the file name always, then as much of the start as fits), its lines and the copy button. */
 .geld-review__triage-fix-place {
   display: flex;
   flex: 1 1 0;
+  align-items: center;
   min-width: 4em;
   color: var(--geld-review-muted);
   font-size: 12px;
   white-space: nowrap;
+}
+
+/* The row's blank parts open it, as the toggle does. */
+.geld-review__triage-fix-row {
+  cursor: pointer;
+}
+
+.geld-review__tipped {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.geld-review__triage-fix-copy {
+  width: 20px;
+  height: 20px;
+  margin-left: 4px;
+  color: var(--geld-review-muted);
+}
+
+.geld-review__triage-fix-copy .octicon {
+  width: 12px;
+  height: 12px;
 }
 
 .geld-review__triage-fix-where {
@@ -3772,6 +3795,11 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 }
 
 /* Discard reads as a quiet link, muted until the pointer is on it, as GitHub's secondary links do. */
+/* Discard stands at the left, away from Apply and Apply and resolve, as GitHub's secondary button with its X. */
+.geld-review__triage-fix-discard-btn {
+  margin-right: auto;
+}
+
 .geld-review__triage-fix-link {
   margin-right: auto;
   padding: 0;
@@ -10103,6 +10131,31 @@ section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-des
 
 :where([data-geld-diff-syntax] :is(.diff-text-inner, .blob-code-inner) .pl-s .pl-v) {
   color: var(--color-prettylights-syntax-constant);
+}
+
+/* A triage fix's diff is Geld's own table, so its tokens are spans (`snippet-syntax.ts`), in the same colours. */
+.geld-review__diff-code [data-syn='keyword'] {
+  color: var(--color-prettylights-syntax-keyword);
+}
+
+.geld-review__diff-code [data-syn='entity'] {
+  color: var(--color-prettylights-syntax-entity);
+}
+
+.geld-review__diff-code [data-syn='constant'] {
+  color: var(--color-prettylights-syntax-constant);
+}
+
+.geld-review__diff-code [data-syn='string'] {
+  color: var(--color-prettylights-syntax-string);
+}
+
+.geld-review__diff-code [data-syn='comment'] {
+  color: var(--color-prettylights-syntax-comment);
+}
+
+.geld-review__diff-code [data-syn='variable'] {
+  color: var(--color-prettylights-syntax-variable);
 }
 
 /* Diff syntax colors on GitHub's original text nodes. */

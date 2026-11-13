@@ -4196,6 +4196,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         reapply();
       });
     },
+    onCopyPath: (path) => void copyText(path),
     onDiscardSuggestion: (key) => {
       countUsage('ai_fix_discarded');
       if (visit.triage.openKey === key) visit.triage.openKey = null;
