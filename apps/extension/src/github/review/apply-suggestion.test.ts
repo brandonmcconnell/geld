@@ -13,7 +13,7 @@ describe('apply-suggestion requests', () => {
   it('commits the reply’s suggestion against the head it was written for, once', () => {
     const request = applySuggestionsRequest('/o/r/pull/7', 99, 'Apply', 'abc', '', 'key-1');
     expect(request.url).toBe('/o/r/pull/7/page_data/apply_review_suggestions');
-    expect(JSON.parse(String(request.init.body))).toEqual({ comments: [{ id: 99 }], message: 'Apply', expectedHeadOid: 'abc' });
+    expect(JSON.parse(String(request.init.body))).toEqual({ comments: [{ id: 99, suggestionIndex: 0 }], message: 'Apply', expectedHeadOid: 'abc' });
     expect(request.init.headers).toMatchObject({ 'Idempotency-Key': 'key-1' });
     expect(request.init.headers).not.toHaveProperty('X-Fetch-Nonce');
   });

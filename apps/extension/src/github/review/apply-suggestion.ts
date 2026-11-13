@@ -7,7 +7,7 @@ import { fetchNonce, pullPathOf } from '../timeline-comment';
  * the code: the fix is posted as a `suggestion` reply in the finding's thread, then committed to the pull request's
  * branch with GitHub's own "Commit suggestion" request. Both requests are the ones GitHub's pull request page sends,
  * read from its bundle in Nov 2026: `page_data/create_review_comment` (`{ text, inReplyTo, submitBatch, path }`, the
- * thread's reply box) and `page_data/apply_review_suggestions` (`{ comments: [{ id }], message, expectedHeadOid }`
+ * thread's reply box) and `page_data/apply_review_suggestions` (`{ comments: [{ id, suggestionIndex }], message, expectedHeadOid }`
  * with an `Idempotency-Key`, the batch commit). GitHub refuses either for a reader who may not, and says why.
  */
 
@@ -32,7 +32,8 @@ export function reviewReplyRequest(pullPath: string, reply: { readonly text: str
 export function applySuggestionsRequest(pullPath: string, commentId: number, message: string, headOid: string, nonce: string, idempotencyKey: string): PageRequest {
   return {
     url: `${pullPath}/page_data/apply_review_suggestions`,
-    init: { method: 'POST', credentials: 'same-origin', headers: headers(nonce, { 'Idempotency-Key': idempotencyKey }), body: JSON.stringify({ comments: [{ id: commentId }], message, expectedHeadOid: headOid }) },
+    // The reply holds one suggestion block, the first; GitHub answers "requires a suggestion_index" without it.
+    init: { method: 'POST', credentials: 'same-origin', headers: headers(nonce, { 'Idempotency-Key': idempotencyKey }), body: JSON.stringify({ comments: [{ id: commentId, suggestionIndex: 0 }], message, expectedHeadOid: headOid }) },
   };
 }
 
