@@ -828,7 +828,7 @@ function deploymentsOn(crawled: Crawled): readonly Deployment[] {
 function foldGroups(meta: GeldPrMeta, settings: GeldSettings, crawled: Crawled, paired: ReadonlySet<string>, deployments: readonly Deployment[]): readonly FoldGroup[] {
   if (settings.compactTimeline === 'off' || visit.fullTimeline) return [];
   // Triggers and bots' run-status lines fold without a row; the rest of the bot comments get their rounds.
-  const triggerAnchors = new Set(crawled.comments.filter((entry) => (!entry.author.bot && isTrigger(entry, settings)) || isStatusLine(entry)).map((entry) => entry.comment.anchor));
+  const triggerAnchors = silentAnchors(meta, crawled, settings);
   const botAnchors = new Set(meta.fold.comments.filter((anchor) => !triggerAnchors.has(anchor)));
   const commentRefs = crawled.comments.map((entry) => ({ author: entry.comment.author, anchor: entry.comment.anchor, root: entry.root }));
   const groups = [...groupBotRuns(commentRefs, botAnchors, [])];
@@ -949,7 +949,13 @@ function isTrigger(entry: CrawledComment, settings: GeldSettings): boolean {
 
 /** Bot comments that say only that a run started or ended: nothing to read, so they fold without a row. */
 function isStatusLine(entry: CrawledComment): boolean {
-  return entry.author.bot && jevNow.lanes.get(entry.comment.anchor) === 'status';
+  return entry.author.bot && jevNow.lanes.get(entry.comment.anchor) === 'status' && refusalReason(entry.comment.body) === null;
+}
+
+/** Triggers and run-status lines, which fold without a row. A comment a bot's chip opens is never one: it would have no seat. */
+function silentAnchors(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings): ReadonlySet<string> {
+  const opened = new Set(meta.bots.flatMap((bot) => (bot.sourceId === undefined ? [] : [bot.sourceId])));
+  return new Set(crawled.comments.filter((entry) => !opened.has(entry.comment.anchor) && ((!entry.author.bot && isTrigger(entry, settings)) || isStatusLine(entry))).map((entry) => entry.comment.anchor));
 }
 
 /**
@@ -1878,7 +1884,7 @@ function seatRewrittenCommits<T extends { readonly node: Element; readonly kind:
 }
 
 function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings, commitRoots: readonly HTMLElement[], pushRoots: ReadonlySet<HTMLElement>, reviewEntriesAll: readonly ReviewEntry[], previewsAll: readonly Preview[]): readonly Batch[] {
-  const triggerAnchors = new Set(crawled.comments.filter((entry) => (!entry.author.bot && isTrigger(entry, settings)) || isStatusLine(entry)).map((entry) => entry.comment.anchor));
+  const triggerAnchors = silentAnchors(meta, crawled, settings);
   const botAnchors = new Set(meta.fold.comments.filter((anchor) => !triggerAnchors.has(anchor)));
   interface RoundComment {
     readonly anchor: string;
@@ -4375,7 +4381,13 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       const seat = hidingTimeline || target.startsWith(NOTE_ANCHOR_PREFIX) ? seatFor(target, meta, groups, batches) : null;
       if (seat === null) {
         // Only scroll to something the page actually holds; a folded, silently-dropped comment has no place to land.
-        if (document.getElementById(target) !== null) location.hash = target;
+        const node = document.getElementById(target);
+        if (node === null) return;
+        // The browser jumps only when the hash changes (a page opened on this comment's permalink does not), and a
+        // row's hold puts back any scroll the reader's own input did not start (Enter on the pill), so land it here.
+        releaseHold();
+        if (location.hash !== `#${target}`) location.hash = target;
+        if (node.getClientRects().length > 0) scrollRowTo(node.getBoundingClientRect().top + window.scrollY);
         return;
       }
       openRowLocal(seat.key, seat.sub);

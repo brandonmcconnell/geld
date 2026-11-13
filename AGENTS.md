@@ -281,6 +281,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Each finding is a thread opening with a severity badge ("🟠 **High** `path:line`"): the item's title skips that line (`BADGE_LINE` in cluster.ts), its rank follows it (Critical blocking, High and Medium bug, Low suggestion), and the worst open badge is the verdict's `severity` (`findingSeverity`, read for every bot).
   Macroscope resolves its own threads once a push fixes them ("No longer relevant as of <sha>"), and an open one is outstanding until then, so open threads stand through its Approvability comment, a request, a new run and a later check that found nothing new in the files it read (`ReviewBot.resolvesThreads`): before, that comment, posted seconds after the threads, took the run's place and the chip said "findings" over eight open threads.
   The Approvability comment is read from its "**Verdict:**" line (`macroscopeApprovability`): "Approved" and "Would Approve" (Preview Mode) are clean, "Needs Human Approval" is the stated verdict, and a "Would Approve" held by a review that did not run (a spend limit) is no word, since the skipped check says why.
+  A "Needs Human Approval" whose only reason is that review not running ("Approvability relies on correctness review") is no word either, so with no checks on the page (a merged pull request) the skip notice is the chip's word and what it opens, not the gate.
   An approval over a Correctness Check that counted findings keeps the count until the threads load (Macroscope approves with findings open when its blocking severity is off), and any gate verdict over a head whose review was refused (a spend limit) stands aside for the skip.
   A Check Run Agent's signed comment is passed over before the refusal and status-line readings.
   A Correctness run with nothing new to review ("All code in this push has already been reviewed.", "Diff unchanged", "No code objects were reviewed.") leaves the review before it current, not behind (`checkFoundNothingNew`), and a skipped check's reason is its own words when it has any.
@@ -734,9 +735,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   per-comment options are GitHub's own menus in the moved thread.
   Compaction (`compactTimeline`: `off | compact | minimal`) hides bot comments and low-signal events with `data-geld-folded` only;
   nothing is inserted into the timeline.
-  **Geld scrolls the page for exactly three reasons**: landing on a permalink's row once (`visit.landedAnchor`: a `beforematch` for the same anchor opens its row but moves nothing;
+  **Geld scrolls the page for exactly four reasons**: landing on a permalink's row once (`visit.landedAnchor`: a `beforematch` for the same anchor opens its row but moves nothing;
   a new hash lands again), and `keepInPlace` — toggling a row compensates whatever opened or closed above it with an instant `scrollBy` so the row under the pointer does not move, then nudges a row that would sit under GitHub's sticky header below it.
   The third is the description's cut (description.ts): when the browser scrolls inside the cut body to show a find-in-page match or a focused link below it, the cut lifts and the page scrolls by the same amount, so that text stays where the browser put it.
+  The fourth is a link from the panel into the full timeline (`onOpenAnchor` when no row holds the comment): it releases the row's hold and lands the comment under the sticky header itself, since the browser jumps only when the hash changes (a page opened on that comment's permalink stays put) and the hold put back any jump the reader's own input did not start (Enter on a pill).
   Otherwise deeplinks (`#discussion_r…`) rely on the browser's fragment navigation — the target's fold is revealed in place, its row is marked `data-viewing`, "Show in timeline" is a plain `href="#anchor"`, reply boxes are focused with `preventScroll`, and "Load more" is clicked (up to 8 rounds) when the target is not on the page yet.
   The Action (`apps/action`, `pull_request_target`, never checks out PR code) edits that one comment on review events;
   "Request a review" posts a bot's comment trigger after an inline confirm.
@@ -1689,6 +1691,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Only a lane with confidence ≥ `LANE_CONFIDENCE` (0.6) is used;
   a comment made of *known* trigger phrases is a trigger whatever Jev says (`isTrigger`: deterministic OR Jev, Jev adds the phrases the list lacks);
   a bot's `status` line folds silently like a trigger;
+  never a refusal, nor a comment a bot's chip opens (its verdict's `sourceId`, `silentAnchors`), which would leave the chip with no row to open;
   a `finding` sorts first in its round with the alert glyph;
   a thread at ≥ `DONE_THRESHOLD` (0.9) becomes `addressed` through `applyAddressed` (still an open status, shown as addressed);
   a preview deployment whose status the parser left `unknown` gets a `choice` over every preview state plus `unknown`, and Jev's answer is taken as given (`previewStatusesFrom`, no confidence gate — it was offered "unknown").

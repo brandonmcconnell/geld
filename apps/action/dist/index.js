@@ -32553,9 +32553,9 @@ function macroscopeApprovability(text) {
   if (!/^\s*(?:#{1,6}\s*)?Approvability\s*$/im.test(text)) return null;
   const verdict = /\bVerdict:?\**\s*:?\s*([^\n]*)/i.exec(text)?.[1]?.replace(/[*_`]/g, "").trim() ?? "";
   const empty = { count: null, score: null, severity: null };
-  if (/^needs human approval\b/i.test(verdict)) return { ...empty, clean: false, verdict: "needs-human" };
   const blockers = /\bneeds human approval because\b([\s\S]*)/i.exec(text)?.[1] ?? "";
   if (/\b(?:limit exceeded|limit reached|relies on correctness review|could not report|skipped for prerequisites)\b/i.test(blockers)) return { ...empty, clean: false };
+  if (/^needs human approval\b/i.test(verdict)) return { ...empty, clean: false, verdict: "needs-human" };
   if (/^(?:approved|would approve)\b/i.test(verdict)) return { ...empty, clean: true };
   return { ...empty, clean: false };
 }
