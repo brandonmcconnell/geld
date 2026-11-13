@@ -17,7 +17,7 @@
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { authorOf } from './crawler';
 import { fitPathInto } from './path-fit';
-import { ICON_CHECK_CIRCLE, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_FILE_SYMLINK_FILE, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_SYNC, ICON_X } from '../ui/icons';
+import { ICON_CHECK_CIRCLE, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_FILE_SYMLINK_FILE, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_SPINNER, ICON_SYNC, ICON_X } from '../ui/icons';
 import { ATTR_WHO } from './hovercard';
 import { ATTR_EDITED_FOR, ATTR_TIME_FOR } from './panel';
 import { dropOrphanedLoans, isTeleported, moveNode, onRestore, ownedBy, restoreAll, teleportedNodes, teleportInto } from './teleport';
@@ -512,8 +512,8 @@ function isExternalHref(href: string): boolean {
 let rerunIds = 0;
 
 /**
- * "Rerun" with the sync glyph, on the byline's right. Running: the glyph
- * spins, the words stay (so nothing shifts), the border goes transparent,
+ * "Rerun" with the sync glyph, on the byline's right. Running: GitHub's
+ * spinner takes the glyph's place, the words stay (so nothing shifts), the border goes transparent,
  * the pointer is the default one and GitHub's tooltip says "<bot> is
  * running"; a click then asks, in GitHub's own dialog, before posting the
  * trigger again. A click while idle posts at once and the control takes
@@ -523,7 +523,7 @@ function rerunControl(rerun: ChatRerun): HTMLElement {
   rerunIds += 1;
   const id = `geld-rerun-${rerunIds}`;
   const wrap = createElement('span', { class: 'geld-review__rerun-wrap' });
-  const button = createElement('button', { type: 'button', id, class: 'geld-review__rerun', ...(rerun.running ? { 'data-running': '', 'aria-describedby': `${id}-tip` } : { 'aria-label': `Rerun ${rerun.bot}` }) }, [icon(ICON_SYNC), createElement('span', {}, ['Rerun'])]);
+  const button = createElement('button', { type: 'button', id, class: 'geld-review__rerun', ...(rerun.running ? { 'data-running': '', 'aria-describedby': `${id}-tip` } : { 'aria-label': `Rerun ${rerun.bot}` }) }, [icon(ICON_SYNC), icon(ICON_SPINNER), createElement('span', {}, ['Rerun'])]);
   // GitHub's own tooltip element (the page defines `tool-tip`; an element made here is upgraded like its own), so
   // the words come up in GitHub's style. Without the definition (an Enterprise version before it) it stays sr-only.
   const tip = document.createElement('tool-tip');

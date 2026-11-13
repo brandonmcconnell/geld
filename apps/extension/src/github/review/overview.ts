@@ -4641,7 +4641,6 @@ function alignRevealWithLanding(node: Element, anchor: string, focusKey: string)
 const LEAVE_GRACE_MS = 3000;
 let leftoverTimer: number | null = null;
 
-/** Fold the description in the frame GitHub renders it, as on a switch back to the conversation tab, rather than a pass later. */
 /**
  * Before paint: the Overview's top card as the digest's view has it (set by the pass too, since GitHub draws the card,
  * and re-renders it, between passes), and the digest back if React's re-render took it. `allowed` is the controller's
@@ -4664,13 +4663,17 @@ export function dressOverviewNow(settings: GeldSettings, allowed: boolean): void
   reseatPanelNow();
 }
 
-export function foldDescriptionNow(settings: GeldSettings): void {
+/**
+ * Fold the description in the frame GitHub renders it, rather than a pass later: on a switch back to the conversation
+ * tab, and when a saved edit renders its blocks anew (`records`), which otherwise showed whole between passes.
+ */
+export function foldDescriptionNow(settings: GeldSettings, records: readonly MutationRecord[] = []): void {
   if (!settings.enabled || !settings.collapseDescription) return;
   const page = describePage(new URL(window.location.href));
   if (page.kind !== 'pull-conversation') return;
   // The full timeline shows the description whole, and that choice belongs to the visit that made it.
   if (settings.prOverview && visit.pageKey === page.stateKey && visit.fullTimeline) return;
-  if (descriptionUnshortened()) shortenDescription(true, { toolsAway: settings.prOverview });
+  if (descriptionUnshortened(records)) shortenDescription(true, { toolsAway: settings.prOverview });
 }
 
 /**
