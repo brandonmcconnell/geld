@@ -12076,7 +12076,7 @@ var init_settings_schema = __esm({
             kind: "toggle",
             key: "aiEnabled",
             label: "AI features",
-            description: "Consolidate bot findings, write the TL;DR and propose fixes with a model of your choosing. Off, nothing below is used and no request is made; on, it takes effect once a gateway URL, key and model are set.",
+            description: "Consolidate bot findings, write the TL;DR and propose fixes with a model of your choosing. Off, no request is made and its settings are hidden but kept. On, they show below, and it takes effect once a gateway URL, key and model are set.",
             popup: false,
             surfaces: ["extension"]
           },
