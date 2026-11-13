@@ -3,6 +3,8 @@ import { connection, NextResponse } from 'next/server';
 
 import { parseUsagePayload, usageCaptures } from '@geld/core';
 
+import { forwardToPostHog, postHogKey } from '@/lib/posthog-forward';
+
 /**
  * Anonymous usage statistics from installed extensions (`usage-uplink.ts`):
  * installs, updates and one ping per day. The payload is parsed again, so only
@@ -15,8 +17,6 @@ import { parseUsagePayload, usageCaptures } from '@geld/core';
  * reads as "send again".
  */
 const MAX_BODY_BYTES = 32 * 1024;
-const DEFAULT_HOST = 'https://us.i.posthog.com';
-const FORWARD_TIMEOUT_MS = 5_000;
 
 /** The body as text, or null past `limit` bytes: read as a stream, so a chunked request with no length stops there too. */
 async function readBody(request: NextRequest, limit: number): Promise<string | null> {
@@ -62,32 +62,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (payload === null) return answer(400);
   const captures = usageCaptures(payload, Date.now());
   if (captures.length === 0) return answer(204);
-  const key = process.env.POSTHOG_USAGE_KEY?.trim() ?? '';
-  if (key === '') {
+  const key = postHogKey();
+  if (key === null) {
     logCaptures(captures);
     return answer(204);
   }
-  const host = (process.env.POSTHOG_USAGE_HOST?.trim() || DEFAULT_HOST).replace(/\/+$/, '');
-  const batch = captures.map((capture) => ({
-    event: capture.event,
-    timestamp: capture.timestamp,
-    properties: { ...capture.properties, distinct_id: crypto.randomUUID(), $process_person_profile: false, $geoip_disable: true, $lib: 'geld-site' },
-  }));
-  let failure: string | null = null;
-  try {
-    const response = await fetch(`${host}/batch/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ api_key: key, batch }),
-      signal: AbortSignal.timeout(FORWARD_TIMEOUT_MS),
-    });
-    if (!response.ok) failure = `status ${response.status}`;
-  } catch (error) {
-    failure = error instanceof Error ? error.name : 'unknown';
-  }
+  const failure = await forwardToPostHog(key, captures);
   if (failure === null) return answer(204);
   // The extension keeps the batch and sends it again with its next ping; the log keeps a copy should that never come.
-  console.error(JSON.stringify({ event: 'extension_usage_forward_failed', reason: failure, count: batch.length }));
+  console.error(JSON.stringify({ event: 'extension_usage_forward_failed', reason: failure, count: captures.length }));
   logCaptures(captures);
   return answer(503);
 }

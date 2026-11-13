@@ -2251,6 +2251,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   turning the setting off drops the queue.
   The site route (`apps/site/app/api/diagnostics/route.ts`) parses and scrubs again (`parseErrorPayload`, frames must match the strict `file:line:col` shape) and writes one `{ event: 'extension_error', … }` JSON line per error to the runtime logs, nothing stored;
   a Vercel log drain carries them further.
+  It also forwards each error to PostHog as an `extension_error` event (`lib/posthog-forward.ts`, the usage route's sender: `POSTHOG_USAGE_KEY`, a random id per event, no person profile, no GeoIP), with `where`, `message`, `stack`, `count` and the version, so the "Geld · Errors" dashboard groups failures by their words.
+  **An AI refusal is reported in the provider's words** (`reportAiFailure`, background.ts, Nov 2026: "refused (400, response-format)" told nothing apart, and a schema bug read the same as a model the gateway does not serve).
+  Those words go only to the opt-in report (`queueErrorReports(logged, sent)`): Copy diagnostics, which the feedback form can attach to a public issue, keeps the short form, and a `content-policy` refusal sends its kind alone, since its words can quote the pull request.
+  A message is cut at 600 characters (`MAX_ERROR_MESSAGE`), room for a provider's refusal.
   The privacy policy's extension section (`@geld/domain/privacy.ts`) says exactly what is sent: keep it in step with `ErrorReport`.
 - **Anonymous usage statistics count installs, updates and active installs with no identifier at all** (`usageStats`, General, on by default, extension only, hidden and never sent on Firefox like `errorReports`;
   `src/lib/usage-uplink.ts`, `@geld/core/usage-report.ts`, `apps/site/app/api/usage/route.ts`).

@@ -16,7 +16,7 @@ describe('scrubErrorText', () => {
   });
 
   it('caps the length', () => {
-    expect(scrubErrorText('x'.repeat(1000))).toHaveLength(300);
+    expect(scrubErrorText('x'.repeat(1000))).toHaveLength(600);
   });
 });
 

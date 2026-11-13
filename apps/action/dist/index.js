@@ -2403,7 +2403,7 @@ var init_error_report = __esm({
     "use strict";
     ERROR_PAYLOAD_VERSION = 1;
     MAX_ERRORS_PER_PAYLOAD = 25;
-    MAX_ERROR_MESSAGE = 300;
+    MAX_ERROR_MESSAGE = 600;
     MAX_STACK_FRAMES = 12;
     MAX_FRAME = 160;
     WHERE = /^[a-z][a-z0-9:-]{0,40}$/;

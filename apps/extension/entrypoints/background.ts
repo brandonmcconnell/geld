@@ -2,7 +2,7 @@ import { isTrackerStatusRequest,readTrackerStatuses } from '../src/lib/tracker-s
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
-import { aiGatewayLabel, parseUnifiedDiff } from '@geld/core';
+import { aiGatewayLabel, errorReportFrom, parseUnifiedDiff } from '@geld/core';
 import type { Refusal } from '@geld/review';
 import { completeChat, decisionModelsPath, evaluateDecision, listModels, servesDecisions, TYPESAFE_API } from '@geld/review';
 import { apiSignedIn, createPullRequest, handleAccountMessage, handleFeedbackMessage, startAccountSync } from '../src/lib/account-service';
@@ -12,7 +12,7 @@ import { syncEnterpriseHosts } from '../src/lib/enterprise';
 import { hasGatewayPermission } from '../src/lib/ai-gateway';
 import { settingsItem } from '../src/lib/storage';
 import { diagnosticSubject, recordDiagnostic } from '../src/lib/diagnostics';
-import { installErrorCapture, reportError } from '../src/lib/error-capture';
+import { installErrorCapture } from '../src/lib/error-capture';
 import { queueErrorReports, startErrorReports } from '../src/lib/error-uplink';
 import { addUsageCount, startUsageReports } from '../src/lib/usage-uplink';
 import type { BlockedUsersResponse, FetchDiffResponse, FetchFileResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
@@ -55,14 +55,18 @@ const MAX_FILE_BYTES = 256 * 1024;
 const BUILT_IN_HOSTS = ['github.com', 'patch-diff.githubusercontent.com'];
 
 /**
- * A request the AI gateway refused, as one of Geld's errors. It says only what kind of refusal it was: the gateway's
- * words can quote the request, and Copy diagnostics and error reports can both leave the device (feedback attaches
- * the diagnostics to a public issue), so the words are shown to the reader in the panel alone. A failure with no
- * status is one of Geld's own fixed reasons (a timeout, an empty answer) and is reported as it is.
+ * A request the AI gateway refused, as one of Geld's errors. Copy diagnostics, which feedback can attach to a public
+ * issue, says only what kind of refusal it was; the error report the reader opted into also carries the gateway's own
+ * words, scrubbed like every report, so a refusal can be told apart from the next (a schema the provider rejects, a
+ * model it does not serve). A content-policy refusal sends its kind alone: its words can quote the pull request's text.
+ * A failure with no status is one of Geld's own fixed reasons (a timeout, an empty answer) and is reported as it is.
  */
 function reportAiFailure(step: string, baseUrl: string, failure: Refusal): void {
   const where = `AI ${step} via ${aiGatewayLabel(baseUrl)}`;
-  reportError('background:ai', failure.status === undefined ? `${where}: ${failure.reason}` : `${where}: refused (${failure.status}, ${failure.kind ?? 'other'})`);
+  const logged = failure.status === undefined ? `${where}: ${failure.reason}` : `${where}: refused (${failure.status}, ${failure.kind ?? 'other'})`;
+  const sent = failure.status === undefined || failure.kind === 'content-policy' ? logged : `${logged}: ${failure.reason}`;
+  const report = (message: string): ReturnType<typeof errorReportFrom> => errorReportFrom({ where: 'background:ai', kind: 'error', error: message, origin: browser.runtime.getURL('/'), at: Date.now() });
+  void queueErrorReports([report(logged)], [report(sent)]).catch(() => undefined);
 }
 
 /** github.com, its diff host, and any Enterprise servers the user configured. */
