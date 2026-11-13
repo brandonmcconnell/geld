@@ -11,7 +11,7 @@ vi.mock('../page-fetch', () => ({
   },
 }));
 
-const { applyFix, applyFixes, applySuggestionsRequest, commitMessage, lastCommentId, newestCommentId, refusalOf, reviewReplyRequest } = await import('./apply-suggestion');
+const { applyFix, applyFixes, applySuggestionsRequest, commitMessage, splitOverlapping, lastCommentId, newestCommentId, refusalOf, reviewReplyRequest } = await import('./apply-suggestion');
 
 describe('applying a fix', () => {
   const fix = { threadAnchors: ['discussion_r100'], path: 'src/a.ts', replacement: ['x'], summary: 'Fix.', title: 'Fix it', headSha: 'abc' };
@@ -107,5 +107,15 @@ describe('apply-suggestion requests', () => {
     expect(refusalOf({ message: 'Head was modified' }, 422)).toBe('Head was modified');
     expect(refusalOf({ errors: [{ message: 'Not allowed' }] }, 403)).toBe('Not allowed');
     expect(refusalOf(null, 500)).toBe('GitHub answered 500.');
+  });
+});
+
+describe('a batch’s overlapping fixes', () => {
+  const at = (key: string, path: string, start: number, end: number) => ({ key, path, start, end });
+  it('keeps the first of two fixes whose lines overlap in one file, and fixes in other files or apart', () => {
+    const fixes = [at('a', 'src/a.ts', 10, 14), at('b', 'src/a.ts', 14, 20), at('c', 'src/a.ts', 21, 22), at('d', 'src/b.ts', 10, 14)];
+    const { batch, overlapping } = splitOverlapping(fixes);
+    expect(batch.map((fix) => fix.key)).toEqual(['a', 'c', 'd']);
+    expect(overlapping.map((fix) => fix.key)).toEqual(['b']);
   });
 });
