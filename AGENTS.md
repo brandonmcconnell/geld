@@ -60,6 +60,8 @@ unset, the notes (`safari-review-notes.mjs`) name the recording the first review
 **Safari's nightly is TestFlight** (`.github/workflows/testflight.yml`, Nov 2026): a Safari extension ships inside an app, so no updater of Geld's own can replace it, but TestFlight with automatic updates on does.
 After every successful CI run on `main` it uploads the latest release's Mac app (the store flavour, built from the release tag), checking App Store Connect on a Linux runner first so a release it has costs no macOS minutes.
 Internal testers get each build once Apple has processed it, and the external groups in the repository variable `TESTFLIGHT_GROUPS` after TestFlight App Review, which every build meets since each release is its own version (at most six a day, a refusal only a warning).
+Uploading and sending to testers are separate jobs: `asc-testflight-distribute.mjs` (Linux) adds the build's What to Test notes, puts it in each external group and submits it to TestFlight App Review, each only if not done yet, so a build `publish.yml` uploaded first still reaches testers and a run that repeats does nothing.
+The group names travel as `BETA_GROUPS`, never `GROUPS`, which Bash reserves for the user's numeric group ids.
 The App Store job then finds the build uploaded and submits it as it is (`--skip_binary_upload --build_number`), unless `asc-store-version-state.mjs` says the version is already with App Review or on the store.
 geld.sh/nightly's Safari tab offers the public link once `TESTFLIGHT_URL` (`apps/site/lib/downloads.ts`) is set.
 The pattern catalog is signed and committed by CI on push (`GELD_CATALOG_PRIVATE_KEY` to sign, `CATALOG_DEPLOY_KEY` — a write deploy key — to push, with "Deploy keys" on the ruleset bypass list).

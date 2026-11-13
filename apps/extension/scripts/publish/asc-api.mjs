@@ -18,10 +18,14 @@ signer.update(`${header}.${payload}`);
 const signature = signer.sign({ key, dsaEncoding: 'ieee-p1363' }).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
 const token = `${header}.${payload}.${signature}`;
 
-export async function api(path) {
-  const response = await fetch(`https://api.appstoreconnect.apple.com/v1${path}`, { headers: { Authorization: `Bearer ${token}` } });
-  if (!response.ok) throw new Error(`App Store Connect answered ${response.status} for ${path}: ${(await response.text()).slice(0, 300)}`);
-  return response.json();
+export async function api(path, { method = 'GET', body } = {}) {
+  const response = await fetch(`https://api.appstoreconnect.apple.com/v1${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  if (!response.ok) throw new Error(`App Store Connect answered ${response.status} for ${method} ${path}: ${(await response.text()).slice(0, 300)}`);
+  return response.status === 204 ? {} : response.json();
 }
 
 export async function appIdFor(bundleId) {

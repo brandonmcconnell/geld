@@ -15,7 +15,9 @@ name: TestFlight
 #     so each build goes to TestFlight App Review first; Apple takes at most six submissions a day and testers get the
 #     build once it is approved. A refusal is a warning: the build is still uploaded and the next release goes out.
 #
-# The App Store job in publish.yml finds the build already uploaded and submits it as it is.
+# Uploading and sending to testers are separate jobs: publish.yml's App Store job may upload a release first, and the
+# build is sent to the external groups all the same (asc-testflight-distribute.mjs does only what is not done yet).
+# The App Store job in turn finds the build already uploaded and submits it as it is.
 #
 # Secrets: the Safari ones publish.yml uses (APPLE_ASC_KEY_ID, APPLE_ASC_ISSUER_ID, APPLE_ASC_PRIVATE_KEY,
 # APPLE_CERTIFICATE_P12, APPLE_CERTIFICATE_PASSWORD, APPLE_TEAM_ID). See apps/extension/store/PUBLISHING.md.
@@ -46,6 +48,7 @@ jobs:
       version: ${{ steps.pick.outputs.version }}
       build: ${{ steps.pick.outputs.build }}
       upload: ${{ steps.known.outputs.upload }}
+      distribute: ${{ steps.known.outputs.distribute }}
     steps:
       - uses: actions/checkout@v7
       - name: Pick the release
@@ -70,17 +73,21 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
           ASC_PRIVATE_KEY: ${{ secrets.APPLE_ASC_PRIVATE_KEY }}
           CERT: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          BETA_GROUPS: ${{ vars.TESTFLIGHT_GROUPS }}
         run: |
           if [ -z "$ASC_KEY_ID" ] || [ -z "$CERT" ]; then
             echo "::warning title=TestFlight::Skipped: Apple credentials are not configured (see apps/extension/store/PUBLISHING.md)."
             echo "upload=false" >> "$GITHUB_OUTPUT"
+            echo "distribute=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # Sent to external testers whether this run uploads the build or finds it there already.
+          if [ -n "$BETA_GROUPS" ]; then echo "distribute=true" >> "$GITHUB_OUTPUT"; else echo "distribute=false" >> "$GITHUB_OUTPUT"; fi
           version="${{ steps.pick.outputs.version }}"; build="${{ steps.pick.outputs.build }}"
           known=$(node apps/extension/scripts/publish/asc-build-exists.mjs sh.geld.safari "$version" "$build" || echo "unknown")
           echo "App Store Connect already has build $version ($build): $known"
           if [ "$known" = "exists" ]; then
-            echo "::notice title=TestFlight::Skipped: App Store Connect already has build $version ($build)."
+            echo "::notice title=TestFlight::App Store Connect already has build $version ($build), so it is not uploaded again."
             echo "upload=false" >> "$GITHUB_OUTPUT"
           else
             echo "upload=true" >> "$GITHUB_OUTPUT"
@@ -148,44 +155,65 @@ jobs:
             -allowProvisioningUpdates -authenticationKeyPath ~/.private_keys/AuthKey_$ASC_KEY_ID.p8 \
             -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
           ls -1 build/export
-      # pilot uploads the package and waits for Apple to process it. Internal groups with automatic distribution get
-      # it then; the external groups in TESTFLIGHT_GROUPS get it after TestFlight App Review.
-      - name: Upload and distribute
+      # pilot uploads the package; internal groups with automatic distribution get it once Apple has processed it.
+      # The distribute job sends it to external testers.
+      - name: Upload
         env:
           ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
-          GROUPS: ${{ vars.TESTFLIGHT_GROUPS }}
           TAG: ${{ needs.check.outputs.tag }}
-          GH_TOKEN: ${{ github.token }}
           FASTLANE_SKIP_UPDATE_CHECK: '1'
           FASTLANE_HIDE_CHANGELOG: '1'
         working-directory: apps/extension/safari/Geld
         run: |
           jq -n --arg k "$ASC_KEY_ID" --arg i "$ASC_ISSUER_ID" --rawfile p ~/.private_keys/AuthKey_$ASC_KEY_ID.p8 \
             '{key_id:$k, issuer_id:$i, key:$p, in_house:false}' > asc-key.json
-          # What to Test: the release's notes, within TestFlight's 4,000 characters.
-          changelog=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body | head -c 3800)
-          [ -z "$changelog" ] && changelog="Geld $TAG"
-          distribute=(--skip_submission true)
-          if [ -n "$GROUPS" ]; then distribute=(--distribute_external true --groups "$GROUPS" --notify_external_testers true); fi
           set +e
           fastlane pilot upload \
             --api_key_path asc-key.json \
             --app_identifier sh.geld.safari --app_platform osx \
             --pkg "$(ls build/export/*.pkg | head -n 1)" \
-            --changelog "$changelog" \
             --uses_non_exempt_encryption false \
-            "${distribute[@]}" 2>&1 | tee pilot.log
+            --skip_submission true 2>&1 | tee pilot.log
           code=${PIPESTATUS[0]}
+          # The App Store job uploaded it meanwhile: the distribute job still sends it.
           if [ "$code" != "0" ] && grep -qiE "bundle version must be higher|already been used|has already been uploaded|redundant binary" pilot.log; then
-            echo "::notice title=TestFlight::Skipped: App Store Connect already has build ${TAG##*build.}."
+            echo "::notice title=TestFlight::App Store Connect already has build ${TAG##*build.}."
             exit 0
           fi
-          # Uploaded, but TestFlight App Review did not take it (a review still running, the daily limit): internal
-          # testers have it, and the next release goes to external testers.
-          if [ "$code" != "0" ] && grep -qiE "Successfully uploaded|Successfully finished processing" pilot.log; then
-            echo "::warning title=TestFlight::Build uploaded, but not sent to external testers. Internal testers have it; the next release is sent as usual. See the log for Apple's answer."
-            exit 0
-          fi
-          [ "$code" = "0" ] && echo "::notice title=TestFlight::Build $TAG uploaded${GROUPS:+ and sent to $GROUPS}."
+          [ "$code" = "0" ] && echo "::notice title=TestFlight::Build $TAG uploaded."
           exit $code
+
+  distribute:
+    name: Send to external testers
+    needs: [check, upload]
+    if: always() && needs.check.result == 'success' && needs.check.outputs.distribute == 'true' && (needs.upload.result == 'success' || needs.upload.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Send the build
+        env:
+          ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.APPLE_ASC_PRIVATE_KEY }}
+          BETA_GROUPS: ${{ vars.TESTFLIGHT_GROUPS }}
+          TAG: ${{ needs.check.outputs.tag }}
+          VERSION: ${{ needs.check.outputs.version }}
+          BUILD: ${{ needs.check.outputs.build }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # What to Test: the release's notes.
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body -q .body > what-to-test.txt || true
+          [ -s what-to-test.txt ] || echo "Geld $TAG" > what-to-test.txt
+          result=$(node apps/extension/scripts/publish/asc-testflight-distribute.mjs sh.geld.safari "$VERSION" "$BUILD" "$BETA_GROUPS" what-to-test.txt)
+          echo "TestFlight: $result"
+          case "$result" in
+            sent) echo "::notice title=TestFlight::Build $VERSION ($BUILD) sent to $BETA_GROUPS for TestFlight App Review." ;;
+            already) echo "::notice title=TestFlight::Build $VERSION ($BUILD) was already sent to $BETA_GROUPS." ;;
+            refused*) echo "::warning title=TestFlight::Build $VERSION ($BUILD) is uploaded, but TestFlight App Review did not take it: ${result#refused }. Internal testers have it; the next run tries again." ;;
+            missing) echo "::warning title=TestFlight::App Store Connect has no build $VERSION ($BUILD) yet; the next run sends it." ;;
+            *) exit 1 ;;
+          esac
