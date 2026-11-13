@@ -11179,6 +11179,50 @@ div:has(> [data-geld-overview-merge]) {
   border-left-width: 0;
 }
 
+/* GitHub's merge in the recommended action is green from its first frame (`greenMerges` in overview-merge.ts does the
+   same by script): found by the action names GitHub's ButtonWithDropdown writes on both halves, under the review group's
+   hint, which is set before the content script's first await. A merge GitHub makes inactive keeps its grey. Mirrors
+   Primer React's primary variant, whose `:where()` selectors weigh one class. */
+html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']) {
+  --geld-merge-bg: var(--button-primary-bgColor-rest, #1f883d);
+  --geld-merge-border: var(--button-primary-borderColor-rest, #1f232826);
+  --geld-merge-shadow: var(--shadow-resting-small, 0 1px 1px 0 #1f23280a, 0 1px 2px 0 #1f232808);
+  border-color: var(--geld-merge-border);
+  background-color: var(--geld-merge-bg);
+  box-shadow: var(--geld-merge-shadow);
+  color: var(--button-primary-fgColor-rest, #ffffff);
+  transition: none;
+}
+
+html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']):hover {
+  --geld-merge-bg: var(--button-primary-bgColor-hover, #1c8139);
+  --geld-merge-border: var(--button-primary-borderColor-hover, #1f232826);
+}
+
+html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']):is(:active, [aria-expanded='true']) {
+  --geld-merge-bg: var(--button-primary-bgColor-active, #197935);
+  --geld-merge-shadow: var(--button-primary-shadow-selected, inset 0 1px 0 0 #002d114d);
+}
+
+html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']):focus-visible {
+  --geld-merge-shadow: inset 0 0 0 3px var(--fgColor-onEmphasis, #ffffff);
+}
+
+html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge_queue.open'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']) [class*='Button-CounterLabel'] {
+  background-color: var(--buttonCounter-primary-bgColor-rest, #002d1133) !important;
+  color: var(--button-primary-fgColor-rest, #ffffff) !important;
+}
+
+html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge_queue.open'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']) [class*='Button-Visual'] {
+  color: var(--button-primary-fgColor-rest, #ffffff);
+}
+
+/* A merge turned green by script after it painted (a repository's first load, before the hint) changes at once: Primer's
+   80ms transition showed a green background under grey words on its way. */
+button[data-geld-merge-variant] {
+  transition: none;
+}
+
 .geld-overview-merge__button--danger.btn {
   border-color: var(--button-danger-borderColor-hover, var(--borderColor-danger-emphasis, #cf222e));
   background: var(--button-danger-bgColor-hover, var(--bgColor-danger-emphasis, #cf222e));
