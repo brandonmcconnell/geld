@@ -1041,6 +1041,18 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Only rows that show ask GitHub's hovercard for their title and state, all of them once "Show N more" is open (which asks for a pass), and never more than `MAX_LOOKUPS` (32), so a description naming a hundred issues is not a hundred requests.
   A Teams message link keys on its message id, and a chat link on its query, so two messages of one thread are two rows.
   The header's "Links" row (`tracker-links.ts`) still reads bare ticket keys against a configured tracker, which this section does not.
+- **Connected services read a related link as the reader's own account** (`@geld/review/link-resolvers/`, pure, `fetch` injected).
+  A `Connection` is one account the reader added (service, label, host, secret, Atlassian email, the workspaces it opens in `covers`, and two uses: `details` on, `ai` off), never synced and never written to the gist.
+  A `LinkResolver` per service reads its own links again from `href` (the registry's key lowercases some), says which workspace a link names (`workspaceOf`: Linear's workspace key, a Jira site, a GitLab host), and answers `ok` with `LinkDetails`, `no-access`, `unsupported` or `failed` with a reason.
+  Most services answer 404 to a reader who may not see a thing, so 404 is `no-access`, and 401 is the connection itself failing (`httpFailure`).
+  `candidatesFor` asks only the connections whose `covers` include the link's workspace, or that name none, the one that last opened the same repository or workspace first (`hintsAfter`, `ConnectionHints`), since GitHub is the one service where two accounts may both see a repository.
+  `resolveLink` goes on to the next connection when one cannot open the link and reports a failure only when none did.
+  Answers are cached per link and set of candidates (`cacheKey`): 6 hours for an answer (24 for conversations), 1 hour for no access, a failure until its `Retry-After`.
+  Linear takes a personal key as written and an OAuth token as Bearer;
+  Jira Cloud pairs an API token with the account's email and reads API 3 (its description is Atlassian Document Format, `adfText`), a self-hosted Jira a personal access token on API 2;
+  GitHub reads `/repos/…/issues/N` (a pull request's `merged_at` says merged) and discussions through GraphQL, on `api.github.com` or an Enterprise host's `/api/v3`;
+  GitLab sends `PRIVATE-TOKEN` and reads a work item as an issue;
+  Bitbucket pairs an Atlassian API token with its email (or an app password with the username).
 - **The description's header reads author, time and GitHub's edit menu** (`review/description-byline.ts`, `compactDescriptionByline`, wherever the digest is, independent of `collapseDescription`): GitHub's line says "brandonmcconnell commented Nov 2 – with Cursor • edited by cursor Bot ▾" (the "– with <App>" part only to signed-in readers, as loose words and an `/apps/` link;
   signed out it is absent).
   The App's mark is already on the author's picture, so the line's direct children other than the author's `strong`, the `a.js-timestamp`, the `.js-comment-edit-history` span and GitHub's narrow-screen picture are hidden (`data-geld-desc-byline` on the line, `data-geld-desc-keep` on what stays;
