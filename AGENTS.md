@@ -833,6 +833,29 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   The comment box's writer comes from the conversation asked for by name (`?overview=false`), which a reader in the preview is otherwise not served: the parameter holds for that one request and changes no preference (checked signed in, Nov 2026).
   Not covered yet: the timeline events the Overview moved into its side panel (merges, force-pushes, review requests, cross-references;
   `page_data/timeline` has them), so the digest's "N timeline events" and mentions rows and its force-push rounds are the conversation's only.
+- **The chat sidebar** (`review/chat-sidebar.ts`, `chat-threads.ts`, the background's `lib/chat-service.ts`, `@geld/review/cursor-agents.ts`, `chat-context.ts`, `sse.ts`).
+ The digest's Geld row has a Chat button (`onChat`, the `comment-discussion` mark, its word dropped in the `icons` fit) that docks a panel to the window's right edge (`aside.geld-chat`, a child of `<body>`, so nothing goes among React's nodes).
+ From 1012px wide the page gives it room (`html[data-geld-chat-open] body { margin-right }`);
+ narrower, it covers the page.
+ It stays open across the pull request's own tabs and a settings rebuild (`syncChatToPage` from `teardownReviewOverview`), and closes with Geld or on another pull request.
+ Asked for in Nov 2026: readers could not reach the dashboard's review assistant from GitHub, and wanted to talk to the agent that wrote a pull request where they review it.
+ **One thread per conversation**: "Assistant", and one per Cursor agent that worked on the pull request, read from its related links (`cursor:` keys, `chatContextFor`) and from Cursor's `GET /v1/agents?prUrl=` under the reader's key.
+ The first agent's thread opens first when the reader's `codingAgent` is Cursor or automatic, and discovery never switches a thread the reader picked or started typing in.
+ **The assistant** streams through the reader's gateway (`streamChat`, `stream: true`, read with `SseParser`, and a gateway that answers with one JSON completion is read too), with `assistantSystemPrompt` laying out the title, description, review threads and changed files (`flowFiles`), read when each message is sent.
+ The composer's model picker starts on `aiModel` and lists the gateway's language models from `local:aiGateway`, the choice kept in `local:chatModels`, and the chat is kept per pull request in `local:assistantChats` (20 pull requests, 60 turns).
+ **A Cursor agent's thread is the agent's own conversation, natively, not an iframe** (read from Cursor's API docs and OpenAPI files, Nov 2026).
+ History is v0's `GET /v0/agents/{id}/conversation`, since v1 keeps only each run's final reply (`conversationFromRuns` is the fallback should v0 go).
+ A message is v1's `POST /v1/agents/{id}/runs`: a follow-up with the picked model, or `delivery: "steer"` with nothing else while a run is under way, when the composer reads "Steer".
+ The running turn streams from `GET /v1/agents/{id}/stream`, its tool calls as one line each (`toolLine`).
+ So a message sent here shows in the Cursor app and on cursor.com, and theirs show here.
+ The stream plays its newest run again from its start, so a reading taken while a run is under way leaves that run's words out (`turnsFromHistory`), and a finished run is read back from Cursor 800 ms after its `result`.
+ An idle agent is not watched: reopened later without its last event id, the stream would play the finished run again.
+ Its conversation is read again every 30 s while its thread shows instead, which watches anew once a run started elsewhere shows.
+ Cursor closes open streams when it deploys, so the background reopens one that ended without `done` from its last event id.
+ **The keys stay in the background** (`chat-service.ts`): the Cursor API key (`local:cursorApiKey`, the options page's "Cursor API key", which asks for `https://api.cursor.com/*` and checks the key with `GET /v1/me`) never reaches the page.
+ `geld:cursor` requests are answered only for GitHub tabs and Geld's own pages, and a port (`geld:chat`) from a GitHub tab carries the streams, pinged every 20 s so Chrome does not stop the worker mid-stream, and closed with the sidebar, which aborts what it had open.
+ The thread model (`ChatTurn`, `AgentLive`) is provider-neutral, so other agents fold in as threads of their own once their APIs can read and continue a conversation.
+ The panel reads whether the sidebar is open from `<html data-geld-chat-open>`, never by importing the sidebar: that module pulls in storage items, WXT reads storage as soon as one is defined, and every panel test without the browser stub failed on it.
 - **Flow: the changed files as a diagram of what imports what** (`review/flow.ts`, `@geld/core/file-flow.ts`).
   A "Flow" button (Lucide's `workflow` mark, `ICON_WORKFLOW`;
   Lucide marks are outlines and `svg.geld-lucide` sets `fill: none !important`, since GitHub's `.octicon { fill: currentColor }` otherwise fills their shapes solid) stands in the Geld row just left of the grouping control wherever the digest does (`prOverview`), on every pull request, one file or many: opened before the diff has loaded, the dialog says it is waiting for the diff and draws when the source arrives.
