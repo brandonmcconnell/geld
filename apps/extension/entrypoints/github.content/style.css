@@ -4512,6 +4512,15 @@ html [data-geld-person-fold-part][data-geld-person-fold-part] {
   cursor: pointer;
 }
 
+/*
+ * Static grey in every state: the icon only opens its tip. Raised above `.geld-review__help:is(:hover, …)`, the blue
+ * link #663 shipped, since an older Geld installed beside this one injects its stylesheet into the page too.
+ */
+.geld-review .geld-review__help:is(:hover, :focus, :focus-visible, :active, [aria-expanded='true']) {
+  background: none;
+  color: var(--geld-review-muted);
+}
+
 .geld-review__help-glyph {
   display: inline-flex;
 }
