@@ -1370,7 +1370,10 @@ function showStatus(state: Mounted): void {
   showInstantMerge(state);
   const overviewMerge = state.sending ? null : overviewMergeOf(actions);
   syncOverviewMerge(overviewMerge, state.overviewMethod ?? overviewMerge?.methods[0] ?? 'SQUASH', {
-    onMerge: (method, anchor) => openMergeBox(state, null, overviewMerge?.kind === 'bypass', method, anchor),
+    onMerge: (method, anchor) => {
+      if (overviewMerge?.kind === 'queue' || overviewMerge?.kind === 'auto') chooseOverviewQueue(state, overviewMerge.kind);
+      else openMergeBox(state, null, overviewMerge?.kind === 'bypass', method, anchor);
+    },
     onMethod: (method) => {
       state.overviewMethod = method;
       showStatus(state);
@@ -1816,6 +1819,14 @@ function chooseStackChoice(state: Mounted, group: StackGroup, choice: StackChoic
   }
   if (window.confirm(stackConfirmWords(group.action, choice))) void runStackChoice(state, group.action, choice);
   else if (state.statusOpener?.isConnected === true) state.statusOpener.focus({ preventScroll: true });
+}
+
+/** The Overview's "Merge when ready" or "Enable auto-merge", as the status menu's item for it goes. */
+function chooseOverviewQueue(state: Mounted, action: 'queue' | 'auto'): void {
+  const group = action === 'queue' ? stackMenuOf(state.mergeActions)?.find((candidate) => candidate.action === 'queue') : undefined;
+  const choice = group?.choices.find((candidate) => candidate.via.current);
+  if (group !== undefined && choice !== undefined) chooseStackChoice(state, group, choice);
+  else chooseStatus(state, action === 'queue' ? { status: 'queued', action, note: 'Merge when ready' } : { status: 'merged', action, note: 'Enable auto-merge' });
 }
 
 const STACK_REQUEST: { readonly [A in Exclude<StackAction, 'merge' | 'queue'>]: Request } = { ready: readyRequest, draft: draftRequest, close: closeRequest, reopen: reopenRequest };

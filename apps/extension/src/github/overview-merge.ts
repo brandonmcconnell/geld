@@ -4,38 +4,45 @@ import { subtreeSettled } from './react-hydration';
 import { stackGroups } from './status-pill';
 import { ICON_CHECK, ICON_INFO, ICON_TRIANGLE_DOWN } from './ui/icons';
 
-/** The merge GitHub would take now, offered in the Overview's recommended action: a plain merge, or an admin's past the rules. */
+/**
+ * The way forward the status menu offers, put in the Overview's recommended action: a merge, an admin's past the
+ * rules, a place in the merge queue or auto-merge.
+ */
 export interface OverviewMerge {
-  readonly kind: 'merge' | 'bypass';
-  /** GitHub's default first. */
+  readonly kind: 'merge' | 'bypass' | 'queue' | 'auto';
+  /** GitHub's default first; none for the queue and auto-merge, which merge with GitHub's default. */
   readonly methods: readonly MergeMethod[];
 }
 
 /**
- * What the Overview's recommended action may offer beside "View merge status": GitHub's own control there merges a pull
- * request in no stack and leaves a stacked one with "View merge status" alone, whatever its state (its `isStacked`
- * check, read from its bundle in Nov 2026), so a stacked pull request ready to merge showed no merge at all. A stacked
- * one is offered what GitHub's sidebar merges, it and every pull request below it, only when each of those could merge;
- * the bypass is left to a pull request in no stack, as the status menu leaves it.
+ * What the Overview's recommended action may offer beside "View merge status": whatever the status menu offers to
+ * merge, so the button is there whenever the pill's menu could merge. GitHub's own control there merges a pull request
+ * in no stack and leaves a stacked one with "View merge status" alone, whatever its state (its `isStacked` check, read
+ * from its bundle in Nov 2026), even once every pull request below it has merged (geld#678). A stack of two or more open
+ * is offered what its menu merges through this pull request, it and every one below it, only when each of those could;
+ * a stack of one, as the flat menu, anything it would offer a pull request in no stack.
  */
 export function overviewMergeOf(actions: MergeActions | null): OverviewMerge | null {
   if (actions === null) return null;
   const { box, offer } = actions;
-  if (offer === 'merge') {
-    if (box.methods.length === 0) return null;
-    if (box.stacked) {
-      if (actions.stack === null) return null;
-      const merge = stackGroups(actions.stack, box.methods[0] ?? 'SQUASH')?.find((group) => group.action === 'merge');
-      if (merge?.choices.some((choice) => choice.via.current) !== true) return null;
-    }
-    return { kind: 'merge', methods: box.methods };
+  const groups = actions.stack === null ? null : stackGroups(actions.stack, box.methods[0] ?? 'SQUASH');
+  if (groups !== null) {
+    const through = groups.find((group) => (group.action === 'merge' || group.action === 'queue') && group.choices.some((choice) => choice.via.current));
+    if (through?.action === 'queue') return { kind: 'queue', methods: [] };
+    return through === undefined || box.methods.length === 0 ? null : { kind: 'merge', methods: box.methods };
   }
-  if (offer === 'bypass' && !box.stacked) {
+  // Its merge would go through `enqueue_stack`, which takes every pull request below it, and only the stack names them.
+  if (box.stacked && actions.stack === null) return null;
+  if (offer === 'merge') return box.methods.length === 0 ? null : { kind: 'merge', methods: box.methods };
+  if (offer === 'bypass') {
     const methods = actions.bypassMethods.length > 0 ? actions.bypassMethods : box.methods;
     return methods.length === 0 ? null : { kind: 'bypass', methods };
   }
+  if (offer === 'queue' || offer === 'auto') return { kind: offer, methods: [] };
   return null;
 }
+
+const KIND_BUTTON: { readonly [K in Exclude<OverviewMerge['kind'], 'merge'>]: string } = { bypass: 'Bypass rules and merge', queue: 'Merge when ready', auto: 'Enable auto-merge' };
 
 /** The button's words for each method: GitHub's merge button calls a merge commit's "Merge pull request". */
 export const METHOD_BUTTON: { readonly [M in MergeMethod]: string } = { MERGE: 'Merge pull request', SQUASH: 'Squash and merge', REBASE: 'Rebase and merge' };
@@ -189,7 +196,7 @@ export function syncOverviewMerge(merge: OverviewMerge | null, method: MergeMeth
 
 function createControl(merge: OverviewMerge, method: MergeMethod, handlers: OverviewMergeHandlers, signature: string): HTMLElement {
   const variant = merge.kind === 'bypass' ? 'geld-overview-merge__button--danger' : 'btn-primary';
-  const label = merge.kind === 'bypass' ? 'Bypass rules and merge' : METHOD_BUTTON[method];
+  const label = merge.kind === 'merge' ? METHOD_BUTTON[method] : KIND_BUTTON[merge.kind];
   const main = createElement('button', { type: 'button', class: `btn btn-sm ${variant} BtnGroup-item geld-overview-merge__main` }, [label]);
   main.addEventListener('click', () => handlers.onMerge(method, control));
   const control = createElement('div', { class: 'BtnGroup geld-overview-merge', [OWN_UI_ATTRIBUTE]: '', [ATTR_MERGE]: signature }, [main]);

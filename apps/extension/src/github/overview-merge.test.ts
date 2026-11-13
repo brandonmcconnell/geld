@@ -38,9 +38,23 @@ const stackOf = (current: number, boxes: { readonly [number: number]: MergeBox }
 describe('overviewMergeOf', () => {
   it('offers the merge GitHub would take now, its default method first', () => {
     expect(overviewMergeOf(actions(box({ mergeable: true }), { offer: 'merge' }))).toEqual({ kind: 'merge', methods: ['SQUASH', 'MERGE', 'REBASE'] });
-    expect(overviewMergeOf(actions(box({}), { offer: 'auto' }))).toBeNull();
-    expect(overviewMergeOf(actions(box({}), { offer: 'queue' }))).toBeNull();
+    expect(overviewMergeOf(actions(box({}), { offer: null }))).toBeNull();
     expect(overviewMergeOf(null)).toBeNull();
+  });
+
+  it('offers the queue and auto-merge the status menu offers, GitHub’s own control standing in for them where it shows', () => {
+    expect(overviewMergeOf(actions(box({ canQueue: true }), { offer: 'queue' }))).toEqual({ kind: 'queue', methods: [] });
+    expect(overviewMergeOf(actions(box({ canAutoMerge: true }), { offer: 'auto' }))).toEqual({ kind: 'auto', methods: [] });
+  });
+
+  // geld#678 (Nov 2026): the pull request below it had merged, which leaves a stack of one GitHub still shows no merge for.
+  it('offers a stack of one whatever it would offer outside a stack, a merge past the rules included', () => {
+    const single = (read: MergeBox): Stack => ({ members: [member(2, true)], boxes: new Map([[2, read]]) });
+    const ready = box({ mergeable: true, stacked: true });
+    expect(overviewMergeOf(actions(ready, { offer: 'merge', stack: single(ready) }))?.kind).toBe('merge');
+    const blocked = box({ stacked: true, canBypass: true, methods: [] });
+    expect(overviewMergeOf(actions(blocked, { offer: 'bypass', bypassMethods: ['SQUASH'], stack: single(blocked) }))).toEqual({ kind: 'bypass', methods: ['SQUASH'] });
+    expect(overviewMergeOf(actions(blocked, { offer: 'bypass', bypassMethods: ['SQUASH'], stack: null }))).toBeNull();
   });
 
   // geld#486 (Nov 2026): GitHub's own control leaves a stacked pull request ready to merge with "View merge status" alone.
@@ -52,9 +66,16 @@ describe('overviewMergeOf', () => {
     expect(overviewMergeOf(actions(ready, { offer: 'merge', stack: null }))).toBeNull();
   });
 
-  it('offers an admin’s merge past the rules only outside a stack, with the methods the bypass may use', () => {
+  it('offers a stacked pull request’s place in the queue through it, as its menu does', () => {
+    const queued = box({ canQueue: true, stacked: true });
+    expect(overviewMergeOf(actions(queued, { offer: 'queue', stack: stackOf(3, { 3: queued, 2: queued, 1: queued }) }))?.kind).toBe('queue');
+    expect(overviewMergeOf(actions(queued, { offer: 'queue', stack: stackOf(3, { 3: queued, 2: box({ stacked: true }), 1: queued }) }))).toBeNull();
+  });
+
+  it('offers an admin’s merge past the rules with the methods the bypass may use, and none in a stack of several, whose menu has none', () => {
     expect(overviewMergeOf(actions(box({ methods: [] }), { offer: 'bypass', bypassMethods: ['REBASE'] }))).toEqual({ kind: 'bypass', methods: ['REBASE'] });
-    expect(overviewMergeOf(actions(box({ stacked: true }), { offer: 'bypass', bypassMethods: ['SQUASH'] }))).toBeNull();
+    const blocked = box({ stacked: true });
+    expect(overviewMergeOf(actions(blocked, { offer: 'bypass', bypassMethods: ['SQUASH'], stack: stackOf(3, { 3: blocked, 2: blocked, 1: blocked }) }))).toBeNull();
   });
 });
 
@@ -81,6 +102,15 @@ describe('syncOverviewMerge', () => {
     expect(document.querySelector('[data-geld-overview-merge]')).toBeNull();
     expect(info?.hasAttribute('aria-label')).toBe(false);
     expect(info?.querySelector('.geld-overview-merge__info')).toBeNull();
+  });
+
+  it('names the queue and auto-merge in GitHub’s words, with no method caret', () => {
+    render('<button type="button">View merge status</button>');
+    syncOverviewMerge({ kind: 'queue', methods: [] }, 'SQUASH', handlers);
+    expect(document.querySelector('.geld-overview-merge__main')?.textContent).toBe('Merge when ready');
+    expect(document.querySelector('.geld-overview-merge__caret')).toBeNull();
+    syncOverviewMerge({ kind: 'auto', methods: [] }, 'SQUASH', handlers);
+    expect(document.querySelector('.geld-overview-merge__main')?.textContent).toBe('Enable auto-merge');
   });
 
   it('draws GitHub’s own grey merge in its green, as GitHub draws it when all is clear, and puts the grey back on teardown', () => {
