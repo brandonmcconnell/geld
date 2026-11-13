@@ -18,7 +18,7 @@ vi.mock('wxt/utils/storage', () => ({
 }));
 vi.mock('wxt/browser', () => ({ browser: { runtime: { sendMessage: async () => undefined } } }));
 
-const { adoptOwnReplies, aiStateFor, loadAiForPage, pendingReplyFor, triageSuggestions } = await import('./ai');
+const { adoptOwnReplies, aiStateFor, loadAiForPage, markSuggestionPosted, pendingReplyFor, triageSuggestions } = await import('./ai');
 
 const at = '2026-11-13T14:24:02Z';
 const finding: RawComment = { anchor: 'discussion_r100', kind: 'thread', author: 'greptile-apps[bot]', body: 'The caret switch is never tested.', createdAt: at, path: 'src/a.test.ts', line: 179 };
@@ -56,9 +56,60 @@ describe('Geld’s own suggestion reply in a fix’s thread', () => {
     expect(triageSuggestions(meta, DEFAULT_SETTINGS)[0]?.behind).toBe('comments');
     await adoptOwnReplies(withReply, 'brandonmcconnell');
     expect(triageSuggestions(meta, DEFAULT_SETTINGS)[0]?.behind).toBeNull();
+    // Adopted from the page it is Geld's, but not the one to commit: the page cannot say which fix it carries.
     const item = meta.items[0];
-    expect(item === undefined ? null : pendingReplyFor(finding.anchor, item)).toBe(200);
+    expect(item === undefined ? null : pendingReplyFor(finding.anchor, item)).toBeNull();
     expect(adoptOwnReplies(withReply, 'brandonmcconnell')).toBeNull();
+  });
+
+  it('keeps the TL;DR current over a thread only Geld has written in since', async () => {
+    await loadRun();
+    const settings = { ...DEFAULT_SETTINGS, aiEnabled: true, aiBaseUrl: 'https://ai-gateway.vercel.sh', aiModel: 'anthropic/claude-sonnet-5' };
+    const withReply: RawComment[] = [{ ...finding, threadAnchors: [{ anchor: finding.anchor, kind: 'thread', author: finding.author, body: finding.body }, geldReply] }];
+    const meta = metaFor(withReply);
+    expect(aiStateFor(meta, withReply, settings).kind).toBe('stale');
+    await adoptOwnReplies(withReply, 'brandonmcconnell');
+    expect(aiStateFor(meta, withReply, settings).kind).toBe('current');
+    const answered: RawComment[] = [{ ...withReply[0] ?? finding, threadAnchors: [...(withReply[0]?.threadAnchors ?? []), { anchor: 'discussion_r300', kind: 'thread', author: 'someone-else', body: 'Not this way.' }] }];
+    expect(aiStateFor(metaFor(answered), answered, settings).kind).toBe('stale');
+  });
+
+  it('names a new commit as well as new comments, since the commit is why the fix is greyed out', async () => {
+    await loadRun();
+    const settings = { ...DEFAULT_SETTINGS, aiEnabled: true, aiBaseUrl: 'https://ai-gateway.vercel.sh', aiModel: 'anthropic/claude-sonnet-5' };
+    const answered: RawComment[] = [{ ...finding, threadAnchors: [{ anchor: finding.anchor, kind: 'thread', author: finding.author, body: finding.body }, { anchor: 'discussion_r300', kind: 'thread', author: 'coderabbitai[bot]', body: 'Agreed, the switch is untested.' }] }];
+    const pushed = { ...metaFor(answered), headSha: 'head2' };
+    expect(aiStateFor(pushed, answered, settings)).toMatchObject({ kind: 'stale', reason: 'both' });
+    expect(aiStateFor({ ...metaFor([finding]), headSha: 'head2' }, [finding], settings)).toMatchObject({ kind: 'stale', reason: 'commits' });
+  });
+
+  it('leaves another person’s reply, or one in other words, as news', async () => {
+    await loadRun();
+    const others: RawComment[] = [
+      { ...finding, threadAnchors: [{ ...geldReply, author: 'someone-else' }, { anchor: 'discussion_r300', kind: 'thread', author: 'brandonmcconnell', body: 'I disagree, see the other test.' }] },
+    ];
+    expect(adoptOwnReplies(others, 'brandonmcconnell')).toBeNull();
+    expect(triageSuggestions(metaFor(others), DEFAULT_SETTINGS)[0]?.behind).toBe('comments');
+  });
+
+  it('commits the reply Geld recorded posting, and only while it stands in the thread', async () => {
+    await loadRun();
+    await markSuggestionPosted(finding.anchor, { anchor: geldReply.anchor, id: 200 });
+    const withReply = metaFor([{ ...finding, threadAnchors: [{ anchor: finding.anchor, kind: 'thread', author: finding.author, body: finding.body }, geldReply] }]);
+    expect(triageSuggestions(withReply, DEFAULT_SETTINGS)[0]?.behind).toBeNull();
+    const standing = withReply.items[0];
+    const gone = metaFor([finding]).items[0];
+    expect(standing === undefined ? null : pendingReplyFor(finding.anchor, standing)).toBe(200);
+    expect(gone === undefined ? null : pendingReplyFor(finding.anchor, gone)).toBeNull();
+  });
+
+  it('still finds the fix behind a new commit once Geld has replied in its thread', async () => {
+    await loadRun();
+    const settings = { ...DEFAULT_SETTINGS, aiEnabled: true, aiBaseUrl: 'https://ai-gateway.vercel.sh', aiModel: 'anthropic/claude-sonnet-5' };
+    const withReply: RawComment[] = [{ ...finding, threadAnchors: [{ anchor: finding.anchor, kind: 'thread', author: finding.author, body: finding.body }, geldReply] }];
+    await adoptOwnReplies(withReply, 'brandonmcconnell');
+    // Geld's reply is posted as the reader: the thread is still a bot's finding, and its fix is behind the commit.
+    expect(aiStateFor({ ...metaFor(withReply), headSha: 'head2' }, withReply, settings)).toMatchObject({ kind: 'stale', reason: 'commits' });
   });
 
   it('keeps the TL;DR current over a thread only Geld has written in since', async () => {

@@ -291,7 +291,13 @@ export function threadKeyOf(item: ReviewItem): string {
 
 /** Open bot findings on a review thread, the ones a fix can be proposed for. People's requests stay theirs to settle. */
 function suggestionCandidates(items: readonly ReviewItem[]): readonly ReviewItem[] {
-  return items.filter((item) => isOpenStatus(item.status) && isBotOnly(item) && item.path !== undefined && threadKeyOf(item) !== '');
+  return items.filter((item) => isOpenStatus(item.status) && botOnlyBesideGeld(item) && item.path !== undefined && threadKeyOf(item) !== '');
+}
+
+/** Only bots wrote in the thread, Geld's own suggestion replies aside: they are posted as the reader, but are not a person's request. */
+function botOnlyBesideGeld(item: ReviewItem): boolean {
+  const own = new Set(suggestionFor(threadKeyOf(item))?.replies ?? []);
+  return isBotOnly(own.size === 0 ? item : { ...item, sources: item.sources.filter((source) => !own.has(source.anchor)) });
 }
 
 function suggestionFor(threadKey: string): StoredSuggestion | undefined {
@@ -660,8 +666,8 @@ const GELD_REPLY = /^Suggested fix from Geld triage\b/;
 
 /**
  * Geld's own suggestion replies in its fixes' threads, read from the page: a reply posted on another device, or before
- * replies were recorded, is Geld's too, so it makes neither the fix nor the TL;DR read as behind. The reader's reply in
- * Geld's words is the one Apply posted; one not yet committed is committed by the next Apply rather than posted again.
+ * replies were recorded, is Geld's too, so it makes neither the fix nor the TL;DR read as behind. Only a reply Geld
+ * recorded posting (`markSuggestionPosted`) is committed by the next Apply; one adopted here is not.
  * Null when there was nothing to adopt, else the store's write.
  */
 export function adoptOwnReplies(comments: readonly RawComment[], viewer: string): Promise<void> | null {
@@ -676,15 +682,12 @@ export function adoptOwnReplies(comments: readonly RawComment[], viewer: string)
       .filter((peer) => !own.has(peer.anchor) && peer.author.toLowerCase() === viewer.toLowerCase() && GELD_REPLY.test(peer.body.trim()));
     if (peers.length === 0) continue;
     const found = peers.map((peer) => peer.anchor);
-    // Only a reply carrying this fix's lines can be committed for it: a triage since may have written another.
-    const lines = (entry.replacement ?? []).map((line) => line.trim()).filter((line) => line !== '');
-    const carrying = peers.filter((peer) => entry.replacement !== null && lines.every((line) => peer.body.includes(line))).at(-1);
-    const latest = Number(/^discussion_r(\d+)$/.exec(carrying?.anchor ?? '')?.[1] ?? Number.NaN);
+    // Marked as Geld's, never taken as the one to commit: the page shows a suggestion as rendered, old and new lines
+    // together, so which fix it carries cannot be told, and a triage since may have written another.
     suggestions.set(entry.key, {
       ...entry,
       ...(entry.sources === undefined ? {} : { sources: [...entry.sources, ...found] }),
       replies: [...own, ...found],
-      ...(entry.state === 'open' && entry.pendingReply === undefined && Number.isInteger(latest) ? { pendingReply: latest } : {}),
     });
     for (const anchor of found) seen.add(anchor);
     changed = true;

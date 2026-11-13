@@ -558,7 +558,8 @@ export interface PanelHandlers {
   /** Commit the fix to the pull request's branch, and with `resolve` resolve every thread it answers. */
   readonly onApplySuggestion: (key: string, resolve: boolean) => void;
   readonly onDiscardSuggestion: (key: string) => void;
-  readonly onCopyPath: (path: string) => void;
+  /** Resolves whether the path reached the clipboard. */
+  readonly onCopyPath: (path: string) => Promise<boolean>;
   /**
    * Hand a finding (by its thread's key) on: `comment` posts what starts the agent `id`, `open` opens it in the open
    * target `id` (`OPEN_TARGETS`), `copy` copies the task for any other.
@@ -841,18 +842,27 @@ function withTip(button: HTMLElement, words: string): HTMLElement {
   return createElement('span', { class: `${PANEL_CLASS}__tipped` }, [button, tip]);
 }
 
+/** A flashed tooltip's own words and the timer putting them back, so a second flash neither keeps nor restores its own. */
+const flashes = new WeakMap<Element, { readonly words: string; readonly timer: number }>();
+
 /** Say something in place of a tooltip's words for a moment ("Copied"), then put them back. */
 function flashTip(tipped: HTMLElement, words: string): void {
   const tip = tipped.querySelector('tool-tip');
   const target = tip ?? tipped;
-  const before = tip === null ? tipped.title : tip.textContent;
-  if (tip === null) tipped.title = words;
-  else tip.textContent = words;
-  window.setTimeout(() => {
-    if (!target.isConnected) return;
-    if (tip === null) tipped.title = before;
-    else tip.textContent = before;
+  const read = (): string => (tip === null ? tipped.title : (tip.textContent ?? ''));
+  const write = (text: string): void => {
+    if (tip === null) tipped.title = text;
+    else tip.textContent = text;
+  };
+  const earlier = flashes.get(target);
+  if (earlier !== undefined) window.clearTimeout(earlier.timer);
+  const own = earlier?.words ?? read();
+  write(words);
+  const timer = window.setTimeout(() => {
+    flashes.delete(target);
+    if (target.isConnected) write(own);
   }, 1500);
+  flashes.set(target, { words: own, timer });
 }
 
 /**
@@ -1541,8 +1551,7 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
     const copy = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__triage-fix-copy`, [ATTR_FOCUS]: `fix-copy:${fix.key}` }, [icon(ICON_COPY)]);
     const tipped = withTip(copy, 'Copy path');
     copy.addEventListener('click', () => {
-      handlers.onCopyPath(fix.path);
-      flashTip(tipped, 'Copied');
+      void handlers.onCopyPath(fix.path).then((copied) => flashTip(tipped, copied ? 'Copied' : 'Copy failed'));
     });
     place.append(tipped);
   }
@@ -1599,18 +1608,30 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
   return row;
 }
 
-/** Each shown line's syntax pieces: added and unchanged lines read as the new file, removed ones as the old. */
+/**
+ * Each shown line's syntax pieces. Each side is read with its unchanged lines, the new file (unchanged and added) and
+ * the old (unchanged and removed), so a comment or string an unchanged line opens colours both alike; unchanged lines
+ * take the new side's colours, removed ones the old's. A gap row starts afresh: the lines it hides are not there.
+ */
 function diffSyntax(fix: TriageSuggestionView): ReadonlyMap<DiffLine, readonly SyntaxPiece[]> {
   const language = snippetLanguage(fix.path);
   const pieces = new Map<DiffLine, readonly SyntaxPiece[]>();
   if (language === null) return pieces;
-  const shown = fix.diff.filter((row): row is DiffLine => row.kind !== 'gap');
-  for (const side of [shown.filter((line) => line.kind !== 'del'), shown.filter((line) => line.kind === 'del')]) {
+  const blocks: DiffLine[][] = [[]];
+  for (const row of fix.diff) {
+    if (row.kind === 'gap') blocks.push([]);
+    else blocks.at(-1)?.push(row);
+  }
+  const paint = (side: readonly DiffLine[], keep: (line: DiffLine) => boolean): void => {
     const painted = highlightLines(side.map((line) => line.text), language);
     side.forEach((line, index) => {
       const found = painted?.[index];
-      if (found !== undefined) pieces.set(line, found);
+      if (found !== undefined && keep(line)) pieces.set(line, found);
     });
+  };
+  for (const block of blocks) {
+    paint(block.filter((line) => line.kind !== 'del'), () => true);
+    paint(block.filter((line) => line.kind !== 'add'), (line) => line.kind === 'del');
   }
   return pieces;
 }
