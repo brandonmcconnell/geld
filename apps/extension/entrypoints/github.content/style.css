@@ -3086,6 +3086,15 @@ html[data-geld-top-card='folded'] [class*='CondensedForYouContainer']:not(:has(>
   display: none !important;
 }
 
+/*
+ * The loading row's 40px skeleton stands where a 42px status icon lands, and a two-line row (title and subtext) is
+ * that icon's height: sized to the icon, the loading row is the 66px it most often becomes, its words still centred.
+ */
+html[data-geld-top-card] [class*='CondensedForYouContainer'] [data-testid='for-you-item-row'][data-item-id='loading'] [class*='Visual'] > [class*='SkeletonAvatar'] {
+  width: 42px !important;
+  height: 42px !important;
+}
+
 /* While GitHub streams the card a `<template>` leads it, so its status row is not `:first-child` and takes a second top border. */
 html[data-geld-top-card] [class*='CondensedForYouContainer'] > template:first-child + section {
   border-top-width: 0 !important;
