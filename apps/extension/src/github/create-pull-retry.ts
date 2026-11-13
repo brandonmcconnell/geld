@@ -5,7 +5,6 @@ import type { ApiSignedInMessage, CreatePullMessage } from '../lib/messages';
 import { isCreatePullOutcome } from '../lib/messages';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { pageFetch } from './page-fetch';
-import { brandMark } from './review/brand';
 import { ICON_CHECK, ICON_COPY, ICON_SPINNER } from './ui/icons';
 import { attachTooltipMessage } from './ui/tooltip';
 
@@ -273,9 +272,9 @@ function mount(failure: CreateFailure, form: HTMLFormElement): Mounted {
 /** Mirrors the stylesheet's phone breakpoint, where the buttons leave the flash's top row for its foot. */
 const PHONE = '(max-width: 543.98px)';
 
-/** A button led by Geld's emblem, whose tooltip says what it does. */
+/** A plain button, as GitHub's own beside it are, whose tooltip says what it does. */
 function retryButton(label: string, tooltip: string, signal: AbortSignal): HTMLButtonElement {
-  const button = createElement('button', { type: 'button', class: 'btn btn-sm geld-pull-retry__try' }, [brandMark('geld-pull-retry__mark'), createElement('span', {}, [label])]);
+  const button = createElement('button', { type: 'button', class: 'btn btn-sm geld-pull-retry__try' }, [createElement('span', {}, [label])]);
   attachTooltipMessage(button, tooltip, signal);
   return button;
 }
