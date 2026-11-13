@@ -2550,11 +2550,13 @@ Ranges are refreshed when source nodes change and cleared on teardown.
 
 ## Code review bots
 
-Two review bots are installed on the repository, both **manual-trigger only** (community PRs are reviewed on request, not on every push): **Cursor Bugbot** — comment `bugbot run` (or `cursor review`) on the PR;
+Three review bots are installed on the repository, all **manual-trigger only** (community PRs are reviewed on request, not on every push): **Cursor Bugbot** — comment `bugbot run` (or `cursor review`) on the PR;
 repo settings in `.cursor/config/bugbot.yaml` (read from the default branch only), review guidance in `.cursor/BUGBOT.md`, the "run only when mentioned" switch lives in the Cursor dashboard per repository.
 **Greptile** — comment `@greptileai`;
 config in `greptile.json` (`skipReview: "AUTOMATIC"` is the manual-only switch;
 note Greptile reads the file from the PR's *source* branch).
+**CodeRabbit** — comment `@coderabbitai review`;
+config in `.coderabbit.yaml` (`reviews.auto_review.enabled: false` is the manual-only switch, and the file overrides the CodeRabbit dashboard's settings for this repository).
 `.github/CODEOWNERS` makes those files owner-reviewed.
 Keep `BUGBOT.md` in step with this file when an invariant changes.
 
