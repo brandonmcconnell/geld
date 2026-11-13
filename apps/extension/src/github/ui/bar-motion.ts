@@ -17,6 +17,12 @@ const ATTR_KIND = 'data-geld-ghost-kind';
 const ATTR_SEEN = 'data-geld-ghost-seen';
 /** Out of the layout for a moment, to read where the title stood without it (the stylesheet hides it). */
 const ATTR_HOLD = 'data-geld-bar-hold';
+/**
+ * On the inner row while the block slides, clipping it at the block's resting left edge (`--geld-bar-edge`): the slide
+ * ends with the ghosts just left of that edge, and the entering parts start there, which the bar's padding showed.
+ */
+const ATTR_CLIP = 'data-geld-bar-clip';
+const EDGE_PROPERTY = '--geld-bar-edge';
 /** Past every exit: a ghost goes then even when nothing removed it (a hidden tab, a style change). */
 const GHOST_MS = 600;
 /**
@@ -115,6 +121,7 @@ let lastParts: Map<PartKind, Element> | null = null;
 let running: Animation[] = [];
 /** The block the running slide carries. */
 let carried: readonly Element[] = [];
+let clipped: HTMLElement | null = null;
 
 function partsOf(inner: HTMLElement): Map<PartKind, Element> {
   const parts = new Map<PartKind, Element>();
@@ -147,6 +154,19 @@ function cancelRunning(): void {
   for (const animation of running) animation.cancel();
   running = [];
   carried = [];
+  clipped?.removeAttribute(ATTR_CLIP);
+  clipped?.style.removeProperty(EDGE_PROPERTY);
+  clipped = null;
+}
+
+/** Clip the row at its block's left edge as it stands at rest, the ghosts and newcomers in place. */
+function clipAtRest(inner: HTMLElement, block: readonly HTMLElement[]): void {
+  const first = block[0];
+  if (first === undefined) return;
+  const edge = first.getBoundingClientRect().left - inner.getBoundingClientRect().left;
+  inner.style.setProperty(EDGE_PROPERTY, `${Math.max(0, edge)}px`);
+  inner.setAttribute(ATTR_CLIP, '');
+  clipped = inner;
 }
 
 /**
@@ -190,17 +210,17 @@ export function animateBarGroup(): void {
   // Taking a running exit over, its ghosts are still on their way out.
   if (removed.length === 0 && (moved || ghosts.length === 0)) {
     for (const ghost of ghosts) ghost.remove();
-    slide(blockOf(inner), seen - anchor.getBoundingClientRect().left, 0, BAR_ENTER, null);
+    slide(inner, seen - anchor.getBoundingClientRect().left, 0, BAR_ENTER, null);
     return;
   }
   const withGhosts = anchor.getBoundingClientRect().left;
   hold(ghosts, true);
   const without = anchor.getBoundingClientRect().left;
   hold(ghosts, false);
-  slide(blockOf(inner), seen - withGhosts, without - withGhosts, BAR_LEAVE, ghosts);
+  slide(inner, seen - withGhosts, without - withGhosts, BAR_LEAVE, ghosts);
 }
 
-function slide(block: readonly HTMLElement[], from: number, to: number, timing: typeof BAR_ENTER | typeof BAR_LEAVE, ghosts: readonly HTMLElement[] | null): void {
+function slide(inner: HTMLElement, from: number, to: number, timing: typeof BAR_ENTER | typeof BAR_LEAVE, ghosts: readonly HTMLElement[] | null): void {
   const done = (): void => {
     // In the frame the block arrives, before paint: the ghosts go as the layout closes up under the same offset.
     for (const ghost of ghosts ?? []) ghost.remove();
@@ -210,6 +230,8 @@ function slide(block: readonly HTMLElement[], from: number, to: number, timing: 
     done();
     return;
   }
+  const block = blockOf(inner);
+  clipAtRest(inner, block);
   carried = block;
   running = block.map((element) => {
     const animation = element.animate([{ translate: `${from}px 0` }, { translate: `${to}px 0` }], { ...timing, fill: 'forwards' });
