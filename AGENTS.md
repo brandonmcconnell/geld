@@ -2502,6 +2502,13 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
   **A selected logo reads like selected text** (`components/brand-selection.tsx`, `[data-brand-logo]`): `::selection` never paints an image (Chrome only tints over it, and a `filter` on the image inverts the tint too), so a `selectionchange` listener marks every logo a selection range intersects `data-selected`, and globals.css turns the image's own tint off, gives the wrapper the selection's background and inverts the image.
   Ranges, not `Selection.containsNode`, which in Chrome answers false for a node with no text.
   The digest's emblem does the same on GitHub (`review/brand.ts`), with the browser's `Highlight`/`HighlightText`, since GitHub sets no selection style.
+- **geld.sh measures visitors only after they opt in** (`components/privacy-controls.tsx`, `components/site-analytics.tsx`, `lib/site-analytics.ts`, Nov 2026): the dashboard's c15t setup (offline, `necessary` and `measurement`, Global Privacy Control a refusal), with a banner at the bottom left ("Your work.
+  Your choices.", Opt in to all · Necessary only · Manage) and Privacy settings in the footer.
+  Only with measurement allowed is `posthog-js` fetched at all (a dynamic import), started with autocapture, a page view per client navigation (`history_change`), page leave with scroll depth, the referrer and GeoIP region PostHog adds, and an anonymous id in `localStorage+cookie`;
+  no session replay, no surveys, no person profiles.
+  A withdrawn choice stops capture at once (`opt_out_capturing`).
+  It needs `NEXT_PUBLIC_POSTHOG_KEY` (and optionally `NEXT_PUBLIC_POSTHOG_HOST`) at build time: without a key the site asks for nothing and loads nothing, which is what previews and local builds do.
+  PostHog skips headless browsers as bots, so a check with Puppeteer launches Chrome with `--disable-blink-features=AutomationControlled` and an ordinary user agent.
 - **`/feedback` is for installs from before the extension's own feedback form.**
   Older builds link `https://www.geld.sh/feedback?version=…&browser=…&page=…`, and `app/feedback/route.ts` forwards to a new issue with `.github/ISSUE_TEMPLATE/feedback.yml` pre-filled.
   Current builds send feedback from the extension itself (see "Feedback stays in the extension").
