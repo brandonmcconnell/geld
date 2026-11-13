@@ -43,6 +43,7 @@ import { shapeMark } from './mark-shape';
 import { brandMark, syncNewBrandMarks, watchBrandScale, watchBrandSelection } from './brand';
 import { inlineText } from './inline-text';
 import { fitPathInto } from './path-fit';
+import { splitOverlapping } from './apply-suggestion';
 import { relativeTimeElement } from './time';
 import { DIGEST_VIEW_OPTIONS, digestViewLabel, viewChoice, viewLabel } from './digest-view';
 import { takeViewFocus } from './view-focus';
@@ -1534,11 +1535,13 @@ function bulkActions(triage: TriageView, handlers: PanelHandlers): HTMLElement |
   const open = triage.suggestions.filter((fix) => fix.state === 'open');
   if (open.length < 2) return null;
   const busy = open.some((fix) => fix.busy !== null);
-  const ready = open.filter((fix) => fix.kind === 'fix' && fix.current && fix.busy === null).map((fix) => fix.key);
+  const { batch, overlapping } = splitOverlapping(open.filter((fix) => fix.kind === 'fix' && fix.current && fix.busy === null));
+  const ready = batch.map((fix) => fix.key);
   const discard = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__triage-fix-discard-btn`, title: `Discard all ${open.length} findings from the triage`, [ATTR_FOCUS]: 'fix-discard-all', ...(busy ? { disabled: '' } : {}) }, [icon(ICON_X), 'Discard all']);
   discard.addEventListener('click', () => handlers.onDiscardAll(open.map((fix) => fix.key)));
   const what = triage.resolves ? 'Post each fix as a suggestion, commit them together, and resolve their threads' : 'Post each fix as a suggestion and commit them together';
-  const title = ready.length === 0 ? 'No fix here fits the head commit. Triage again first.' : `${what} (${ready.length} ${ready.length === 1 ? 'fix' : 'fixes'})`;
+  const left = overlapping.length === 0 ? '' : `. ${overlapping.length === 1 ? 'One fix overlaps' : `${overlapping.length} fixes overlap`} another’s lines and waits for the next triage`;
+  const title = ready.length === 0 ? 'No fix here fits the head commit. Triage again first.' : `${what} (${ready.length} ${ready.length === 1 ? 'fix' : 'fixes'})${left}`;
   const fixAll = createElement('button', { type: 'button', class: 'btn btn-sm btn-primary', title, [ATTR_FOCUS]: 'fix-all', ...(busy || ready.length === 0 ? { disabled: '' } : {}), ...(busy ? { 'aria-busy': 'true' } : {}) }, [
     busy ? 'Fixing…' : 'Fix all',
     ...(ready.length > 0 && !busy ? [createElement('span', { class: 'Counter' }, [String(ready.length)])] : []),

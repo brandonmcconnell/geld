@@ -25,7 +25,7 @@ import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import { adoptOwnReplies, aiPending, aiStateFor, clearAiForPage, discardSuggestion, jevDecisionsFor, loadAiForPage, markSuggestionApplied, markSuggestionPosted, pendingReplyFor, previewDecisionKey, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi, withJevDone } from './ai';
 import type { AiState, SuggestionSource, SuggestionTarget } from './ai';
-import { applyFixes } from './apply-suggestion';
+import { applyFixes, splitOverlapping } from './apply-suggestion';
 import { agentComment, agentLikely, agentsInRelatedLinks, agentTask, CODING_AGENTS, codingAgentById, diffHunks, lineDiff, OPEN_TARGETS, openTargetById, openTargetLikely, recommendAgents } from '@geld/review';
 import type { CodingAgent, OpenTarget } from '@geld/review';
 import { relatedLinksOnPage } from '../related-links';
@@ -2617,6 +2617,8 @@ function targetIcon(target: OpenTarget): string | null {
   return target.appId === undefined ? null : `https://avatars.githubusercontent.com/in/${target.appId}?s=32&v=4`;
 }
 
+const OVERLAP_WORDS = 'Its lines overlap another fix’s, so it was left out of that commit. Triage again to fit it to the new code.';
+
 /** The triage card's reading: the fixes to show, who to hand the rest to, and what this visit did with them. */
 function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, prAuthor: string | null, knownBots: ReadonlySet<string>): TriageView | null {
   if (ai.kind !== 'current' && ai.kind !== 'stale' && ai.kind !== 'failed' && ai.kind !== 'running') return null;
@@ -3936,13 +3938,15 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   /** Fix commits the triage's fixes, several in one commit, and resolves their threads unless the reader or the repository opts out. */
   const runFixes = (keys: readonly string[]): void => {
     const listed = triageSuggestions(meta, settings);
-    const picked = keys.flatMap((key) => {
+    const candidates = keys.flatMap((key) => {
       const found = listed.find((entry) => entry.entry.key === key);
       const replacement = found?.entry.replacement ?? null;
-      return found === undefined || replacement === null || !found.current || found.entry.state === 'applied' || visit.triage.busy.has(key) ? [] : [{ key, found, replacement }];
+      return found === undefined || replacement === null || !found.current || found.entry.state === 'applied' || visit.triage.busy.has(key) ? [] : [{ key, found, replacement, path: found.entry.path, start: found.entry.start, end: found.entry.end }];
     });
+    const { batch: picked, overlapping } = splitOverlapping(candidates);
     if (picked.length === 0) return;
     const triage = visit.triage;
+    for (const { key } of overlapping) triage.errors.set(key, OVERLAP_WORDS);
     const resolves = settings.resolveOnFix && repoBots.resolveOnFix !== false;
     for (const { key } of picked) {
       triage.busy.set(key, 'fix');

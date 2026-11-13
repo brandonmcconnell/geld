@@ -122,6 +122,20 @@ export type ApplyResult =
    */
   | { readonly ok: false; readonly reason: string; readonly posted: boolean; readonly reply?: { readonly anchor: string; readonly id: number } };
 
+/**
+ * A batch's fixes and the ones left out of it: a fix replaces its whole line range, so two whose ranges in one file
+ * overlap would each rewrite the other's lines. The first of them goes in the batch; the rest wait for their own run.
+ */
+export function splitOverlapping<T extends { readonly path: string; readonly start: number; readonly end: number }>(fixes: readonly T[]): { readonly batch: readonly T[]; readonly overlapping: readonly T[] } {
+  const batch: T[] = [];
+  const overlapping: T[] = [];
+  for (const fix of fixes) {
+    const clash = batch.some((taken) => taken.path === fix.path && fix.start <= taken.end && taken.start <= fix.end);
+    (clash ? overlapping : batch).push(fix);
+  }
+  return { batch, overlapping };
+}
+
 /** One fix's suggestion reply: the one Geld posted before, else a new one. A refusal is the fix's result. */
 async function replyFor(pullPath: string, fix: FixToApply): Promise<number | ApplyResult> {
   const inReplyTo = lastCommentId(fix.threadAnchors);
