@@ -3833,12 +3833,6 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   gap: 8px;
 }
 
-/* Discard reads as a quiet link, muted until the pointer is on it, as GitHub's secondary links do. */
-/* Discard stands at the left, away from Apply and Apply and resolve, as GitHub's secondary button with its X. */
-.geld-review__triage-fix-discard-btn {
-  margin-right: auto;
-}
-
 /* Fix all and Discard all stand under the list, on its edges. */
 .geld-review__triage-bulk {
   margin: 0 16px 8px 38px;
