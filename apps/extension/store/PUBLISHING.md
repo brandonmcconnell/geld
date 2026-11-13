@@ -21,7 +21,7 @@ Nothing fails silently: a skipped store is a warning annotation on the run, and 
 | Chrome Web Store | uploads the zip, publishes to the default (public) target | hours–days |
 | Edge Add-ons | uploads to the draft, submits it with the notes | 1–7 days |
 | Firefox AMO | `web-ext sign --channel listed` with the sources zip | usually minutes (auto-approval) |
-| Safari | macOS runner: `safari:sync` (build number = CI run number, App Store version `major.minor.<build>`), `xcodebuild archive` + export with cloud signing, then `fastlane deliver` uploads the `.pkg`, creates that App Store version and attaches the build, sets the release notes, the listing text from `store/listing/` and the App Review notes (plus the recording, when configured) and **submits for review**; skipped while a submission is waiting for or in review (checked with a read-only API call first), never withdrawing it | 1–2 days |
+| Safari | macOS runner: `safari:sync` (build number = CI run number, App Store version `major.minor.<build>`), `xcodebuild archive` + export with cloud signing, then `fastlane deliver` uploads the `.pkg` (or, when `testflight.yml` has already uploaded the release for TestFlight, names that build), creates that App Store version and attaches the build, sets the release notes, the listing text from `store/listing/` and the App Review notes (plus the recording, when configured) and **submits for review**; skipped while a submission is waiting for or in review (checked with a read-only API call first), never withdrawing it | 1–2 days |
 
 ## One-time setup
 
@@ -110,6 +110,25 @@ When App Review asks for more information:
 5. If only information or screenshots changed, Apple permits resubmitting the same build. If the containing app, extension, permissions, or behavior changed, upload and select a new build.
 
 The publish workflow keeps future notes in sync through fastlane’s `app_review_information`, and re-attaches the recording whenever `SAFARI_REVIEW_VIDEO_URL` is set.
+
+### Safari nightly through TestFlight — `TESTFLIGHT_GROUPS`, once
+
+Safari extensions ship inside an app, so the only way a Safari build updates itself is TestFlight: testers install the TestFlight app on macOS 12 or later, join, and turn on automatic updates. `.github/workflows/testflight.yml` uploads every release's Mac app to App Store Connect after each successful CI run on `main`, with the same Safari secrets as above. A build App Store Connect already has is not uploaded again, which is checked on a Linux runner before any macOS minutes are spent. Sending it to testers is a job of its own (`asc-testflight-distribute.mjs`, on Linux): it gives the build its What to Test notes, with or without external groups, adds it to each group in `TESTFLIGHT_GROUPS` and submits it to TestFlight App Review, doing only what is not done yet, so a build the App Store job uploaded first still reaches testers, and a refused submission is tried again on the next run. The App Store job in `publish.yml` then finds the build uploaded and submits it as it is (`fastlane deliver --skip_binary_upload --build_number`), unless its App Store version is already with App Review or on the store (`asc-store-version-state.mjs`).
+
+Each build is testable for 90 days, and every release is its own App Store version, which decides who gets builds and when:
+
+- **Internal testers** (App Store Connect users on the team, up to 100) get every build as soon as Apple has processed it, with no review.
+- **External testers** (anyone with the public link, up to 10,000) get each build once TestFlight App Review approves it, usually within hours. The first build of each version is always reviewed, and every release is a new version. Apple takes at most six submissions a day, so on a busy day some releases go to internal testers only; the run says so in a warning, and the next release goes out as usual.
+
+Set up once in [App Store Connect](https://appstoreconnect.apple.com/apps) → Geld → TestFlight:
+
+1. **Test Information** (sidebar): the beta app description, a feedback email, the privacy policy URL `https://www.geld.sh/privacy`, and the Beta App Review contact. The App Review notes in `store/safari-review-notes.txt` serve for the review notes too.
+2. **Internal Testing → +**: a group, say `Team`, with **Enable automatic distribution** on, and the team members who should test. They need App Store Connect access with TestFlight allowed.
+3. **External Testing → +**: a group, say `Geld Nightly`. Under Testers, **Create Public Link** (Open to Anyone, or filtered to macOS), and copy the link.
+4. Repository variable `TESTFLIGHT_GROUPS` = `Geld Nightly` (comma-separated for several groups). Without it the workflow still uploads every build for internal testers and sends none to external ones.
+5. Put the public link in `TESTFLIGHT_URL` in `apps/site/lib/downloads.ts`. The Safari tab on geld.sh/nightly then offers it, in place of "use the App Store version".
+
+A TestFlight build of `sh.geld.safari` replaces the App Store install on that Mac, and the App Store install replaces it again, since both are the same app. Settings stay, since the extension is the same.
 
 ## Store listing text
 

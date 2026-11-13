@@ -68,7 +68,7 @@ Geld never calls the GitHub API. Counts come from the page when it renders per-f
 
 ### Nightly builds
 
-Every release also carries a nightly build for each browser, `geld-<version>-<browser>-nightly.zip`, called _Geld Nightly_. It is the same production build as the store's. The Chrome and Edge builds (and other Chromium browsers, with the Chrome zip) keep themselves up to date with every push to `main`. The Firefox and Safari builds are updated by hand for now: Firefox only installs builds Mozilla has signed, and Safari extensions ship inside an app. The store builds contain none of the updater.
+Every release also carries a nightly build for each browser, `geld-<version>-<browser>-nightly.zip`, called _Geld Nightly_. It is the same production build as the store's. The Chrome and Edge builds (and other Chromium browsers, with the Chrome zip) keep themselves up to date with every push to `main`. Safari's nightly is a TestFlight beta of Geld for Safari, uploaded with every release, which TestFlight updates on its own (Safari extensions ship inside an app). The Firefox build is updated by hand for now: Firefox only installs builds Mozilla has signed. The store builds contain none of the updater.
 
 Setup for each browser, with its quirks (Brave's folder access flag, Firefox and Zen, Safari), is on [geld.sh/nightly](https://www.geld.sh/nightly), an unlisted page to send testers to.
 

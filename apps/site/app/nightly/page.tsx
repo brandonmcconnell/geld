@@ -5,7 +5,7 @@ import { NightlyBrowserTabs } from '@/components/nightly-browser-tabs';
 import type { BrowserTab } from '@/components/nightly-browser-tabs';
 import { PageIntro, Prose } from '@/components/section';
 import { SubBar } from '@/components/sub-bar';
-import { STORE_URLS } from '@/lib/downloads';
+import { STORE_URLS, TESTFLIGHT_URL } from '@/lib/downloads';
 import { LATEST_RELEASE_URL } from '@/lib/site';
 
 export const metadata: Metadata = {
@@ -121,11 +121,37 @@ const BROWSER_TABS: readonly BrowserTab[] = [
     label: 'Safari',
     content: (
       <Prose>
-        <p>
-          Safari extensions ship inside an app, so there is no self-updating nightly for Safari.{' '}
-          {STORE_URLS.safari !== undefined ? <ExternalLink href={STORE_URLS.safari}>Get Geld for Safari</ExternalLink> : 'Get Geld for Safari'} from the App
-          Store. Building the Safari nightly yourself takes Xcode and is meant for development.
-        </p>
+        {TESTFLIGHT_URL !== null ? (
+          <>
+            <p>Safari extensions ship inside an app, so Safari&apos;s nightly is a TestFlight beta of Geld for Safari, updated with every push to main.</p>
+            <ol>
+              <li>
+                On macOS 12 or later, install <ExternalLink href="https://apps.apple.com/app/testflight/id899247664">TestFlight</ExternalLink> from the App
+                Store.
+              </li>
+              <li>
+                Open <ExternalLink href={TESTFLIGHT_URL}>Geld&apos;s TestFlight link</ExternalLink> on your Mac, then <strong>Accept</strong> and{' '}
+                <strong>Install</strong>.
+              </li>
+              <li>
+                When TestFlight asks, turn on <strong>Automatic Updates</strong>. Each new build then installs itself.
+              </li>
+              <li>
+                Open Geld once, then turn it on in Safari&apos;s <strong>Settings</strong>, under <strong>Extensions</strong>.
+              </li>
+            </ol>
+            <p>
+              The beta replaces Geld from the App Store on that Mac, keeping your settings, and installing the App Store version puts it back. Each build waits
+              for Apple&apos;s beta review, usually a few hours, before it reaches you.
+            </p>
+          </>
+        ) : (
+          <p>
+            Safari extensions ship inside an app, so there is no self-updating nightly for Safari yet.{' '}
+            {STORE_URLS.safari !== undefined ? <ExternalLink href={STORE_URLS.safari}>Get Geld for Safari</ExternalLink> : 'Get Geld for Safari'} from the App
+            Store. Building the Safari nightly yourself takes Xcode and is meant for development.
+          </p>
+        )}
       </Prose>
     ),
   },
@@ -202,7 +228,8 @@ export default function NightlyPage() {
               <strong>Manual</strong> shows a badge on the toolbar icon and an <strong>Install</strong> button in its popup.
             </li>
             <li>
-              To look right away, click the refresh icon beside the status in the toolbar popup (<strong>Check for updates</strong>). It shows once a folder is connected.
+              To look right away, click the refresh icon beside the status in the toolbar popup (<strong>Check for updates</strong>). It shows once a folder is
+              connected.
             </li>
             <li>
               Every build is checked against its published checksum before anything is written, and Geld keeps a copy of the build it replaces. A failed update

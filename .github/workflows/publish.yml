@@ -303,9 +303,19 @@ jobs:
           known=$(node apps/extension/scripts/publish/asc-build-exists.mjs sh.geld.safari "$marketing" "$build" || echo "unknown")
           echo "App Store Connect already has build $marketing ($build): $known"
           echo "state=$known" >> "$GITHUB_OUTPUT"
+          submit=true
+          # TestFlight (testflight.yml) uploads every release, so the build is usually there already: it is submitted
+          # as it is, unless its App Store version is with App Review or on the store.
           if [ "$known" = "exists" ]; then
-            echo "::notice title=Safari::Skipped: App Store Connect already has build $marketing ($build) (checked without archiving)."
+            store=$(node apps/extension/scripts/publish/asc-store-version-state.mjs sh.geld.safari "$marketing" || echo "unknown")
+            echo "App Store version $marketing: $store"
+            case "$store" in
+              none|open) echo "::notice title=Safari::Build $marketing ($build) is already on App Store Connect (TestFlight uploaded it), so it is submitted without archiving again." ;;
+              submitted*) submit=false; echo "::notice title=Safari::Skipped: App Store version $marketing is already ${store#submitted } (checked without archiving)." ;;
+              *) submit=false; echo "::warning title=Safari::Skipped: could not read App Store version $marketing's state, so nothing was submitted; the next run checks again." ;;
+            esac
           fi
+          echo "submit=$submit" >> "$GITHUB_OUTPUT"
       - uses: pnpm/action-setup@v6
         if: steps.creds.outputs.ready == 'true' && steps.review.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
       - uses: actions/setup-node@v7
@@ -385,7 +395,7 @@ jobs:
       # none (review_attachment_file in its upload_metadata.rb), so the recording
       # is downloaded and handed to it on every submission while its URL is set.
       - name: Upload and submit for review
-        if: steps.creds.outputs.ready == 'true' && steps.review.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
+        if: steps.creds.outputs.ready == 'true' && steps.review.outputs.ready == 'true' && steps.known.outputs.submit == 'true'
         env:
           ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
@@ -395,12 +405,17 @@ jobs:
           SAFARI_REVIEW_VIDEO_URL: ${{ vars.SAFARI_REVIEW_VIDEO_URL }}
           SAFARI_REVIEW_VIDEO_VERSION: ${{ vars.SAFARI_REVIEW_VIDEO_VERSION }}
           SAFARI_REVIEW_TEST_DEVICE: ${{ vars.SAFARI_REVIEW_TEST_DEVICE }}
+          ASC_PRIVATE_KEY: ${{ secrets.APPLE_ASC_PRIVATE_KEY }}
+          BUILD_KNOWN: ${{ steps.known.outputs.state }}
           FASTLANE_SKIP_UPDATE_CHECK: '1'
           FASTLANE_HIDE_CHANGELOG: '1'
         working-directory: apps/extension/safari/Geld
         run: |
           version="$SAFARI_REVIEW_VERSION"
           build="$SAFARI_REVIEW_BUILD"
+          mkdir -p ~/.private_keys && echo "$ASC_PRIVATE_KEY" | base64 --decode > ~/.private_keys/AuthKey_$ASC_KEY_ID.p8
+          # The build TestFlight already uploaded is named; otherwise the package this run exported is uploaded.
+          if [ "$BUILD_KNOWN" = "exists" ]; then binary=(--skip_binary_upload --build_number "$build"); else binary=(--pkg "$(ls build/export/*.pkg | head -n 1)"); fi
           jq -n --arg k "$ASC_KEY_ID" --arg i "$ASC_ISSUER_ID" --rawfile p ~/.private_keys/AuthKey_$ASC_KEY_ID.p8 \
             '{key_id:$k, issuer_id:$i, key:$p, in_house:false}' > asc-key.json
           node ../../scripts/publish/safari-review-notes.mjs ../../store/safari-review-notes.txt > review-notes.txt
@@ -417,7 +432,7 @@ jobs:
           fastlane deliver \
             --api_key_path asc-key.json \
             --app_identifier sh.geld.safari --platform osx \
-            --pkg "$(ls build/export/*.pkg | head -n 1)" \
+            "${binary[@]}" \
             --app_version "$version" \
             --skip_screenshots --skip_metadata false \
             --release_notes "$(jq -n --arg n "$NOTES" '{"en-US":$n}')" \
