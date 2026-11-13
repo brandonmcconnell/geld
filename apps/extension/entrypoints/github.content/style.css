@@ -3558,18 +3558,18 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   border-top-right-radius: 5px;
 }
 
-.geld-review__triage-fix:last-child:not([data-open]) > .geld-review__triage-fix-row,
+.geld-review__triage-fix:last-child:not([data-open]) > .geld-review__triage-fix-place,
 .geld-review__triage-fix:last-child > .geld-review__triage-fix-body {
   border-bottom-left-radius: 5px;
   border-bottom-right-radius: 5px;
 }
 
-/* Title and controls on the first line, the path on a line of its own under them, so it has the row's whole width. */
+/* Title and controls on the first line, and under it the path in a band of its own, as a file's header in GitHub's diff, so it has the row's whole width. */
 .geld-review__triage-fix-row {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 0 4px;
+  gap: 4px;
+  min-height: 36px;
   padding: 0 4px 0 0;
 }
 
@@ -3621,16 +3621,27 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 /* The path, fitted in the middle (`fitPathInto`: the file name always, then as much of the start as fits), its lines and the copy button. */
 .geld-review__triage-fix-place {
   display: flex;
-  flex: 1 0 100%;
-  order: 1;
   align-items: center;
   min-width: 0;
-  margin-top: -8px;
-  padding: 0 0 8px 34px;
+  padding: 4px 12px 4px 34px;
+  border-top: 1px solid var(--geld-review-border-muted);
+  background: var(--geld-review-subtle);
   color: var(--geld-review-muted);
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
   font-size: 12px;
   line-height: 20px;
   white-space: nowrap;
+  cursor: pointer;
+}
+
+.geld-review__triage-fix-facts {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  padding-left: 12px;
+  font-family: var(--fontStack-sansSerif, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif);
 }
 
 /* The row's blank parts open it, as the toggle does. */

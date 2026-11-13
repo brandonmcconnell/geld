@@ -1623,7 +1623,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   A finding no fix fits gets a row too, marked "Needs an agent", with "Fix with" the recommended agent and the others in its menu (`agentControl`).
   Every action is on its finding's row, and there is no hand-off for all findings at once: under rows that already hold fixes, a "Fix with Cursor" for everything read as if nothing were fixed yet.
   The row shows the path, not only the file name, fitted by `fitPathInto` (the file name, then as much of the start as fits, and where even the file name does not fit, the file name cut in its middle).
-  The path, its lines and its copy button stand on a second line under the title, open or closed and at any width, so the controls on the first line never squeeze it (experimental, Nov 2026: beside the title it was cut to a few letters).
+  The path, its lines and its copy button stand in a band of their own under the title, as a file's header does in GitHub's diff (`__triage-fix-place`: monospace, the muted surface, a rule above), open or closed and at any width, so the controls on the first line never squeeze it (experimental, Nov 2026: beside the title it was cut to a few letters).
+  "Out of date" and the +/− counts stand at the band's right (`__triage-fix-facts`), so the title has the first line beside the controls alone.
+  The band is a sibling of the title row, not part of it: the row's hover and open tint stop at the band, which keeps its own surface, so the two read as two lines open too.
   It is fitted to the room its line leaves it (`fitPathInto(…, place)`), since measured against its own box, sized to its text, a rounding cut a path that fitted.
   Under the stale or failed line the fixes stand 8px from it, as far as from the card's foot.
   A fix replaces the lines of one thread in one file, since a GitHub suggestion can only take those lines: a change across files or past the thread's lines is a "Needs an agent" row, not a fix.

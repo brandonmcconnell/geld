@@ -1544,8 +1544,8 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
     createElement('span', { class: `${PANEL_CLASS}__triage-fix-title` }, [...inlineText(fix.title)]),
   ]);
   toggle.addEventListener('click', () => handlers.onToggleSuggestion(fix.key));
-  // The path and its copy button stand beside the toggle, not in it: a button cannot hold another.
-  const place = createElement('span', { class: `${PANEL_CLASS}__triage-fix-place` }, [where, lineText]);
+  // The path and its copy button stand under the toggle, not in it: a button cannot hold another.
+  const place = createElement('div', { class: `${PANEL_CLASS}__triage-fix-place` }, [where, lineText]);
   if (fix.path !== '') {
     const copy = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__triage-fix-copy`, [ATTR_FOCUS]: `fix-copy:${fix.key}` }, [icon(ICON_COPY)]);
     const tipped = withTip(copy, 'Copy path');
@@ -1560,13 +1560,16 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
     : isFix
       ? createElement('span', { class: `${PANEL_CLASS}__triage-fix-counts`, 'aria-label': `${added} added, ${removed} removed` }, [createElement('span', { 'data-kind': 'add' }, [`+${added}`]), createElement('span', { 'data-kind': 'del' }, [`−${removed}`])])
       : createElement('span', { class: `${PANEL_CLASS}__triage-fix-state`, 'data-kind': 'agent' }, ['Needs an agent']);
-  const head = createElement('div', { class: `${PANEL_CLASS}__triage-fix-row` }, [toggle, place, status]);
-  // A fix that waits on another triage says so on the row, where its Apply is greyed out.
-  if (isFix && !applied && !fix.current) head.insertBefore(createElement('span', { class: `${PANEL_CLASS}__triage-fix-state`, 'data-kind': 'behind', title: behindWords(fix) }, ['Out of date']), status);
-  head.addEventListener('click', (event) => {
-    if (event.target instanceof Element && event.target.closest('button, a, details') !== null) return;
-    handlers.onToggleSuggestion(fix.key);
-  });
+  // A fix that waits on another triage says so beside its counts, while its Apply is greyed out.
+  const behind = isFix && !applied && !fix.current ? createElement('span', { class: `${PANEL_CLASS}__triage-fix-state`, 'data-kind': 'behind', title: behindWords(fix) }, ['Out of date']) : null;
+  place.append(createElement('span', { class: `${PANEL_CLASS}__triage-fix-facts` }, behind === null ? [status] : [behind, status]));
+  const head = createElement('div', { class: `${PANEL_CLASS}__triage-fix-row` }, [toggle]);
+  for (const line of [head, place]) {
+    line.addEventListener('click', (event) => {
+      if (event.target instanceof Element && event.target.closest('button, a, details') !== null) return;
+      handlers.onToggleSuggestion(fix.key);
+    });
+  }
   if (!applied) {
     const busy = fix.busy !== null;
     const dismiss = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__triage-fix-discard`, [ATTR_FOCUS]: `fix-trash:${fix.key}`, ...(busy ? { disabled: '' } : {}) }, [icon(ICON_X)]);
@@ -1576,7 +1579,7 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
   const chevron = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__chevron`, 'aria-label': open ? 'Close' : 'Open', 'aria-expanded': String(open), tabindex: '-1' }, [icon(ICON_CHEVRON_DOWN)]);
   chevron.addEventListener('click', () => handlers.onToggleSuggestion(fix.key));
   head.append(chevron);
-  const row = createElement('li', { class: `${PANEL_CLASS}__triage-fix`, 'data-state': fix.state, 'data-kind': fix.kind, ...(open ? { 'data-open': '' } : {}) }, [head]);
+  const row = createElement('li', { class: `${PANEL_CLASS}__triage-fix`, 'data-state': fix.state, 'data-kind': fix.kind, ...(open ? { 'data-open': '' } : {}) }, [head, place]);
   if (!open) return row;
   const body = createElement('div', { class: `${PANEL_CLASS}__triage-fix-body` });
   const summary = fix.summary !== '' ? fix.summary : isFix ? '' : 'Geld could not read the lines this thread is on, so it proposed no fix here.';
