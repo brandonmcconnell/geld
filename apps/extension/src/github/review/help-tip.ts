@@ -42,6 +42,8 @@ export function helpTip(options: HelpTipOptions): HTMLElement {
   let hideTimer: ReturnType<typeof setTimeout> | null = null;
   let detach: (() => void) | null = null;
   let lastSpot = '';
+  /** Set while focus goes back to the icon after Escape, whose `focusin` must not open the tip it just closed. */
+  let restoring = false;
 
   const place = (): void => {
     const anchor = (glyph.querySelector('svg') ?? glyph).getBoundingClientRect();
@@ -90,11 +92,23 @@ export function helpTip(options: HelpTipOptions): HTMLElement {
     const onToggle = (): void => {
       if (menu?.open !== true) close();
     };
+    // Escape wherever focus is (a tip opened by hovering leaves it elsewhere), and ahead of the menu's own Escape on the
+    // document: the tip closes first, the menu on the next press.
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      const hadFocus = inside(document.activeElement);
+      close();
+      if (hadFocus) refocus();
+    };
     document.addEventListener('mousedown', onDown, true);
+    window.addEventListener('keydown', onKey, true);
     menu?.addEventListener('toggle', onToggle);
     detach = () => {
       cancelAnimationFrame(frame);
       document.removeEventListener('mousedown', onDown, true);
+      window.removeEventListener('keydown', onKey, true);
       menu?.removeEventListener('toggle', onToggle);
     };
   };
@@ -125,6 +139,15 @@ export function helpTip(options: HelpTipOptions): HTMLElement {
 
   const inside = (node: EventTarget | null): boolean => node instanceof Node && (button.contains(node) || tip.contains(node));
 
+  const refocus = (): void => {
+    restoring = true;
+    try {
+      button.focus({ preventScroll: true });
+    } finally {
+      restoring = false;
+    }
+  };
+
   const wire = (target: HTMLElement): void => {
     target.addEventListener('pointerenter', () => {
       hovering = true;
@@ -136,6 +159,7 @@ export function helpTip(options: HelpTipOptions): HTMLElement {
       settle();
     });
     target.addEventListener('focusin', () => {
+      if (restoring) return;
       focused = true;
       settle();
     });
@@ -143,14 +167,6 @@ export function helpTip(options: HelpTipOptions): HTMLElement {
       if (inside(event.relatedTarget)) return;
       focused = false;
       settle();
-    });
-    target.addEventListener('keydown', (event) => {
-      if (event.key !== 'Escape' || !shown) return;
-      // The tip closes first; the menu around it closes on the next Escape.
-      event.preventDefault();
-      event.stopPropagation();
-      close();
-      button.focus({ preventScroll: true });
     });
   };
   wire(button);
