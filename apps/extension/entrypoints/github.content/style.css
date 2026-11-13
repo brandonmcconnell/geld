@@ -3839,6 +3839,11 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   margin-right: auto;
 }
 
+/* Fix all and Discard all stand under the list, on its edges. */
+.geld-review__triage-bulk {
+  margin: 0 16px 8px 38px;
+}
+
 .geld-review__triage-fix-link {
   margin-right: auto;
   padding: 0;
@@ -3954,6 +3959,7 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   }
 
   .geld-review__triage-fixes,
+  .geld-review__triage-bulk,
   .geld-review__triage-writing,
   .geld-review__triage-status {
     margin-left: 16px;

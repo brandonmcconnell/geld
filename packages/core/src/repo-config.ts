@@ -41,7 +41,8 @@ export const ORG_CONFIG_PATHS: readonly string[] = ['geld.yml', '.github/geld.ym
 export interface RepoConfig extends Pick<GeldSettings, 'categories' | 'groups' | 'categoryPatterns' | 'customCategories'> {
   /** Review bots installed on the repository, by registry id (`bugbot`, `coderabbit`, …), in the file's order. */
   readonly reviewBots: readonly string[];
-  readonly review?: { readonly ai: boolean };
+  /** `ai`: whether AI review may run (the dashboard reads it). `resolveOnFix`: whether a triage fix resolves its threads, as the setting of that name. */
+  readonly review?: { readonly ai?: boolean; readonly resolveOnFix?: boolean };
   readonly issueTracker?: IssueTrackerConfig;
 }
 
@@ -144,7 +145,13 @@ export function collectRepoConfigIssues(value: unknown, catalog: Catalog = BUNDL
   checkCategoryPatterns(issues, at('categoryPatterns'), value.categoryPatterns);
   checkCustomCategories(issues, at('customCategories'), value.customCategories);
   checkReviewBots(issues, at('reviewBots'), value.reviewBots, knownBots);
-  if (value.review !== undefined && (!isRecord(value.review) || typeof value.review.ai !== 'boolean')) issues.push({ path: at('review.ai'), message: 'Expected a boolean AI policy.' });
+  if (value.review !== undefined) {
+    if (!isRecord(value.review)) issues.push({ path: at('review'), message: `Expected a mapping with \`ai\` or \`resolveOnFix\`, got ${describeValue(value.review)}.` });
+    else {
+      if (value.review.ai !== undefined && typeof value.review.ai !== 'boolean') issues.push({ path: at('review.ai'), message: 'Expected a boolean AI policy.' });
+      if (value.review.resolveOnFix !== undefined && typeof value.review.resolveOnFix !== 'boolean') issues.push({ path: at('review.resolveOnFix'), message: `Expected true or false, got ${describeValue(value.review.resolveOnFix)}.` });
+    }
+  }
   if (value.issueTracker !== undefined && !parseIssueTracker(value.issueTracker)) issues.push({path:at('issueTracker'),message:'Expected a supported tracker, allowed keys and an HTTPS origin.'});
   return issues;
 }
@@ -193,9 +200,18 @@ export function parseRepoConfig(text: string, catalog: Catalog = BUNDLED_CATALOG
       customCategories: normalized.customCategories,
       reviewBots: reviewBotsOf(value),
       ...(issueTracker?{issueTracker}:{}),
-      ...(isRecord(value.review) && typeof value.review.ai === 'boolean' ? { review: { ai: value.review.ai } } : {}),
+      ...reviewPolicyOf(value.review),
     },
   };
+}
+
+function reviewPolicyOf(value: unknown): Pick<RepoConfig, 'review'> {
+  if (!isRecord(value)) return {};
+  const review = {
+    ...(typeof value.ai === 'boolean' ? { ai: value.ai } : {}),
+    ...(typeof value.resolveOnFix === 'boolean' ? { resolveOnFix: value.resolveOnFix } : {}),
+  };
+  return Object.keys(review).length === 0 ? {} : { review };
 }
 
 /** Whether a config changes anything at all. */
@@ -214,6 +230,13 @@ export function declaredReviewBots(configs: readonly RepoConfig[]): readonly str
   const ids: string[] = [];
   for (const config of configs) for (const id of config.reviewBots) if (!ids.includes(id)) ids.push(id);
   return ids;
+}
+
+/** What the configs say about resolving a triage fix's threads, the repository's word over its organisation's; `null` when none says. */
+export function repoResolvesOnFix(configs: readonly RepoConfig[]): boolean | null {
+  let said: boolean | null = null;
+  for (const config of configs) if (config.review?.resolveOnFix !== undefined) said = config.review.resolveOnFix;
+  return said;
 }
 
 /** Pattern lines are scoped by `[owner/repo]` headers; this one returns to "everywhere" before appended lines. */
@@ -301,5 +324,6 @@ export function describeRepoConfig(config: RepoConfig): string {
   const patterns = Object.values(config.categoryPatterns).reduce((sum, lines) => sum + (lines?.length ?? 0), 0) + config.customCategories.reduce((sum, custom) => sum + custom.patterns.length, 0);
   if (patterns > 0) parts.push(`${patterns} ${patterns === 1 ? 'pattern' : 'patterns'}`);
   if (config.reviewBots.length > 0) parts.push(`${config.reviewBots.length} review ${config.reviewBots.length === 1 ? 'bot' : 'bots'}`);
+  if (config.review?.resolveOnFix === false) parts.push('fixes leave threads open');
   return parts.length === 0 ? 'no changes' : parts.join(', ');
 }

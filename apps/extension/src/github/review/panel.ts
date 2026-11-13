@@ -556,7 +556,11 @@ export interface PanelHandlers {
   readonly onToggleTriage: () => void;
   readonly onToggleSuggestion: (key: string) => void;
   /** Commit the fix to the pull request's branch, and with `resolve` resolve every thread it answers. */
-  readonly onApplySuggestion: (key: string, resolve: boolean) => void;
+  /** Commit the fix, resolving its threads unless the reader or the repository opts out (`TriageView.resolves`). */
+  readonly onFixSuggestion: (key: string) => void;
+  /** Several fixes in one commit, as GitHub's batched suggestions. */
+  readonly onFixAll: (keys: readonly string[]) => void;
+  readonly onDiscardAll: (keys: readonly string[]) => void;
   readonly onDiscardSuggestion: (key: string) => void;
   /** Resolves whether the path reached the clipboard. */
   readonly onCopyPath: (path: string) => Promise<boolean>;
@@ -591,7 +595,7 @@ export interface TriageSuggestionView {
   readonly current: boolean;
   /** Why it is not current: a commit since, or a comment in its threads it has not read. */
   readonly behind: 'commit' | 'comments' | null;
-  readonly busy: 'apply' | 'resolve' | null;
+  readonly busy: 'fix' | null;
   readonly error: string | null;
 }
 
@@ -634,6 +638,8 @@ export interface TriageView {
   readonly writing: boolean;
   /** What the last hand-off did, said once under the card ("Posted @cursor"), and the finding to offer copying again after a failed copy. */
   readonly handedOff: { readonly text: string; readonly copyAgain: string | null } | null;
+  /** Fix resolves the threads it answers: the `resolveOnFix` setting, and no `review.resolveOnFix: false` from the repository. */
+  readonly resolves: boolean;
 }
 
 export function itemKey(id: string): string {
@@ -1464,8 +1470,8 @@ function aiFailureText(state: Extract<AiState, { readonly kind: 'failed' }>): st
 
 /**
  * The AI triage, right under the Geld row it was asked for from: what the open threads need (the TL;DR), a line when
- * something new arrived since, then one row per fix it proposes, each opening to its diff with Apply, Apply and resolve
- * and Discard, and at the foot the hand-off of what is left to a coding agent.
+ * something new arrived since, then one row per fix it proposes, each opening to its diff with Fix and Discard, then
+ * Fix all and Discard all under two or more, and the hand-off of what is left to a coding agent.
  */
 function triageCard(model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
   const state = model.ai;
@@ -1501,6 +1507,8 @@ function triageCard(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
       const list = createElement('ul', { class: `${PANEL_CLASS}__triage-fixes`, role: 'list', 'aria-label': 'Suggested fixes' });
       for (const fix of triage.suggestions) list.append(fixRow(fix, triage, handlers));
       card.append(list);
+      const bulk = bulkActions(triage, handlers);
+      if (bulk !== null) card.append(bulk);
     } else if (triage.writing) {
       card.append(createElement('p', { class: `${PANEL_CLASS}__triage-writing`, 'data-pending': '' }, ['Writing fixes for the open threads…']));
     }
@@ -1518,6 +1526,27 @@ function triageCard(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
   return card.children.length === 0 ? null : card;
 }
 
+/**
+ * Under two or more open findings: Discard all at the left and Fix all at the right, as an opened fix's own buttons
+ * stand. Fix all takes every fix written for the head in one commit; Discard all takes every finding still listed.
+ */
+function bulkActions(triage: TriageView, handlers: PanelHandlers): HTMLElement | null {
+  const open = triage.suggestions.filter((fix) => fix.state === 'open');
+  if (open.length < 2) return null;
+  const busy = open.some((fix) => fix.busy !== null);
+  const ready = open.filter((fix) => fix.kind === 'fix' && fix.current && fix.busy === null).map((fix) => fix.key);
+  const discard = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__triage-fix-discard-btn`, title: `Discard all ${open.length} findings from the triage`, [ATTR_FOCUS]: 'fix-discard-all', ...(busy ? { disabled: '' } : {}) }, [icon(ICON_X), 'Discard all']);
+  discard.addEventListener('click', () => handlers.onDiscardAll(open.map((fix) => fix.key)));
+  const what = triage.resolves ? 'Post each fix as a suggestion, commit them together, and resolve their threads' : 'Post each fix as a suggestion and commit them together';
+  const title = ready.length === 0 ? 'No fix here fits the head commit. Triage again first.' : `${what} (${ready.length} ${ready.length === 1 ? 'fix' : 'fixes'})`;
+  const fixAll = createElement('button', { type: 'button', class: 'btn btn-sm btn-primary', title, [ATTR_FOCUS]: 'fix-all', ...(busy || ready.length === 0 ? { disabled: '' } : {}), ...(busy ? { 'aria-busy': 'true' } : {}) }, [
+    busy ? 'Fixing…' : 'Fix all',
+    ...(ready.length > 0 && !busy ? [createElement('span', { class: 'Counter' }, [String(ready.length)])] : []),
+  ]);
+  fixAll.addEventListener('click', () => handlers.onFixAll(ready));
+  return createElement('div', { class: `${PANEL_CLASS}__triage-fix-actions ${PANEL_CLASS}__triage-bulk` }, [discard, fixAll]);
+}
+
 function triageText(text: string, pending: boolean): HTMLElement {
   return createElement('div', { class: `${PANEL_CLASS}__triage-head` }, [
     createElement('span', { class: `${PANEL_CLASS}__triage-glyph`, 'aria-hidden': 'true' }, [icon(ICON_SPARKLE_FILL)]),
@@ -1526,8 +1555,8 @@ function triageText(text: string, pending: boolean): HTMLElement {
 }
 
 /**
- * One finding the triage read. A fix: its title, where it applies, how much it changes, then the trash (Discard) and
- * "Apply" with its menu (Apply and resolve, or hand the finding to an agent instead). A finding no fix fits: "Fix with"
+ * One finding the triage read. A fix: its title, where it applies, how much it changes, then the X (Discard) and
+ * "Fix" with its menu (copy the task, or hand the finding to an agent instead). A finding no fix fits: "Fix with"
  * the recommended agent and its menu. The row opens to the diff, or to what the triage says is needed.
  */
 function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHandlers): HTMLElement {
@@ -1561,7 +1590,7 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
     : isFix
       ? createElement('span', { class: `${PANEL_CLASS}__triage-fix-counts`, 'aria-label': `${added} added, ${removed} removed` }, [createElement('span', { 'data-kind': 'add' }, [`+${added}`]), createElement('span', { 'data-kind': 'del' }, [`−${removed}`])])
       : createElement('span', { class: `${PANEL_CLASS}__triage-fix-state`, 'data-kind': 'agent' }, ['Needs an agent']);
-  // A fix that waits on another triage says so beside its counts, while its Apply is greyed out.
+  // A fix that waits on another triage says so beside its counts, while its Fix is greyed out.
   const behind = isFix && !applied && !fix.current ? createElement('span', { class: `${PANEL_CLASS}__triage-fix-state`, 'data-kind': 'behind', title: behindWords(fix) }, ['Out of date']) : null;
   place.append(createElement('span', { class: `${PANEL_CLASS}__triage-fix-facts` }, behind === null ? [status] : [behind, status]));
   const head = createElement('div', { class: `${PANEL_CLASS}__triage-fix-row` }, [toggle]);
@@ -1587,25 +1616,17 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
   if (summary !== '') body.append(createElement('p', { class: `${PANEL_CLASS}__triage-fix-summary` }, [...inlineText(summary)]));
   if (isFix) body.append(diffTable(fix));
   const notes: string[] = [];
-  if (fix.threads > 1) notes.push(`One change for ${fix.threads} threads reporting the same problem (${fix.reporters.join(', ')}). Resolving resolves them all.`);
+  if (fix.threads > 1) notes.push(`One change for ${fix.threads} threads reporting the same problem (${fix.reporters.join(', ')}). ${triage.resolves ? 'Fix resolves them all.' : 'It answers them all.'}`);
   if (isFix && !fix.current && !applied) notes.push(behindWords(fix));
   if (!isFix) notes.push('A fix that fits the lines a thread is on can be applied as a suggestion. This one needs more than that, so hand it to an agent.');
   for (const note of notes) body.append(createElement('p', { class: `${PANEL_CLASS}__triage-fix-note` }, [note]));
   if (isFix && !applied) {
     const busy = fix.busy !== null;
-    const blocked = busy || !fix.current;
-    const why = fix.current ? 'Post this as a suggestion in the thread and commit it to the branch' : `Triage again first. ${behindWords(fix)}`;
     const discard = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__triage-fix-discard-btn`, [ATTR_FOCUS]: `fix-discard:${fix.key}`, ...(busy ? { disabled: '' } : {}) }, [icon(ICON_X), 'Discard']);
     discard.addEventListener('click', () => handlers.onDiscardSuggestion(fix.key));
-    const apply = createElement('button', { type: 'button', class: 'btn btn-sm', title: why, [ATTR_FOCUS]: `fix-apply:${fix.key}`, ...(blocked ? { disabled: '' } : {}), ...(fix.busy === 'apply' ? { 'aria-busy': 'true' } : {}) }, [fix.busy === 'apply' ? 'Applying…' : 'Apply']);
-    apply.addEventListener('click', () => handlers.onApplySuggestion(fix.key, false));
-    const resolve = createElement(
-      'button',
-      { type: 'button', class: 'btn btn-sm btn-primary', title: `${why}, then resolve ${fix.threads === 1 ? 'its thread' : `all ${fix.threads} threads`}`, [ATTR_FOCUS]: `fix-resolve:${fix.key}`, ...(blocked ? { disabled: '' } : {}), ...(fix.busy === 'resolve' ? { 'aria-busy': 'true' } : {}) },
-      [fix.busy === 'resolve' ? 'Applying…' : 'Apply and resolve'],
-    );
-    resolve.addEventListener('click', () => handlers.onApplySuggestion(fix.key, true));
-    body.append(createElement('div', { class: `${PANEL_CLASS}__triage-fix-actions` }, [discard, apply, resolve]));
+    const commit = createElement('button', { type: 'button', class: 'btn btn-sm btn-primary', title: fixWhy(fix, triage), [ATTR_FOCUS]: `fix-commit:${fix.key}`, ...(busy || !fix.current ? { disabled: '' } : {}), ...(busy ? { 'aria-busy': 'true' } : {}) }, [busy ? 'Fixing…' : 'Fix']);
+    commit.addEventListener('click', () => handlers.onFixSuggestion(fix.key));
+    body.append(createElement('div', { class: `${PANEL_CLASS}__triage-fix-actions` }, [discard, commit]));
   }
   if (fix.error !== null) body.append(createElement('p', { class: `${PANEL_CLASS}__triage-fix-error`, role: 'alert' }, [fix.error]));
   row.append(body);
@@ -1782,17 +1803,21 @@ function missingToolHelp(tool: MissingTool, handlers: PanelHandlers, close: () =
   });
 }
 
+/** What Fix does, for its tooltip: post the suggestion, commit it, and resolve the threads it answers when that is on. */
+function fixWhy(fix: TriageSuggestionView, triage: TriageView): string {
+  if (!fix.current) return `Triage again first. ${behindWords(fix)}`;
+  const threads = fix.threads === 1 ? 'its thread' : `all ${fix.threads} threads`;
+  return triage.resolves ? `Post this fix as a suggestion in the thread, commit it, and resolve ${threads}` : 'Post this fix as a suggestion in the thread and commit it';
+}
+
 function applyControl(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHandlers): HTMLElement {
   const blocked = fix.busy !== null || !fix.current;
-  const threads = fix.threads === 1 ? 'its thread' : `all ${fix.threads} threads`;
-  // The same default as the open row's primary button: the finding is settled once its fix is in.
-  const main = createElement('button', { type: 'button', class: 'btn btn-sm', title: fix.current ? `Post this fix as a suggestion in the thread, commit it, and resolve ${threads}` : `Triage again first. ${behindWords(fix)}`, [ATTR_FOCUS]: `fix-head-apply:${fix.key}`, ...(blocked ? { disabled: '' } : {}), ...(fix.busy !== null ? { 'aria-busy': 'true' } : {}) }, [
+  const main = createElement('button', { type: 'button', class: 'btn btn-sm', title: fixWhy(fix, triage), [ATTR_FOCUS]: `fix-head-apply:${fix.key}`, ...(blocked ? { disabled: '' } : {}), ...(fix.busy !== null ? { 'aria-busy': 'true' } : {}) }, [
     icon(ICON_CHECK),
-    createElement('span', { class: `${PANEL_CLASS}__split-label` }, [fix.busy !== null ? 'Applying…' : 'Apply & resolve']),
+    createElement('span', { class: `${PANEL_CLASS}__split-label` }, [fix.busy !== null ? 'Fixing…' : 'Fix']),
   ]);
-  main.addEventListener('click', () => handlers.onApplySuggestion(fix.key, true));
+  main.addEventListener('click', () => handlers.onFixSuggestion(fix.key));
   return splitButton(main, 'More ways to fix this', `fix-head-more:${fix.key}`, (list, close) => {
-    if (!blocked) list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_CHECK)]), 'Apply without resolving'], close, () => handlers.onApplySuggestion(fix.key, false)));
     copyItem(list, fix.key, handlers, close);
     agentItems(list, fix.key, triage, handlers, close, null);
   });

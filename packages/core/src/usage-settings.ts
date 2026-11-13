@@ -40,6 +40,7 @@ export const USAGE_TOGGLES = [
   'relatedLinks',
   'aiEnabled',
   'aiJev',
+  'resolveOnFix',
 ] as const satisfies readonly (keyof GeldSettings)[];
 export type UsageToggle = (typeof USAGE_TOGGLES)[number];
 
