@@ -146,9 +146,10 @@ export const CONSOLIDATE_JSON_SCHEMA = {
         properties: {
           id: { type: 'string' },
           title: { type: 'string' },
-          severity: { type: ['string', 'null'], enum: [...SEVERITIES, null] },
-          context: { type: ['string', 'null'] },
-          fix: { type: ['string', 'null'] },
+          // Nullable as `anyOf`, never `type: [..., 'null']`: Anthropic checks an enum against a type list as a whole and refuses it.
+          severity: { anyOf: [{ type: 'string', enum: [...SEVERITIES] }, { type: 'null' }] },
+          context: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+          fix: { anyOf: [{ type: 'string' }, { type: 'null' }] },
         },
       },
     },

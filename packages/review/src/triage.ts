@@ -60,7 +60,7 @@ export const SUGGEST_JSON_SCHEMA = {
         properties: {
           ids: { type: 'array', items: { type: 'string' } },
           summary: { type: 'string' },
-          replacement: { type: ['string', 'null'] },
+          replacement: { anyOf: [{ type: 'string' }, { type: 'null' }] },
         },
       },
     },

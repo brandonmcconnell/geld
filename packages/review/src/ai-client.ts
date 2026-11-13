@@ -132,8 +132,11 @@ export async function listModels(
 
 const MAX_PROVIDER_MESSAGE = 240;
 
-/** How a 400 names the `response_format` it cannot take; "schema" or "strict" alone also turn up in errors about other fields. */
-const SCHEMA_REFUSED = /response_format|json_schema|structured outputs?/i;
+/**
+ * How a 400 names the `response_format` it cannot take, or the field a gateway turned it into (`output_config.format`,
+ * Anthropic's, behind Vercel's gateway); "schema" or "strict" alone also turn up in errors about other fields.
+ */
+const SCHEMA_REFUSED = /response_format|json_schema|structured outputs?|output_config\.format|output_format/i;
 
 /**
  * What kind of refusal a provider's words describe, from a fixed list: what may leave the device in an error report,
