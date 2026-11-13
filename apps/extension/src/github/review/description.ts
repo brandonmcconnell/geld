@@ -311,6 +311,7 @@ const state = { page: '', open: new Map<string, boolean>(), capped: true, toolsA
 let resizeObserver: ResizeObserver | null = null;
 let observed: HTMLElement | null = null;
 let observedRow: HTMLElement | null = null;
+let observedBlocks = new WeakSet<Element>();
 
 export function descriptionBody(): HTMLElement | null {
   const body =
@@ -605,7 +606,12 @@ function observe(body: HTMLElement): void {
     if (entries.some((entry) => entry.target === observed || entry.target === observedRow)) measure(observed);
     else if (entries.some((entry) => entry.target instanceof HTMLElement && observedScrollers.has(entry.target))) measureCarriers(observed);
   });
-  if (observed !== body) {
+  // Blocks rendered anew (an edit saved) are cut by a fresh reading even when the body keeps its size, and observing
+  // again is one.
+  const blocks = blocksOf(body);
+  const fresh = blocks.some((block) => !observedBlocks.has(block));
+  for (const block of blocks) observedBlocks.add(block);
+  if (observed !== body || fresh) {
     if (observed !== null) resizeObserver.unobserve(observed);
     observed = body;
     resizeObserver.observe(body);
@@ -917,6 +923,7 @@ function release(): void {
   observedScrollers.clear();
   observed = null;
   observedRow = null;
+  observedBlocks = new WeakSet();
 }
 
 function clear(): void {
@@ -979,10 +986,19 @@ export function shortenDescription(on: boolean, options: { readonly toolsAway?: 
   applyTo(body);
 }
 
-/** A description GitHub has rendered that is not shortened yet, as on a switch back to the conversation tab. */
-export function descriptionUnshortened(): boolean {
+/** GitHub's own nodes added to or taken from the body itself: its blocks rendered anew, as when an edit is saved. */
+function blocksRenderedAnew(body: HTMLElement, records: readonly MutationRecord[]): boolean {
+  const githubs = (nodes: NodeList): boolean => [...nodes].some((node) => !(node instanceof Element && node.hasAttribute(OWN_UI_ATTRIBUTE)));
+  return records.some((record) => record.type === 'childList' && record.target === body && (githubs(record.addedNodes) || githubs(record.removedNodes)));
+}
+
+/**
+ * A description GitHub has rendered that is not shortened as it stands: never yet, as on a switch back to the
+ * conversation tab, or not its blocks in `records`, which GitHub rendered into the same body when an edit was saved.
+ */
+export function descriptionUnshortened(records: readonly MutationRecord[] = []): boolean {
   const body = descriptionBody();
-  return body !== null && !body.hasAttribute(ATTR_ON);
+  return body !== null && (!body.hasAttribute(ATTR_ON) || blocksRenderedAnew(body, records));
 }
 
 /**

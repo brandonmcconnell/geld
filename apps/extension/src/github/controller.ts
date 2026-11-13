@@ -48,6 +48,7 @@ import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surf
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
 import { reassertDescriptionMenu } from './description-menu';
 import { applyPeoplePresence, removePeoplePresence } from './people-presence';
+import { applyCreatePullRetry, removeCreatePullRetry } from './create-pull-retry';
 import { applyBlockedListHiding, removeBlockedListHiding } from './blocked-lists';
 import { blockedFor } from './blocked-users';
 import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
@@ -545,8 +546,8 @@ export class GeldController {
     if (this.settings.quickReview && this.mayDressPage()) reassertStatusPills();
     // With the parts and the pill in place, the bar's left side slides as one block to where it now stands.
     if (this.mayDressPage()) animateBarGroup();
-    // The description GitHub just rendered (a switch back to the conversation tab) is folded in its first frame.
-    if (this.mayDressPage()) foldDescriptionNow(this.settings);
+    // The description GitHub just rendered (a switch back to the conversation tab, a saved edit) is folded in its first frame.
+    if (this.mayDressPage()) foldDescriptionNow(this.settings, records);
     // The Overview's top card, which GitHub draws and re-renders between passes, dressed in its first frame, and the
     // digest back after a re-render of the column took it.
     dressOverviewNow(this.settings, this.mayDressPage());
@@ -1173,6 +1174,7 @@ export class GeldController {
     if (!document.documentElement.hasAttribute(ATTR_DRESSED)) document.documentElement.setAttribute(ATTR_DRESSED, '');
     this.syncTabCounts();
     applyAttachmentLightbox(this.settings.attachmentLightbox);
+    guard('content:create-pull-retry', () => applyCreatePullRetry());
 
     // Another page state (a navigation) is always the whole page, whatever the batches said.
     const full = scope === null || this.lastPassKey !== page.stateKey;
@@ -2177,6 +2179,7 @@ export class GeldController {
     removeCommitHover();
     removeAuthorHiding();
     removePeoplePresence();
+    removeCreatePullRetry();
     removeBlockedListHiding();
     removeSurfaceStyles();
     for (const group of findHeaderStatGroups()) restoreHeaderStats(group);

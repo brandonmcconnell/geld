@@ -916,21 +916,21 @@ function escapeRegExp(text) {
   return text.replace(REGEXP_SPECIAL, "\\$&");
 }
 function splitAlternatives(body) {
-  const parts = [];
+  const parts2 = [];
   let depth = 0;
   let current = "";
   for (const char of body) {
     if (char === "{") depth += 1;
     if (char === "}") depth -= 1;
     if (char === "," && depth === 0) {
-      parts.push(current);
+      parts2.push(current);
       current = "";
       continue;
     }
     current += char;
   }
-  parts.push(current);
-  return parts;
+  parts2.push(current);
+  return parts2;
 }
 function expandBraces(pattern) {
   const open2 = pattern.indexOf("{");
@@ -1165,9 +1165,9 @@ function parseCatalogText(text) {
   return parseCatalog(value);
 }
 function compareExtensionVersions(a, b) {
-  const parts = (version2) => version2.split(".").slice(0, 3).map((part) => Number.parseInt(part, 10) || 0);
-  const left = parts(a);
-  const right = parts(b);
+  const parts2 = (version2) => version2.split(".").slice(0, 3).map((part) => Number.parseInt(part, 10) || 0);
+  const left = parts2(a);
+  const right = parts2(b);
   for (let index = 0; index < 3; index += 1) {
     const difference = (left[index] ?? 0) - (right[index] ?? 0);
     if (difference !== 0) return difference;
@@ -2413,52 +2413,6 @@ var init_error_report = __esm({
   }
 });
 
-// ../../packages/core/src/format.ts
-function formatCount(value) {
-  return numberFormatter.format(Math.max(0, value));
-}
-function formatCountLike(original, value) {
-  const separator = GROUP_SEPARATOR.exec(original)?.[1];
-  return separator === void 0 ? formatCount(value) : formatCount(value).replace(/,/g, separator);
-}
-function parseCount(text) {
-  if (text === null || text === void 0) return null;
-  const digits = text.replace(/[^\d]/g, "");
-  if (digits === "") return null;
-  const value = Number.parseInt(digits, 10);
-  return Number.isFinite(value) ? value : null;
-}
-function pluralize(count, singular, plural2) {
-  return `${formatCount(count)} ${count === 1 ? singular : plural2}`;
-}
-function addTotals(a, b) {
-  return {
-    files: a.files + b.files,
-    additions: a.additions + b.additions,
-    deletions: a.deletions + b.deletions
-  };
-}
-function subtractTotals(a, b) {
-  return {
-    files: Math.max(0, a.files - b.files),
-    additions: Math.max(0, a.additions - b.additions),
-    deletions: Math.max(0, a.deletions - b.deletions)
-  };
-}
-function formatDiffstat(totals) {
-  return `+${formatCount(totals.additions)} \u2212${formatCount(totals.deletions)}`;
-}
-var numberFormatter, COUNT_PATTERN, GROUP_SEPARATOR, EMPTY_TOTALS;
-var init_format = __esm({
-  "../../packages/core/src/format.ts"() {
-    "use strict";
-    numberFormatter = new Intl.NumberFormat("en-US");
-    COUNT_PATTERN = String.raw`\d+(?:[.,'’\u00a0\u202f]\d{2,3})*`;
-    GROUP_SEPARATOR = /\d([.,'’\u00a0\u202f])\d{2,3}(?!\d)/;
-    EMPTY_TOTALS = { files: 0, additions: 0, deletions: 0 };
-  }
-});
-
 // ../../packages/core/src/trackers.ts
 function record(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -2564,6 +2518,9 @@ var init_trackers = __esm({
 });
 
 // ../../packages/core/src/settings.ts
+function isCodingAgentId(value) {
+  return typeof value === "string" && CODING_AGENT_IDS.some((id) => id === value);
+}
 function isSuggestedFixMode(value) {
   return typeof value === "string" && SUGGESTED_FIX_MODES.some((mode) => mode === value);
 }
@@ -2720,10 +2677,10 @@ function hasAdvancedSettings(settings, categoryId, catalog = BUNDLED_CATALOG) {
 function describeAdvancedSettings(settings, categoryId, catalog = BUNDLED_CATALOG) {
   const groupsOff = categoryById(categoryId, catalog).groups.filter((group) => !isGroupEnabled(settings, categoryId, group.id)).length;
   const extra = categoryPatternLines(settings, categoryId).filter((line) => !/^\[.*\]$/.test(line)).length;
-  const parts = [];
-  if (groupsOff > 0) parts.push(`${groupsOff} group${groupsOff === 1 ? "" : "s"} off`);
-  if (extra > 0) parts.push(`${extra} extra pattern${extra === 1 ? "" : "s"}`);
-  return parts.length === 0 ? null : parts.join(" \xB7 ");
+  const parts2 = [];
+  if (groupsOff > 0) parts2.push(`${groupsOff} group${groupsOff === 1 ? "" : "s"} off`);
+  if (extra > 0) parts2.push(`${extra} extra pattern${extra === 1 ? "" : "s"}`);
+  return parts2.length === 0 ? null : parts2.join(" \xB7 ");
 }
 function normalizeSettings(value) {
   if (typeof value !== "object" || value === null) return DEFAULT_SETTINGS;
@@ -2751,6 +2708,7 @@ function normalizeSettings(value) {
     showBadge: bool(record4, "showBadge", DEFAULT_SETTINGS.showBadge),
     autoUpdatePatterns: bool(record4, "autoUpdatePatterns", DEFAULT_SETTINGS.autoUpdatePatterns),
     errorReports: bool(record4, "errorReports", DEFAULT_SETTINGS.errorReports),
+    usageStats: bool(record4, "usageStats", DEFAULT_SETTINGS.usageStats),
     enterpriseHosts: isStringArray(record4.enterpriseHosts) ? record4.enterpriseHosts.map(normalizeHost).filter((host) => host !== null) : DEFAULT_SETTINGS.enterpriseHosts,
     repoConfigs: isRepoConfigMode(record4.repoConfigs) ? record4.repoConfigs : DEFAULT_SETTINGS.repoConfigs,
     prOverview: bool(record4, "prOverview", DEFAULT_SETTINGS.prOverview),
@@ -2769,7 +2727,8 @@ function normalizeSettings(value) {
     aiModel: typeof record4.aiModel === "string" ? record4.aiModel.trim() : DEFAULT_SETTINGS.aiModel,
     aiJev: bool(record4, "aiJev", DEFAULT_SETTINGS.aiJev),
     aiDecisionModel: typeof record4.aiDecisionModel === "string" ? record4.aiDecisionModel.trim() : DEFAULT_SETTINGS.aiDecisionModel,
-    suggestedFixes: isSuggestedFixMode(record4.suggestedFixes) ? record4.suggestedFixes : DEFAULT_SETTINGS.suggestedFixes
+    suggestedFixes: isSuggestedFixMode(record4.suggestedFixes) ? record4.suggestedFixes : DEFAULT_SETTINGS.suggestedFixes,
+    codingAgent: isCodingAgentId(record4.codingAgent) ? record4.codingAgent : DEFAULT_SETTINGS.codingAgent
   };
 }
 function normalizeHost(input3) {
@@ -2826,7 +2785,7 @@ function withCustomCategory(settings, custom2) {
 function withCategoryEnabled(settings, id, enabled) {
   return id === "large" ? { ...settings, hideLargeDiffs: enabled } : { ...settings, categories: { ...settings.categories, [id]: enabled } };
 }
-var SUGGESTED_FIX_MODES, REPO_CONFIG_MODES, REVIEW_GROUPINGS, COMPACT_TIMELINE_MODES, DIGEST_VIEWS, DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY, CATEGORY_ORDER;
+var CODING_AGENT_IDS, SUGGESTED_FIX_MODES, REPO_CONFIG_MODES, REVIEW_GROUPINGS, COMPACT_TIMELINE_MODES, DIGEST_VIEWS, DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY, CATEGORY_ORDER;
 var init_settings = __esm({
   "../../packages/core/src/settings.ts"() {
     "use strict";
@@ -2834,6 +2793,7 @@ var init_settings = __esm({
     init_categories();
     init_category_icons();
     init_test_patterns();
+    CODING_AGENT_IDS = ["auto", "cursor", "copilot", "claude", "codex", "devin", "t3code"];
     SUGGESTED_FIX_MODES = ["all", "bots", "ai", "off"];
     REPO_CONFIG_MODES = ["always", "ask", "never"];
     REVIEW_GROUPINGS = ["type", "batch"];
@@ -2861,6 +2821,7 @@ var init_settings = __esm({
       showBadge: true,
       autoUpdatePatterns: true,
       errorReports: false,
+      usageStats: true,
       enterpriseHosts: [],
       repoConfigs: "ask",
       prOverview: true,
@@ -2879,10 +2840,430 @@ var init_settings = __esm({
       issueTracker: null,
       aiJev: false,
       aiDecisionModel: "",
-      suggestedFixes: "bots"
+      suggestedFixes: "bots",
+      codingAgent: "auto"
     };
     SETTINGS_STORAGE_KEY = "sync:settings";
     CATEGORY_ORDER = CATEGORY_IDS;
+  }
+});
+
+// ../../packages/core/src/usage-settings.ts
+function isUsageCounter(value) {
+  return USAGE_COUNTERS.some((counter) => counter === value);
+}
+function hidCounterFor(categoryId) {
+  const counter = `hid_${isCategoryId(categoryId) ? categoryId : "custom"}`;
+  return isUsageCounter(counter) ? counter : "hid_custom";
+}
+function isPatternLine(line) {
+  const trimmed = line.trim();
+  return trimmed !== "" && !trimmed.startsWith("#") && !/^\[.*\]$/.test(trimmed);
+}
+function capped(count) {
+  return Math.min(Math.max(0, Math.floor(count)), USAGE_COUNT_CAP);
+}
+function usageSettingsOf(settings) {
+  const toggles = {};
+  for (const key of USAGE_TOGGLES) toggles[key] = settings[key];
+  const categories = {};
+  for (const id of CATEGORY_IDS) categories[id] = isCategoryEnabled(settings, id);
+  const builtInOn = CATEGORY_IDS.filter((id) => isCategoryEnabled(settings, id)).length;
+  const customOn = settings.customCategories.filter((custom2) => isCategoryEnabled(settings, custom2.id)).length;
+  const extraPatterns = Object.values(settings.categoryPatterns).reduce((sum, lines2) => sum + (lines2?.filter(isPatternLine).length ?? 0), 0);
+  const autoViewed = [...CATEGORY_IDS, ...settings.customCategories.map((custom2) => custom2.id)].filter((id) => isAutoViewed(settings, id)).length;
+  const counts = {
+    customCategories: capped(settings.customCategories.length),
+    customCategoriesOn: capped(customOn),
+    builtInCategoriesOn: builtInOn,
+    categoriesOn: capped(builtInOn + customOn),
+    patternGroupsOff: capped(Object.values(settings.groups).filter((on) => on === false).length),
+    extraPatterns: capped(extraPatterns),
+    autoViewedCategories: capped(autoViewed),
+    repoRules: capped(settings.repoRules.length),
+    hiddenAuthors: capped(settings.hiddenAuthors.length),
+    enterpriseHosts: capped(settings.enterpriseHosts.length),
+    testSyntaxes: capped(settings.testSyntaxes.length),
+    reviewBots: capped(settings.reviewBots.length)
+  };
+  return {
+    toggles,
+    choices: {
+      compactTimeline: settings.compactTimeline,
+      reviewGrouping: settings.reviewGrouping,
+      repoConfigs: settings.repoConfigs,
+      suggestedFixes: settings.suggestedFixes,
+      codingAgent: settings.codingAgent,
+      digestView: digestViewOf(settings),
+      issueTracker: settings.issueTracker?.provider ?? "none"
+    },
+    categories,
+    counts
+  };
+}
+function isRecord6(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function parseUsageSettings(value) {
+  if (!isRecord6(value) || !isRecord6(value.toggles) || !isRecord6(value.choices) || !isRecord6(value.categories) || !isRecord6(value.counts)) return null;
+  const toggles = {};
+  for (const key of USAGE_TOGGLES) {
+    const on = value.toggles[key];
+    if (typeof on === "boolean") toggles[key] = on;
+  }
+  const choices = {};
+  const given = value.choices;
+  for (const key of Object.keys(USAGE_CHOICES).filter((name) => name in USAGE_CHOICES)) {
+    const options = USAGE_CHOICES[key];
+    const chosen = options.find((option) => option === given[key]);
+    if (chosen !== void 0) choices[key] = chosen;
+  }
+  const categories = {};
+  for (const id of CATEGORY_IDS) {
+    const on = value.categories[id];
+    if (typeof on === "boolean") categories[id] = on;
+  }
+  const counts = {};
+  for (const key of USAGE_COUNTS) {
+    const count = value.counts[key];
+    if (typeof count === "number" && Number.isInteger(count) && count >= 0) counts[key] = Math.min(count, key === "builtInCategoriesOn" ? CATEGORY_IDS.length : USAGE_COUNT_CAP);
+  }
+  return { toggles, choices, categories, counts };
+}
+function parseUsageCounts(value) {
+  if (!isRecord6(value)) return null;
+  const counts = {};
+  for (const counter of USAGE_COUNTERS) {
+    const count = value[counter];
+    if (typeof count === "number" && Number.isInteger(count) && count > 0) counts[counter] = Math.min(count, USAGE_COUNTER_CAP);
+  }
+  return counts;
+}
+function snake(name) {
+  return name.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+}
+function usageToggleProperty(key) {
+  return `setting_${snake(key)}`;
+}
+function usageSettingsProperties(snapshot) {
+  const properties = {};
+  for (const key of USAGE_TOGGLES) {
+    const on = snapshot.toggles[key];
+    if (on !== void 0) properties[usageToggleProperty(key)] = on;
+  }
+  for (const [key, chosen] of Object.entries(snapshot.choices)) properties[snake(key)] = chosen;
+  for (const [id, on] of Object.entries(snapshot.categories)) properties[`category_${id}`] = on;
+  for (const [key, count] of Object.entries(snapshot.counts)) properties[snake(key)] = count;
+  const custom2 = snapshot.counts.customCategories;
+  if (custom2 !== void 0) properties.has_custom_categories = custom2 > 0;
+  return properties;
+}
+function usageCountProperties(counts) {
+  return Object.fromEntries(USAGE_COUNTERS.map((counter) => [`used_${counter}`, counts[counter] ?? 0]));
+}
+var USAGE_COUNT_CAP, USAGE_COUNTER_CAP, USAGE_TOGGLES, USAGE_CHOICES, USAGE_COUNTS, USAGE_COUNTERS;
+var init_usage_settings = __esm({
+  "../../packages/core/src/usage-settings.ts"() {
+    "use strict";
+    init_categories();
+    init_trackers();
+    init_settings();
+    USAGE_COUNT_CAP = 10;
+    USAGE_COUNTER_CAP = 1e4;
+    USAGE_TOGGLES = [
+      "enabled",
+      "groupHidden",
+      "expandedByDefault",
+      "hideCommentLines",
+      "testOutline",
+      "hideLargeDiffs",
+      "expandLargeDiffs",
+      "showListStats",
+      "hideWhitespace",
+      "shortcutEnabled",
+      "showBadge",
+      "autoUpdatePatterns",
+      "errorReports",
+      "prOverview",
+      "quickReview",
+      "holdToMerge",
+      "collapseDescription",
+      "attachmentLightbox",
+      "relatedLinks",
+      "aiEnabled",
+      "aiJev"
+    ];
+    USAGE_CHOICES = {
+      compactTimeline: COMPACT_TIMELINE_MODES,
+      reviewGrouping: REVIEW_GROUPINGS,
+      repoConfigs: REPO_CONFIG_MODES,
+      suggestedFixes: SUGGESTED_FIX_MODES,
+      codingAgent: CODING_AGENT_IDS,
+      digestView: DIGEST_VIEWS,
+      issueTracker: [...ISSUE_TRACKERS, "none"]
+    };
+    USAGE_COUNTS = [
+      "customCategories",
+      "customCategoriesOn",
+      "builtInCategoriesOn",
+      "categoriesOn",
+      "patternGroupsOff",
+      "extraPatterns",
+      "autoViewedCategories",
+      "repoRules",
+      "hiddenAuthors",
+      "enterpriseHosts",
+      "testSyntaxes",
+      "reviewBots"
+    ];
+    USAGE_COUNTERS = [
+      "diff_pages",
+      "diff_pages_hiding",
+      "hidden_files_shown",
+      "hidden_file_revealed",
+      "digest_shown",
+      "digest_copied",
+      "digest_view_changed",
+      "flow_opened",
+      "ai_triage_run",
+      "ai_fix_applied",
+      "ai_fix_discarded",
+      "agent_handoff",
+      "bot_review_requested",
+      "review_approve",
+      "review_request_changes",
+      "review_comment",
+      "comment_posted",
+      "status_merge",
+      "status_queue",
+      "status_auto",
+      "status_close",
+      "status_ready",
+      "status_draft",
+      "status_reopen",
+      "rollback_feedback",
+      "hid_tests",
+      "hid_generated",
+      "hid_vendored",
+      "hid_agents",
+      "hid_docs",
+      "hid_tooling",
+      "hid_stories",
+      "hid_trivial",
+      "hid_large",
+      "hid_custom"
+    ];
+  }
+});
+
+// ../../packages/core/src/usage-report.ts
+function parseNightlyUsage(value) {
+  if (!isRecord7(value)) return null;
+  const mode = oneOf(MODES, value.mode);
+  return mode === void 0 ? null : { mode };
+}
+function isRecord7(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isTime2(value) {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+function oneOf(options, value) {
+  return options.find((option) => option === value);
+}
+function parseEvent(value) {
+  if (!isRecord7(value) || !isTime2(value.at)) return null;
+  if (value.version !== void 0 && (typeof value.version !== "string" || !VERSION2.test(value.version))) return null;
+  const noted = { at: value.at, ...typeof value.version === "string" ? { version: value.version } : {} };
+  switch (value.name) {
+    case "extension_installed":
+      return { name: "extension_installed", ...noted };
+    case "extension_active": {
+      if (typeof value.firstOfWeek !== "boolean" || typeof value.firstOfMonth !== "boolean") return null;
+      const settings = value.firstOfWeek && value.settings !== void 0 ? parseUsageSettings(value.settings) : null;
+      const counts = value.counts === void 0 ? null : parseUsageCounts(value.counts);
+      const blocked = oneOf(BLOCKS, value.blocked);
+      return {
+        name: "extension_active",
+        ...noted,
+        firstOfWeek: value.firstOfWeek,
+        firstOfMonth: value.firstOfMonth,
+        ...settings === null ? {} : { settings },
+        ...counts === null ? {} : { counts },
+        ...blocked === void 0 ? {} : { blocked }
+      };
+    }
+    case "extension_updated": {
+      if (typeof value.from !== "string" || !VERSION2.test(value.from)) return null;
+      const trigger = oneOf(MODES, value.trigger);
+      const method = oneOf(METHODS, value.method);
+      return {
+        name: "extension_updated",
+        ...noted,
+        from: value.from,
+        ...trigger === void 0 ? {} : { trigger },
+        ...method === void 0 ? {} : { method },
+        ...value.rollback === true ? { rollback: true } : {}
+      };
+    }
+    default:
+      return null;
+  }
+}
+function parseUsagePayload(value) {
+  if (!isRecord7(value) || value.v !== USAGE_PAYLOAD_VERSION) return null;
+  if (typeof value.version !== "string" || !VERSION2.test(value.version)) return null;
+  const channel = oneOf(CHANNELS, value.channel);
+  const browser = oneOf(BROWSERS2, value.browser);
+  if (channel === void 0 || browser === void 0) return null;
+  if (!Array.isArray(value.events) || value.events.length === 0 || value.events.length > MAX_USAGE_EVENTS) return null;
+  const events = value.events.map(parseEvent);
+  if (!events.every((event) => event !== null)) return null;
+  const selfUpdate = parseNightlyUsage(value.selfUpdate);
+  return { v: USAGE_PAYLOAD_VERSION, version: value.version, channel, browser, ...selfUpdate === null ? {} : { selfUpdate }, events };
+}
+function parts(version2) {
+  return version2.split(".").map(Number);
+}
+function usageBuildOf(version2) {
+  const all = version2.split(".");
+  return all.length === 4 && /^\d+$/.test(all[3] ?? "") ? Number(all[3]) : null;
+}
+function versionJump(from, to) {
+  const left = parts(from);
+  const right = parts(to);
+  const names = ["major", "minor", "patch", "build"];
+  for (let i = 0; i < 4; i++) {
+    const diff = (right[i] ?? 0) - (left[i] ?? 0);
+    if (diff < 0) return "downgrade";
+    if (diff > 0) return names[i] ?? "build";
+  }
+  return "same";
+}
+function usageCaptures(payload, receivedAt) {
+  return payload.events.flatMap((event) => {
+    if (event.at < receivedAt - USAGE_MAX_AGE_MS) return [];
+    const at = event.at > receivedAt + MAX_FUTURE_MS ? receivedAt : event.at;
+    const timestamp = new Date(at).toISOString();
+    const version2 = event.version ?? payload.version;
+    const build = usageBuildOf(version2);
+    const common = {
+      version: version2,
+      build,
+      channel: payload.channel,
+      browser: payload.browser,
+      ...payload.selfUpdate === void 0 ? {} : { nightly_mode: payload.selfUpdate.mode }
+    };
+    switch (event.name) {
+      case "extension_installed":
+        return [{ event: event.name, timestamp, properties: common }];
+      case "extension_active":
+        return [
+          {
+            event: event.name,
+            timestamp,
+            properties: {
+              ...common,
+              first_of_week: event.firstOfWeek,
+              first_of_month: event.firstOfMonth,
+              ...event.settings === void 0 ? {} : usageSettingsProperties(event.settings),
+              ...usageCountProperties(event.counts ?? {}),
+              ...payload.selfUpdate === void 0 ? {} : { nightly_blocked: event.blocked ?? "none" }
+            }
+          }
+        ];
+      case "extension_updated": {
+        const fromBuild = usageBuildOf(event.from);
+        return [{
+          event: event.name,
+          timestamp,
+          properties: {
+            ...common,
+            from_version: event.from,
+            from_build: fromBuild,
+            build_delta: build === null || fromBuild === null ? null : build - fromBuild,
+            version_jump: versionJump(event.from, version2),
+            upgrade_path: `${event.from} \u2192 ${version2}`,
+            update_trigger: event.trigger ?? (payload.channel === "stable" ? "store" : "by_hand"),
+            update_method: event.method ?? null,
+            rollback: event.rollback === true
+          }
+        }];
+      }
+    }
+  });
+}
+function usagePeriods(at) {
+  const date5 = new Date(at);
+  const day = date5.toISOString().slice(0, 10);
+  const thursday = Date.UTC(date5.getUTCFullYear(), date5.getUTCMonth(), date5.getUTCDate() - (date5.getUTCDay() + 6) % 7 + 3);
+  const year = new Date(thursday).getUTCFullYear();
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const firstThursday = Date.UTC(year, 0, 4 - (jan4.getUTCDay() + 6) % 7 + 3);
+  const week = 1 + Math.round((thursday - firstThursday) / (7 * 864e5));
+  return { day, week: `${year}-W${String(week).padStart(2, "0")}`, month: day.slice(0, 7) };
+}
+var USAGE_PAYLOAD_VERSION, MAX_USAGE_EVENTS, VERSION2, BROWSERS2, CHANNELS, MODES, METHODS, BLOCKS, USAGE_MAX_AGE_MS, MAX_FUTURE_MS;
+var init_usage_report = __esm({
+  "../../packages/core/src/usage-report.ts"() {
+    "use strict";
+    init_usage_settings();
+    USAGE_PAYLOAD_VERSION = 1;
+    MAX_USAGE_EVENTS = 50;
+    VERSION2 = /^\d+(?:\.\d+){0,3}$/;
+    BROWSERS2 = ["chrome", "edge", "firefox", "safari", "other"];
+    CHANNELS = ["stable", "nightly"];
+    MODES = ["manual", "automatic"];
+    METHODS = ["folder", "downloads", "shared"];
+    BLOCKS = ["folder", "permission"];
+    USAGE_MAX_AGE_MS = 30 * 864e5;
+    MAX_FUTURE_MS = 60 * 6e4;
+  }
+});
+
+// ../../packages/core/src/format.ts
+function formatCount(value) {
+  return numberFormatter.format(Math.max(0, value));
+}
+function formatCountLike(original, value) {
+  const separator = GROUP_SEPARATOR.exec(original)?.[1];
+  return separator === void 0 ? formatCount(value) : formatCount(value).replace(/,/g, separator);
+}
+function parseCount(text) {
+  if (text === null || text === void 0) return null;
+  const digits = text.replace(/[^\d]/g, "");
+  if (digits === "") return null;
+  const value = Number.parseInt(digits, 10);
+  return Number.isFinite(value) ? value : null;
+}
+function pluralize(count, singular, plural2) {
+  return `${formatCount(count)} ${count === 1 ? singular : plural2}`;
+}
+function addTotals(a, b) {
+  return {
+    files: a.files + b.files,
+    additions: a.additions + b.additions,
+    deletions: a.deletions + b.deletions
+  };
+}
+function subtractTotals(a, b) {
+  return {
+    files: Math.max(0, a.files - b.files),
+    additions: Math.max(0, a.additions - b.additions),
+    deletions: Math.max(0, a.deletions - b.deletions)
+  };
+}
+function formatDiffstat(totals) {
+  return `+${formatCount(totals.additions)} \u2212${formatCount(totals.deletions)}`;
+}
+var numberFormatter, COUNT_PATTERN, GROUP_SEPARATOR, EMPTY_TOTALS;
+var init_format = __esm({
+  "../../packages/core/src/format.ts"() {
+    "use strict";
+    numberFormatter = new Intl.NumberFormat("en-US");
+    COUNT_PATTERN = String.raw`\d+(?:[.,'’\u00a0\u202f]\d{2,3})*`;
+    GROUP_SEPARATOR = /\d([.,'’\u00a0\u202f])\d{2,3}(?!\d)/;
+    EMPTY_TOTALS = { files: 0, additions: 0, deletions: 0 };
   }
 });
 
@@ -2927,7 +3308,7 @@ function testSyntaxProblem(line) {
   const parsed = parseTestSyntax(line);
   return "problem" in parsed ? parsed.problem : null;
 }
-function isRecord6(value) {
+function isRecord8(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function describeValue(value) {
@@ -2943,7 +3324,7 @@ function list(values) {
 }
 function checkBooleanMap(issues, path, value, known, isAcceptable, noun) {
   if (value === void 0) return;
-  if (!isRecord6(value)) {
+  if (!isRecord8(value)) {
     issues.push({ path, message: `Expected an object mapping ${noun} ids to true/false, got ${describeValue(value)}.` });
     return;
   }
@@ -3000,7 +3381,7 @@ function hostProblem(line) {
 }
 function checkCategoryPatterns(issues, path, value) {
   if (value === void 0) return;
-  if (!isRecord6(value)) {
+  if (!isRecord8(value)) {
     issues.push({ path, message: `Expected an object mapping category ids to pattern lists, got ${describeValue(value)}.` });
     return;
   }
@@ -3022,7 +3403,7 @@ function checkCustomCategories(issues, path, value) {
   const seen = /* @__PURE__ */ new Set();
   value.forEach((entry2, index) => {
     const entryPath = `${path}[${index}]`;
-    if (!isRecord6(entry2)) {
+    if (!isRecord8(entry2)) {
       issues.push({ path: entryPath, message: `Expected a category object, got ${describeValue(entry2)}.` });
       return;
     }
@@ -3051,7 +3432,7 @@ function checkCustomCategories(issues, path, value) {
 }
 function collectSettingsIssues(value, path = "settings", catalog = BUNDLED_CATALOG) {
   const issues = [];
-  if (!isRecord6(value)) {
+  if (!isRecord8(value)) {
     issues.push({ path, message: `Expected an object of settings, got ${describeValue(value)}.` });
     return issues;
   }
@@ -3078,6 +3459,9 @@ function collectSettingsIssues(value, path = "settings", catalog = BUNDLED_CATAL
   }
   if (value.suggestedFixes !== void 0 && !isSuggestedFixMode(value.suggestedFixes)) {
     issues.push({ path: `${path}.suggestedFixes`, message: `Expected one of ${list(SUGGESTED_FIX_MODES)}, got ${describeValue(value.suggestedFixes)}.` });
+  }
+  if (value.codingAgent !== void 0 && !isCodingAgentId(value.codingAgent)) {
+    issues.push({ path: `${path}.codingAgent`, message: `Expected one of ${list(CODING_AGENT_IDS)}, got ${describeValue(value.codingAgent)}.` });
   }
   if (value.aiBaseUrl !== void 0 && typeof value.aiBaseUrl !== "string") {
     issues.push({ path: `${path}.aiBaseUrl`, message: `Expected a string, got ${describeValue(value.aiBaseUrl)}.` });
@@ -3241,7 +3625,7 @@ function validateSettingsDocument(content, catalog = BUNDLED_CATALOG) {
   } catch (error61) {
     return { ok: false, issues: [jsonIssue(content, error61)] };
   }
-  if (!isRecord6(parsed)) {
+  if (!isRecord8(parsed)) {
     return { ok: false, issues: [{ path: "$", message: `Expected a JSON object at the top level, got ${describeValue(parsed)}.` }] };
   }
   const issues = [];
@@ -3258,7 +3642,7 @@ function validateSettingsDocument(content, catalog = BUNDLED_CATALOG) {
   return { ok: true, settings: normalizeSettings(body) };
 }
 function validateSettingsValue(value, catalog = BUNDLED_CATALOG) {
-  const wrapped = isRecord6(value) && "settings" in value;
+  const wrapped = isRecord8(value) && "settings" in value;
   const body = wrapped ? value.settings : value;
   const issues = collectSettingsIssues(body, wrapped ? "settings" : "$", catalog);
   if (issues.length > 0) return { ok: false, issues };
@@ -3297,6 +3681,7 @@ var init_settings_validate = __esm({
       "showBadge",
       "autoUpdatePatterns",
       "errorReports",
+      "usageStats",
       "prOverview",
       "quickReview",
       "holdToMerge",
@@ -3310,7 +3695,7 @@ var init_settings_validate = __esm({
 });
 
 // ../../packages/core/src/gist-sync.ts
-function isRecord7(value) {
+function isRecord9(value) {
   return typeof value === "object" && value !== null;
 }
 function serializeSettingsPayload(settings, now = /* @__PURE__ */ new Date()) {
@@ -3321,7 +3706,7 @@ function serializeSettingsPayload(settings, now = /* @__PURE__ */ new Date()) {
 function parseSettingsPayload(content) {
   try {
     const parsed = JSON.parse(content);
-    if (!isRecord7(parsed)) return null;
+    if (!isRecord9(parsed)) return null;
     return normalizeSettings("settings" in parsed ? parsed.settings : parsed);
   } catch {
     return null;
@@ -3344,7 +3729,7 @@ async function api(token, path, init = {}) {
 }
 async function fetchGitHubProfile(token) {
   const body = await api(token, "/user");
-  if (!isRecord7(body)) throw new Error("Unexpected profile response.");
+  if (!isRecord9(body)) throw new Error("Unexpected profile response.");
   const login = body.login;
   const id = body.id;
   const avatarUrl = body.avatar_url;
@@ -3354,11 +3739,11 @@ async function fetchGitHubProfile(token) {
   return { login, id, avatarUrl };
 }
 function readGist(value) {
-  if (!isRecord7(value)) return null;
+  if (!isRecord9(value)) return null;
   const id = value.id;
   const updatedAt = value.updated_at;
   const files = value.files;
-  if (typeof id !== "string" || typeof updatedAt !== "string" || !isRecord7(files)) return null;
+  if (typeof id !== "string" || typeof updatedAt !== "string" || !isRecord9(files)) return null;
   const htmlUrl = typeof value.html_url === "string" ? value.html_url : `https://gist.github.com/${id}`;
   return { id, updatedAt, htmlUrl, hasFile: GIST_FILE in files };
 }
@@ -3375,9 +3760,9 @@ async function findSettingsGist(token) {
 async function readRemoteContent(token, gistId) {
   const gist = await api(token, `/gists/${gistId}`);
   const summary = readGist(gist);
-  if (summary === null || !isRecord7(gist) || !isRecord7(gist.files)) return null;
+  if (summary === null || !isRecord9(gist) || !isRecord9(gist.files)) return null;
   const file2 = gist.files[GIST_FILE];
-  if (!isRecord7(file2)) return null;
+  if (!isRecord9(file2)) return null;
   let content = typeof file2.content === "string" ? file2.content : null;
   if ((content === null || file2.truncated === true) && typeof file2.raw_url === "string") {
     const raw = await fetch(file2.raw_url, { headers: { Authorization: `Bearer ${token}` } });
@@ -3420,7 +3805,7 @@ function settingsEqual(a, b) {
 }
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  if (isRecord7(value)) {
+  if (isRecord9(value)) {
     return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
   }
   return JSON.stringify(value);
@@ -3841,26 +4226,26 @@ var require_directives = __commonJS({
           this.tags = Object.assign({}, _Directives.defaultTags);
           this.atNextDocument = false;
         }
-        const parts = line.trim().split(/[ \t]+/);
-        const name = parts.shift();
+        const parts2 = line.trim().split(/[ \t]+/);
+        const name = parts2.shift();
         switch (name) {
           case "%TAG": {
-            if (parts.length !== 2) {
+            if (parts2.length !== 2) {
               onError(0, "%TAG directive should contain exactly two parts");
-              if (parts.length < 2)
+              if (parts2.length < 2)
                 return false;
             }
-            const [handle, prefix] = parts;
+            const [handle, prefix] = parts2;
             this.tags[handle] = prefix;
             return true;
           }
           case "%YAML": {
             this.yaml.explicit = true;
-            if (parts.length !== 1) {
+            if (parts2.length !== 1) {
               onError(0, "%YAML directive should contain exactly one part");
               return false;
             }
-            const [version2] = parts;
+            const [version2] = parts2;
             if (version2 === "1.1" || version2 === "1.2") {
               this.yaml.version = version2;
               return true;
@@ -6595,9 +6980,9 @@ var require_timestamp = __commonJS({
     var stringifyNumber = require_stringifyNumber();
     function parseSexagesimal(str3, asBigInt) {
       const sign = str3[0];
-      const parts = sign === "-" || sign === "+" ? str3.substring(1) : str3;
+      const parts2 = sign === "-" || sign === "+" ? str3.substring(1) : str3;
       const num3 = (n) => asBigInt ? BigInt(n) : Number(n);
-      const res = parts.replace(/_/g, "").split(":").reduce((res2, p) => res2 * num3(60) + num3(p), num3(0));
+      const res = parts2.replace(/_/g, "").split(":").reduce((res2, p) => res2 * num3(60) + num3(p), num3(0));
       return sign === "-" ? num3(-1) * res : res;
     }
     function stringifySexagesimal(node2) {
@@ -6613,18 +6998,18 @@ var require_timestamp = __commonJS({
         value *= num3(-1);
       }
       const _60 = num3(60);
-      const parts = [value % _60];
+      const parts2 = [value % _60];
       if (value < 60) {
-        parts.unshift(0);
+        parts2.unshift(0);
       } else {
-        value = (value - parts[0]) / _60;
-        parts.unshift(value % _60);
+        value = (value - parts2[0]) / _60;
+        parts2.unshift(value % _60);
         if (value >= 60) {
-          value = (value - parts[0]) / _60;
-          parts.unshift(value);
+          value = (value - parts2[0]) / _60;
+          parts2.unshift(value);
         }
       }
-      return sign + parts.map((n) => String(n).padStart(2, "0")).join(":").replace(/000000\d*$/, "");
+      return sign + parts2.map((n) => String(n).padStart(2, "0")).join(":").replace(/000000\d*$/, "");
     }
     var intTime = {
       identify: (value) => typeof value === "bigint" || Number.isInteger(value),
@@ -10919,7 +11304,7 @@ function checkReviewBots(issues, path, value, knownBots) {
 function collectRepoConfigIssues(value, catalog = BUNDLED_CATALOG, path = "$", knownBots = null) {
   const issues = [];
   if (value === null || value === void 0) return issues;
-  if (!isRecord6(value)) {
+  if (!isRecord8(value)) {
     issues.push({ path, message: `Expected a mapping of settings, got ${describeValue(value)}.` });
     return issues;
   }
@@ -10937,7 +11322,7 @@ function collectRepoConfigIssues(value, catalog = BUNDLED_CATALOG, path = "$", k
   checkCategoryPatterns(issues, at("categoryPatterns"), value.categoryPatterns);
   checkCustomCategories(issues, at("customCategories"), value.customCategories);
   checkReviewBots(issues, at("reviewBots"), value.reviewBots, knownBots);
-  if (value.review !== void 0 && (!isRecord6(value.review) || typeof value.review.ai !== "boolean")) issues.push({ path: at("review.ai"), message: "Expected a boolean AI policy." });
+  if (value.review !== void 0 && (!isRecord8(value.review) || typeof value.review.ai !== "boolean")) issues.push({ path: at("review.ai"), message: "Expected a boolean AI policy." });
   if (value.issueTracker !== void 0 && !parseIssueTracker(value.issueTracker)) issues.push({ path: at("issueTracker"), message: "Expected a supported tracker, allowed keys and an HTTPS origin." });
   return issues;
 }
@@ -10967,7 +11352,7 @@ function parseRepoConfig(text, catalog = BUNDLED_CATALOG, knownBots = null) {
   }
   const issues = collectRepoConfigIssues(value, catalog, "$", knownBots);
   if (issues.length > 0) return { ok: false, issues };
-  if (value === null || value === void 0 || !isRecord6(value)) return { ok: true, config: EMPTY_REPO_CONFIG };
+  if (value === null || value === void 0 || !isRecord8(value)) return { ok: true, config: EMPTY_REPO_CONFIG };
   const normalized = normalizeSettings(value);
   const issueTracker = parseIssueTracker(value.issueTracker);
   return {
@@ -10979,7 +11364,7 @@ function parseRepoConfig(text, catalog = BUNDLED_CATALOG, knownBots = null) {
       customCategories: normalized.customCategories,
       reviewBots: reviewBotsOf(value),
       ...issueTracker ? { issueTracker } : {},
-      ...isRecord6(value.review) && typeof value.review.ai === "boolean" ? { review: { ai: value.review.ai } } : {}
+      ...isRecord8(value.review) && typeof value.review.ai === "boolean" ? { review: { ai: value.review.ai } } : {}
     }
   };
 }
@@ -11043,15 +11428,15 @@ function generatedConfigFrom(gitattributes) {
   return lines2.length === 0 ? EMPTY_REPO_CONFIG : { ...EMPTY_REPO_CONFIG, categoryPatterns: { generated: lines2 } };
 }
 function describeRepoConfig(config2) {
-  const parts = [];
+  const parts2 = [];
   const categories = Object.keys(config2.categories).length + config2.customCategories.length;
-  if (categories > 0) parts.push(`${categories} ${categories === 1 ? "category" : "categories"}`);
+  if (categories > 0) parts2.push(`${categories} ${categories === 1 ? "category" : "categories"}`);
   const groups = Object.keys(config2.groups).length;
-  if (groups > 0) parts.push(`${groups} ${groups === 1 ? "group" : "groups"}`);
+  if (groups > 0) parts2.push(`${groups} ${groups === 1 ? "group" : "groups"}`);
   const patterns = Object.values(config2.categoryPatterns).reduce((sum, lines2) => sum + (lines2?.length ?? 0), 0) + config2.customCategories.reduce((sum, custom2) => sum + custom2.patterns.length, 0);
-  if (patterns > 0) parts.push(`${patterns} ${patterns === 1 ? "pattern" : "patterns"}`);
-  if (config2.reviewBots.length > 0) parts.push(`${config2.reviewBots.length} review ${config2.reviewBots.length === 1 ? "bot" : "bots"}`);
-  return parts.length === 0 ? "no changes" : parts.join(", ");
+  if (patterns > 0) parts2.push(`${patterns} ${patterns === 1 ? "pattern" : "patterns"}`);
+  if (config2.reviewBots.length > 0) parts2.push(`${config2.reviewBots.length} review ${config2.reviewBots.length === 1 ? "bot" : "bots"}`);
+  return parts2.length === 0 ? "no changes" : parts2.join(", ");
 }
 var import_yaml, REPO_CONFIG_PATH, ORG_CONFIG_REPO, ORG_CONFIG_PATHS, EMPTY_REPO_CONFIG, ALLOWED_KEYS, BOT_ID, PERSONAL_KEYS, SCOPE_RESET;
 var init_repo_config = __esm({
@@ -11082,6 +11467,7 @@ var init_repo_config = __esm({
       "showBadge",
       "autoUpdatePatterns",
       "errorReports",
+      "usageStats",
       "enterpriseHosts",
       "repoConfigs",
       "hideTests",
@@ -11096,6 +11482,7 @@ var init_repo_config = __esm({
       "aiModel",
       "aiDecisionModel",
       "suggestedFixes",
+      "codingAgent",
       "autoViewed",
       "testOutline",
       "testSyntaxes",
@@ -11324,7 +11711,7 @@ var init_settings_schema = __esm({
             kind: "toggle",
             key: "attachmentLightbox",
             label: "Attachment lightbox",
-            description: "Preview image attachments in issues and pull requests with zoom and pan.",
+            description: "View images, videos and PDFs in rendered Markdown in a larger player: issues, pull requests, discussions, READMEs and other Markdown files.",
             popup: false,
             surfaces: ["extension"]
           },
@@ -11393,6 +11780,14 @@ var init_settings_schema = __esm({
             key: "errorReports",
             label: "Send error reports",
             description: "When part of Geld breaks, send the error and where in Geld\u2019s code it happened to `geld.sh`, with the version and browser. Addresses, repository and file names, people and page text are removed first. Off: errors stay on this device, in Copy diagnostics.",
+            popup: false,
+            surfaces: ["extension"]
+          },
+          {
+            kind: "toggle",
+            key: "usageStats",
+            label: "Send anonymous usage statistics",
+            description: "Tell `geld.sh` when Geld is installed or updated, and once a day that it is in use, with the version, browser and release channel, how often its features were used, and once a week which of its switches and categories are on and which options you picked in its menus. What you typed (category names, patterns, rules, logins) is only counted, never sent. No identifier is attached, and nothing about pages, repositories or accounts is sent. Off: nothing is sent.",
             popup: false,
             surfaces: ["extension"]
           }
@@ -11643,13 +12038,30 @@ var init_settings_schema = __esm({
             kind: "choice",
             key: "suggestedFixes",
             label: "Suggested fixes",
-            description: "Review bots often attach a fix; with AI on, Geld can propose one too. Choose which appear on an item.",
+            description: "Review bots often attach a fix, and with AI on, Geld can propose one too. Choose which appear on an item. The AI triage proposes fixes to apply whenever you run it, unless this is `Off`.",
             popup: false,
             options: [
               { value: "bots", label: "From bots", description: "Show the fix a review bot attached to its comment." },
               { value: "ai", label: "From AI", description: "Only fixes the consolidation model proposes (needs a gateway key)." },
               { value: "all", label: "Both", description: "Bot fixes and, with AI on, proposed ones." },
-              { value: "off", label: "Off", description: "Never show a suggested fix; the finding alone." }
+              { value: "off", label: "Off", description: "Never show or propose a fix, the AI triage included. The finding alone." }
+            ]
+          },
+          {
+            kind: "choice",
+            key: "codingAgent",
+            label: "Coding agent",
+            description: "Who the AI triage offers to hand open findings to first. The others stay one click away in its menu. `Auto` recommends the agent a pull request\u2019s links show its author used, when you are that author.",
+            popup: false,
+            surfaces: ["extension"],
+            options: [
+              { value: "auto", label: "Auto", description: "The agent this pull request\u2019s author used, when you are the author. Otherwise the menu\u2019s order." },
+              { value: "cursor", label: "Cursor", description: "Mentions `@cursor` on the pull request to start a Cursor cloud agent." },
+              { value: "copilot", label: "Copilot", description: "Mentions `@copilot` on the pull request." },
+              { value: "claude", label: "Claude", description: "Mentions `@claude` on the pull request." },
+              { value: "codex", label: "Codex", description: "Mentions `@codex` on the pull request." },
+              { value: "devin", label: "Devin", description: "Starts a Devin session with `/devin` on the pull request." },
+              { value: "t3code", label: "T3 Code", description: "Opens the finding in T3 Code as a draft on this pull request\u2019s branch, for you to send." }
             ]
           },
           {
@@ -11786,7 +12198,7 @@ var init_settings_schema = __esm({
               {
                 id: "report-diagnostics",
                 label: "Report with diagnostics",
-                description: "Opens GitHub's new-issue form with the same report filled in, plus a place to say what was happening. The report goes to GitHub alone, as the form's prefilled text, and nothing is posted until you submit the issue there; it is also copied to the clipboard in case the link had to trim it.",
+                description: "Opens Geld's feedback form with the same report attached, plus a place to say what was happening. You see the whole issue before it is sent, and nothing leaves this device until you send it.",
                 surfaces: ["extension"]
               },
               {
@@ -11877,6 +12289,7 @@ __export(src_exports, {
   CHANGE_KINDS_CATEGORY_IDS: () => CHANGE_KINDS_CATEGORY_IDS,
   CHANGE_KIND_IDS: () => CHANGE_KIND_IDS,
   CHIP_PLACEMENTS: () => CHIP_PLACEMENTS,
+  CODING_AGENT_IDS: () => CODING_AGENT_IDS,
   COMPACT_TIMELINE_MODES: () => COMPACT_TIMELINE_MODES,
   CORRUPTED_SETTINGS_COPY: () => CORRUPTED_SETTINGS_COPY,
   COUNT_PATTERN: () => COUNT_PATTERN,
@@ -11894,6 +12307,7 @@ __export(src_exports, {
   MAX_ERRORS_PER_PAYLOAD: () => MAX_ERRORS_PER_PAYLOAD,
   MAX_ERROR_MESSAGE: () => MAX_ERROR_MESSAGE,
   MAX_STACK_FRAMES: () => MAX_STACK_FRAMES,
+  MAX_USAGE_EVENTS: () => MAX_USAGE_EVENTS,
   ORG_CONFIG_PATHS: () => ORG_CONFIG_PATHS,
   ORG_CONFIG_REPO: () => ORG_CONFIG_REPO,
   REPO_CONFIG_MODES: () => REPO_CONFIG_MODES,
@@ -11907,6 +12321,14 @@ __export(src_exports, {
   TEST_PATTERN_GROUPS: () => TEST_PATTERN_GROUPS,
   TEST_PATTERN_GROUP_IDS: () => TEST_PATTERN_GROUP_IDS,
   TRACKER_LABELS: () => TRACKER_LABELS,
+  USAGE_CHOICES: () => USAGE_CHOICES,
+  USAGE_COUNTERS: () => USAGE_COUNTERS,
+  USAGE_COUNTER_CAP: () => USAGE_COUNTER_CAP,
+  USAGE_COUNTS: () => USAGE_COUNTS,
+  USAGE_COUNT_CAP: () => USAGE_COUNT_CAP,
+  USAGE_MAX_AGE_MS: () => USAGE_MAX_AGE_MS,
+  USAGE_PAYLOAD_VERSION: () => USAGE_PAYLOAD_VERSION,
+  USAGE_TOGGLES: () => USAGE_TOGGLES,
   actionsFor: () => actionsFor,
   addTotals: () => addTotals,
   allBuiltInTestPatterns: () => allBuiltInTestPatterns,
@@ -11962,6 +12384,7 @@ __export(src_exports, {
   globToRegExp: () => globToRegExp,
   groupKey: () => groupKey,
   hasAdvancedSettings: () => hasAdvancedSettings,
+  hidCounterFor: () => hidCounterFor,
   hiddenCategoryFromCustom: () => hiddenCategoryFromCustom,
   isAnyCategoryId: () => isAnyCategoryId,
   isAutoViewed: () => isAutoViewed,
@@ -11971,6 +12394,7 @@ __export(src_exports, {
   isCategoryId: () => isCategoryId,
   isCategoryInPicker: () => isCategoryInPicker,
   isChangeKindId: () => isChangeKindId,
+  isCodingAgentId: () => isCodingAgentId,
   isCommentOnlyLine: () => isCommentOnlyLine,
   isCompactTimelineMode: () => isCompactTimelineMode,
   isCustomCategoryId: () => isCustomCategoryId,
@@ -11978,12 +12402,13 @@ __export(src_exports, {
   isGroupEnabled: () => isGroupEnabled,
   isGroupKey: () => isGroupKey,
   isOwnError: () => isOwnError,
-  isRecord: () => isRecord6,
+  isRecord: () => isRecord8,
   isRepoConfigMode: () => isRepoConfigMode,
   isReviewGrouping: () => isReviewGrouping,
   isSuggestedFixMode: () => isSuggestedFixMode,
   isTestGroupEnabled: () => isTestGroupEnabled,
   isTestPatternGroupId: () => isTestPatternGroupId,
+  isUsageCounter: () => isUsageCounter,
   isWellFormedGroupKey: () => isWellFormedGroupKey,
   isWellFormedId: () => isWellFormedId,
   linguistGeneratedPatterns: () => linguistGeneratedPatterns,
@@ -12014,6 +12439,9 @@ __export(src_exports, {
   parseTestSyntax: () => parseTestSyntax,
   parseUnifiedDiff: () => parseUnifiedDiff,
   parseUnifiedDiffHunks: () => parseUnifiedDiffHunks,
+  parseUsageCounts: () => parseUsageCounts,
+  parseUsagePayload: () => parseUsagePayload,
+  parseUsageSettings: () => parseUsageSettings,
   pathFromGitHeader: () => pathFromGitHeader,
   plainText: () => plainText,
   pluralize: () => pluralize,
@@ -12039,9 +12467,17 @@ __export(src_exports, {
   testSyntaxesFrom: () => testSyntaxesFrom,
   textFields: () => textFields,
   toggleFields: () => toggleFields,
+  usageBuildOf: () => usageBuildOf,
+  usageCaptures: () => usageCaptures,
+  usageCountProperties: () => usageCountProperties,
+  usagePeriods: () => usagePeriods,
+  usageSettingsOf: () => usageSettingsOf,
+  usageSettingsProperties: () => usageSettingsProperties,
+  usageToggleProperty: () => usageToggleProperty,
   validateSettingsDocument: () => validateSettingsDocument,
   validateSettingsValue: () => validateSettingsValue,
   verifyCatalogSignature: () => verifyCatalogSignature,
+  versionJump: () => versionJump,
   withAutoViewedForAll: () => withAutoViewedForAll,
   withCategoryEnabled: () => withCategoryEnabled,
   withCustomCategory: () => withCustomCategory,
@@ -12063,6 +12499,8 @@ var init_src = __esm({
     init_diff_parse();
     init_diff_summaries();
     init_error_report();
+    init_usage_report();
+    init_usage_settings();
     init_format();
     init_gist_sync();
     init_glob();
@@ -12084,7 +12522,7 @@ var init_src = __esm({
 function tokenKind(token) {
   return token.startsWith("ghu_") ? "app" : "oauth";
 }
-function isRecord9(value) {
+function isRecord11(value) {
   return typeof value === "object" && value !== null;
 }
 function str(record4, key) {
@@ -12096,7 +12534,7 @@ function num(record4, key) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 function parseTokenResponse(body, now) {
-  if (!isRecord9(body)) return null;
+  if (!isRecord11(body)) return null;
   const accessToken = str(body, "access_token");
   if (accessToken === null) return null;
   const expiresIn = num(body, "expires_in");
@@ -12116,7 +12554,7 @@ async function postForm(fetchImpl, url2, fields) {
     body: new URLSearchParams(fields).toString()
   });
   const body = await response.json().catch(() => null);
-  return { status: response.status, body: isRecord9(body) ? body : null };
+  return { status: response.status, body: isRecord11(body) ? body : null };
 }
 async function requestDeviceCode(clientId, options = {}) {
   const fetchImpl = options.fetch ?? defaultFetch;
@@ -12310,7 +12748,7 @@ async function boundedBody(response, limit, signal) {
   let size = 0;
   let canceled = signal.aborted;
   const decoder = new TextDecoder();
-  const parts = [];
+  const parts2 = [];
   const stop = () => {
     canceled = true;
     void reader.cancel().catch(() => void 0);
@@ -12329,9 +12767,9 @@ async function boundedBody(response, limit, signal) {
         stop();
         return null;
       }
-      parts.push(decoder.decode(chunk.value, { stream: true }));
+      parts2.push(decoder.decode(chunk.value, { stream: true }));
     }
-    return canceled ? null : parts.join("") + decoder.decode();
+    return canceled ? null : parts2.join("") + decoder.decode();
   } catch {
     return null;
   } finally {
@@ -15527,10 +15965,10 @@ var $ZodCIDRv4 = /* @__PURE__ */ $constructor("$ZodCIDRv4", (inst, def) => {
   $ZodStringFormat.init(inst, def);
 });
 function isValidCIDRv6(value) {
-  const parts = value.split("/");
-  if (parts.length !== 2)
+  const parts2 = value.split("/");
+  if (parts2.length !== 2)
     return false;
-  const [address, prefix] = parts;
+  const [address, prefix] = parts2;
   if (!prefix)
     return false;
   const prefixNum = Number(prefix);
@@ -27483,10 +27921,10 @@ function _readonly(Class2, innerType) {
   });
 }
 // @__NO_SIDE_EFFECTS__
-function _templateLiteral(Class2, parts, params) {
+function _templateLiteral(Class2, parts2, params) {
   return new Class2({
     type: "template_literal",
-    parts,
+    parts: parts2,
     ...normalizeParams(params)
   });
 }
@@ -27900,15 +28338,15 @@ function foldObjects(members2) {
     for (const key in object2.properties) {
       if (Object.prototype.hasOwnProperty.call(properties, key))
         continue;
-      const parts = [];
+      const parts2 = [];
       for (const other of objects) {
         const part = other.properties?.[key] ?? undeclaredConstraint(other);
         if (part === null || part === void 0)
           continue;
-        if (!parts.some((seen) => JSON.stringify(seen) === JSON.stringify(part)))
-          parts.push(part);
+        if (!parts2.some((seen) => JSON.stringify(seen) === JSON.stringify(part)))
+          parts2.push(part);
       }
-      const merged = parts.length === 1 ? parts[0] : foldObjects(parts) ?? { allOf: parts };
+      const merged = parts2.length === 1 ? parts2[0] : foldObjects(parts2) ?? { allOf: parts2 };
       assignProp(properties, key, merged);
     }
     for (const key of object2.required ?? [])
@@ -30499,10 +30937,10 @@ var ZodTemplateLiteral = /* @__PURE__ */ $constructor("ZodTemplateLiteral", (ins
   ZodType.init(inst, def);
   inst._zod.processJSONSchema = (ctx, json2, params) => templateLiteralProcessor(inst, ctx, json2, params);
 });
-function templateLiteral(parts, params) {
+function templateLiteral(parts2, params) {
   return new ZodTemplateLiteral({
     type: "template_literal",
-    parts,
+    parts: parts2,
     ...util_exports.normalizeParams(params)
   });
 }
@@ -31618,9 +32056,9 @@ function fnv1aHex(text) {
   return (hash2 >>> 0).toString(16).padStart(8, "0");
 }
 function itemIdFor(anchors, ruleId) {
-  const parts = [...anchors].sort();
-  if (ruleId !== void 0 && ruleId !== "") parts.push(`rule:${ruleId}`);
-  return `ri_${fnv1aHex(parts.join("|"))}`;
+  const parts2 = [...anchors].sort();
+  if (ruleId !== void 0 && ruleId !== "") parts2.push(`rule:${ruleId}`);
+  return `ri_${fnv1aHex(parts2.join("|"))}`;
 }
 var OPEN_STATUSES = /* @__PURE__ */ new Set(["open", "needs-reply", "addressed", "outdated"]);
 function isOpenStatus(status) {
@@ -32493,6 +32931,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   const checkVerdict = /* @__PURE__ */ new Map();
   const checkStartedAt = /* @__PURE__ */ new Map();
   const checkFinishedAt = /* @__PURE__ */ new Map();
+  const checkDoneBy = /* @__PURE__ */ new Map();
   const postedThreads = /* @__PURE__ */ new Set();
   const checkSkipped = /* @__PURE__ */ new Map();
   const checkCurrent = /* @__PURE__ */ new Set();
@@ -32526,6 +32965,9 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const finished = check2.completedAt === void 0 ? NaN : Date.parse(check2.completedAt);
     if (Number.isNaN(finished)) checkFinishedAt.delete(bot.id);
     else checkFinishedAt.set(bot.id, finished);
+    const doneBy = running || check2.doneBy === void 0 ? NaN : Date.parse(check2.doneBy);
+    if (Number.isNaN(doneBy)) checkDoneBy.delete(bot.id);
+    else checkDoneBy.set(bot.id, doneBy);
     const record4 = {
       id: bot.id,
       login,
@@ -32707,7 +33149,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const record4 = byId.get(id);
     if (record4 !== void 0) byId.set(id, afterAnswer(record4));
   }
-  for (const [id, { login, anchor: anchor2, at, own: own2, acknowledged, triggered }] of statusOnly) {
+  for (const [id, { login, anchor: anchor2, at, own: own2, acknowledged, triggered, askedAt }] of statusOnly) {
     const existing = byId.get(id);
     const edited = lastEditBy.get(id);
     if (existing !== void 0 && at !== null && edited !== void 0 && edited > at) continue;
@@ -32716,7 +33158,10 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const finished = checkFinishedAt.get(id);
     const before = started !== void 0 ? started : finished;
     const skippedBefore = id === "coderabbit" && triggered === true && before === void 0 && checkSkipped.has(id);
-    const checkIsThisRun = existing?.checkName !== void 0 && !(before !== void 0 && at !== null && before < at) && !skippedBefore;
+    const doneBy = checkDoneBy.get(id);
+    const asked = askedAt ?? at;
+    const doneBefore = before === void 0 && doneBy !== void 0 && asked !== null && doneBy < asked;
+    const checkIsThisRun = existing?.checkName !== void 0 && !(before !== void 0 && at !== null && before < at) && !doneBefore && !skippedBefore;
     if (stale && !checkIsThisRun && options.partial !== true) {
       const prior = runsBeforeAsk.get(id);
       if (prior !== void 0 && !threadRuns.has(id)) {
@@ -33144,6 +33589,8 @@ function planConsolidation(previous, items, options) {
       carried.set(item.id, carriedFrom(same));
       continue;
     }
+    const seen = options.seen;
+    if (seen !== void 0 && item.sources.length > 0 && item.sources.every((source) => seen.has(source.anchor))) continue;
     const grownFrom = item.sources.map((source) => previousByAnchor.get(source.anchor)).find((candidate) => candidate !== void 0);
     const input3 = {
       id: item.id,
@@ -33192,7 +33639,8 @@ function summaryInput(items) {
     title: item.title,
     severity: item.severity,
     status: item.status,
-    ...item.path === void 0 ? {} : { path: item.path }
+    ...item.path === void 0 ? {} : { path: item.path },
+    ...item.context === void 0 ? {} : { context: item.context }
   }));
 }
 function summaryRecord(tldr, items, updatedAt) {
@@ -33440,11 +33888,11 @@ function headerLine(meta3) {
   const threads = threadCounts(meta3.items);
   const open2 = threads.open;
   const total = threads.total;
-  const parts = [`**${total - open2} of ${total} done**`];
-  for (const bot of meta3.bots) parts.push(botPhrase(bot, meta3.headSha));
+  const parts2 = [`**${total - open2} of ${total} done**`];
+  for (const bot of meta3.bots) parts2.push(botPhrase(bot, meta3.headSha));
   if (open2 > 0 && total > 0) {
   }
-  return parts.join(" \xB7 ");
+  return parts2.join(" \xB7 ");
 }
 function renderSummary(meta3, subject) {
   const { open: open2, done } = groupItems(meta3.items);
@@ -33497,10 +33945,11 @@ Rules:
 - "severity": one of the allowed values when you can tell; null otherwise.
 - When "sameProblemAs" lists other ids, those items were judged to report the same underlying problem: give them one and the same title, and let each context say which other reporters raised it.
 - Return JSON only, matching the schema. Every id must be one of the ids you were given.`;
-var SUMMARY_SYSTEM = `You write the TL;DR of a pull request's review state for its digest.
+var SUMMARY_SYSTEM = `You write the triage of a pull request's open review feedback for its digest: what the author has to do before it can merge.
 Rules:
 - At most three sentences, plain prose, no lists, no headings, no emoji.
-- Say what kind of feedback is open (bugs, questions, nits), where it clusters, and what is blocking if anything. Do not repeat every item.
+- Say concretely what each open finding asks for (the change, in a few words, not just its file), and whether anything blocks merging. Group findings that ask for the same kind of change.
+- Wrap file names, paths, symbols, identifiers and code in backticks: \`attachment-viewer.tsx\`, \`parseDiff()\`.
 - When "previousTldr" is given, keep its wording where it still holds and change only what the item list requires.
 - Return JSON only: {"tldr": "..."}.`;
 var ADDRESSED_SYSTEM = `You decide whether a review finding still applies given later discussion and the files that changed.
@@ -33636,18 +34085,18 @@ function joinUrl(base, path) {
   const rest = path.replace(/^\/+/, "");
   return `${origin}/${VERSIONED_BASE.test(origin) ? rest.replace(/^v1\//i, "") : rest}`;
 }
-function isRecord8(value) {
+function isRecord10(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function contentOf(value) {
   if (typeof value === "string" && value !== "") return value;
   if (!Array.isArray(value)) return null;
-  const parts = [];
+  const parts2 = [];
   for (const part of value) {
-    if (typeof part === "string") parts.push(part);
-    else if (isRecord8(part) && typeof part.text === "string") parts.push(part.text);
+    if (typeof part === "string") parts2.push(part);
+    else if (isRecord10(part) && typeof part.text === "string") parts2.push(part.text);
   }
-  const joined = parts.join("");
+  const joined = parts2.join("");
   return joined === "" ? null : joined;
 }
 async function completeChat(options) {
@@ -33684,10 +34133,10 @@ async function completeChat(options) {
     });
     if (!response.ok) return { ok: false, reason: `Completion failed (${response.status}).` };
     const payload = await response.json();
-    if (!isRecord8(payload) || !Array.isArray(payload.choices))
+    if (!isRecord10(payload) || !Array.isArray(payload.choices))
       return { ok: false, reason: "Completion response was empty." };
     const first = payload.choices[0];
-    const message = isRecord8(first) && isRecord8(first.message) ? first.message : null;
+    const message = isRecord10(first) && isRecord10(first.message) ? first.message : null;
     const text = message === null ? null : contentOf(message.content);
     if (text === null) return { ok: false, reason: "Completion response had no text." };
     const model = typeof payload.model === "string" ? payload.model : options.model;
@@ -34206,9 +34655,9 @@ var REPORTERS = [
         const rows = body.match(/(?:\*\*|<strong>)(Block|Warn|Monitor|Ignore)(?:\*\*|<\/strong>)/g) ?? [];
         const count = rows.length;
         const blocked = rows.filter((row) => /Block/.test(row)).length;
-        const parts = count > 0 ? [{ text: plural(count, "alert") }] : [];
-        if (blocked > 0) parts.push({ text: String(blocked), glyph: "dot", tone: "bad" });
-        return { state: "failed", headline: count > 0 ? `${plural(count, "alert")} in dependencies` : "Alerts in dependencies", ...count > 0 ? { count } : {}, short: parts };
+        const parts2 = count > 0 ? [{ text: plural(count, "alert") }] : [];
+        if (blocked > 0) parts2.push({ text: String(blocked), glyph: "dot", tone: "bad" });
+        return { state: "failed", headline: count > 0 ? `${plural(count, "alert")} in dependencies` : "Alerts in dependencies", ...count > 0 ? { count } : {}, short: parts2 };
       }
       if (/\ball alerts resolved\b/i.test(body)) return { state: "passed", headline: "All alerts resolved", short: [] };
       if (/\breview the following changes in (?:direct )?dependencies\b/i.test(body)) {
@@ -34319,10 +34768,10 @@ var CHECK_REPORTERS = [
     short: (words) => {
       const issues = /(\d+) new issues?/i.exec(words);
       if (issues === null) return [];
-      const parts = [{ text: plural(Number(issues[1]), "issue") }];
+      const parts2 = [{ text: plural(Number(issues[1]), "issue") }];
       const high = /(\d+) (?:high|critical)/i.exec(words);
-      if (high !== null) parts.push({ text: high[1] ?? "", glyph: "dot", tone: "bad" });
-      return parts;
+      if (high !== null) parts2.push({ text: high[1] ?? "", glyph: "dot", tone: "bad" });
+      return parts2;
     }
   },
   {
@@ -34339,14 +34788,14 @@ var CHECK_REPORTERS = [
         const match = new RegExp(`${key}:?\\s*(\\d+)`, "i").exec(words);
         return match === null ? null : Number(match[1]);
       };
-      const parts = [];
+      const parts2 = [];
       const failed = read("failed");
       const passed = read("passed");
       const pending = read("pending");
-      if (failed !== null && failed > 0) parts.push({ text: String(failed), glyph: "x", tone: "bad" });
-      if (passed !== null && passed > 0) parts.push({ text: String(passed), glyph: "check", tone: "good" });
-      if (pending !== null && pending > 0) parts.push({ text: String(pending), glyph: "dot", tone: "warn" });
-      return parts;
+      if (failed !== null && failed > 0) parts2.push({ text: String(failed), glyph: "x", tone: "bad" });
+      if (passed !== null && passed > 0) parts2.push({ text: String(passed), glyph: "check", tone: "good" });
+      if (pending !== null && pending > 0) parts2.push({ text: String(pending), glyph: "dot", tone: "warn" });
+      return parts2;
     }
   },
   {
@@ -34492,10 +34941,10 @@ var CHECK_REPORTERS = [
     short: (words) => {
       const alerts = /\b(\d+) new alerts?\b/i.exec(words);
       if (alerts?.[1] === void 0 || Number(alerts[1]) === 0) return [];
-      const parts = [{ text: plural(Number(alerts[1]), "alert") }];
+      const parts2 = [{ text: plural(Number(alerts[1]), "alert") }];
       const severe = /\b(\d+) (?:critical|high)\b/i.exec(words);
-      if (severe?.[1] !== void 0) parts.push({ text: severe[1], glyph: "dot", tone: "bad" });
-      return parts;
+      if (severe?.[1] !== void 0) parts2.push({ text: severe[1], glyph: "dot", tone: "bad" });
+      return parts2;
     }
   }
 ];
@@ -34528,11 +34977,22 @@ var plannerOutputSchema = external_exports.object({ steps: external_exports.arra
   watch: external_exports.array(external_exports.string().max(500)).max(3)
 })).min(1).max(200) });
 
+// ../../packages/review/src/triage.ts
+var suggestOutputSchema = external_exports.object({
+  suggestions: external_exports.array(
+    external_exports.object({
+      ids: external_exports.array(external_exports.string().min(1)).min(1),
+      summary: external_exports.string().max(600),
+      replacement: external_exports.string().max(2e4).nullish()
+    })
+  )
+});
+
 // src/github.ts
 init_src2();
 var API3 = "https://api.github.com";
 var GRAPHQL = `${API3}/graphql`;
-function isRecord10(value) {
+function isRecord12(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 async function githubJson(client, url2, init = {}) {
@@ -34549,12 +35009,12 @@ async function githubJson(client, url2, init = {}) {
 }
 async function graphql(client, query, variables) {
   const body = await githubJson(client, GRAPHQL, { method: "POST", body: JSON.stringify({ query, variables }) });
-  if (!isRecord10(body)) throw new Error("GitHub GraphQL returned a non-object.");
+  if (!isRecord12(body)) throw new Error("GitHub GraphQL returned a non-object.");
   if (body.errors !== void 0) throw new Error("GitHub GraphQL could not confirm the request");
   return body.data;
 }
 function assertPrQuery(value) {
-  if (!isRecord10(value) || !isRecord10(value.repository)) {
+  if (!isRecord12(value) || !isRecord12(value.repository)) {
     throw new Error("GitHub GraphQL returned an unexpected pull request payload.");
   }
 }
@@ -34626,7 +35086,7 @@ query GeldThreadComments($id: ID!, $cursor: String) {
 }
 `;
 function assertThreadCommentsQuery(value) {
-  if (!isRecord10(value) || !("node" in value)) throw new Error("GitHub GraphQL returned an unexpected shape for the thread comments.");
+  if (!isRecord12(value) || !("node" in value)) throw new Error("GitHub GraphQL returned an unexpected shape for the thread comments.");
 }
 async function remainingThreadComments(client, threadId, first) {
   const nodes = [...first.nodes];
@@ -34669,7 +35129,7 @@ query GeldCheckContexts($owner: String!, $name: String!, $oid: GitObjectID!, $cu
 }
 `;
 function assertCheckContextsQuery(value) {
-  if (!isRecord10(value) || !("repository" in value)) throw new Error("GitHub GraphQL returned an unexpected shape for the check contexts.");
+  if (!isRecord12(value) || !("repository" in value)) throw new Error("GitHub GraphQL returned an unexpected shape for the check contexts.");
 }
 async function remainingCheckContexts(client, owner, repo, oid, first) {
   const nodes = [...first.nodes];
@@ -34803,7 +35263,7 @@ function findSummaryComment(comments, ownLogins = []) {
 async function tokenLogin(client) {
   try {
     const body = await githubJson(client, `${API3}/user`);
-    return isRecord10(body) && typeof body.login === "string" && body.login !== "" ? body.login : null;
+    return isRecord12(body) && typeof body.login === "string" && body.login !== "" ? body.login : null;
   } catch {
     return null;
   }
@@ -34814,10 +35274,10 @@ async function filesChangedBetween(client, owner, repo, fromSha, toSha) {
     client,
     `${API3}/repos/${owner}/${repo}/compare/${encodeURIComponent(fromSha)}...${encodeURIComponent(toSha)}`
   );
-  if (!isRecord10(body) || !Array.isArray(body.files)) return [];
+  if (!isRecord12(body) || !Array.isArray(body.files)) return [];
   const paths = [];
   for (const file2 of body.files) {
-    if (isRecord10(file2) && typeof file2.filename === "string" && file2.filename !== "") paths.push(file2.filename);
+    if (isRecord12(file2) && typeof file2.filename === "string" && file2.filename !== "") paths.push(file2.filename);
   }
   return paths;
 }
@@ -34827,11 +35287,11 @@ async function upsertIssueComment(client, owner, repo, number4, existingId, body
     return existingId;
   }
   const created = await githubJson(client, `${API3}/repos/${owner}/${repo}/issues/${number4}/comments`, { method: "POST", body: JSON.stringify({ body }) });
-  if (!isRecord10(created) || typeof created.id !== "number") throw new Error("GitHub did not return the new comment id.");
+  if (!isRecord12(created) || typeof created.id !== "number") throw new Error("GitHub did not return the new comment id.");
   return created.id;
 }
 function record3(value) {
-  return isRecord10(value) ? value : null;
+  return isRecord12(value) ? value : null;
 }
 function nested(value, key) {
   const parent = record3(value);
@@ -34895,7 +35355,7 @@ async function trackerStates(client, references) {
     if (index >= 20 || reference.provider !== "github_issues" || !reference.repository) return reference;
     const path = `repos/${reference.repository.split("/").map(encodeURIComponent).join("/")}/issues/${encodeURIComponent(reference.id)}`;
     const result = await api2.request(path);
-    return result.ok && isRecord10(result.value) && typeof result.value.state === "string" ? { ...reference, status: result.value.state } : reference;
+    return result.ok && isRecord12(result.value) && typeof result.value.state === "string" ? { ...reference, status: result.value.state } : reference;
   }));
 }
 

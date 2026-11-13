@@ -20,7 +20,7 @@ import { botTitle, isOpenStatus, itemThreads, resolveBotId, threadCounts } from 
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { reactSettled } from '../react-hydration';
 import type { RevisionMarker } from './crawler';
-import { ICON_ALERT, ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_EXCLAMATION_CIRCLE_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_QUESTION, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_TRASH, ICON_TRIANGLE_DOWN, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER, ICON_EYE_CLOSED, ICON_BLOCKED } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_EXCLAMATION_CIRCLE_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SPINNER, ICON_TRASH, ICON_TRIANGLE_DOWN, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER, ICON_EYE_CLOSED, ICON_BLOCKED } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checkStateOfRun, checksHealth, checksRowTone, checksSummary, checksTotal, pushRowTone, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
 import type { CheckCounts, CheckState, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
@@ -43,6 +43,7 @@ import { fitPathInto } from './path-fit';
 import { relativeTimeElement } from './time';
 import { DIGEST_VIEW_OPTIONS, digestViewLabel, viewChoice, viewLabel } from './digest-view';
 import { takeViewFocus } from './view-focus';
+import { helpTip } from './help-tip';
 import type { MissingTool } from '../../lib/feedback';
 
 export const PANEL_CLASS = 'geld-review';
@@ -686,7 +687,7 @@ export function syncSpinners(root: Element): void {
   });
 }
 
-const SPINNERS = `.octicon-in-progress, .${PANEL_CLASS}__icon--spin .octicon, [class*="Spinner-SpinnerAnimation"]`;
+const SPINNERS = '.octicon-in-progress, .geld-spinner, [class*="Spinner-SpinnerAnimation"]';
 const spinnerRoots = new Set<Element>();
 let spinnerFrame = 0;
 
@@ -1641,20 +1642,23 @@ function copyItem(list: HTMLElement, key: string, handlers: PanelHandlers, close
   list.append(createElement('div', { class: `${PANEL_CLASS}__menu-sep`, role: 'separator' }));
 }
 
-const MISSING_TOOL_LABEL: Readonly<Record<MissingTool, string>> = { 'review bot': 'Request a bot', 'coding agent': 'Request an agent' };
+const MISSING_TOOL_NOUN: Readonly<Record<MissingTool, string>> = { 'review bot': 'bot', 'coding agent': 'agent' };
 
-/** "Request a bot" / "Request an agent": the feedback page, its draft asking Geld to support the reader's own tool. */
+/** A help icon whose tip reads "Don't see your preferred bot? Request it", the link opening the feedback page with its draft. */
 function missingToolHelp(tool: MissingTool, handlers: PanelHandlers, close: () => void, role: 'menuitem' | null = null): HTMLElement {
-  const link = createElement('button', { type: 'button', class: `${PANEL_CLASS}__help`, title: `Ask Geld to support your ${tool}`, ...(role === null ? {} : { role }) }, [
-    createElement('span', { class: `${PANEL_CLASS}__help-glyph`, 'aria-hidden': 'true' }, [icon(ICON_QUESTION)]),
-    createElement('span', { class: `${PANEL_CLASS}__help-link` }, [MISSING_TOOL_LABEL[tool]]),
-  ]);
+  const noun = MISSING_TOOL_NOUN[tool];
+  const link = createElement('button', { type: 'button', class: `${PANEL_CLASS}__help-link` }, ['Request it']);
   link.addEventListener('click', (event) => {
     event.stopPropagation();
     close();
     handlers.onMissingTool(tool);
   });
-  return link;
+  return helpTip({
+    prefix: PANEL_CLASS,
+    label: `Don\u2019t see your preferred ${noun}?`,
+    content: [`Don\u2019t see your preferred ${noun}? `, link],
+    ...(role === null ? {} : { role }),
+  });
 }
 
 function applyControl(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHandlers): HTMLElement {
@@ -1938,7 +1942,7 @@ function botLook(bot: BotVerdictRecord, model: Pick<PanelModel, 'botRequests'>):
   const title = botTitle(bot.id, bot.login);
   if (request !== undefined) {
     const label = `${title}: ${requestSentence(request)}`;
-    return request.kind === 'starting' ? { health: 'pending', glyph: ICON_IN_PROGRESS, detail: requestDetail(request), label } : { health: 'warn', glyph: ICON_ALERT, detail: requestDetail(request), label };
+    return request.kind === 'starting' ? { health: 'pending', glyph: ICON_SPINNER, detail: requestDetail(request), label } : { health: 'warn', glyph: ICON_ALERT, detail: requestDetail(request), label };
   }
   const health = botHealth(bot);
   // A run that did not happen (refused, or broken) wears the warning triangle, not a verdict's light: nothing was
@@ -2071,13 +2075,12 @@ function requestMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | 
   if (model.requestable.length === 0) return null;
   installMenuDismissal();
   const details = createElement('details', { class: `${PANEL_CLASS}__menu ${PANEL_CLASS}__request` });
-  // The ⋯ every row wears; while a bot runs it turns into the spinning sync glyph, which is the news.
   const summary = createElement(
     'summary',
-    { class: `${PANEL_CLASS}__icon${model.running ? ` ${PANEL_CLASS}__icon--spin` : ''}`, 'aria-label': model.running ? 'A review is running · Request a review' : 'Request a review', title: model.running ? 'A review is running' : 'Request a review', role: 'button', [ATTR_FOCUS]: 'rerun' },
+    { class: `${PANEL_CLASS}__icon`, 'aria-label': model.running ? 'A review is running · Request a review' : 'Request a review', title: model.running ? 'A review is running' : 'Request a review', role: 'button', [ATTR_FOCUS]: 'rerun' },
     // Idle, the control is an action — it posts the trigger comments — so it wears the send glyph, not the ⋯ of a
-    // menu that only offers choices; running, the spinning sync says a review is under way.
-    [icon(model.running ? ICON_SYNC : ICON_PAPER_AIRPLANE)],
+    // menu that only offers choices; running, GitHub's spinner says a review is under way.
+    [icon(model.running ? ICON_SPINNER : ICON_PAPER_AIRPLANE)],
   );
   summary.addEventListener('click', (event) => event.stopPropagation());
   // Closed by Run, Cancel, Escape or a click outside: whatever changed meanwhile renders now.
