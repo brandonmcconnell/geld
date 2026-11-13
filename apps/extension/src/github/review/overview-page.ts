@@ -119,12 +119,22 @@ export function openCollapsedThreads(root: ParentNode = document): number {
 const pressed = new WeakSet<Element>();
 
 /**
+ * What holds the Overview's checks list once Checks is expanded: an overlay under the top card until Nov 2026, then a
+ * drawer inside the card's "Merge status" section (`section.StatusDrawer…[aria-label="Checks"]`).
+ */
+const CHECKS_HOLDERS = '[role="group"][aria-label="Checks"], section[aria-label="Checks"]';
+
+function checksHolder(root: ParentNode): HTMLElement | null {
+  return [...root.querySelectorAll<HTMLElement>(CHECKS_HOLDERS)].find((holder) => holder.closest('.geld-review') === null) ?? null;
+}
+
+/**
  * GitHub's checks list on the Overview: the merge box's own list (`expandableWrapper`, its groups, gear and each check's
- * menu), drawn in an overlay under the top card once its Checks mini status is expanded, and not in the page before.
+ * menu), drawn under the top card once its Checks mini status is expanded, and not in the page before.
  */
 export function overviewChecksList(root: ParentNode = document): HTMLElement | null {
-  for (const group of root.querySelectorAll<HTMLElement>('[role="group"][aria-label="Checks"]')) {
-    if (group.closest('.geld-review') === null && group.querySelector('[class*="expandableWrapper"]') !== null) return group;
+  for (const holder of root.querySelectorAll<HTMLElement>(CHECKS_HOLDERS)) {
+    if (holder.closest('.geld-review') === null && holder.querySelector('[class*="expandableWrapper"]') !== null) return holder;
   }
   return null;
 }
@@ -155,8 +165,7 @@ export function openOverviewChecks(root: ParentNode = document, now = Date.now()
 /** Closes the list Geld opened once the digest no longer folds the card, as long as the list is at home and not lent to a row. */
 export function closeOverviewChecks(root: ParentNode = document): void {
   if (!checksOpenedHere) return;
-  const overlay = [...root.querySelectorAll('[role="group"][aria-label="Checks"]')].find((group) => group.closest('.geld-review') === null);
-  if (overlay === undefined) {
+  if (checksHolder(root) === null) {
     checksOpenedHere = false;
     return;
   }

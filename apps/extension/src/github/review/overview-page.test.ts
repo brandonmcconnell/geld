@@ -291,4 +291,23 @@ describe("the Overview's checks list", () => {
     closeOverviewChecks();
     expect(pressed).toEqual([]);
   });
+
+  it('is found in the drawer inside the Merge status card as well as in the overlay', () => {
+    const drawerCard = (list: string): string =>
+      `<div class="MiniStatusGrid__x"><section aria-label="Merge status"><section aria-label="Collapse checks"><button>Collapse checks</button></section><section class="StatusDrawer__x" aria-label="Checks"><div>${list}</div></section></section></div>`;
+    const list = '<div class="expandableWrapper__x"><div role="group" aria-label="failing checks"></div></div>';
+    document.body.innerHTML = card(false);
+    openOverviewChecks(document, 40_000);
+    document.body.innerHTML = drawerCard(list);
+    expect(overviewChecksList()?.classList.contains('StatusDrawer__x')).toBe(true);
+    const pressed: string[] = [];
+    document.body.addEventListener('click', (event) => pressed.push(event.target instanceof Element ? (event.target.textContent ?? '') : ''));
+    document.body.innerHTML = drawerCard('<!--geld:quick-view:1-->');
+    expect(overviewChecksList()).toBeNull();
+    closeOverviewChecks();
+    expect(pressed).toEqual([]);
+    document.body.innerHTML = drawerCard(list);
+    closeOverviewChecks();
+    expect(pressed).toEqual(['Collapse checks']);
+  });
 });
