@@ -1,10 +1,10 @@
-// Send a build of the Mac app to TestFlight's external groups.
+// Ready a build of the Mac app for TestFlight testers.
 //
 //   node asc-testflight-distribute.mjs <bundle-id> <marketing-version> <build-number> <groups> [what-to-test-file]
 //
 // Whoever uploaded the build (testflight.yml, or publish.yml's App Store job), this makes sure it carries its What to
-// Test notes, is in each named external group (comma-separated) and has been submitted to TestFlight App Review,
-// doing only what is not done yet, so a later run repeats nothing. It waits up to 40 minutes for Apple to finish
+// Test notes and, when external groups are named (comma-separated, may be empty), is in each of them and has been
+// submitted to TestFlight App Review, doing only what is not done yet, so a later run repeats nothing. It waits up to 40 minutes for Apple to finish
 // processing a build it has just been given.
 //
 // Prints "sent", "already" (every step was done before), "refused <reason>" when Apple would not take the review
@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs';
 import { api, appIdFor } from './asc-api.mjs';
 
 const [bundleId, marketingVersion, buildNumber, groupList, notesFile] = process.argv.slice(2);
-if (!bundleId || !marketingVersion || !buildNumber || !groupList) {
+if (!bundleId || !marketingVersion || !buildNumber || groupList === undefined) {
   throw new Error('usage: asc-testflight-distribute.mjs <bundle-id> <marketing-version> <build-number> <groups> [what-to-test-file]');
 }
 const groupNames = groupList.split(',').map((name) => name.trim()).filter((name) => name !== '');
@@ -74,6 +74,11 @@ for (const name of groupNames) {
 }
 
 // A build never submitted answers with no data, or a 404.
+if (groupNames.length === 0) {
+  console.log(changed ? 'sent' : 'already');
+  process.exit(0);
+}
+
 const submission = await api(`/builds/${build.id}/betaAppReviewSubmission`).then(
   (answer) => answer.data,
   (error) => {
