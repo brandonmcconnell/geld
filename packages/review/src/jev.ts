@@ -1,5 +1,5 @@
 import type { FetchLike } from './ai-client';
-import { joinUrl } from './ai-client';
+import { failureReason, joinUrl, providerMessage } from './ai-client';
 
 /**
  * TypeSafe's Jev is a System One model: it evaluates one piece of state
@@ -275,7 +275,10 @@ export async function evaluateDecision(options: EvaluateOptions): Promise<JevRes
       body: JSON.stringify(openai === null ? options.request : openai.body),
       ...(controller === null ? {} : { signal: controller.signal }),
     });
-    if (!response.ok) return { ok: false, reason: `Decision request failed (${response.status}).` };
+    if (!response.ok) {
+      const message = providerMessage(await response.text().catch(() => ''), options.apiKey);
+      return { ok: false, reason: failureReason(`Decision request failed (${response.status})`, message) };
+    }
     const body: unknown = await response.json();
     const parsed = openai === null ? parseJevResponse(body) : parseOpenAiDecisions(body, openai.names);
     if (parsed === null) return { ok: false, reason: 'The decision model answered in an unexpected shape.' };

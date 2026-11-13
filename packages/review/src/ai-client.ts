@@ -26,7 +26,7 @@ export interface ChatCompletionOptions {
 
 export type ChatCompletionResult =
   | { readonly ok: true; readonly text: string; readonly model: string }
-  | { readonly ok: false; readonly reason: string };
+  | { readonly ok: false; readonly reason: string; readonly status?: number };
 
 /** What a gateway's `/v1/models` says about a model, beyond its id, when it says anything (Vercel and OpenRouter both do). */
 export interface ModelInfo {
@@ -130,24 +130,82 @@ export async function listModels(
   }
 }
 
+const MAX_PROVIDER_MESSAGE = 240;
+
+/** How a 400 words a gateway or model that cannot take a JSON schema in `response_format`. */
+const SCHEMA_REFUSED = /response_format|json_schema|structured output|schema|strict/i;
+
+function messageIn(value: unknown): string | null {
+  if (typeof value === 'string') return value.trim() === '' ? null : value;
+  // Gemini's OpenAI endpoint answers some errors as a one-element array.
+  if (Array.isArray(value)) return messageIn(value[0]);
+  if (!isRecord(value)) return null;
+  for (const key of ['error', 'message', 'detail']) {
+    const found = messageIn(value[key]);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
+/** What a provider said about a refused request, short, with the key and anything key-shaped taken out. */
+export function providerMessage(body: string, apiKey: string): string | null {
+  let message: string | null;
+  try {
+    message = messageIn(JSON.parse(body));
+  } catch {
+    message = /^\s*</.test(body) ? null : body;
+  }
+  if (message === null) return null;
+  let text = apiKey === '' ? message : message.split(apiKey).join('<key>');
+  text = text
+    .replace(/\b(?:sk|pk|rk|key)-[\w-]{6,}/gi, '<key>')
+    .replace(/[\w-]{32,}/g, '<token>')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (text === '') return null;
+  return text.length > MAX_PROVIDER_MESSAGE ? `${text.slice(0, MAX_PROVIDER_MESSAGE - 1)}…` : text;
+}
+
+/** "Completion failed (400)", then the provider's words when it gave any, as one sentence. */
+export function failureReason(lead: string, message: string | null): string {
+  if (message === null) return `${lead}.`;
+  return `${lead}: ${/[.!?…]$/.test(message) ? message : `${message}.`}`;
+}
+
+function refusal(status: number, message: string | null): ChatCompletionResult {
+  return { ok: false, reason: failureReason(`Completion failed (${status})`, message), status };
+}
+
+/** The schema as an instruction, for a gateway that takes no `response_format`: the parsers read JSON with or without a fence. */
+function withSchemaInPrompt(messages: readonly ChatMessage[], schema: unknown): readonly ChatMessage[] {
+  const instruction = `Answer with one JSON object and nothing else, matching this JSON Schema:\n${JSON.stringify(schema)}`;
+  const system = messages.findIndex((message) => message.role === 'system');
+  if (system === -1) return [{ role: 'system', content: instruction }, ...messages];
+  return messages.map((message, index) => (index === system ? { ...message, content: `${message.content}\n\n${instruction}` } : message));
+}
+
 export async function completeChat(options: ChatCompletionOptions): Promise<ChatCompletionResult> {
   if (options.apiKey === '') return { ok: false, reason: 'No API key.' };
-  const body: Record<string, unknown> = {
+  const base: Record<string, unknown> = {
     model: options.model,
     messages: options.messages,
   };
   // Reasoning models (OpenAI's gpt-5 and later, o-series) answer 400 to any temperature but their default.
-  if (options.temperature !== undefined) body.temperature = options.temperature;
-  if (options.jsonSchema !== undefined) {
-    body.response_format = {
-      type: 'json_schema',
-      json_schema: {
-        name: options.schemaName ?? 'geld',
-        strict: true,
-        schema: options.jsonSchema,
-      },
-    };
-  }
+  if (options.temperature !== undefined) base.temperature = options.temperature;
+  const body =
+    options.jsonSchema === undefined
+      ? base
+      : {
+          ...base,
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: options.schemaName ?? 'geld',
+              strict: true,
+              schema: options.jsonSchema,
+            },
+          },
+        };
   const controller = options.timeoutMs === undefined ? null : new AbortController();
   const timer =
     controller === null || options.timeoutMs === undefined
@@ -160,17 +218,26 @@ export async function completeChat(options: ChatCompletionOptions): Promise<Chat
   try {
     // Detached first: a browser's native fetch called as `options.fetch(…)` throws "Illegal invocation".
     const fetchImpl = options.fetch;
-    const response = await fetchImpl(joinUrl(options.baseUrl, '/v1/chat/completions'), {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${options.apiKey}`,
-        'content-type': 'application/json',
-        accept: 'application/json',
-      },
-      body: JSON.stringify(body),
-      ...(signal ? { signal } : {}),
-    });
-    if (!response.ok) return { ok: false, reason: `Completion failed (${response.status}).` };
+    const post = (payload: Record<string, unknown>): Promise<Response> =>
+      fetchImpl(joinUrl(options.baseUrl, '/v1/chat/completions'), {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${options.apiKey}`,
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify(payload),
+        ...(signal ? { signal } : {}),
+      });
+    let response = await post(body);
+    if (!response.ok) {
+      const status = response.status;
+      const message = providerMessage(await response.text().catch(() => ''), options.apiKey);
+      const schemaRefused = status === 400 && options.jsonSchema !== undefined && message !== null && SCHEMA_REFUSED.test(message);
+      if (!schemaRefused) return refusal(status, message);
+      response = await post({ ...base, messages: withSchemaInPrompt(options.messages, options.jsonSchema) });
+      if (!response.ok) return refusal(status, message);
+    }
     const payload: unknown = await response.json();
     if (!isRecord(payload) || !Array.isArray(payload.choices))
       return { ok: false, reason: 'Completion response was empty.' };

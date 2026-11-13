@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { completeChat, joinUrl, listModels } from './ai-client';
+import { completeChat, joinUrl, listModels, providerMessage } from './ai-client';
 import type { ChatCompletionOptions } from './ai-client';
 import { evaluateDecision } from './jev';
 
@@ -167,6 +167,72 @@ it('calls the given fetch on its own, as a browser requires of its native fetch'
       request: { model: 'jev-latest', state: 'Fixture', questions: { a: { type: 'noul', instructions: 'Yes?' } } },
     }),
   ).toEqual({ ok: true, model: 'jev', answers: { a: { type: 'noul', noul: 0.9 } } });
+});
+
+describe('a refused completion', () => {
+  const options = (fetchImpl: ChatCompletionOptions['fetch']): ChatCompletionOptions => ({
+    fetch: fetchImpl,
+    baseUrl: 'https://ai-gateway.vercel.sh',
+    apiKey: 'sk-synthetic-secret-1234',
+    model: 'anthropic/claude-sonnet-5',
+    messages: [
+      { role: 'system', content: 'You write titles.' },
+      { role: 'user', content: '{}' },
+    ],
+    jsonSchema: { type: 'object', properties: { tldr: { type: 'string' } }, required: ['tldr'], additionalProperties: false },
+    schemaName: 'geld_summary',
+  });
+
+  it('says what the provider said, without the key', async () => {
+    const result = await completeChat(
+      options(async () => Response.json({ error: { message: 'Model not found for key sk-synthetic-secret-1234', type: 'invalid_request_error' } }, { status: 404 })),
+    );
+    expect(result).toEqual({ ok: false, reason: 'Completion failed (404): Model not found for key <key>.', status: 404 });
+  });
+
+  it('keeps to the status when the answer has no words to give', async () => {
+    expect(await completeChat(options(async () => new Response('<html><body>Bad gateway</body></html>', { status: 502 })))).toEqual({ ok: false, reason: 'Completion failed (502).', status: 502 });
+    expect(providerMessage(JSON.stringify([{ error: { code: 400, message: 'Invalid JSON payload received.' } }]), '')).toBe('Invalid JSON payload received.');
+  });
+
+  it('asks again with the schema in the prompt when the gateway cannot take it as a response format', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const result = await completeChat(
+      options(async (_url, init) => {
+        const body: unknown = JSON.parse(String(init?.body));
+        if (typeof body === 'object' && body !== null && !Array.isArray(body)) bodies.push(Object.fromEntries(Object.entries(body)));
+        return bodies.length === 1 ? Response.json({ error: { message: "Invalid schema for response_format 'geld_summary'" } }, { status: 400 }) : Response.json({ choices: [{ message: { content: '{"tldr":"ok"}' } }] });
+      }),
+    );
+    expect(result).toEqual({ ok: true, text: '{"tldr":"ok"}', model: 'anthropic/claude-sonnet-5' });
+    expect(bodies[0]).toHaveProperty('response_format');
+    expect(bodies[1]).not.toHaveProperty('response_format');
+    expect(JSON.stringify(bodies[1]?.messages)).toContain('matching this JSON Schema');
+  });
+
+  it('reports the first refusal when the plain request is refused too, and asks only once', async () => {
+    let calls = 0;
+    const result = await completeChat(
+      options(async () => {
+        calls += 1;
+        return calls === 1 ? Response.json({ error: { message: 'json_schema is not supported for this model' } }, { status: 400 }) : Response.json({ error: { message: 'Something else' } }, { status: 400 });
+      }),
+    );
+    expect(calls).toBe(2);
+    expect(result).toEqual({ ok: false, reason: 'Completion failed (400): json_schema is not supported for this model.', status: 400 });
+  });
+
+  it('does not ask again for a 400 that is not about the schema', async () => {
+    let calls = 0;
+    const result = await completeChat(
+      options(async () => {
+        calls += 1;
+        return Response.json({ error: { message: "This model's maximum context length is 8192 tokens." } }, { status: 400 });
+      }),
+    );
+    expect(calls).toBe(1);
+    expect(result.ok).toBe(false);
+  });
 });
 
 it('leaves temperature to the provider unless the caller sets one', async () => {
