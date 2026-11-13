@@ -122,6 +122,83 @@ export function parseSuggestOutput(text: string, items: readonly SuggestInputIte
   return out;
 }
 
+export const BODY_SYSTEM = `You read one comment on a pull request (a review's own words, a bot's run summary or a person's remark) and list the code changes it asks for, for a coding agent to make.
+The comment's threads are listed under "threads": they are reported on their own, so leave out anything they cover.
+Rules:
+- One entry per change asked for: findings outside the diff, failed checks, requests in the comment's own words.
+- "title": what is wrong, a few words, sentence case, no period. "task": one or two sentences saying what to change and where. Wrap code, symbols and file names in backticks.
+- "path" and "line": the file and the line the change is at when the comment names them, else null.
+- Leave out praise, walkthroughs, summaries of what the pull request does, and questions that ask for no change.
+- Return {"findings": []} when it asks for nothing. Never invent findings. Return JSON only, matching the schema.`;
+
+export interface BodyInput {
+  readonly author: string;
+  readonly text: string;
+  /** The titles of the threads the comment came with. */
+  readonly threads: readonly string[];
+}
+
+export function bodyUserPrompt(pull: SuggestPullRequest, input: BodyInput): string {
+  return JSON.stringify({ pullRequest: pull, comment: { author: input.author, text: input.text }, threads: input.threads }, null, 2);
+}
+
+export const BODY_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['findings'],
+  properties: {
+    findings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['title', 'task', 'path', 'line'],
+        properties: {
+          title: { type: 'string' },
+          task: { type: 'string' },
+          path: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+          line: { anyOf: [{ type: 'integer' }, { type: 'null' }] },
+        },
+      },
+    },
+  },
+} as const;
+
+const bodyOutputSchema = z.object({
+  findings: z.array(
+    z.object({
+      title: z.string().max(200),
+      task: z.string().max(1_000),
+      path: z.string().max(500).nullish(),
+      line: z.number().int().nullish(),
+    }),
+  ),
+});
+
+/** A change a comment asks for outside its threads: no thread holds it, so it goes to an agent rather than a suggestion. */
+export interface BodyFinding {
+  readonly title: string;
+  readonly task: string;
+  readonly path: string | null;
+  readonly line: number | null;
+}
+
+/** The model's findings, each with a title and a task; at most 12, since one comment asking for more is a plan, not findings. */
+export function parseBodyOutput(text: string): readonly BodyFinding[] | null {
+  let json: unknown;
+  try {
+    json = JSON.parse(text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/u, ''));
+  } catch {
+    return null;
+  }
+  const parsed = bodyOutputSchema.safeParse(json);
+  if (!parsed.success) return null;
+  return parsed.data.findings
+    .map((finding) => ({ title: finding.title.trim(), task: finding.task.trim(), path: finding.path?.trim() || null, line: finding.line !== null && finding.line !== undefined && finding.line > 0 ? finding.line : null }))
+    .filter((finding) => finding.title !== '' && finding.task !== '')
+    .slice(0, 12);
+}
+
 export type DiffLineKind = 'context' | 'del' | 'add';
 
 export interface DiffLine {

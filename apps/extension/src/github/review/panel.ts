@@ -455,6 +455,8 @@ export interface PanelModel {
   readonly openSubKey: string | null;
   /** Threads (by first-comment anchor) whose frame shows the comment they came from. */
   readonly openSources: ReadonlySet<string>;
+  /** Fixes asked for from a chat, `key:state:scope`, so the open chat's Fix control is drawn again as one lands. */
+  readonly chatFixes: readonly string[];
   /** Bumps when a looked-up issue/PR title lands, so the mentions view is rebuilt with it. */
   readonly refsVersion: number;
   /** Bumps when a comment's edit history or an old revision lands, so an open chat's pinned source is rebuilt with it. */
@@ -598,6 +600,8 @@ export interface TriageSuggestionView {
   readonly behind: 'commit' | 'comments' | null;
   readonly busy: 'fix' | null;
   readonly error: string | null;
+  /** Who wrote the comment a finding outside its threads came from, when it is one (`StoredSuggestion.origin`). */
+  readonly from: string | null;
 }
 
 export interface TriageAgent {
@@ -1583,6 +1587,10 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
   // The path and its copy button stand under the toggle, not in it: a button cannot hold another.
   const path = createElement('span', { class: `${PANEL_CLASS}__triage-fix-path` }, [where, lineText]);
   const place = createElement('div', { class: `${PANEL_CLASS}__triage-fix-place` }, [path]);
+  if (fix.path === '' && fix.from !== null) {
+    where.setAttribute('data-from', '');
+    where.append(`From ${fix.from}’s comment`);
+  }
   if (fix.path !== '') {
     const copy = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__triage-fix-copy`, [ATTR_FOCUS]: `fix-copy:${fix.key}` }, [icon(ICON_COPY)]);
     const tipped = withTip(copy, 'Copy path');
@@ -1625,7 +1633,7 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
   const notes: string[] = [];
   if (fix.threads > 1) notes.push(`One change for ${fix.threads} threads reporting the same problem (${fix.reporters.join(', ')}). ${triage.resolves ? 'Apply resolves them all.' : 'It answers them all.'}`);
   if (isFix && !fix.current && !applied) notes.push(behindWords(fix));
-  if (!isFix) notes.push('A fix that fits the lines a thread is on can be applied as a suggestion. This one needs more than that, so hand it to an agent.');
+  if (!isFix) notes.push(fix.from !== null ? `${fix.from}’s comment asks for this outside its threads, so there is no thread to suggest a fix in. Hand it to an agent.` : 'A fix that fits the lines a thread is on can be applied as a suggestion. This one needs more than that, so hand it to an agent.');
   for (const note of notes) body.append(createElement('p', { class: `${PANEL_CLASS}__triage-fix-note` }, [note]));
   if (isFix && !applied) {
     const busy = fix.busy !== null;
@@ -3762,6 +3770,7 @@ function signatureOf(model: PanelModel): string {
     ingesting: model.ingesting,
     openSubKey: model.openSubKey,
     openSources: [...model.openSources].sort(),
+    chatFixes: model.chatFixes,
     refs: model.refsVersion,
     edits: model.editsVersion,
     running: model.running,

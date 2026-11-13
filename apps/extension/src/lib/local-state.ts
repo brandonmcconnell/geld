@@ -80,6 +80,8 @@ export interface AiRunRecord {
   /** Comment anchors the model has been shown, so a finding it left as reported is not asked about (and paid for) again. */
   readonly seen?: readonly string[];
   readonly suggestions?: readonly StoredSuggestion[];
+  /** Threads the reader asked Geld to fix from their chat, people's included: the triage writes fixes for them too. */
+  readonly asked?: readonly string[];
 }
 
 /**
@@ -109,6 +111,12 @@ export interface StoredSuggestion {
   readonly pendingReply?: number;
   /** That reply's words as the page first showed them, so a reply the reader edited since is posted afresh, not committed. */
   readonly pendingReplyText?: string;
+  /**
+   * A change a comment asks for outside its threads (a review's findings outside the diff, a failed check, a person's
+   * request), read from that comment when the reader asked from its chat. No thread holds it, so it is for an agent:
+   * `replacement` is null, `summary` is the task, and `path`/`start` say where when the comment did.
+   */
+  readonly origin?: { readonly anchor: string; readonly author: string; readonly title: string };
 }
 export const aiRunsItem = storage.defineItem<Readonly<Record<string, AiRunRecord>>>('local:aiRuns', { fallback: {} });
 export const AI_RUNS_CAP = 40;
