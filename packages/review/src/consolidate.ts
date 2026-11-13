@@ -7,6 +7,7 @@
  * the TL;DR is rewritten only when the set of open items changed.
  */
 
+import { botById, unthreadedExcerpt } from './bots';
 import type { RawComment } from './cluster';
 import { isBotOnly, sourceExcerpts } from './cluster';
 import type { GeldPrMeta, ReviewItem, ReviewSummary, SuggestedFix } from './model';
@@ -121,17 +122,52 @@ export function applyConsolidation(
   });
 }
 
-/** Sorted open item ids: the TL;DR is written for exactly this set. */
-export function summaryKey(items: readonly ReviewItem[]): readonly string[] {
-  return items
-    .filter((item) => isOpenStatus(item.status))
-    .map((item) => item.id)
-    .sort();
+/**
+ * Findings a review bot reports that no open review thread holds, as its latest review says (`BotVerdictRecord.unthreaded`:
+ * CodeRabbit's outside-diff comments and failed pre-merge checks). The Review bots row counts them, so the triage reads
+ * them too. They are taken from the review, never worked out from the threads in view, which a capped item list, a
+ * thread marked done by hand or threads merged into one row would miscount.
+ */
+export interface UnthreadedFinding {
+  /** Changes when the bot reports again or rewrites its review, so a TL;DR written before is behind. */
+  readonly id: string;
+  readonly bot: string;
+  readonly login: string;
+  readonly count: number;
+  readonly sourceId: string;
 }
 
-export function summaryIsCurrent(summary: ReviewSummary | undefined, items: readonly ReviewItem[]): boolean {
+export function unthreadedFindings(meta: GeldPrMeta): readonly UnthreadedFinding[] {
+  return meta.bots.flatMap((bot) => {
+    const found = bot.unthreaded;
+    if (bot.verdict !== 'findings' || found === undefined) return [];
+    return [{ id: `unthreaded:${bot.id}@${found.sourceId}:${found.count}:${found.digest}`, bot: bot.id, login: bot.login, count: found.count, sourceId: found.sourceId }];
+  });
+}
+
+const UNTHREADED_EXCERPT_CHARS = 4000;
+
+/** The TL;DR's view of them: one entry per bot, the sections of its review that hold them. */
+export function unthreadedInputs(findings: readonly UnthreadedFinding[], comments: readonly RawComment[]): readonly SummaryInputItem[] {
+  return findings.map((finding) => {
+    const name = botById(finding.bot)?.title ?? finding.login;
+    const what = finding.count === 1 ? '1 finding' : `${finding.count} findings`;
+    const review = (comments.find((comment) => comment.anchor === finding.sourceId)?.body ?? '').replace(/<!--[\s\S]*?-->/g, '');
+    const held = unthreadedExcerpt(review);
+    const body = (held === '' ? review : held).replace(/\s+/g, ' ').trim();
+    const context = body.length > UNTHREADED_EXCERPT_CHARS ? `${body.slice(0, UNTHREADED_EXCERPT_CHARS)}…` : body;
+    return { id: finding.id, title: `${name} reports ${what} outside its review threads`, severity: 'bug', status: 'open', ...(context === '' ? {} : { context }) };
+  });
+}
+
+/** Sorted open item ids, and the bots' unthreaded findings: the TL;DR is written for exactly this set. */
+export function summaryKey(items: readonly ReviewItem[], unthreaded: readonly UnthreadedFinding[] = []): readonly string[] {
+  return [...items.filter((item) => isOpenStatus(item.status)).map((item) => item.id), ...unthreaded.map((finding) => finding.id)].sort();
+}
+
+export function summaryIsCurrent(summary: ReviewSummary | undefined, items: readonly ReviewItem[], unthreaded: readonly UnthreadedFinding[] = []): boolean {
   if (summary === undefined) return false;
-  const key = summaryKey(items);
+  const key = summaryKey(items, unthreaded);
   return key.length === summary.forItems.length && key.every((id, index) => id === summary.forItems[index]);
 }
 
@@ -148,8 +184,8 @@ export function summaryInput(items: readonly ReviewItem[]): readonly SummaryInpu
     }));
 }
 
-export function summaryRecord(tldr: string, items: readonly ReviewItem[], updatedAt: string): ReviewSummary {
-  return { tldr, updatedAt, forItems: summaryKey(items) };
+export function summaryRecord(tldr: string, items: readonly ReviewItem[], updatedAt: string, unthreaded: readonly UnthreadedFinding[] = []): ReviewSummary {
+  return { tldr, updatedAt, forItems: summaryKey(items, unthreaded) };
 }
 
 /** Whether a fix should be shown under the user's preference. */

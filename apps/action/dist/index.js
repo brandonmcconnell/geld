@@ -12076,7 +12076,7 @@ var init_settings_schema = __esm({
             kind: "toggle",
             key: "aiEnabled",
             label: "AI features",
-            description: "Consolidate bot findings, write the TL;DR and propose fixes with a model of your choosing. Off, nothing below is used and no request is made; on, it takes effect once a gateway URL, key and model are set.",
+            description: "Consolidate bot findings, write the TL;DR and propose fixes with a model of your choosing. Off, no request is made and its settings are hidden but kept. On, they show below, and it takes effect once a gateway URL, key and model are set.",
             popup: false,
             surfaces: ["extension"]
           },
@@ -31943,7 +31943,8 @@ var botVerdictSchema = external_exports.object({
   sourceId: external_exports.string().min(1).optional(),
   reason: external_exports.string().min(1).optional(),
   runJudged: external_exports.literal(true).optional(),
-  needsHuman: external_exports.literal(true).optional()
+  needsHuman: external_exports.literal(true).optional(),
+  unthreaded: external_exports.object({ count: external_exports.number().int().positive(), sourceId: external_exports.string().min(1), digest: external_exports.string().min(1) }).optional()
 });
 var reviewerSchema = external_exports.object({
   login: external_exports.string().min(1),
@@ -32027,7 +32028,8 @@ function botVerdictFrom(value) {
   const sourced = value.sourceId === void 0 ? named : { ...named, sourceId: value.sourceId };
   const reasoned = value.reason === void 0 ? sourced : { ...sourced, reason: value.reason };
   const judged = value.runJudged === void 0 ? reasoned : { ...reasoned, runJudged: true };
-  return value.needsHuman === void 0 ? judged : { ...judged, needsHuman: true };
+  const human = value.needsHuman === void 0 ? judged : { ...judged, needsHuman: true };
+  return value.unthreaded === void 0 ? human : { ...human, unthreaded: { count: value.unthreaded.count, sourceId: value.unthreaded.sourceId, digest: value.unthreaded.digest } };
 }
 function metaFrom(value) {
   const meta3 = {
@@ -32452,6 +32454,19 @@ function isReviewShaped(parsed) {
 function outsideDiffCount(text) {
   const match = /\boutside diff range comments\s*\((\d+)\)/i.exec(text);
   return match?.[1] === void 0 ? 0 : Number.parseInt(match[1], 10);
+}
+var AFTER_OUTSIDE_DIFF = /^[^\w\n]*(?:<[^>\n]*>[^\w\n]*)*(?:(?:nitpick|additional|duplicate) comments\s*\(\d+\)|(?:review details|prompt for all review comments with ai agents|prompt to fix all issues)(?:\s*<\/[a-z]+>)*[^\w\n]*$)/im;
+function unthreadedExcerpt(text) {
+  const parts2 = [];
+  const outside = /\boutside diff range comments\s*\(\d+\)/i.exec(text);
+  if (outside !== null) {
+    const rest = text.slice(outside.index + outside[0].length);
+    const end = AFTER_OUTSIDE_DIFF.exec(rest);
+    parts2.push(`${outside[0]}${end === null ? rest : rest.slice(0, end.index)}`);
+  }
+  const failed = /\bfailed pre-merge checks:[^\S\n]*\n[\s\S]*?(?=\bafter applying the fix\b|```|$)/i.exec(text);
+  if (failed !== null) parts2.push(failed[0]);
+  return parts2.map((part) => part.trim()).filter((part) => part !== "").join("\n\n");
 }
 function failedPreMergeCount(text) {
   if (!hasHeading(text, FIX_ALL_HEADING)) return 0;
@@ -32992,6 +33007,25 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
   const threadRuns = /* @__PURE__ */ new Map();
   const unthreadedBy = /* @__PURE__ */ new Map();
   const runsBeforeAsk = /* @__PURE__ */ new Map();
+  const unthreadedBeforeAsk = /* @__PURE__ */ new Map();
+  const setAside = (id) => {
+    const prior = threadRuns.get(id);
+    if (prior !== void 0) runsBeforeAsk.set(id, prior);
+    const outside = unthreadedBy.get(id);
+    if (outside !== void 0) unthreadedBeforeAsk.set(id, outside);
+    threadRuns.delete(id);
+    unthreadedBy.delete(id);
+  };
+  const restoreAsked = (id) => {
+    const prior = runsBeforeAsk.get(id);
+    if (!threadRuns.has(id) && prior !== void 0) threadRuns.set(id, prior);
+    const outside = unthreadedBeforeAsk.get(id);
+    if (!unthreadedBy.has(id) && outside !== void 0) unthreadedBy.set(id, outside);
+  };
+  const forgetAsked = (id) => {
+    runsBeforeAsk.delete(id);
+    unthreadedBeforeAsk.delete(id);
+  };
   const lastEditBy = /* @__PURE__ */ new Map();
   const editedAtOf = /* @__PURE__ */ new Map();
   const countedSummaries = /* @__PURE__ */ new Set();
@@ -33032,12 +33066,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
         if (asked.id === id) continue;
         if (viaWorkflow && (workflow === "failed" || workflow === null && !Number.isNaN(at) && now - at > ACK_GRACE_MS)) continue;
         if (!viaWorkflow && !Number.isNaN(at) && now - at > ACK_GRACE_MS && botById(asked.id)?.acknowledges === "reaction" && !reactedBy(comment, asked.id)) continue;
-        if (botById(asked.id)?.resolvesThreads !== true) {
-          const prior = threadRuns.get(asked.id);
-          if (prior !== void 0) runsBeforeAsk.set(asked.id, prior);
-          threadRuns.delete(asked.id);
-          unthreadedBy.delete(asked.id);
-        }
+        if (botById(asked.id)?.resolvesThreads !== true) setAside(asked.id);
         const acknowledged = viaWorkflow ? workflow === "queued" : botById(asked.id)?.acknowledges === "reaction" && reactedBy(comment, asked.id);
         statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged, askedAt: Number.isNaN(at) ? null : at });
       }
@@ -33049,7 +33078,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       postedThreads.add(id);
       reported(id, comment);
       statusOnly.delete(id);
-      runsBeforeAsk.delete(id);
+      forgetAsked(id);
       const run2 = threadRuns.get(id);
       const open2 = (run2?.open ?? 0) + (comment.resolved ? 0 : 1);
       const openAnchor = run2?.openAnchor ?? (comment.resolved ? null : comment.anchor);
@@ -33067,9 +33096,8 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       const at = Number.isNaN(rewritten) ? posted : Math.max(rewritten, Number.isNaN(posted) ? rewritten : posted);
       if (!Number.isNaN(at)) answeredBy.set(id, { askedAt: statusOnly.get(id)?.at ?? (Number.isNaN(posted) ? at : posted), at, finished: !Number.isNaN(rewritten), anchor: comment.anchor });
       statusOnly.delete(id);
-      const prior = runsBeforeAsk.get(id);
-      if (!threadRuns.has(id) && prior !== void 0) threadRuns.set(id, prior);
-      runsBeforeAsk.delete(id);
+      restoreAsked(id);
+      forgetAsked(id);
       continue;
     }
     const refusal = refusalReason(comment.body);
@@ -33081,20 +33109,14 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
       }
       statusOnly.delete(id);
       const existing2 = byId.get(id);
-      const prior = runsBeforeAsk.get(id);
-      if (!threadRuns.has(id) && prior !== void 0) threadRuns.set(id, prior);
+      restoreAsked(id);
       const reviewed = threadRuns.has(id) || existing2?.sourceId !== void 0 && (existing2.verdict === "clean" || existing2.verdict === "findings");
       if (reviewed) continue;
       byId.set(id, { id, login: comment.author, verdict: "failed", reviewedSha: headSha, ...existing2?.checkName === void 0 ? {} : { checkName: existing2.checkName }, sourceId: comment.anchor, reason: refusal });
       continue;
     }
     if (isStatusLineComment(comment.body)) {
-      if (botById(id)?.resolvesThreads !== true) {
-        const prior = threadRuns.get(id);
-        if (prior !== void 0) runsBeforeAsk.set(id, prior);
-        threadRuns.delete(id);
-        unthreadedBy.delete(id);
-      }
+      if (botById(id)?.resolvesThreads !== true) setAside(id);
       const at = comment.createdAt === void 0 ? NaN : Date.parse(comment.createdAt);
       const triggered = commandReply(comment.body) === "started" || statusOnly.get(id)?.triggered === true;
       const pending = statusOnly.get(id);
@@ -33111,16 +33133,16 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     if (!isReviewShaped(parsed) && threadRuns.has(id)) {
       reported(id, comment);
       statusOnly.delete(id);
-      runsBeforeAsk.delete(id);
+      forgetAsked(id);
       continue;
     }
     reported(id, comment);
     if (parsed.count !== null) countedSummaries.add(comment.anchor);
-    if (parsed.unthreaded !== void 0) unthreadedBy.set(id, { count: parsed.unthreaded, anchor: comment.anchor });
+    if (parsed.unthreaded !== void 0) unthreadedBy.set(id, { count: parsed.unthreaded, anchor: comment.anchor, digest: fnv1aHex(comment.body) });
     else unthreadedBy.delete(id);
     if (botById(id)?.resolvesThreads !== true) threadRuns.delete(id);
     statusOnly.delete(id);
-    runsBeforeAsk.delete(id);
+    forgetAsked(id);
     const existing = byId.get(id);
     const login = comment.author;
     if (existing !== void 0) {
@@ -33174,14 +33196,14 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     if (stale && !checkIsThisRun && options.partial !== true) {
       const prior = runsBeforeAsk.get(id);
       if (prior !== void 0 && !threadRuns.has(id)) {
-        threadRuns.set(id, prior);
+        restoreAsked(id);
         continue;
       }
+      if (prior === void 0) restoreAsked(id);
     }
     const skippedThisRun = checkIsThisRun ? checkSkipped.get(id) : void 0;
     if (existing !== void 0 && skippedThisRun !== void 0) {
-      const prior = runsBeforeAsk.get(id);
-      if (prior !== void 0 && !threadRuns.has(id)) threadRuns.set(id, prior);
+      restoreAsked(id);
       const reviewed = threadRuns.has(id) || existing.sourceId !== void 0 && (existing.verdict === "clean" || existing.verdict === "findings");
       if (!reviewed && !(existing.verdict === "failed" && existing.reason !== void 0)) {
         byId.set(id, { id, login, verdict: "failed", reviewedSha: existing.reviewedSha, ...existing.checkName === void 0 ? {} : { checkName: existing.checkName }, sourceId: anchor2, reason: skippedThisRun });
@@ -33290,6 +33312,11 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     if (record4 === void 0 || record4.verdict === "running") continue;
     const refusal = record4.verdict === "failed" && record4.reason !== void 0;
     byId.set(id, { ...record4, runJudged: true, ...refusal || record4.reviewedSha !== refusedSha ? {} : { reviewedSha: UNKNOWN_SHA } });
+  }
+  for (const [id, record4] of byId) {
+    const seen = threadRuns.get(id)?.unthreaded ?? unthreadedBy.get(id);
+    if (record4.verdict !== "findings" || seen === void 0 || seen.count <= 0) continue;
+    byId.set(id, { ...record4, unthreaded: { count: seen.count, sourceId: seen.anchor, digest: seen.digest } });
   }
   return [...byId.values()];
 }
@@ -33634,12 +33661,31 @@ function applyConsolidation(items, carried, outputs) {
     return carry.fix === void 0 || item.fix !== void 0 ? explained : { ...explained, fix: carry.fix };
   });
 }
-function summaryKey(items) {
-  return items.filter((item) => isOpenStatus(item.status)).map((item) => item.id).sort();
+function unthreadedFindings(meta3) {
+  return meta3.bots.flatMap((bot) => {
+    const found = bot.unthreaded;
+    if (bot.verdict !== "findings" || found === void 0) return [];
+    return [{ id: `unthreaded:${bot.id}@${found.sourceId}:${found.count}:${found.digest}`, bot: bot.id, login: bot.login, count: found.count, sourceId: found.sourceId }];
+  });
 }
-function summaryIsCurrent(summary, items) {
+var UNTHREADED_EXCERPT_CHARS = 4e3;
+function unthreadedInputs(findings, comments) {
+  return findings.map((finding) => {
+    const name = botById(finding.bot)?.title ?? finding.login;
+    const what = finding.count === 1 ? "1 finding" : `${finding.count} findings`;
+    const review = (comments.find((comment) => comment.anchor === finding.sourceId)?.body ?? "").replace(/<!--[\s\S]*?-->/g, "");
+    const held = unthreadedExcerpt(review);
+    const body = (held === "" ? review : held).replace(/\s+/g, " ").trim();
+    const context = body.length > UNTHREADED_EXCERPT_CHARS ? `${body.slice(0, UNTHREADED_EXCERPT_CHARS)}\u2026` : body;
+    return { id: finding.id, title: `${name} reports ${what} outside its review threads`, severity: "bug", status: "open", ...context === "" ? {} : { context } };
+  });
+}
+function summaryKey(items, unthreaded = []) {
+  return [...items.filter((item) => isOpenStatus(item.status)).map((item) => item.id), ...unthreaded.map((finding) => finding.id)].sort();
+}
+function summaryIsCurrent(summary, items, unthreaded = []) {
   if (summary === void 0) return false;
-  const key = summaryKey(items);
+  const key = summaryKey(items, unthreaded);
   return key.length === summary.forItems.length && key.every((id, index) => id === summary.forItems[index]);
 }
 function summaryInput(items) {
@@ -33652,8 +33698,8 @@ function summaryInput(items) {
     ...item.context === void 0 ? {} : { context: item.context }
   }));
 }
-function summaryRecord(tldr, items, updatedAt) {
-  return { tldr, updatedAt, forItems: summaryKey(items) };
+function summaryRecord(tldr, items, updatedAt, unthreaded = []) {
+  return { tldr, updatedAt, forItems: summaryKey(items, unthreaded) };
 }
 function fixVisible(fix, mode) {
   if (fix === void 0 || mode === "off") return false;
@@ -33958,6 +34004,7 @@ var SUMMARY_SYSTEM = `You write the triage of a pull request's open review feedb
 Rules:
 - At most three sentences, plain prose, no lists, no headings, no emoji.
 - Say concretely what each open finding asks for (the change, in a few words, not just its file), and whether anything blocks merging. Group findings that ask for the same kind of change.
+- An item titled as a bot's findings outside its review threads carries the bot's own review in "context" (comments outside the diff, failed checks): say what those findings ask for as you would for any other.
 - Wrap file names, paths, symbols, identifiers and code in backticks: \`attachment-viewer.tsx\`, \`parseDiff()\`.
 - When "previousTldr" is given, keep its wording where it still holds and change only what the item list requires.
 - Return JSON only: {"tldr": "..."}.`;
@@ -35484,9 +35531,11 @@ async function consolidate(ai, pending) {
   }
   return parsed.value;
 }
-async function writeTldr(ai, items, previous, now) {
-  if (previous !== void 0 && summaryIsCurrent(previous, items)) return previous;
-  const open2 = summaryInput(items);
+async function writeTldr(ai, meta3, comments, previous, now) {
+  const { items } = meta3;
+  const unthreaded = unthreadedFindings(meta3);
+  if (previous !== void 0 && summaryIsCurrent(previous, items, unthreaded)) return previous;
+  const open2 = [...summaryInput(items), ...unthreadedInputs(unthreaded, comments)];
   if (open2.length === 0) return void 0;
   const result = await completeChat({
     fetch: ai.fetch,
@@ -35510,7 +35559,7 @@ async function writeTldr(ai, items, previous, now) {
     console.warn(`AI summary ignored: ${parsed.issues.join("; ")}`);
     return previous;
   }
-  return summaryRecord(parsed.value, items, now);
+  return summaryRecord(parsed.value, items, now, unthreaded);
 }
 async function judgeAddressed(ai, items, changedPaths) {
   if (items.length === 0) return [];
@@ -35605,7 +35654,7 @@ ${loaded.headBranch ?? ""}`, { provider: "github", host: "github.com", owner: ev
   const consolidated = buildMeta(pr, { ...common, producer, generatedAt, rewritten, carried: plan.carried });
   const semantic = await judgeAddressed(ai, botOnlyForRewrite(consolidated.items), pr.changedPaths);
   const judged = buildMeta(pr, { ...common, producer, generatedAt, rewritten, carried: plan.carried, semantic });
-  const summary = await writeTldr(ai, judged.items, previous?.summary, generatedAt);
+  const summary = await writeTldr(ai, judged, rawCommentsOf(pr), previous?.summary, generatedAt);
   const meta3 = buildMeta(pr, { ...common, producer, generatedAt, rewritten, carried: plan.carried, semantic, ...summary === void 0 ? {} : { summary } });
   const body = renderSummary(meta3, { owner: event.owner, repo: event.repo, number: event.number, links: ticketLinks });
   const id = await upsertIssueComment(client, event.owner, event.repo, event.number, existing?.commentId ?? null, body);

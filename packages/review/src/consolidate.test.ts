@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { RawComment } from './cluster';
 import { clusterComments } from './cluster';
-import { applyConsolidation, fixVisible, planConsolidation, summaryIsCurrent, summaryRecord } from './consolidate';
+import { applyConsolidation, fixVisible, planConsolidation, summaryIsCurrent, summaryRecord, unthreadedFindings, unthreadedInputs } from './consolidate';
 import type { GeldPrMeta } from './model';
+import { unthreadedExcerpt } from './bots';
 
 const at = '2026-09-18T10:00:00.000Z';
 
@@ -84,5 +85,48 @@ describe('summary freshness', () => {
     expect(summaryIsCurrent(summary, items)).toBe(true);
     expect(summaryIsCurrent(summary, items.slice(0, 1))).toBe(false);
     expect(summaryIsCurrent(undefined, items)).toBe(false);
+  });
+});
+
+describe('findings outside review threads', () => {
+  const verdict = (unthreaded: number | null, digest = 'd1'): GeldPrMeta['bots'][number] => ({
+    id: 'coderabbit',
+    login: 'coderabbitai[bot]',
+    verdict: 'findings',
+    count: 3,
+    reviewedSha: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    sourceId: 'discussion_r3',
+    ...(unthreaded === null ? {} : { unthreaded: { count: unthreaded, sourceId: 'pullrequestreview-9', digest } }),
+  });
+  const withBots = (bots: GeldPrMeta['bots']): GeldPrMeta => ({ ...metaWith([]), bots });
+
+  it('reads them from the review that holds them, not from the threads in view', () => {
+    // A count of 3 over no item in view (a capped list, threads marked done) is no finding outside threads by itself.
+    expect(unthreadedFindings(withBots([verdict(null)]))).toEqual([]);
+    expect(unthreadedFindings(withBots([verdict(2)]))).toEqual([{ id: 'unthreaded:coderabbit@pullrequestreview-9:2:d1', bot: 'coderabbit', login: 'coderabbitai[bot]', count: 2, sourceId: 'pullrequestreview-9' }]);
+    expect(unthreadedFindings(withBots([{ ...verdict(2), verdict: 'clean' }]))).toEqual([]);
+  });
+
+  it('hands the TL;DR the sections that hold them, however long the review, and keys it to the review’s words', () => {
+    const found = unthreadedFindings(withBots([verdict(1)]));
+    const inline = `${'Inline detail about another comment. '.repeat(200)}`;
+    const body = `<!-- marker -->**Actionable comments posted: 2** ${inline}\n\nOutside diff range comments (1)\n\n\`src/a.ts\` 10-12: handle the empty list.\n\nNitpick comments (3)\n\nRename x.`;
+    const review: RawComment = { anchor: 'pullrequestreview-9', kind: 'review', author: 'coderabbitai[bot]', body, createdAt: at };
+    const reply: RawComment = { anchor: 'issuecomment-12', kind: 'comment', author: 'coderabbitai[bot]', body: 'No further change is needed.', createdAt: '2026-09-19T10:00:00.000Z' };
+    expect(unthreadedInputs(found, [review, reply])).toEqual([{ id: found[0]?.id, title: 'CodeRabbit reports 1 finding outside its review threads', severity: 'bug', status: 'open', context: 'Outside diff range comments (1) `src/a.ts` 10-12: handle the empty list.' }]);
+    const before = summaryRecord('Nothing open.', [], at);
+    expect(summaryIsCurrent(before, [], found)).toBe(false);
+    expect(summaryIsCurrent(summaryRecord('One finding outside the diff.', [], at, found), [], found)).toBe(true);
+    // The same count in a rewritten review is a new reading.
+    expect(summaryIsCurrent(summaryRecord('One finding outside the diff.', [], at, found), [], unthreadedFindings(withBots([verdict(1, 'd2')])))).toBe(false);
+  });
+
+  it('cuts out the outside-diff comments and failed checks, wherever they stand in the review', () => {
+    const prompt = `Prompt to fix all issues\n\n${'Inline comment detail. '.repeat(300)}\nFailed pre-merge checks:\n- Docstring Coverage:\n  Write docstrings.\nAfter applying the fix, run the tests.`;
+    expect(unthreadedExcerpt(prompt)).toBe('Failed pre-merge checks:\n- Docstring Coverage:\n  Write docstrings.');
+    expect(unthreadedExcerpt('Actionable comments posted: 1')).toBe('');
+    // A finding's own words are no section heading: the rest of the outside-diff comments stay in.
+    const outside = '> **⚠️ Outside diff range comments (2)**\n> `a.ts` 3: Preserve review details when rebuilding the page.\n> `b.ts` 9: Additional comments (in code) should be kept.\n\n<summary>🧹 Nitpick comments (1)</summary>\nRename x.\n\n<summary>📜 Review details</summary>';
+    expect(unthreadedExcerpt(outside)).toBe('Outside diff range comments (2)**\n> `a.ts` 3: Preserve review details when rebuilding the page.\n> `b.ts` 9: Additional comments (in code) should be kept.');
   });
 });
