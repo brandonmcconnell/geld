@@ -252,14 +252,15 @@ function Composer({ thread, composer, actions }: { readonly thread: string; read
   }
   React.useEffect(() => actions.draftChanged(text.trim() === ''), [actions, text]);
   const update = (value: string): void => setDraft({ thread, text: value });
-  const send = (): void => {
-    if (composer.mode === 'stop') {
-      actions.stop();
-      return;
-    }
-    if (text.trim() === '' || !composer.canSend) return;
+  const submitDraft = (): void => {
+    if (composer.mode === 'stop' || text.trim() === '' || !composer.canSend) return;
     actions.submit(text);
     update('');
+  };
+  // Only the button stops a reply: Enter while drafting the next question must not cut the answer short.
+  const send = (): void => {
+    if (composer.mode === 'stop') actions.stop();
+    else submitDraft();
   };
   const label = composer.mode === 'stop' ? 'Stop the reply' : composer.mode === 'steer' ? 'Send into the running turn' : 'Send';
   return (
@@ -277,7 +278,7 @@ function Composer({ thread, composer, actions }: { readonly thread: string; read
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
-              send();
+              submitDraft();
             }
           }}
           placeholder={composer.placeholder}

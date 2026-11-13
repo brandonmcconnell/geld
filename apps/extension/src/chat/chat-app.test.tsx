@@ -102,6 +102,15 @@ describe('chat panel', () => {
     act(() => submit?.click());
     expect(handlers.stop).toHaveBeenCalled();
   });
+
+  it('never stops the reply on Enter in the message field', () => {
+    const handlers = actions();
+    const container = render(view({ composer: { ...COMPOSER, mode: 'stop' } }), handlers);
+    const field = container.querySelector('textarea');
+    act(() => field?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })));
+    expect(handlers.stop).not.toHaveBeenCalled();
+    expect(handlers.submit).not.toHaveBeenCalled();
+  });
 });
 
 describe('chat markdown', () => {
