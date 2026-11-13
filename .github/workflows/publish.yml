@@ -26,9 +26,10 @@ name: Publish to stores
 #   Edge    : EDGE_PRODUCT_ID, EDGE_CLIENT_ID, EDGE_API_KEY
 #   Firefox : AMO_JWT_ISSUER, AMO_JWT_SECRET  (add-on id comes from the manifest's browser_specific_settings)
 #   Safari  : APPLE_ASC_KEY_ID, APPLE_ASC_ISSUER_ID, APPLE_ASC_PRIVATE_KEY (base64 .p8),
-#             APPLE_CERTIFICATE_P12 (base64), APPLE_CERTIFICATE_PASSWORD, APPLE_TEAM_ID
-#             plus repository variables SAFARI_REVIEW_VIDEO_URL, SAFARI_REVIEW_VIDEO_VERSION and
-#             SAFARI_REVIEW_TEST_DEVICE; SAFARI_AUTO_PUBLISH=false keeps Safari to manual runs
+#             APPLE_CERTIFICATE_P12 (base64), APPLE_CERTIFICATE_PASSWORD, APPLE_TEAM_ID;
+#             optional repository variables SAFARI_REVIEW_VIDEO_URL, SAFARI_REVIEW_VIDEO_VERSION and
+#             SAFARI_REVIEW_TEST_DEVICE (set once, together) name and attach the physical-Mac recording
+#             for App Review; SAFARI_AUTO_PUBLISH=false keeps Safari to manual runs
 # See apps/extension/store/PUBLISHING.md for where each comes from.
 
 on:
@@ -216,6 +217,12 @@ jobs:
   # Never withdraws a submission Apple has not finished: withdrawing the waiting one for each newer build, twice a day,
   # meant no review ever finished. A review waiting or under way is a skip, as on Chrome and Edge, and the next run
   # submits the newest build once it ends. The repository variable SAFARI_AUTO_PUBLISH=false keeps Safari to manual runs.
+  #
+  # Every release is its own App Store version: Apple releases a version once and caps the version string at three
+  # integers, so the release's four-part version cannot be it; scripts/safari-version.mjs makes it major.minor.<build>
+  # (0.1.3.4308 → 0.1.4308, build 4308), and the job needs no version bump between releases. The physical-Mac
+  # recording Apple asked for with the first version is referenced, and attached when its URL is set, but never
+  # required again: App Review asked for it once, for the new app.
   safari:
     name: Safari (App Store Connect)
     needs: assets
@@ -231,23 +238,36 @@ jobs:
           REVIEW_VIDEO: ${{ vars.SAFARI_REVIEW_VIDEO_URL }}
           REVIEW_VIDEO_VERSION: ${{ vars.SAFARI_REVIEW_VIDEO_VERSION }}
           REVIEW_DEVICE: ${{ vars.SAFARI_REVIEW_TEST_DEVICE }}
-          TAG: ${{ needs.assets.outputs.tag }}
         run: |
-          # The recording is labelled with what it shows, so a new version needs a new recording; a new build of the same one does not.
-          version="${TAG#v}"; version="${version%%-build.*}"
-          recorded="${REVIEW_VIDEO_VERSION%% *}"
           if [ -z "$KEY" ] || [ -z "$CERT" ]; then
             echo "::warning title=Safari::Skipped: Apple credentials are not configured (see apps/extension/store/PUBLISHING.md)."
             echo "ready=false" >> "$GITHUB_OUTPUT"
-          elif [ -z "$REVIEW_VIDEO" ] || [ -z "$REVIEW_DEVICE" ]; then
-            echo "::warning title=Safari::Skipped: Apple requires a physical-Mac recording and tested-device details. Set SAFARI_REVIEW_VIDEO_URL, SAFARI_REVIEW_VIDEO_VERSION and SAFARI_REVIEW_TEST_DEVICE (see apps/extension/store/PUBLISHING.md)."
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          elif [ "$recorded" != "$version" ]; then
-            echo "::warning title=Safari::Skipped: the review recording shows Geld ${REVIEW_VIDEO_VERSION:-(unset)}, not $version. Record this version and update SAFARI_REVIEW_VIDEO_URL and SAFARI_REVIEW_VIDEO_VERSION (see apps/extension/store/PUBLISHING.md)."
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          set_count=0
+          for value in "$REVIEW_VIDEO" "$REVIEW_VIDEO_VERSION" "$REVIEW_DEVICE"; do [ -n "$value" ] && set_count=$((set_count + 1)); done
+          if [ "$set_count" != "0" ] && [ "$set_count" != "3" ]; then
+            echo "::warning title=Safari::Skipped: set SAFARI_REVIEW_VIDEO_URL, SAFARI_REVIEW_VIDEO_VERSION and SAFARI_REVIEW_TEST_DEVICE together, or none of them (see apps/extension/store/PUBLISHING.md)."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$set_count" = "0" ]; then
+            echo "::notice title=Safari::No review recording is configured; the notes point App Review at the recording its first review was given. Set SAFARI_REVIEW_VIDEO_URL, SAFARI_REVIEW_VIDEO_VERSION and SAFARI_REVIEW_TEST_DEVICE once to attach it to every submission."
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+      # The App Store version and build for this release, from its tag vX.Y.Z-build.N; safari:sync stamps the same.
+      - name: Name the App Store version
+        id: ids
+        if: steps.creds.outputs.ready == 'true'
+        env:
+          TAG: ${{ needs.assets.outputs.tag }}
+        run: |
+          package_version="${TAG#v}"; package_version="${package_version%%-build.*}"
+          build="${TAG##*build.}"
+          version=$(node apps/extension/scripts/safari-version.mjs "$package_version" "$build")
+          echo "App Store version $version, build $build (release $TAG)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
       # Read-only, before anything is built: a submission still waiting for or in review is left alone.
       - name: Check App Store Connect for a review in progress
         id: review
@@ -270,7 +290,7 @@ jobs:
           esac
       # A build App Store Connect already has is detected with a read-only API
       # call before spending minutes archiving and uploading a package Apple
-      # would refuse as redundant. The release tag is vX.Y.Z-build.N.
+      # would refuse as redundant.
       - name: Check App Store Connect for this build
         id: known
         if: steps.creds.outputs.ready == 'true' && steps.review.outputs.ready == 'true'
@@ -278,9 +298,8 @@ jobs:
           ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
           ASC_PRIVATE_KEY: ${{ secrets.APPLE_ASC_PRIVATE_KEY }}
-          TAG: ${{ needs.assets.outputs.tag }}
         run: |
-          marketing="${TAG#v}"; marketing="${marketing%%-build.*}"; build="${TAG##*build.}"
+          marketing="${{ steps.ids.outputs.version }}"; build="${{ steps.ids.outputs.build }}"
           known=$(node apps/extension/scripts/publish/asc-build-exists.mjs sh.geld.safari "$marketing" "$build" || echo "unknown")
           echo "App Store Connect already has build $marketing ($build): $known"
           echo "state=$known" >> "$GITHUB_OUTPUT"
@@ -299,15 +318,13 @@ jobs:
         env:
           FONTAWESOME_PACKAGE_TOKEN: ${{ secrets.FONTAWESOME_PACKAGE_TOKEN }}
       # Rebuild the Safari flavour at the release's version and refresh the Xcode
-      # wrapper (safari:sync copies the build in and stamps MARKETING_VERSION and
-      # the build number). The release tag is vX.Y.Z-build.N → build number N.
+      # wrapper (safari:sync copies the build in and stamps the build number and,
+      # from it, the same MARKETING_VERSION the ids step named).
       - if: steps.creds.outputs.ready == 'true' && steps.review.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
         env:
           WXT_GELD_APP_CLIENT_ID: ${{ vars.WXT_GELD_APP_CLIENT_ID }}
-          TAG: ${{ needs.assets.outputs.tag }}
-        run: |
-          export GELD_BUILD_NUMBER="${TAG##*build.}"
-          pnpm --filter @geld/extension safari:sync
+          GELD_BUILD_NUMBER: ${{ steps.ids.outputs.build }}
+        run: pnpm --filter @geld/extension safari:sync
       - name: Import signing certificate
         if: steps.creds.outputs.ready == 'true' && steps.review.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
         env:
@@ -359,15 +376,21 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
           ls -1 build/export
       # fastlane (preinstalled on GitHub's macOS runners) uploads the .pkg, waits for
-      # App Store Connect to process it, attaches it to the version, fills in the
-      # release notes and submits for review. Nothing is withdrawn: the review
-      # check above skips the job while a submission is waiting or in review.
+      # App Store Connect to process it, creates the App Store version and attaches
+      # the build to it, fills in the release notes and submits for review. Nothing
+      # is withdrawn: the review check above skips the job while a submission is
+      # waiting or in review.
+      #
+      # deliver deletes a version's App Review attachment whenever it is given
+      # none (review_attachment_file in its upload_metadata.rb), so the recording
+      # is downloaded and handed to it on every submission while its URL is set.
       - name: Upload and submit for review
         if: steps.creds.outputs.ready == 'true' && steps.review.outputs.ready == 'true' && steps.known.outputs.state != 'exists'
         env:
           ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
-          TAG: ${{ needs.assets.outputs.tag }}
+          SAFARI_REVIEW_VERSION: ${{ steps.ids.outputs.version }}
+          SAFARI_REVIEW_BUILD: ${{ steps.ids.outputs.build }}
           NOTES: ${{ needs.assets.outputs.notes }}
           SAFARI_REVIEW_VIDEO_URL: ${{ vars.SAFARI_REVIEW_VIDEO_URL }}
           SAFARI_REVIEW_VIDEO_VERSION: ${{ vars.SAFARI_REVIEW_VIDEO_VERSION }}
@@ -376,13 +399,20 @@ jobs:
           FASTLANE_HIDE_CHANGELOG: '1'
         working-directory: apps/extension/safari/Geld
         run: |
-          version="${TAG#v}"; version="${version%%-build.*}"
-          build="${TAG##*build.}"
+          version="$SAFARI_REVIEW_VERSION"
+          build="$SAFARI_REVIEW_BUILD"
           jq -n --arg k "$ASC_KEY_ID" --arg i "$ASC_ISSUER_ID" --rawfile p ~/.private_keys/AuthKey_$ASC_KEY_ID.p8 \
             '{key_id:$k, issuer_id:$i, key:$p, in_house:false}' > asc-key.json
-          export SAFARI_REVIEW_VERSION="$version" SAFARI_REVIEW_BUILD="$build"
           node ../../scripts/publish/safari-review-notes.mjs ../../store/safari-review-notes.txt > review-notes.txt
           review_information=$(jq -cn --rawfile notes review-notes.txt '{notes:$notes}')
+          attachment=()
+          if [ -n "$SAFARI_REVIEW_VIDEO_URL" ]; then
+            extension="${SAFARI_REVIEW_VIDEO_URL##*/}"; extension="${extension%%\?*}"; extension="${extension##*.}"
+            case "$extension" in mov|mp4|m4v|zip|pdf|png|jpg|jpeg) ;; *) extension="mov" ;; esac
+            curl -fsSL --retry 3 -o "review-recording.$extension" "$SAFARI_REVIEW_VIDEO_URL"
+            echo "Review recording: $(du -h "review-recording.$extension" | cut -f1) from SAFARI_REVIEW_VIDEO_URL"
+            attachment=(--app_review_attachment_file "$PWD/review-recording.$extension")
+          fi
           set +e
           fastlane deliver \
             --api_key_path asc-key.json \
@@ -395,6 +425,7 @@ jobs:
             --description "$(jq -n --rawfile t ../../store/listing/description.txt '{"en-US":($t | rtrimstr("\n"))}')" \
             --promotional_text "$(jq -n --rawfile t ../../store/listing/promotional-text.txt '{"en-US":($t | rtrimstr("\n"))}')" \
             --app_review_information "$review_information" \
+            "${attachment[@]}" \
             --submission_information '{"export_compliance_uses_encryption":false,"export_compliance_encryption_updated":false,"add_id_info_uses_idfa":false}' \
             --run_precheck_before_submit false \
             --submit_for_review --automatic_release \

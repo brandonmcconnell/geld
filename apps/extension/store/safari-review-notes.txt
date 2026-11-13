@@ -2,9 +2,9 @@ Geld is a Safari Web Extension in Apple's required macOS containing app. The app
 
 1. Physical-device recording
 
-Recording: {{VIDEO_URL}}
+{{RECORDING}}
 
-Captured on {{TEST_DEVICE}}, showing Geld {{VIDEO_VERSION}}. This submission is Geld {{VERSION}} (build {{BUILD}}). It covers launch, enabling the extension, granting github.com access, opening a public pull request, hiding and revealing test files, and the toolbar popup and settings.
+It covers launch, enabling the extension, granting github.com access, opening a public pull request, hiding and revealing test files, and the toolbar popup and settings. This submission is Geld {{VERSION}} (build {{BUILD}}): the same app and the same setup flow, with the changes in the release notes.
 
 No account registration, purchases, subscriptions or user-generated content. Optional GitHub sign-in is not needed for any of this and creates no Geld account.
 
