@@ -16,9 +16,10 @@ vi.mock('wxt/utils/storage', () => ({
     }),
   },
 }));
-vi.mock('wxt/browser', () => ({ browser: { runtime: { sendMessage: async () => undefined } } }));
+const sendMessage = vi.fn(async (_message: unknown): Promise<unknown> => undefined);
+vi.mock('wxt/browser', () => ({ browser: { runtime: { sendMessage: (message: unknown) => sendMessage(message) } } }));
 
-const { adoptOwnReplies, aiStateFor, loadAiForPage, markSuggestionPosted, pendingReplyFor, triageSuggestions } = await import('./ai');
+const { adoptOwnReplies, aiStateFor, loadAiForPage, markSuggestionPosted, pendingReplyFor, runAi, triageSuggestions, withAi } = await import('./ai');
 
 const at = '2026-11-13T14:24:02Z';
 const finding: RawComment = { anchor: 'discussion_r100', kind: 'thread', author: 'greptile-apps[bot]', body: 'The caret switch is never tested.', createdAt: at, path: 'src/a.test.ts', line: 179 };
@@ -57,8 +58,7 @@ describe('Geld’s own suggestion reply in a fix’s thread', () => {
     await adoptOwnReplies(withReply, 'brandonmcconnell');
     expect(triageSuggestions(meta, DEFAULT_SETTINGS)[0]?.behind).toBeNull();
     // Adopted from the page it is Geld's, but not the one to commit: the page cannot say which fix it carries.
-    const item = meta.items[0];
-    expect(item === undefined ? null : pendingReplyFor(finding.anchor, item)).toBeNull();
+    expect(pendingReplyFor(finding.anchor, withReply)).toBeNull();
     expect(adoptOwnReplies(withReply, 'brandonmcconnell')).toBeNull();
   });
 
@@ -95,12 +95,15 @@ describe('Geld’s own suggestion reply in a fix’s thread', () => {
   it('commits the reply Geld recorded posting, and only while it stands in the thread', async () => {
     await loadRun();
     await markSuggestionPosted(finding.anchor, { anchor: geldReply.anchor, id: 200 });
-    const withReply = metaFor([{ ...finding, threadAnchors: [{ anchor: finding.anchor, kind: 'thread', author: finding.author, body: finding.body }, geldReply] }]);
-    expect(triageSuggestions(withReply, DEFAULT_SETTINGS)[0]?.behind).toBeNull();
-    const standing = withReply.items[0];
-    const gone = metaFor([finding]).items[0];
-    expect(standing === undefined ? null : pendingReplyFor(finding.anchor, standing)).toBe(200);
-    expect(gone === undefined ? null : pendingReplyFor(finding.anchor, gone)).toBeNull();
+    const comments: RawComment[] = [{ ...finding, threadAnchors: [{ anchor: finding.anchor, kind: 'thread', author: finding.author, body: finding.body }, geldReply] }];
+    expect(triageSuggestions(metaFor(comments), DEFAULT_SETTINGS)[0]?.behind).toBeNull();
+    expect(pendingReplyFor(finding.anchor, comments)).toBe(200);
+    expect(pendingReplyFor(finding.anchor, [finding])).toBeNull();
+    // The page shows it, its words are taken; edited on GitHub since, it is no longer the fix in Geld's preview.
+    await adoptOwnReplies(comments, 'brandonmcconnell');
+    expect(pendingReplyFor(finding.anchor, comments)).toBe(200);
+    const edited: RawComment[] = [{ ...finding, threadAnchors: [{ anchor: finding.anchor, kind: 'thread', author: finding.author, body: finding.body }, { ...geldReply, body: `${geldReply.body} unwanted();` }] }];
+    expect(pendingReplyFor(finding.anchor, edited)).toBeNull();
   });
 
   it('still finds the fix behind a new commit once Geld has replied in its thread', async () => {
@@ -142,11 +145,19 @@ describe('Geld’s own suggestion reply in a fix’s thread', () => {
     expect(triageSuggestions(metaFor(others), DEFAULT_SETTINGS)[0]?.behind).toBe('comments');
   });
 
-  it('does not take a reply with other lines as the one to commit', async () => {
+
+  it('keeps the TL;DR when a push makes Geld rewrite a fix in a thread it has replied in', async () => {
     await loadRun();
-    const stale: RawComment[] = [{ ...finding, threadAnchors: [{ ...geldReply, body: 'Suggested fix from Geld triage: an earlier fix. Suggested change something else' }] }];
-    await adoptOwnReplies(stale, 'brandonmcconnell');
-    const item = metaFor(stale).items[0];
-    expect(item === undefined ? null : pendingReplyFor(finding.anchor, item)).toBeNull();
+    stored.set('local:aiKey', 'sk-test');
+    const settings = { ...DEFAULT_SETTINGS, aiEnabled: true, aiBaseUrl: 'https://ai-gateway.vercel.sh', aiModel: 'anthropic/claude-sonnet-5' };
+    const comments: RawComment[] = [{ ...finding, threadAnchors: [{ anchor: finding.anchor, kind: 'thread', author: finding.author, body: finding.body }, geldReply] }];
+    await adoptOwnReplies(comments, 'brandonmcconnell');
+    const pushed = { ...metaFor(comments), headSha: 'head2' };
+    sendMessage.mockImplementation(async () => ({ ok: true, model: 'm', text: JSON.stringify({ suggestions: [{ ids: [finding.anchor], summary: 'Toggle in place, again.', replacement: 'render(group(true));' }] }) }));
+    const lines = Array.from({ length: 200 }, (_, index) => `line ${index + 1}`);
+    await runAi(pushed, comments, settings, () => undefined, { pull: { title: 't', description: '' }, target: async () => ({ path: 'src/a.test.ts', start: 174, end: 179, lines }) });
+    expect(triageSuggestions(pushed, settings)[0]).toMatchObject({ behind: null, entry: { summary: 'Toggle in place, again.' } });
+    expect(withAi(pushed).summary?.tldr).toBe('One finding: test the caret switch.');
+    expect(aiStateFor(pushed, comments, settings).kind).toBe('current');
   });
 });

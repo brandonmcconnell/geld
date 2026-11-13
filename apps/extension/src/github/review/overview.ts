@@ -4213,7 +4213,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       triage.busy.set(key, resolve ? 'resolve' : 'apply');
       triage.errors.delete(key);
       reapply();
-      const pendingReply = pendingReplyFor(key, found.item);
+      const pendingReply = pendingReplyFor(key, rawComments);
       void applyFix({ threadAnchors: found.item.sources.map((source) => source.anchor), path: found.entry.path, replacement, summary: found.entry.summary, title: found.item.title, headSha: meta.headSha, pendingReply }).then(async (result) => {
         triage.busy.delete(key);
         if (!result.ok) {

@@ -502,6 +502,13 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
   // Threads that own their fix first: a partner reads what became of the fix it shares.
   const owns = (item: ReviewItem): boolean => (suggestionFor(threadKeyOf(item))?.key ?? threadKeyOf(item)) === threadKeyOf(item);
   const candidates = [...suggestionCandidates(items)].sort((a, b) => Number(owns(b)) - Number(owns(a)));
+  // Read before any fix is replaced: the ids the TL;DR was written for, and Geld's replies that keep them so.
+  const writtenAs = new Map(asWrittenFor(candidates).map((item) => [threadKeyOf(item), item.id]));
+  const repliedBefore = new Map(candidates.map((item) => [threadKeyOf(item), suggestionFor(threadKeyOf(item))?.replies ?? []]));
+  const kept = (keys: readonly string[]): Partial<StoredSuggestion> => {
+    const replies = [...new Set(keys.flatMap((key) => repliedBefore.get(key) ?? []))];
+    return replies.length === 0 ? {} : { replies };
+  };
   const openThreads = new Set(candidates.map(threadKeyOf));
   for (const item of candidates) {
     const key = threadKeyOf(item);
@@ -520,7 +527,7 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
         else suggestions.set(shared.key, { ...shared, threads: shared.threads.filter((thread) => thread !== key) });
       }
       const ownNote = existing?.key === key && existing.threads.length === 1 && existing.replacement === null ? existing.summary : '';
-      suggestions.set(key, { key, threads: [key], headSha, path: item.path ?? '', start: 0, end: 0, original: [], replacement: null, summary: ownNote, state: 'open', sources: [...anchorsOf([item])], itemIds: { [key]: item.id } });
+      suggestions.set(key, { key, threads: [key], headSha, path: item.path ?? '', start: 0, end: 0, original: [], replacement: null, summary: ownNote, state: 'open', sources: [...anchorsOf([item])], itemIds: { [key]: writtenAs.get(key) ?? item.id }, ...kept([key]) });
       continue;
     }
     if (existing !== undefined && existing.key !== key) {
@@ -580,7 +587,8 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
         summary: codeSpans(entry.summary, paths),
         state: 'open',
         sources: [...anchorsOf(entry.ids.flatMap((id) => asked.get(id) ?? []))],
-        itemIds: Object.fromEntries(entry.ids.flatMap((id) => { const item = asked.get(id); return item === undefined ? [] : [[id, item.id]]; })),
+        itemIds: Object.fromEntries(entry.ids.flatMap((id) => { const item = asked.get(id); return item === undefined ? [] : [[id, writtenAs.get(id) ?? item.id]]; })),
+        ...kept(entry.ids),
       });
     }
   }
@@ -632,7 +640,7 @@ export function triageNoteFor(item: ReviewItem): string | null {
 async function settle(key: string, state: StoredSuggestion['state'], anchors: readonly string[] = [], pendingReply?: number): Promise<void> {
   const entry = suggestions.get(key);
   if (entry === undefined) return;
-  const { pendingReply: _done, ...rest } = entry;
+  const { pendingReply: _reply, pendingReplyText: _text, ...rest } = entry;
   suggestions.set(key, {
     ...rest,
     state,
@@ -676,17 +684,22 @@ export function adoptOwnReplies(comments: readonly RawComment[], viewer: string)
   let changed = false;
   for (const entry of [...suggestions.values()]) {
     if (entry.state === 'discarded') continue;
+    const inThreads = entry.threads.flatMap((key) => byAnchor.get(key)?.threadAnchors ?? []);
+    const pending = entry.pendingReply === undefined || entry.pendingReplyText !== undefined ? undefined : inThreads.find((peer) => peer.anchor === `discussion_r${entry.pendingReply}`);
+    if (pending !== undefined) {
+      suggestions.set(entry.key, { ...entry, pendingReplyText: textHash(pending.body) });
+      changed = true;
+    }
     const own = new Set(entry.replies ?? []);
-    const peers = entry.threads
-      .flatMap((key) => byAnchor.get(key)?.threadAnchors ?? [])
-      .filter((peer) => !own.has(peer.anchor) && peer.author.toLowerCase() === viewer.toLowerCase() && GELD_REPLY.test(peer.body.trim()));
+    const peers = inThreads.filter((peer) => !own.has(peer.anchor) && peer.author.toLowerCase() === viewer.toLowerCase() && GELD_REPLY.test(peer.body.trim()));
     if (peers.length === 0) continue;
     const found = peers.map((peer) => peer.anchor);
     // Marked as Geld's, never taken as the one to commit: the page shows a suggestion as rendered, old and new lines
     // together, so which fix it carries cannot be told, and a triage since may have written another.
+    const current = suggestions.get(entry.key) ?? entry;
     suggestions.set(entry.key, {
-      ...entry,
-      ...(entry.sources === undefined ? {} : { sources: [...entry.sources, ...found] }),
+      ...current,
+      ...(current.sources === undefined ? {} : { sources: [...current.sources, ...found] }),
       replies: [...own, ...found],
     });
     for (const anchor of found) seen.add(anchor);
@@ -697,11 +710,15 @@ export function adoptOwnReplies(comments: readonly RawComment[], viewer: string)
   return store(lastRun);
 }
 
-/** The reply Geld posted for this fix and has not committed, while it still stands in the thread. */
-export function pendingReplyFor(key: string, item: ReviewItem): number | null {
+/** The reply Geld posted for this fix and has not committed, while it stands in the thread in the words it was posted with. */
+export function pendingReplyFor(key: string, comments: readonly RawComment[]): number | null {
   const entry = suggestions.get(key);
   if (entry?.pendingReply === undefined) return null;
-  return anchorsOf([item]).includes(`discussion_r${entry.pendingReply}`) ? entry.pendingReply : null;
+  const anchor = `discussion_r${entry.pendingReply}`;
+  const reply = entry.threads.flatMap((thread) => comments.find((comment) => comment.anchor === thread)?.threadAnchors ?? []).find((peer) => peer.anchor === anchor);
+  if (reply === undefined) return null;
+  // Edited on GitHub since: what it would commit is no longer the fix in Geld's preview.
+  return entry.pendingReplyText === undefined || entry.pendingReplyText === textHash(reply.body) ? entry.pendingReply : null;
 }
 
 /** Titles the model has already rewritten for this pull request. */

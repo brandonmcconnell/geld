@@ -107,6 +107,8 @@ export interface StoredSuggestion {
   readonly replies?: readonly string[];
   /** A suggestion reply Geld posted whose commit did not go through, committed instead of posting another. */
   readonly pendingReply?: number;
+  /** That reply's words as the page first showed them, so a reply the reader edited since is posted afresh, not committed. */
+  readonly pendingReplyText?: string;
 }
 export const aiRunsItem = storage.defineItem<Readonly<Record<string, AiRunRecord>>>('local:aiRuns', { fallback: {} });
 export const AI_RUNS_CAP = 40;
