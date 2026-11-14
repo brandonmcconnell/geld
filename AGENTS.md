@@ -264,7 +264,7 @@ Devin Review counts what it fixed itself (`countShapedBy`, surveyed Nov 2026, mi
 Devin automatically fixed it." and "found 2 findings.
 Devin automatically fixed all 2 findings." are clean (count 0), "found 4 findings.
 Devin fixed 3 findings;
-1 finding is left for you to triage below." counts the one left, and the "Fixed by Devin (N)" list (`DEVIN_FIXED_LIST`) grades no severity, since none of it is open.
+1 finding is left for you to triage below." counts the one left, and the "Fixed by Devin (N)" list (`DEVIN_FIXED_LIST`) states no verdict ("needs human review", "ready to merge") and grades no severity, since none of it is open.
   **Nine more bots joined the registry in Oct 2026** (`REVIEW_BOTS`;
   surveyed from recent public pull requests by login with `/tmp`-style scripts, their docs read the same day): **Claude Code Review** (`claude[bot]`, `@claude review`/`always`/`once`, check "Claude Code Review", `REVIEW.md` — `CLAUDE.md` is every Claude Code user's file and says nothing about Code Review;
   conversational, since the login is also Claude Code's Action and "PR Steward", which narrate;

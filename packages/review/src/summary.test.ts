@@ -368,6 +368,10 @@ describe('bots + prompts', () => {
     const partly = parseBotBody(devinFixed('**Devin Review** found 4 findings. Devin fixed 3 findings; 1 finding is left for you to triage below.', '- **Critical crash on empty input** — Guarded the empty case.'), 'devin');
     expect(partly).toMatchObject({ count: 1, clean: false, severity: null });
     expect(parseBotBody('**Devin Review** found 1 finding. It is left for you to triage in Devin Review.', 'devin')).toMatchObject({ count: 1, clean: false });
+    // What it fixed states no verdict either: a fixed item's title is not Devin asking for a person.
+    const humanFixed = parseBotBody(devinFixed('**Devin Review** found 1 finding. Devin automatically fixed it.', '- **Fallback needs human review** — Removed the manual-review fallback.'), 'devin');
+    expect(humanFixed).toMatchObject({ count: 0, clean: true });
+    expect(humanFixed.verdict).toBeUndefined();
     // Codex: "Didn't find any major issues".
     expect(parseBotBody("Codex Review: Didn't find any major issues. Great work!", 'codex')).toMatchObject({ clean: true });
     // ...but not beside a count of findings: the count is the word.
@@ -663,6 +667,8 @@ describe('bots + prompts', () => {
     // A finding Devin fixed itself is not one (mint#14895): its summary is a clean review.
     const autofixed = verdictsFrom([], [{ author: 'devin-ai-integration[bot]', body: '**Devin Review** found 1 finding. Devin automatically fixed it.\n\n<details>\n<summary><b>Fixed by Devin (1)</b></summary>\n\n- **Links to hidden tabs stay hidden** — Fixed.\n\n</details>', anchor: 'issuecomment-9' }], 'aaa');
     expect(autofixed[0]).toMatchObject({ id: 'devin', verdict: 'clean', sourceId: 'issuecomment-9' });
+    const humanFixed = verdictsFrom([], [{ author: 'devin-ai-integration[bot]', body: '**Devin Review** found 1 finding. Devin automatically fixed it.\n\n<details>\n<summary><b>Fixed by Devin (1)</b></summary>\n\n- **Fallback needs human review** — Removed the manual-review fallback.\n\n</details>', anchor: 'issuecomment-10' }], 'aaa');
+    expect(humanFixed[0]).toMatchObject({ id: 'devin', verdict: 'clean' });
     // Findings, then a new push and "Starting" again, then a green check and silence: the latest run found nothing.
     const rerun = verdictsFrom(
       [{ name: 'Devin Review', status: 'completed', conclusion: 'success', sha: 'bbb' }],

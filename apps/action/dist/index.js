@@ -32623,13 +32623,14 @@ function parseBotBody(body, botId, anchor2) {
     }
   }
   const approved = (count === null || count === 0) && (/\b(?:didn.t|did not|couldn.t|could not) find any(?: \w+)? (?:issues|bugs|problems|findings)\b/i.test(text) || /\b(?:verdict|assessment)\W{0,6}(?:would\s+)?approved?\b/i.test(text) || /\breview complete\s*[\u2014\u2013-]+\s*approved\b/i.test(text) || /^\s*(?:[#>*_\s]*)approved[*_]*\s*(?:[.!:;\u2014\u2013-]|$)/i.test(text));
-  const needsHuman = /\bneeds? (?:a )?human (?:review(?:er)?|approval)\b/i.test(text.replace(/\b(?:not|no|never|without|doesn.t|does not|don.t|do not|didn.t|did not)\b(?!\s+(?:only|just|merely)\b)(?:\s+\w+){0,2}\s+needs? (?:a )?human (?:review(?:er)?|approval)\b/gi, ""));
-  const readyToMerge = /\bready to merge\b/i.test(text) && !/\b(?:not|isn.t|aren.t|never|before|until|far from|nowhere near)\b(?:\s+\w+){0,3}\s+ready to merge\b/i.test(text) && // ...nor with a condition after it ("ready to merge after the failing check is fixed", "once …", "if …").
-  !/\bready to merge\s+(?:after|once|when|if|provided|pending|following|as soon as|but|except|unless)\b/i.test(text);
+  const weighed = botId === "devin" ? text.replace(DEVIN_FIXED_LIST, "") : text;
+  const needsHuman = /\bneeds? (?:a )?human (?:review(?:er)?|approval)\b/i.test(weighed.replace(/\b(?:not|no|never|without|doesn.t|does not|don.t|do not|didn.t|did not)\b(?!\s+(?:only|just|merely)\b)(?:\s+\w+){0,2}\s+needs? (?:a )?human (?:review(?:er)?|approval)\b/gi, ""));
+  const readyToMerge = /\bready to merge\b/i.test(weighed) && !/\b(?:not|isn.t|aren.t|never|before|until|far from|nowhere near)\b(?:\s+\w+){0,3}\s+ready to merge\b/i.test(weighed) && // ...nor with a condition after it ("ready to merge after the failing check is fixed", "once …", "if …").
+  !/\bready to merge\s+(?:after|once|when|if|provided|pending|following|as soon as|but|except|unless)\b/i.test(weighed);
   const clean = botId === "coderabbit" ? (count === null || count === 0) && (/\bno actionable comments were generated\b/i.test(text) || count === 0 && shaped !== null) : !needsHuman && (count === null || count === 0) && (/\bno(?: (?:new|further|additional|other|remaining|potential|actionable|significant|blocking|logic|open))* (?:issues|bugs|findings|problems|defects|errors)\b/i.test(text) || /\bno actionable comments\b/i.test(text) || /\b(?:looks good|lgtm|all clean|no bugs found|nothing blocking|they look great|all reported issues were addressed)\b/i.test(text) || readyToMerge || approved || count === 0 && (score === null || botId === "greptile" || shaped !== null));
-  const affirmed = (botId === "devin" ? text.replace(DEVIN_FIXED_LIST, "") : text).replace(/\b(?:no|not|without|zero|non-)(?:\s+\w+){0,3}[\s-]+(?:high severity|critical|blockers?|blocking|security (?:issues?|vulnerabilit(?:y|ies)|risks?))\b/gi, "");
+  const affirmed = weighed.replace(/\b(?:no|not|without|zero|non-)(?:\s+\w+){0,3}[\s-]+(?:high severity|critical|blockers?|blocking|security (?:issues?|vulnerabilit(?:y|ies)|risks?))\b/gi, "");
   const severity = /\b(?:high severity|critical|blocker|security (?:issue|vulnerability|risk))\b/i.test(affirmed) ? "high" : /\bmedium(?: severity| risk)?\b/i.test(affirmed) ? "medium" : /\blow(?: severity| risk)?\b/i.test(affirmed) ? "low" : null;
-  const changesRequested = /\b(?:verdict|assessment)\W{0,6}(?:request(?:s|ed)? changes|changes requested)\b/i.test(text);
+  const changesRequested = /\b(?:verdict|assessment)\W{0,6}(?:request(?:s|ed)? changes|changes requested)\b/i.test(weighed);
   const coderabbit = botId === "coderabbit";
   const verdict = coderabbit ? {} : needsHuman ? { verdict: "needs-human" } : changesRequested ? { verdict: "changes-requested" } : {};
   const unthreaded = coderabbit ? outsideDiffCount(text) + (reviewBody ? failedPreMergeCount(text) : 0) : 0;
