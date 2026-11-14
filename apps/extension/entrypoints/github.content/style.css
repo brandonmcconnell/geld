@@ -11300,16 +11300,21 @@ button[data-geld-merge-variant] {
  * The Overview's review comments in a chat, laid out as the conversation's (its markup differs: a header grid of
  * picture, name and time, actions and badges; the body and the reactions toolbar in one wrapper). The picture stands
  * in the gutter up and to the left of the bubble, the name and the time on one line above it; the ⋯ and the picker
- * are moved beside the bubble and the pills under it by chat.ts (`placeOverviewControls`).
+ * are moved beside the bubble and the pills under it by chat.ts (`placeOverviewControls`). GitHub holds the header to
+ * its 28px control height on a display line height, and a border: the line is the classic 20px, so the picture and the
+ * name stand as close to the bubble as in the conversation.
  */
 .geld-review__chat [data-geld-part='meta'] [data-testid='comment-header'],
 .geld-review__chat [data-geld-part='meta'] [data-testid='comment-header'] > div {
   display: flex !important;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   min-width: 0;
+  min-height: 0 !important;
   margin: 0 !important;
   padding: 0 !important;
+  border: 0 !important;
+  line-height: 20px !important;
 }
 
 .geld-review__chat [data-geld-part='meta'] [data-testid='comment-header'] [class*='AvatarContainer'] {
@@ -11329,14 +11334,18 @@ button[data-geld-merge-variant] {
   height: var(--geld-chat-avatar) !important;
 }
 
+/* One line that overflows past a narrower bubble, as the classic one does, the time at its 12px. */
 .geld-review__chat [data-geld-part='meta'] [data-testid='comment-header-left-side-items'],
 .geld-review__chat [data-geld-part='meta'] [data-testid='comment-header-left-side-items'] > * {
   display: flex !important;
   flex-direction: row !important;
+  flex-wrap: nowrap !important;
   align-items: baseline;
   gap: 6px;
   margin: 0 !important;
   padding: 0 !important;
+  font-size: 12px !important;
+  line-height: 20px !important;
   white-space: nowrap;
 }
 
