@@ -108,7 +108,7 @@ function githubMergeButtons(scope: Element): HTMLButtonElement[] {
   return [...scope.querySelectorAll<HTMLButtonElement>('button')].filter((button) => {
     if (button.closest(`[${OWN_UI_ATTRIBUTE}]`) !== null || button.hasAttribute(ATTR_INFO)) return false;
     const label = button.getAttribute('aria-labelledby');
-    const words = `${button.textContent ?? ''} ${label === null ? '' : (document.getElementById(label)?.textContent ?? '')}`;
+    const words = `${button.textContent ?? ''} ${button.getAttribute('aria-label') ?? ''} ${label === null ? '' : (document.getElementById(label)?.textContent ?? '')}`;
     return /\bmerge\b/i.test(words) && button.textContent?.trim() !== VIEW_STATUS;
   });
 }
@@ -122,7 +122,7 @@ function greenMerges(scope: Element): void {
   for (const button of githubMergeButtons(scope)) {
     const original = button.getAttribute(ATTR_VARIANT);
     // A merge GitHub disables (a required check still running) stays grey, as GitHub draws it: green would offer it.
-    if (isDisabled(button)) {
+    if (mergeBlocked(button)) {
       if (original !== null) {
         button.setAttribute('data-variant', original);
         button.removeAttribute(ATTR_VARIANT);
@@ -161,6 +161,13 @@ export function greenOverviewMerges(): Element | null {
   greenMerges(section);
   watchDisabled(section);
   return section;
+}
+
+/** GitHub keeps the method caret usable while it blocks the merge beside it (an approval required): the caret goes with that merge. */
+function mergeBlocked(button: HTMLButtonElement): boolean {
+  if (isDisabled(button)) return true;
+  const merge = button.closest('[data-component="ButtonGroup"]')?.querySelector<HTMLButtonElement>('button[data-component="Button"]') ?? null;
+  return merge !== null && merge !== button && isDisabled(merge);
 }
 
 function isDisabled(button: HTMLButtonElement): boolean {
