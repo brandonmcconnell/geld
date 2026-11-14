@@ -2537,6 +2537,9 @@ function digestViewOf(settings) {
   if (!settings.prOverview) return "github";
   return settings.compactTimeline === "off" ? "digest-timeline" : "digest";
 }
+function consentPatch(choice, at) {
+  return { usageStats: choice.usageStats, errorReports: choice.errorReports, consentDecidedAt: at };
+}
 function digestViewPatch(settings, view, at) {
   const folded = settings.compactTimeline === "off" ? "compact" : settings.compactTimeline;
   if (view === "github") return { prOverview: false, compactTimeline: settings.compactTimeline, digestViewChosenAt: at };
@@ -2714,6 +2717,7 @@ function normalizeSettings(value) {
     prOverview: bool(record4, "prOverview", DEFAULT_SETTINGS.prOverview),
     compactTimeline: isCompactTimelineMode(record4.compactTimeline) ? record4.compactTimeline : DEFAULT_SETTINGS.compactTimeline,
     digestViewChosenAt: typeof record4.digestViewChosenAt === "string" ? record4.digestViewChosenAt : DEFAULT_SETTINGS.digestViewChosenAt,
+    consentDecidedAt: typeof record4.consentDecidedAt === "string" ? record4.consentDecidedAt : DEFAULT_SETTINGS.consentDecidedAt,
     reviewGrouping: isReviewGrouping(record4.reviewGrouping) ? record4.reviewGrouping : DEFAULT_SETTINGS.reviewGrouping,
     collapseDescription: bool(record4, "collapseDescription", DEFAULT_SETTINGS.collapseDescription),
     attachmentLightbox: bool(record4, "attachmentLightbox", DEFAULT_SETTINGS.attachmentLightbox),
@@ -2827,6 +2831,7 @@ var init_settings = __esm({
       prOverview: true,
       compactTimeline: "compact",
       digestViewChosenAt: "",
+      consentDecidedAt: "",
       reviewGrouping: "type",
       collapseDescription: true,
       attachmentLightbox: true,
@@ -3451,6 +3456,9 @@ function collectSettingsIssues(value, path = "settings", catalog = BUNDLED_CATAL
   }
   if (value.compactTimeline !== void 0 && !isCompactTimelineMode(value.compactTimeline)) {
     issues.push({ path: `${path}.compactTimeline`, message: `Expected one of ${list(COMPACT_TIMELINE_MODES)}, got ${describeValue(value.compactTimeline)}.` });
+  }
+  if (value.consentDecidedAt !== void 0 && typeof value.consentDecidedAt !== "string") {
+    issues.push({ path: `${path}.consentDecidedAt`, message: `Expected a string, got ${describeValue(value.consentDecidedAt)}.` });
   }
   if (value.digestViewChosenAt !== void 0 && typeof value.digestViewChosenAt !== "string") {
     issues.push({ path: `${path}.digestViewChosenAt`, message: `Expected a string, got ${describeValue(value.digestViewChosenAt)}.` });
@@ -11477,6 +11485,7 @@ var init_repo_config = __esm({
       "prOverview",
       "compactTimeline",
       "digestViewChosenAt",
+      "consentDecidedAt",
       "reviewGrouping",
       "collapseDescription",
       "aiBaseUrl",
@@ -12366,6 +12375,7 @@ __export(src_exports, {
   compileAuthorRules: () => compileAuthorRules,
   compileGlobs: () => compileGlobs,
   compileRepoRules: () => compileRepoRules,
+  consentPatch: () => consentPatch,
   createMatcher: () => createMatcher,
   customCategoryById: () => customCategoryById,
   customCategoryId: () => customCategoryId,

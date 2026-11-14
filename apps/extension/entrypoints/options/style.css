@@ -25,7 +25,8 @@ body {
   font-size: 13.5px;
 }
 
-.options__account-prompt:empty {
+.options__account-prompt:empty,
+.options__consent:empty {
   display: none;
 }
 
