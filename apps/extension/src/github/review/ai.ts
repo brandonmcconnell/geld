@@ -462,6 +462,7 @@ export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], s
   const needsFixes = source !== null && triageFixesOn(settings) && suggestionCandidates(meta.items).length > 0 && workFor(meta, comments, settings) !== null;
   const ranAt = new Date().toISOString();
   if (pending.length === 0 && !needsTldr && !needsFixes) return { changed: false };
+  if (inFlight.size > 0) return { changed: false };
   countUsage('ai_triage_run');
 
   for (const item of pending) inFlight.add(item.id);
@@ -537,6 +538,8 @@ export async function fixFromComments(meta: GeldPrMeta, comments: readonly RawCo
   await hydrating;
   const apiKey = (await aiKeyItem.getValue()).trim();
   if (apiKey === '' || !still()) return { changed: false, failed: false };
+  // Checked again with no await before the reservation: two asks set up side by side would share the one marker.
+  if (inFlight.size > 0) return { changed: false, failed: false };
   // A thread whose saved fix it shares with others is asked about with them, so the answer still covers every one.
   const threads = [...new Set(scope.threads.flatMap((key) => [key, ...(suggestionFor(key)?.threads ?? [])]))];
   for (const key of threads) askedThreads.add(key);
