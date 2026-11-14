@@ -1,5 +1,6 @@
 import { pageFetch } from '../page-fetch';
 import type { RefState } from './refs';
+import { parseTimelineEvents, type TimelineEvent } from './timeline-events';
 
 /** A pull request or issue that mentions this one, from the Overview's timeline data. */
 export interface TimelineMention {
@@ -67,51 +68,75 @@ export function nextTimelinePage(link: string | null): string | null {
   return null;
 }
 
-/** Pages read at most: 25 items each, so the mentions of a long conversation's first 200 events. */
-const MAX_PAGES = 8;
-/** A reading is kept this long before it is asked for again, since a mention can land while the page is open. */
+/**
+ * Pages read at most: 25 items each, so a conversation's first 1,000 items. The pages run oldest first, so a longer
+ * timeline is read without its newest items, and the reading says it is not complete.
+ */
+const MAX_PAGES = 40;
+/** A reading is kept this long before it is asked for again, since a mention or an event can land while the page is open. */
 const FRESH_MS = 5 * 60_000;
+
+export interface Timeline {
+  readonly mentions: readonly TimelineMention[];
+  readonly events: readonly TimelineEvent[];
+  /** False when the timeline ran past `MAX_PAGES`: what was read is its oldest part. */
+  readonly complete: boolean;
+}
 
 interface Reading {
   readonly at: number;
-  readonly mentions: readonly TimelineMention[] | null;
+  readonly timeline: Timeline | null;
 }
 
 const readings = new Map<string, Reading>();
 const inFlight = new Set<string>();
 
-async function readMentions(pullPath: string): Promise<readonly TimelineMention[] | null> {
+async function readTimeline(pullPath: string): Promise<Timeline | null> {
   const mentions: TimelineMention[] = [];
+  const events: TimelineEvent[] = [];
   let next: string | null = `${pullPath}/page_data/timeline`;
   for (let page = 0; next !== null && page < MAX_PAGES; page += 1) {
     const response = await pageFetch(next, { credentials: 'same-origin', headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'GitHub-Verified-Fetch': 'true' } });
     // A page that fails leaves the reading incomplete: no answer, so the last complete one stands rather than a shorter list.
     if (!response.ok) return null;
-    mentions.push(...parseTimelineMentions(await response.json()));
+    const payload: unknown = await response.json();
+    mentions.push(...parseTimelineMentions(payload));
+    events.push(...parseTimelineEvents(payload));
     next = nextTimelinePage(response.headers.get('link'));
   }
-  return mentions;
+  return { mentions, events, complete: next === null };
 }
 
 /**
- * The pull requests and issues that mention this one, on the Overview, whose page holds no cross-reference rows (they
- * live in its activity panel, outside the page until opened): read once per pull request and again after `FRESH_MS`,
- * `onLanded` asked for a pass when an answer lands. Null until the first answer, or when the timeline cannot be read.
+ * The Overview's timeline data, which its page holds no rows for (they live in its activity panel, outside the page
+ * until opened): read once per pull request and again after `FRESH_MS`, `onLanded` asked for a pass when an answer
+ * changes what was read. Null until the first answer, or when the timeline cannot be read.
  */
-export function timelineMentionsFor(pullPath: string, onLanded: () => void): readonly TimelineMention[] | null {
+function timelineFor(pullPath: string, onLanded: () => void): Timeline | null {
   const reading = readings.get(pullPath);
   if ((reading === undefined || Date.now() - reading.at > FRESH_MS) && !inFlight.has(pullPath)) {
     inFlight.add(pullPath);
-    void readMentions(pullPath)
+    void readTimeline(pullPath)
       .catch(() => null)
-      .then((mentions) => {
+      .then((timeline) => {
         inFlight.delete(pullPath);
-        const before = readings.get(pullPath)?.mentions;
-        readings.set(pullPath, { at: Date.now(), mentions: mentions ?? before ?? null });
-        if (JSON.stringify(before ?? null) !== JSON.stringify(mentions ?? before ?? null)) onLanded();
+        const before = readings.get(pullPath)?.timeline ?? null;
+        const after = timeline ?? before;
+        readings.set(pullPath, { at: Date.now(), timeline: after });
+        if (JSON.stringify(before) !== JSON.stringify(after)) onLanded();
       });
   }
-  return reading?.mentions ?? null;
+  return reading?.timeline ?? null;
+}
+
+/** The pull requests and issues that mention this one, on the Overview: null until the timeline has been read. */
+export function timelineMentionsFor(pullPath: string, onLanded: () => void): readonly TimelineMention[] | null {
+  return timelineFor(pullPath, onLanded)?.mentions ?? null;
+}
+
+/** The pull request's own events (closed, renamed, a review requested…), on the Overview, and whether the whole timeline was read: null until it has been. */
+export function timelineEventsFor(pullPath: string, onLanded: () => void): Pick<Timeline, 'events' | 'complete'> | null {
+  return timelineFor(pullPath, onLanded);
 }
 
 export function resetTimelineMentions(): void {

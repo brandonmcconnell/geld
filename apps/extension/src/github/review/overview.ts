@@ -40,7 +40,7 @@ import { deploymentEntries, deploymentOf, deploymentsOfPreview, environmentLabel
 import { threadFragmentOf } from './thread-fragment';
 import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, loadMoreStalled, loadMoreStanding, sourceAnchorFromHash } from './deeplink';
 import { commitDate, commitTimes, isRewritten } from './commit-dates';
-import { embeddedPullRequestCreated } from '../merge-actions';
+import { embeddedPullRequestBranches, embeddedPullRequestCreated } from '../merge-actions';
 import { editedAt, editsVersion, editTimesOf, refreshEditTimes, resetEditTimes, revisionAsOf, revisionTimesOf } from './edit-times';
 import type { SameRunCandidate } from './revisions';
 import { RUN_SETTLE_MS, threadHeadOf } from './thread-head';
@@ -82,9 +82,10 @@ import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel, TriageView } from './panel';
 import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots, triggerFor } from './panel-model';
-import { commitShaOf, outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
-import { timelineMentionsFor } from './timeline-mentions';
-import type { MentionLine } from './quick-view';
+import { commitShaOf, outgoingMentions, renderEventsView, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
+import { eventState, eventWords, type TimelineEvent } from './timeline-events';
+import { timelineEventsFor, timelineMentionsFor } from './timeline-mentions';
+import type { EventLine, MentionLine } from './quick-view';
 import { botCommentControls, chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf, threadLinesOf, parkChats, releaseParkedChats } from './chat';
 import type { ChatByline, ChatLink, ChatRerun, ChatThreadLink } from './chat';
 import { viaBotOf } from './via';
@@ -1070,6 +1071,69 @@ function incomingReadMentions(): readonly MentionLine[] {
   }));
 }
 
+/**
+ * On the Overview, the pull request's own events (closed, renamed, a review requested…): its page holds no event rows
+ * (they live in its activity panel, outside the page until opened), so they are read from the timeline data that panel reads.
+ */
+function overviewEvents(): { readonly events: readonly TimelineEvent[]; readonly complete: boolean } {
+  const none = { events: [], complete: true };
+  if (!isOverviewPage()) return none;
+  const pullPath = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(location.pathname)?.[0];
+  if (pullPath === undefined) return none;
+  return timelineEventsFor(pullPath, reapplySoon) ?? none;
+}
+
+function eventBranches(): { readonly base: string | null; readonly head: string | null } {
+  return embeddedPullRequestBranches(location.pathname);
+}
+
+/**
+ * The Overview's timeline events row, as the classic page's: headlined by its last state change, timed by it. A reading
+ * cut short holds only the oldest events, so its count is a floor ("200+") and it has no headline, which could be a
+ * close a later reopen undid.
+ */
+function overviewEventsGroup({ events, complete }: { readonly events: readonly TimelineEvent[]; readonly complete: boolean }): FoldGroup | null {
+  const first = events[0];
+  if (first === undefined) return null;
+  const last = complete ? [...events].reverse().find((event) => eventState(event) !== null) : undefined;
+  const kind = last === undefined ? null : eventState(last);
+  const headline =
+    last === undefined || kind === null ? undefined : { kind, actor: last.login, avatarSrc: last.avatarUrl === '' ? null : last.avatarUrl, target: kind === 'merged' ? eventBranches().base : null, anchor: '' };
+  return {
+    key: 'events',
+    label: `${events.length}${complete ? '' : '+'} timeline event${events.length === 1 && complete ? '' : 's'}`,
+    author: null,
+    nodes: [],
+    section: 'activity',
+    at: last?.at ?? first.at,
+    ...(headline === undefined ? {} : { headline }),
+  };
+}
+
+/** Events the conversation's rows say without the actor's name ("closed this"): the picture beside them says who. */
+const NAMELESS_EVENTS = new Set(['closed', 'reopened', 'merged', 'head_ref_deleted', 'head_ref_restored']);
+
+function eventLines(events: readonly TimelineEvent[]): readonly EventLine[] {
+  const branches = eventBranches();
+  return events.map((event) => {
+    const state = eventState(event);
+    const href = event.bot ? `/apps/${event.login.replace(/\[bot\]$/, '')}` : `/${event.login}`;
+    return {
+      type: event.type,
+      state: state === 'reopened' ? 'open' : state,
+      avatar:
+        event.login === '' || event.avatarUrl === ''
+          ? null
+          : createElement('a', { class: 'geld-review__activity-who', href, ...whoAttributes(event.login, event.bot) }, [
+              createElement('img', { class: 'geld-review__avatar', 'data-kind': event.bot ? 'bot' : 'user', src: event.avatarUrl, alt: `@${event.login}`, width: '20', height: '20' }),
+            ]),
+      actor: event.login === '' || NAMELESS_EVENTS.has(event.type) ? null : createElement('a', { class: 'geld-review__activity-actor', href, ...whoAttributes(event.login, event.bot) }, [event.login]),
+      words: eventWords(event, branches),
+      at: event.at,
+    };
+  });
+}
+
 /** An activity row's moment as last read, so a row whose nodes are on loan, or on their way home, keeps it. */
 const foldMomentByKey = new Map<string, string>();
 
@@ -1111,7 +1175,7 @@ function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
     const firstAnchor = firstAnchorIn(group.nodes[0] ?? null);
     // A row headlined by its state change keeps that change's time, not the first event's.
     const headlineNode = group.headline === undefined ? null : (group.nodes.find((node) => node.id === group.headline?.anchor) ?? null);
-    const read = group.section === 'activity' ? foldMoment(group, headlineNode) : null;
+    const read = group.section === 'activity' ? (group.at ?? foldMoment(group, headlineNode)) : null;
     if (read !== null) foldMomentByKey.set(group.key, read);
     const at = group.section === 'activity' ? (read ?? foldMomentByKey.get(group.key)) : undefined;
     return {
@@ -3817,6 +3881,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     const leftovers = groupLeftovers(leftoverList, [...conversationMentions(), ...incomingReadMentions()].map((line) => `${line.href} ${line.title} ${line.state}`));
     groups.push(...leftovers);
     foldTargets.push(...leftovers);
+    if (!groups.some((group) => group.key === 'events')) {
+      const events = overviewEventsGroup(overviewEvents());
+      if (events !== null) groups.push(events);
+    }
   }
   // Rounds: what landed between two pushes. A push is a run of commit rows or a force-push event (after a force-push
   // GitHub lists no commits, only "force-pushed from a to b"). Bot run summaries belong to their round rather than to rows of their own.
@@ -4471,7 +4539,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   if (mounted?.slot !== null && mounted?.slot !== undefined && visit.openKey !== null) {
     const nodes = quickViewFor(visit.openKey, meta, groups);
     // What the description and comments mention has no timeline row, so the Mentions row can stand with no nodes to show.
-    const onlyOutgoing = visit.openKey === foldKey('mentions') && (conversationMentions().length > 0 || incomingReadMentions().length > 0);
+    const onlyOutgoing = (visit.openKey === foldKey('mentions') && (conversationMentions().length > 0 || incomingReadMentions().length > 0)) || (visit.openKey === foldKey('events') && nodes.length === 0 && overviewEvents().events.length > 0);
     if (nodes.length === 0 && !onlyOutgoing) {
       // An open thread row (by push) whose thread is momentarily out of the crawl keeps its row through the grace.
       if (!visit.openKey.startsWith('item:') || openLineStillMissing()) {
@@ -4570,6 +4638,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         } else {
           renderQuickView(mounted.slot, nodes);
         }
+      } else if (visit.openKey === foldKey('events') && nodes.length === 0) {
+        const read = overviewEvents();
+        renderEventsView(mounted.slot, eventLines(read.events), read.complete);
       } else if (visit.openKey === foldKey('mentions')) {
         renderMentionsView(mounted.slot, nodes, conversationMentions(true), (href) => refDetails(href, reapplySoon), incomingReadMentions());
       } else if (visit.openKey.startsWith('item:')) {
