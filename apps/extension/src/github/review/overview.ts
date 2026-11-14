@@ -213,7 +213,7 @@ interface VisitState {
 interface TriageVisit {
   openKey: string | null;
   collapsed: boolean;
-  readonly busy: Map<string, 'fix'>;
+  readonly busy: Map<string, 'fix' | 'writing'>;
   readonly errors: Map<string, string>;
   handedOff: HandedOff | null;
   /** Fixes asked for from a chat, by the thread's key or the comment's anchor, and the choice a comment's was asked with. */
@@ -3995,14 +3995,24 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     const kind = aiStateFor(meta, rawComments, settings).kind;
     return kind !== 'off' && kind !== 'app' && triageFixesOn(settings);
   };
+  /** The saved fixes an ask would write afresh: those holding any of its threads, a shared one's partners included. */
+  const fixesFor = (threads: readonly string[]): readonly string[] => {
+    const asked = new Set(threads);
+    return triageSuggestions(meta, settings).flatMap(({ entry }) => (entry.threads.some((thread) => asked.has(thread)) ? [entry.key] : []));
+  };
   const askFix = (key: string, scope: CommentFixScope | null, ask: FixScope): void => {
     const triage = visit.triage;
+    // A fix being applied and the same fix written afresh would each record over the other: one at a time.
+    const rewriting = fixesFor(ask.threads);
+    if (rewriting.some((entry) => triage.busy.get(entry) === 'fix')) return;
+    for (const entry of rewriting) triage.busy.set(entry, 'writing');
     triage.collapsed = false;
     triage.chatFixes.set(key, { state: 'running', scope });
     reapply();
     const headSha = meta.headSha;
     const source: SuggestionSource = { pull: pullIntent(), target: (item) => suggestionTarget(item, rawComments, headSha) };
     void fixFromComments(meta, rawComments, settings, reapply, source, ask).then((run) => {
+      for (const entry of rewriting) if (triage.busy.get(entry) === 'writing') triage.busy.delete(entry);
       triage.chatFixes.set(key, { state: !run.changed ? 'idle' : run.failed ? 'failed' : 'done', scope, ...(run.reason === undefined ? {} : { error: run.reason }) });
       reapply();
     });
@@ -4018,7 +4028,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     if (item === null) return null;
     const key = threadKeyOf(item);
     const asked = visit.triage.chatFixes.get(key);
-    return { state: asked?.state ?? 'idle', ...(asked?.error === undefined ? {} : { error: asked.error }), onFix: () => askFix(key, null, { threads: [key], comment: null }) };
+    const applying = fixesFor([key]).some((entry) => visit.triage.busy.get(entry) === 'fix');
+    return { state: asked?.state ?? 'idle', applying, ...(asked?.error === undefined ? {} : { error: asked.error }), onFix: () => askFix(key, null, { threads: [key], comment: null }) };
   };
   const commentFixOf = (anchor: string, author: string, links: readonly ChatThreadLink[]): CommentFix | null => {
     if (!chatFixesOn()) return null;
@@ -4033,6 +4044,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     const asked = visit.triage.chatFixes.get(anchor);
     return {
       threads: keys.length,
+      applying: fixesFor(keys).some((entry) => visit.triage.busy.get(entry) === 'fix'),
       state: asked?.state ?? 'idle',
       scope: asked?.scope ?? null,
       ...(asked?.error === undefined ? {} : { error: asked.error }),

@@ -1634,6 +1634,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   A thread asked about again is written afresh, over a current fix or a discarded one (`proposeFixes`' `only`), where the triage on its own keeps what it has.
   A thread whose saved fix answers other threads too is asked about with them, so the fix written afresh still covers every one and Apply still resolves them all.
   A thread asked about apart from the fix it shares leaves that fix only once its own answer is in (`leaving` in `proposeFixes`), so a refused or unreadable answer leaves the shared fix covering every thread as before.
+  A fix being applied and the same fix written afresh from a chat never run at once (`TriageVisit.busy` `writing`, `fixesFor`): each would record over the other, the applied state or the reply kept for a refused commit, so a chat's Fix waits while its fix is applied (`ChatFix.applying`) and Apply waits while it is written.
   A chat's fix that gets no answer says why on that chat's control, whose Fix asks again, and is never the triage's error: the card's Try again reruns the triage, which would not ask about that comment.
   A comment's open tasks keep the card up on a pull request with no thread open (`aiStateFor`: not `nothing` then).
   An answer that lands after the reader moved to another pull request is dropped, never written into that one's run (`still`, in a full triage too): the module's maps hold one pull request's run at a time.
