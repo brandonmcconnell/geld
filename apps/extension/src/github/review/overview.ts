@@ -4002,9 +4002,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   };
   const askFix = (key: string, scope: CommentFixScope | null, ask: FixScope): void => {
     const triage = visit.triage;
-    // A fix being applied and the same fix written afresh would each record over the other: one at a time.
+    // A fix being applied, or written afresh by another ask, and this ask would each record over the other: one at a time.
     const rewriting = fixesFor(ask.threads);
-    if (rewriting.some((entry) => triage.busy.get(entry) === 'fix')) return;
+    if (rewriting.some((entry) => triage.busy.has(entry))) return;
     for (const entry of rewriting) triage.busy.set(entry, 'writing');
     triage.collapsed = false;
     triage.chatFixes.set(key, { state: 'running', scope });

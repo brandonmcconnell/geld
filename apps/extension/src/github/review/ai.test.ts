@@ -284,4 +284,21 @@ describe('a fix asked for from a chat', () => {
     expect(triageSuggestions(meta, settings).map(({ entry }) => entry.threads)).toEqual([[bot.anchor, other.anchor]]);
     expect(aiStateFor(meta, [bot, other], settings).kind).not.toBe('failed');
   });
+
+  it('drops a request whose visit ended during its setup, or that was left and come back to', async () => {
+    await fresh();
+    const meta = metaFor([review]);
+    sendMessage.mockImplementation(async () => ({ ok: true, model: 'm', text: JSON.stringify({ findings: [{ title: 'Handle leaks', task: 'Close it.', path: null, line: null }] }) }));
+    const scope = { threads: [], comment: { anchor: review.anchor, author: review.author, text: review.body, threads: [] } };
+    const during = fixFromComments(meta, [review], settings, () => undefined, source, scope);
+    loadAiForPage('github:/o/r/pull/9', () => undefined);
+    expect(await during).toEqual({ changed: false, failed: false });
+    expect(triageSuggestions(meta, settings)).toEqual([]);
+    await new Promise<void>((resolve) => loadAiForPage('github:/o/r/pull/8', resolve));
+    const away = fixFromComments(meta, [review], settings, () => undefined, source, scope);
+    loadAiForPage('github:/o/r/pull/9', () => undefined);
+    loadAiForPage('github:/o/r/pull/8', () => undefined);
+    expect(await away).toEqual({ changed: false, failed: false });
+    expect(triageSuggestions(meta, settings)).toEqual([]);
+  });
 });

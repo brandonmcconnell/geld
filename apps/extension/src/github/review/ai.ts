@@ -82,6 +82,8 @@ const suggestions = new Map<string, StoredSuggestion>();
 const askedThreads = new Set<string>();
 /** The pull request the module state belongs to, and its record as last stored. */
 let runKey: string | null = null;
+/** Advances whenever the module turns to another pull request: a request belongs to the visit it began in, even back on the same page. */
+let visitId = 0;
 let lastRun: AiRunRecord | null = null;
 let hydrating: Promise<void> | null = null;
 /** Item ids (and `tldr`) a request is in flight for — the rows that shimmer. */
@@ -121,6 +123,7 @@ aiKeyItem.watch(() => {
 export function loadAiForPage(key: string, onLoaded: () => void): void {
   if (runKey === key) return;
   runKey = key;
+  visitId += 1;
   rewrites.clear();
   summary = undefined;
   seen.clear();
@@ -443,13 +446,13 @@ const SUGGEST_MARGIN = 25;
  * so the rows can shimmer, and again when results land. A run that gets no usable answer is stored with its reason.
  */
 export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings, onProgress: () => void, source: SuggestionSource | null = null): Promise<ConsolidateRun> {
+  // Taken before the first await: answers that land after the reader moved to another visit are dropped.
+  const visitAt = visitId;
+  const still = (): boolean => visitId === visitAt;
   if (meta.producer.ai || !(await aiConfigured(settings)) || inFlight.size > 0) return { changed: false };
   await hydrating;
   const apiKey = (await aiKeyItem.getValue()).trim();
-  if (apiKey === '') return { changed: false };
-  // As for a chat's fix: answers that land after the reader moved to another pull request are dropped.
-  const page = runKey;
-  const still = (): boolean => runKey === page;
+  if (apiKey === '' || !still()) return { changed: false };
   const known: GeldPrMeta = withAi(meta);
   const plan = planConsolidation(known, meta.items, { comments, wantFix: wantFix(settings), seen });
   const pending = plan.pending;
@@ -526,13 +529,14 @@ export interface FixScope {
  * them to suggest in, and replace that comment's rows from before. Resolves with whether a request failed.
  */
 export async function fixFromComments(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings, onProgress: () => void, source: SuggestionSource, scope: FixScope): Promise<{ readonly changed: boolean; readonly failed: boolean; readonly reason?: string }> {
+  // Taken before the first await, and checked before anything shared changes: an answer that lands after the reader
+  // moved to another visit (another pull request, or this one opened afresh) is that visit's no longer.
+  const visitAt = visitId;
+  const still = (): boolean => visitId === visitAt;
   if (meta.producer.ai || !(await aiConfigured(settings)) || inFlight.size > 0 || !triageFixesOn(settings)) return { changed: false, failed: false };
   await hydrating;
   const apiKey = (await aiKeyItem.getValue()).trim();
-  if (apiKey === '') return { changed: false, failed: false };
-  // An answer that lands after the reader moved to another pull request is that page's no longer: dropped, not written.
-  const page = runKey;
-  const still = (): boolean => runKey === page;
+  if (apiKey === '' || !still()) return { changed: false, failed: false };
   // A thread whose saved fix it shares with others is asked about with them, so the answer still covers every one.
   const threads = [...new Set(scope.threads.flatMap((key) => [key, ...(suggestionFor(key)?.threads ?? [])]))];
   for (const key of threads) askedThreads.add(key);
