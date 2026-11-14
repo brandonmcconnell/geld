@@ -1621,6 +1621,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   It presses only Resolve (`resolveIfOpen`), so a partner thread someone resolved meanwhile is never unresolved.
   Every button in the triage card is the merge box's size, 24px with 10px either side and 12px words (`.geld-review__triage .btn-sm`, mirroring `.geld-quick-review__footer .btn-sm`): at Primer's 28px the row's Apply and the open fix's buttons read oversized beside the rows.
   Apply all's count is a 16px disc with bold 10px figures (`__triage-count`): Primer's 18px counter filled the 24px button edge to edge.
+  The button is a flex row centred on its cross axis (`__triage-apply-all`), since on the words' line box the disc sat 2px high.
   **Apply all and Discard all** stand under the list once two or more findings are open (`bulkActions`), at the right, Discard all just left of Apply all, which carries a counter of the fixes it takes.
   Apply all takes every fix written for the head in one commit (`applyFixes`: each suggestion reply posted in order, then every reply that stands committed at once, as GitHub's "Add suggestion to batch"): each commit moves the branch's head and a commit sent against the head before it is refused, so fixes committed one after another would all fail but the first.
   A reply GitHub refuses leaves the rest to commit, and a refused commit records every reply posted, so the next Apply commits them rather than posting again.

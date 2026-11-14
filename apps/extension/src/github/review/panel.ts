@@ -1546,7 +1546,7 @@ function bulkActions(triage: TriageView, handlers: PanelHandlers): HTMLElement |
   const what = triage.resolves ? 'Post each fix as a suggestion, commit them together, and resolve their threads' : 'Post each fix as a suggestion and commit them together';
   const left = overlapping.length === 0 ? '' : `. ${overlapping.length === 1 ? 'One fix overlaps' : `${overlapping.length} fixes overlap`} another’s lines and waits for the next triage`;
   const title = triage.policyPending ? 'Reading the repository’s Geld config first' : ready.length === 0 ? 'No fix here fits the head commit. Triage again first.' : `${what} (${ready.length} ${ready.length === 1 ? 'fix' : 'fixes'})${left}`;
-  const fixAll = createElement('button', { type: 'button', class: 'btn btn-sm btn-primary', title, [ATTR_FOCUS]: 'fix-all', ...(busy || ready.length === 0 || triage.policyPending ? { disabled: '' } : {}), ...(busy ? { 'aria-busy': 'true' } : {}) }, [
+  const fixAll = createElement('button', { type: 'button', class: `btn btn-sm btn-primary ${PANEL_CLASS}__triage-apply-all`, title, [ATTR_FOCUS]: 'fix-all', ...(busy || ready.length === 0 || triage.policyPending ? { disabled: '' } : {}), ...(busy ? { 'aria-busy': 'true' } : {}) }, [
     busy ? 'Applying…' : 'Apply all',
     ...(ready.length > 0 && !busy ? [createElement('span', { class: `Counter ${PANEL_CLASS}__triage-count` }, [String(ready.length)])] : []),
   ]);
