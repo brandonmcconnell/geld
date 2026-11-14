@@ -4011,11 +4011,13 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     reapply();
     const headSha = meta.headSha;
     const source: SuggestionSource = { pull: pullIntent(), target: (item) => suggestionTarget(item, rawComments, headSha) };
-    void fixFromComments(meta, rawComments, settings, reapply, source, ask).then((run) => {
+    // However the request ends, its fixes are free to apply again: a mark left by a request that threw held Apply for good.
+    const settle = (run: { readonly changed: boolean; readonly failed: boolean; readonly reason?: string }): void => {
       for (const entry of rewriting) if (triage.busy.get(entry) === 'writing') triage.busy.delete(entry);
       triage.chatFixes.set(key, { state: !run.changed ? 'idle' : run.failed ? 'failed' : 'done', scope, ...(run.reason === undefined ? {} : { error: run.reason }) });
       reapply();
-    });
+    };
+    void fixFromComments(meta, rawComments, settings, reapply, source, ask).then(settle, () => settle({ changed: true, failed: true, reason: 'The request did not finish.' }));
   };
   /** The open finding a thread (or a thread a comment came with) is, by any of its comments' anchors. */
   const fixableItemAt = (anchor: string): ReviewItem | null => {
