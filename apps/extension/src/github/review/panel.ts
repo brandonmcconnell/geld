@@ -1548,7 +1548,7 @@ function bulkActions(triage: TriageView, handlers: PanelHandlers): HTMLElement |
   const title = triage.policyPending ? 'Reading the repository’s Geld config first' : ready.length === 0 ? 'No fix here fits the head commit. Triage again first.' : `${what} (${ready.length} ${ready.length === 1 ? 'fix' : 'fixes'})${left}`;
   const fixAll = createElement('button', { type: 'button', class: 'btn btn-sm btn-primary', title, [ATTR_FOCUS]: 'fix-all', ...(busy || ready.length === 0 || triage.policyPending ? { disabled: '' } : {}), ...(busy ? { 'aria-busy': 'true' } : {}) }, [
     busy ? 'Applying…' : 'Apply all',
-    ...(ready.length > 0 && !busy ? [createElement('span', { class: 'Counter' }, [String(ready.length)])] : []),
+    ...(ready.length > 0 && !busy ? [createElement('span', { class: `Counter ${PANEL_CLASS}__triage-count` }, [String(ready.length)])] : []),
   ]);
   fixAll.addEventListener('click', () => handlers.onApplyAll(eligible.map((fix) => fix.key)));
   return createElement('div', { class: `${PANEL_CLASS}__triage-fix-actions ${PANEL_CLASS}__triage-bulk` }, [discard, fixAll]);
