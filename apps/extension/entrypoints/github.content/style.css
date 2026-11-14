@@ -3833,6 +3833,23 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   gap: 8px;
 }
 
+/* The triage's buttons are the merge box's (`.geld-quick-review__footer .btn-sm`): 24px, 10px either side, 12px words. */
+.geld-review__triage .btn-sm {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+  line-height: 22px;
+}
+
+.geld-review__triage .btn-sm.geld-review__split-caret {
+  padding: 0 6px !important;
+}
+
+/* The agent's 16px mark stands as far from the 24px button's left edge as from its top and bottom. */
+.geld-review__triage .btn-sm.geld-review__split-agent {
+  padding-left: 3px !important;
+}
+
 /* Fix all and Discard all stand under the list, on its edges. */
 .geld-review__triage-bulk {
   margin: 0 16px 8px 38px;
