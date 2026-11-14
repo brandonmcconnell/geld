@@ -32493,6 +32493,12 @@ function hasHeading(text, heading) {
 }
 function countShapedBy(botId, text, reviewBody) {
   switch (botId) {
+    case "devin": {
+      if (!/\bfound \d+ findings?\b/i.test(text)) return null;
+      const left = /(\d+) findings? (?:is|are) left\b/i.exec(text);
+      if (left?.[1] !== void 0) return Number.parseInt(left[1], 10);
+      return /\bdevin (?:automatically )?fixed (?:it|them|all)\b/i.test(text) ? 0 : null;
+    }
     case "claude": {
       const match = /(\d+)[^\S\n]*P1,[^\S\n]*(\d+)[^\S\n]*P2/i.exec(text);
       return match?.[1] !== void 0 && match[2] !== void 0 ? Number.parseInt(match[1], 10) + Number.parseInt(match[2], 10) : null;
@@ -32589,6 +32595,7 @@ function findingSeverity(body) {
   return mark === "\u{1F534}" || mark === "\u{1F7E0}" || mark === "\u{1F6D1}" || mark === ":stop_sign:" ? "high" : mark === "\u{1F7E1}" ? "medium" : "low";
 }
 var SEVERITY_RANK = { high: 3, medium: 2, low: 1 };
+var DEVIN_FIXED_LIST = /fixed by devin\s*\(\d+\)[\s\S]*?(?=<\/details>|^\s*\[?view findings in devin review|(?![\s\S]))/gim;
 function parseBotBody(body, botId, anchor2) {
   const text = body.replace(/\r\n?/g, "\n").replace(/<!--[\s\S]*?-->/g, "").trim();
   const reviewBody = anchor2 === void 0 || anchor2.startsWith("pullrequestreview-");
@@ -32620,7 +32627,7 @@ function parseBotBody(body, botId, anchor2) {
   const readyToMerge = /\bready to merge\b/i.test(text) && !/\b(?:not|isn.t|aren.t|never|before|until|far from|nowhere near)\b(?:\s+\w+){0,3}\s+ready to merge\b/i.test(text) && // ...nor with a condition after it ("ready to merge after the failing check is fixed", "once …", "if …").
   !/\bready to merge\s+(?:after|once|when|if|provided|pending|following|as soon as|but|except|unless)\b/i.test(text);
   const clean = botId === "coderabbit" ? (count === null || count === 0) && (/\bno actionable comments were generated\b/i.test(text) || count === 0 && shaped !== null) : !needsHuman && (count === null || count === 0) && (/\bno(?: (?:new|further|additional|other|remaining|potential|actionable|significant|blocking|logic|open))* (?:issues|bugs|findings|problems|defects|errors)\b/i.test(text) || /\bno actionable comments\b/i.test(text) || /\b(?:looks good|lgtm|all clean|no bugs found|nothing blocking|they look great|all reported issues were addressed)\b/i.test(text) || readyToMerge || approved || count === 0 && (score === null || botId === "greptile" || shaped !== null));
-  const affirmed = text.replace(/\b(?:no|not|without|zero|non-)(?:\s+\w+){0,3}[\s-]+(?:high severity|critical|blockers?|blocking|security (?:issues?|vulnerabilit(?:y|ies)|risks?))\b/gi, "");
+  const affirmed = (botId === "devin" ? text.replace(DEVIN_FIXED_LIST, "") : text).replace(/\b(?:no|not|without|zero|non-)(?:\s+\w+){0,3}[\s-]+(?:high severity|critical|blockers?|blocking|security (?:issues?|vulnerabilit(?:y|ies)|risks?))\b/gi, "");
   const severity = /\b(?:high severity|critical|blocker|security (?:issue|vulnerability|risk))\b/i.test(affirmed) ? "high" : /\bmedium(?: severity| risk)?\b/i.test(affirmed) ? "medium" : /\blow(?: severity| risk)?\b/i.test(affirmed) ? "low" : null;
   const changesRequested = /\b(?:verdict|assessment)\W{0,6}(?:request(?:s|ed)? changes|changes requested)\b/i.test(text);
   const coderabbit = botId === "coderabbit";

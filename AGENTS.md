@@ -260,6 +260,11 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   "Didn't find any major issues" (Codex), "Verdict: approve" and a leading "Approved" (Cursor's automations under the Bugbot login) are clean, and "Verdict: request changes" is a stated verdict (`changes-requested`); **Bugbot is `conversational` too**, since the same `cursor[bot]` login is Cursor's cloud agents', which reply in other bots' threads and address them ("@greptileai Both P1 findings are addressed… Please re-review" read as Bugbot's findings over its own clean review, mint#13111) — its own summaries are always review-shaped, so nothing of Bugbot's is lost;
   a notice headed by its reason over a long explanation — "Bugbot couldn't run - usage limit reached", "Bugbot needs on-demand usage enabled" (an `<h3>`, read with its tags off), CodeRabbit's "Review limit reached" (its free OSS reviews used up: only as the whole heading of a warning alert, whose `[!WARNING]` marker, "Warning" as the page reads it, is not the heading, since a finding may be headed with the same words) — and "usage limits have been reached" (Codex) are refusals;
   and **Devin is `conversational`** like Replicas, since under the same login it narrates the pull requests it opens ("I'll fix CI failures…", "Tested commit … in a browser…") — only a review-shaped comment votes, and Devin Review's always are.
+Devin Review counts what it fixed itself (`countShapedBy`, surveyed Nov 2026, mint#14895): "found 1 finding.
+Devin automatically fixed it." and "found 2 findings.
+Devin automatically fixed all 2 findings." are clean (count 0), "found 4 findings.
+Devin fixed 3 findings;
+1 finding is left for you to triage below." counts the one left, and the "Fixed by Devin (N)" list (`DEVIN_FIXED_LIST`) grades no severity, since none of it is open.
   **Nine more bots joined the registry in Oct 2026** (`REVIEW_BOTS`;
   surveyed from recent public pull requests by login with `/tmp`-style scripts, their docs read the same day): **Claude Code Review** (`claude[bot]`, `@claude review`/`always`/`once`, check "Claude Code Review", `REVIEW.md` — `CLAUDE.md` is every Claude Code user's file and says nothing about Code Review;
   conversational, since the login is also Claude Code's Action and "PR Steward", which narrate;

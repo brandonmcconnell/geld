@@ -505,6 +505,15 @@ function hasHeading(text: string, heading: RegExp): boolean {
 
 function countShapedBy(botId: string, text: string, reviewBody: boolean): number | null {
   switch (botId) {
+    case 'devin': {
+      // Devin Review fixes some of what it finds and counts what is left: "found 2 findings. Devin automatically fixed
+      // all 2 findings." (or "…fixed it."), "found 4 findings. Devin fixed 3 findings; 1 finding is left for you to
+      // triage below." (surveyed Nov 2026). Its other words ("found 1 new potential issue") are read as any bot's.
+      if (!/\bfound \d+ findings?\b/i.test(text)) return null;
+      const left = /(\d+) findings? (?:is|are) left\b/i.exec(text);
+      if (left?.[1] !== undefined) return Number.parseInt(left[1], 10);
+      return /\bdevin (?:automatically )?fixed (?:it|them|all)\b/i.test(text) ? 0 : null;
+    }
     case 'claude': {
       const match = /(\d+)[^\S\n]*P1,[^\S\n]*(\d+)[^\S\n]*P2/i.exec(text);
       return match?.[1] !== undefined && match[2] !== undefined ? Number.parseInt(match[1], 10) + Number.parseInt(match[2], 10) : null;
@@ -654,6 +663,12 @@ export function findingSeverity(body: string): FindingSeverity | null {
 
 const SEVERITY_RANK: Readonly<Record<FindingSeverity, number>> = { high: 3, medium: 2, low: 1 };
 
+/**
+ * What Devin fixed itself ("Fixed by Devin (3)" over a list), which grades nothing still open: raw in its
+ * `<details>`, as the page reads it up to the "View findings in Devin Review" line.
+ */
+const DEVIN_FIXED_LIST = /fixed by devin\s*\(\d+\)[\s\S]*?(?=<\/details>|^\s*\[?view findings in devin review|(?![\s\S]))/gim;
+
 export function parseBotBody(body: string, botId: string, anchor?: string): ParsedBotBody {
   // HTML comments are the bots' own markers (Cursor's automation ids, Greptile's score), never words to weigh.
   const text = body.replace(/\r\n?/g, '\n').replace(/<!--[\s\S]*?-->/g, '').trim();
@@ -743,7 +758,7 @@ export function parseBotBody(body: string, botId: string, anchor?: string): Pars
           (count === 0 && (score === null || botId === 'greptile' || shaped !== null)));
   // A severity word under a negation is not a severity: "no established behavioral blocker", "no critical issues",
   // "without security risk". The denied phrase goes before the words are weighed.
-  const affirmed = text.replace(/\b(?:no|not|without|zero|non-)(?:\s+\w+){0,3}[\s-]+(?:high severity|critical|blockers?|blocking|security (?:issues?|vulnerabilit(?:y|ies)|risks?))\b/gi, '');
+  const affirmed = (botId === 'devin' ? text.replace(DEVIN_FIXED_LIST, '') : text).replace(/\b(?:no|not|without|zero|non-)(?:\s+\w+){0,3}[\s-]+(?:high severity|critical|blockers?|blocking|security (?:issues?|vulnerabilit(?:y|ies)|risks?))\b/gi, '');
   const severity: FindingSeverity | null = /\b(?:high severity|critical|blocker|security (?:issue|vulnerability|risk))\b/i.test(affirmed)
     ? 'high'
     : /\bmedium(?: severity| risk)?\b/i.test(affirmed)
