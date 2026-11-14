@@ -265,4 +265,23 @@ describe('a fix asked for from a chat', () => {
     expect(asked).toEqual([[bot.anchor, other.anchor]]);
     expect(triageSuggestions(meta, settings).map(({ entry }) => entry.threads)).toEqual([[bot.anchor, other.anchor]]);
   });
+
+  it('leaves a shared fix covering every thread when the refresh gets no answer, and says why on the chat alone', async () => {
+    const other: RawComment = { anchor: 'discussion_r600', kind: 'thread', author: 'greptile-apps[bot]', body: 'Same rename here.', createdAt: at, path: 'src/b.ts', line: 3 };
+    const bot: RawComment = { ...person, author: 'coderabbitai[bot]' };
+    stored.set('local:aiRuns', {
+      'github:/o/r/pull/8': {
+        ranAt: at,
+        rewrites: [],
+        seen: [bot.anchor, other.anchor],
+        suggestions: [{ key: bot.anchor, threads: [bot.anchor, other.anchor], headSha: 'head1', path: 'src/b.ts', start: 3, end: 3, original: ['use(x);'], replacement: ['use(count);'], summary: 'Renames it.', state: 'open', sources: [bot.anchor, other.anchor] }],
+      },
+    });
+    await fresh();
+    const meta = metaFor([bot, other]);
+    sendMessage.mockImplementation(async () => ({ ok: false, reason: 'The gateway refused the request.' }));
+    expect(await fixFromComments(meta, [bot, other], settings, () => undefined, source, { threads: [other.anchor], comment: null })).toEqual({ changed: true, failed: true, reason: 'The gateway refused the request.' });
+    expect(triageSuggestions(meta, settings).map(({ entry }) => entry.threads)).toEqual([[bot.anchor, other.anchor]]);
+    expect(aiStateFor(meta, [bot, other], settings).kind).not.toBe('failed');
+  });
 });

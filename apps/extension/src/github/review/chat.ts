@@ -104,6 +104,8 @@ export type ChatFixState = 'idle' | 'running' | 'done' | 'failed';
 
 export interface ChatFix {
   readonly state: ChatFixState;
+  /** Why the model gave no answer, said on the control: Fix asks again. */
+  readonly error?: string;
   readonly onFix: () => void;
 }
 
@@ -116,6 +118,7 @@ export interface CommentFix {
   readonly state: ChatFixState;
   /** The choice being written or last written, so its button is the one that says so. */
   readonly scope: CommentFixScope | null;
+  readonly error?: string;
   readonly onFix: (scope: CommentFixScope) => void;
 }
 
@@ -129,12 +132,13 @@ const FIX_WORDS: Readonly<Record<ChatFixState, string>> = {
 /** A thread chat's Fix, in Rerun's box: the sparkle and the word, GitHub's spinner in the sparkle's place while it is written. */
 function threadFixControl(fix: ChatFix): HTMLElement {
   const running = fix.state === 'running';
-  const button = createElement('button', { type: 'button', class: 'geld-review__rerun geld-review__chat-fix', title: FIX_WORDS[fix.state], 'data-state': fix.state, ...(running ? { 'data-running': '', disabled: '', 'aria-busy': 'true' } : {}) }, [icon(ICON_SPARKLE_FILL), icon(ICON_SPINNER), createElement('span', {}, ['Fix'])]);
+  const words = fix.state === 'failed' && fix.error !== undefined ? `The model could not answer: ${fix.error} Fix asks again.` : FIX_WORDS[fix.state];
+  const button = createElement('button', { type: 'button', class: 'geld-review__rerun geld-review__chat-fix', title: words, 'data-state': fix.state, ...(running ? { 'data-running': '', disabled: '', 'aria-busy': 'true' } : {}) }, [icon(ICON_SPARKLE_FILL), icon(ICON_SPINNER), createElement('span', {}, ['Fix'])]);
   button.addEventListener('click', () => fix.onFix());
   return button;
 }
 
-/** A comment chat's Fix row: "Fix:" outside a button group of This comment, Threads and Both (the primary). */
+/** A comment chat's Fix row: "Fix:", then This comment, Threads and Both (the primary) as buttons of their own. */
 function commentFixRow(fix: CommentFix): HTMLElement {
   const running = fix.state === 'running';
   const threads = fix.threads === 1 ? 'its thread' : `its ${fix.threads} threads`;
@@ -146,16 +150,16 @@ function commentFixRow(fix: CommentFix): HTMLElement {
           ['threads', 'Threads', `A fix for ${threads}, to apply as a suggestion`],
           ['both', 'Both', `What this comment asks for and a fix for ${threads}`],
         ];
-  const group = createElement('div', { class: 'BtnGroup', role: 'group', 'aria-label': 'Fix' });
+  const group = createElement('div', { class: 'geld-review__chat-fix-choices', role: 'group', 'aria-label': 'Fix' });
   for (const [scope, label, title] of choices) {
     const primary = scope === 'both' || fix.threads === 0;
     const pressed = running && fix.scope === scope;
-    const button = createElement('button', { type: 'button', class: `btn btn-sm BtnGroup-item${primary ? ' btn-primary' : ''}`, title, ...(running ? { disabled: '' } : {}), ...(pressed ? { 'aria-busy': 'true' } : {}) }, [pressed ? 'Fixing…' : label]);
+    const button = createElement('button', { type: 'button', class: `btn btn-sm${primary ? ' btn-primary' : ''}`, title, ...(running ? { disabled: '' } : {}), ...(pressed ? { 'aria-busy': 'true' } : {}) }, [pressed ? 'Fixing…' : label]);
     button.addEventListener('click', () => fix.onFix(scope));
     group.append(button);
   }
   const row = createElement('div', { class: 'geld-review__chat-fix-row', 'data-state': fix.state }, [createElement('span', { class: 'geld-review__chat-fix-label' }, ['Fix:']), group]);
-  if (fix.state === 'done' || fix.state === 'failed') row.append(createElement('span', { class: 'geld-review__chat-fix-note', role: 'status' }, [fix.state === 'done' ? 'In the triage at the top of the digest.' : FIX_WORDS.failed]));
+  if (fix.state === 'done' || fix.state === 'failed') row.append(createElement('span', { class: 'geld-review__chat-fix-note', role: 'status' }, [fix.state === 'done' ? 'In the triage at the top of the digest.' : fix.error === undefined ? FIX_WORDS.failed : `The model could not answer: ${fix.error}`]));
   return row;
 }
 
