@@ -3850,6 +3850,19 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   padding-left: 3px !important;
 }
 
+/* Apply all's count: a 16px disc with bold 10px figures, where Primer's 18px counter filled the 24px button edge to edge. */
+.geld-review__triage .btn-sm .Counter.geld-review__triage-count {
+  min-width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  vertical-align: 1px;
+}
+
 /* Fix all and Discard all stand under the list, on its edges. */
 .geld-review__triage-bulk {
   margin: 0 16px 8px 38px;
