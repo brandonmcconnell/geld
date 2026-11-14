@@ -1,5 +1,6 @@
 import { readdirSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'wxt';
 import type { ThemeIcon } from 'wxt';
 import { ACTION_ICON_SIZES, actionIconPath } from './src/lib/action-icon';
@@ -61,7 +62,8 @@ export default defineConfig({
   // yourself, create the git-ignored `web-ext.config.ts` with `disabled: false`.
   webExt: { disabled: true },
   ...(nightly ? { outDirTemplate: '{{browser}}-mv{{manifestVersion}}-nightly' } : {}),
-  vite: ({ browser }) => ({ define: { __GELD_NIGHTLY__: JSON.stringify(selfUpdating(browser)), __GELD_CHANNEL__: JSON.stringify(nightly ? 'nightly' : 'stable') } }),
+  // Tailwind compiles only the chat sidebar's stylesheet (`src/chat/chat.css`, imported `?inline` into its shadow root); no other stylesheet uses it.
+  vite: ({ browser }) => ({ plugins: [tailwindcss()], define: { __GELD_NIGHTLY__: JSON.stringify(selfUpdating(browser)), __GELD_CHANNEL__: JSON.stringify(nightly ? 'nightly' : 'stable') } }),
   manifest: ({ browser, manifestVersion: mv }) => {
     const updater = selfUpdating(browser);
     const channel = nightly ? 'nightly' : 'build';

@@ -260,6 +260,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   "Didn't find any major issues" (Codex), "Verdict: approve" and a leading "Approved" (Cursor's automations under the Bugbot login) are clean, and "Verdict: request changes" is a stated verdict (`changes-requested`); **Bugbot is `conversational` too**, since the same `cursor[bot]` login is Cursor's cloud agents', which reply in other bots' threads and address them ("@greptileai Both P1 findings are addressed… Please re-review" read as Bugbot's findings over its own clean review, mint#13111) — its own summaries are always review-shaped, so nothing of Bugbot's is lost;
   a notice headed by its reason over a long explanation — "Bugbot couldn't run - usage limit reached", "Bugbot needs on-demand usage enabled" (an `<h3>`, read with its tags off), CodeRabbit's "Review limit reached" (its free OSS reviews used up: only as the whole heading of a warning alert, whose `[!WARNING]` marker, "Warning" as the page reads it, is not the heading, since a finding may be headed with the same words) — and "usage limits have been reached" (Codex) are refusals;
   and **Devin is `conversational`** like Replicas, since under the same login it narrates the pull requests it opens ("I'll fix CI failures…", "Tested commit … in a browser…") — only a review-shaped comment votes, and Devin Review's always are.
+  Devin Review counts what it fixed itself (`countShapedBy`, surveyed Nov 2026, mint#14895): a summary that says Devin "automatically fixed it" or "automatically fixed all 2 findings" is clean (count 0), one that says "1 finding is left for you to triage" counts the one left, and the "Fixed by Devin (N)" list (`DEVIN_FIXED_LIST`) states no verdict ("needs human review", "ready to merge") and grades no severity, since none of it is open.
   **Nine more bots joined the registry in Oct 2026** (`REVIEW_BOTS`;
   surveyed from recent public pull requests by login with `/tmp`-style scripts, their docs read the same day): **Claude Code Review** (`claude[bot]`, `@claude review`/`always`/`once`, check "Claude Code Review", `REVIEW.md` — `CLAUDE.md` is every Claude Code user's file and says nothing about Code Review;
   conversational, since the login is also Claude Code's Action and "PR Steward", which narrate;
@@ -856,6 +857,43 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   A team asked to review is read as a team from any field of the event naming one, and so is a login in `org/slug` form (the field GitHub uses for teams could not be seen: a token without organisation access gets every review request as a person's), and it links to `/orgs/<org>/teams/<slug>`, never to a person's profile or hovercard.
   Deployments and force-pushes are left out of it, as on the conversation, where the Previews and Deployments rows and the commits row hold them (checked on microsoft/vscode#343264: 12 events on both pages).
   Not covered yet: the Overview's force-pushes, so its commits row and rounds hold only the commits its page renders.
+- **The chat sidebar** (`review/chat-sidebar.ts`, `chat-threads.ts`, the background's `lib/chat-service.ts`, `@geld/review/cursor-agents.ts`, `chat-context.ts`, `sse.ts`).
+ The digest's Geld row has a Chat button (`onChat`, the `comment-discussion` mark, its word dropped in the `icons` fit) that docks a panel to the window's right edge (`div.geld-chat`, a child of `<body>`, so nothing goes among React's nodes).
+ **The button is hidden for now** (`CHAT_BUTTON_SHOWN` in panel.ts, Nov 2026): it is built but not put in the row, so nothing opens the sidebar or loads its script until the owner turns it back on.
+ **The panel is React in a shadow root, built from shadcn/ui's AI Elements on Base UI** (`src/chat/`, Nov 2026): the store in `chat-sidebar.ts` holds the state and builds a plain view (`ChatView`, `src/chat/view.ts`), and `chat-app.tsx` renders it with shadcn's Message, Bubble, Message Scroller, Trace, Input Group, Dropdown Menu, Tooltip and Empty, copied into `src/chat/ui/` (their source is ours;
+ Lucide marks became octicons, and `shadcn.css` vendors the utilities they use, MIT).
+ Replies are Markdown through Streamdown, which closes what a streaming reply leaves open (a fence, a list), sanitizes with GitHub's schema, keeps only http, https and mailto addresses (`safeUrl`), and shows an image as its words, never loading it: a model whose context held an attacker's text could emit an image whose address carries the conversation.
+ Code is coloured by highlight.js in a Streamdown code plugin (`highlight.ts`) with GitHub's syntax tokens (`--color-prettylights-syntax-*`), as the diff highlighter does, so every GitHub theme, colour-blind and high-contrast ones included, colours it;
+ Shiki's grammars cannot load on demand in a content script.
+ shadcn's tokens are GitHub's Primer tokens (`chat.css` `:host`), which the shadow root inherits, so no palette is copied, and `data-dark` mirrors GitHub's colour mode for the components' `dark:` styles.
+ Three things a shadow root needs: menus and tooltips portal into it (`PortalContainer`, Base UI's default is `document.body`, where no style reaches), Tailwind's `@property` rules are registered on the document (a browser ignores them in a shadow root, which broke rings and shadows), and key events stop at the host, since past it GitHub's shortcuts see the host rather than a field and acted on what was typed (`?` opened GitHub's shortcut dialog).
+ **The view is a script of its own, injected on first use** (`entrypoints/chat-ui.ts`, `/chat-ui.js`, `loadChatUi`): at 1.36 MB it was nearly half the content script again, paid on every GitHub page, so the background injects it into the tab's isolated world (`geld:load-chat-ui`, `injectChatUi`) when the reader first heads for the Chat button (`warmChat` on pointer or focus), and it hands `mountChat` over on that world's shared global.
+ A render error shows a "The chat stopped working" panel and is reported through the content script (`onError`), since the view's bundle has no error capture of its own.
+ From 1012px wide the page gives it room (`html[data-geld-chat-open] body { margin-right }`);
+ narrower, it covers the page.
+ It stays open across the pull request's own tabs and a settings rebuild (`syncChatToPage` from `teardownReviewOverview`), and closes with Geld or on another pull request.
+ Asked for in Nov 2026: readers could not reach the dashboard's review assistant from GitHub, and wanted to talk to the agent that wrote a pull request where they review it.
+ **One thread per conversation**: "Assistant", and one per Cursor agent that worked on the pull request, read from its related links (`cursor:` keys, `chatContextFor`) and from Cursor's `GET /v1/agents?prUrl=` under the reader's key.
+ The first agent's thread opens first when the reader's `codingAgent` is Cursor or automatic, and discovery never switches a thread the reader picked or started typing in.
+ **The assistant** streams through the reader's gateway (`streamChat`, `stream: true`, read with `SseParser`, and a gateway that answers with one JSON completion is read too), with `assistantSystemPrompt` laying out the title, description, review threads and changed files (`flowFiles`), read when each message is sent.
+ The composer's model picker starts on `aiModel` and lists the gateway's language models from `local:aiGateway`, the choice kept in `local:chatModels`, and the chat is kept per pull request in `local:assistantChats` (20 pull requests, 60 turns).
+ Every tab sends its chat to the background to save (`geld:chat-save`, `saveAssistantChat`, one write at a time): two tabs rewriting the stored map together each dropped the other's chat.
+ The assistant's reading of the pull request is kept per pull request (`lastPullReading`), since the description and the flow's files are not on the other tabs the sidebar stays open on.
+ An open sidebar reads its setup again when a key or the gateway's model list changes in local storage, and when the window regains focus, which is how a permission granted in the options shows.
+ Every answer it waits on is dropped once the sidebar has closed or opened again since it asked (`session`), so a slow reply never lands in another pull request's sidebar.
+ **A Cursor agent's thread is the agent's own conversation, natively, not an iframe** (read from Cursor's API docs and OpenAPI files, Nov 2026).
+ History is v0's `GET /v0/agents/{id}/conversation`, since v1 keeps only each run's final reply (`conversationFromRuns` is the fallback should v0 go).
+ A message is v1's `POST /v1/agents/{id}/runs`: a follow-up with the picked model, or `delivery: "steer"` with nothing else while a run is under way, when the composer reads "Steer".
+ The running turn streams from `GET /v1/agents/{id}/stream`, its tool calls as one line each (`toolLine`).
+ So a message sent here shows in the Cursor app and on cursor.com, and theirs show here.
+ The stream plays its newest run again from its start, so a reading taken while a run is under way leaves that run's words out (`turnsFromHistory`), and a finished run is read back from Cursor 800 ms after its `result`.
+ An idle agent is not watched: reopened later without its last event id, the stream would play the finished run again.
+ Its conversation is read again every 30 s while its thread shows instead, which watches anew once a run started elsewhere shows.
+ Cursor closes open streams when it deploys, so the background reopens one that ended without `done` from its last event id.
+ **The keys stay in the background** (`chat-service.ts`): the Cursor API key (`local:cursorApiKey`, the options page's "Cursor API key", which asks for `https://api.cursor.com/*` and checks the key with `GET /v1/me`) never reaches the page.
+ `geld:cursor` requests are answered only for GitHub tabs and Geld's own pages, and a port (`geld:chat`) from a GitHub tab carries the streams, pinged every 20 s so Chrome does not stop the worker mid-stream, and closed with the sidebar, which aborts what it had open.
+ The thread model (`ChatTurn`, `AgentLive`) is provider-neutral, so other agents fold in as threads of their own once their APIs can read and continue a conversation.
+ The panel reads whether the sidebar is open from `<html data-geld-chat-open>`, never by importing the sidebar: that module pulls in storage items, WXT reads storage as soon as one is defined, and every panel test without the browser stub failed on it.
 - **Flow: the changed files as a diagram of what imports what** (`review/flow.ts`, `@geld/core/file-flow.ts`).
   A "Flow" button (Lucide's `workflow` mark, `ICON_WORKFLOW`;
   Lucide marks are outlines and `svg.geld-lucide` sets `fill: none !important`, since GitHub's `.octicon { fill: currentColor }` otherwise fills their shapes solid) stands in the Geld row just left of the grouping control wherever the digest does (`prOverview`), on every pull request, one file or many: opened before the diff has loaded, the dialog says it is waiting for the diff and draws when the source arrives.
@@ -2032,6 +2070,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   It is turned green before paint on every mutation batch (`greenOverviewMerges`, from `reassertStatusPills`), whether or not Geld's controls have mounted and without waiting for the section to hydrate, since only an attribute is written: done in `syncOverviewMerge` alone, the button showed grey with dark words until the controls mounted and then changed colour under the reader.
   That callback needs the controller, which starts only once settings and the catalog have loaded, so on a page load the button still painted grey and then turned green through Primer's 80 ms transition, its background ahead of its words (Nov 2026).
   The stylesheet therefore draws it green itself from its first frame: GitHub's `ButtonWithDropdown` writes its action name on both halves (`data-dd-action-name` `pull_requests.merge.open` and `.open_method`, `pull_requests.merge_queue.open` and `.open_method`, read from its bundle), and under the review group's hint (`html[data-geld-quick-review]`, set before the content script's first `await`) a default one GitHub has not made inactive wears Primer's primary colours, hover, press and focus, with no transition.
+  The two halves go green together or not at all, decided by the merge half (`:has()` on the `ButtonGroup`, `mergeBlocked` in the script): GitHub keeps the method caret usable while it blocks the merge, and on mintlify/customer-apps#7 (approval required) a green caret stood beside the grey, inactive merge.
+  The script reads the caret by its `aria-label` ("Select merge method"), which GitHub names it with, where it only read `aria-labelledby` and so never turned the caret green beside a green merge.
   A merge the script turns green later (a repository's first load, before the hint) carries `data-geld-merge-variant`, which takes the transition off, so it changes in one frame.
   GitHub's Primer React button is a grid laid out for its label, and the caret's `.BtnGroup-item` floats, so both marks are centred by flex with GitHub's rules outranked;
   left to GitHub's layout they sat against one edge.
@@ -2601,11 +2641,13 @@ Ranges are refreshed when source nodes change and cleared on teardown.
 
 ## Code review bots
 
-Two review bots are installed on the repository, both **manual-trigger only** (community PRs are reviewed on request, not on every push): **Cursor Bugbot** — comment `bugbot run` (or `cursor review`) on the PR;
+Three review bots are installed on the repository, all **manual-trigger only** (community PRs are reviewed on request, not on every push): **Cursor Bugbot** — comment `bugbot run` (or `cursor review`) on the PR;
 repo settings in `.cursor/config/bugbot.yaml` (read from the default branch only), review guidance in `.cursor/BUGBOT.md`, the "run only when mentioned" switch lives in the Cursor dashboard per repository.
 **Greptile** — comment `@greptileai`;
 config in `greptile.json` (`skipReview: "AUTOMATIC"` is the manual-only switch;
 note Greptile reads the file from the PR's *source* branch).
+**CodeRabbit** — comment `@coderabbitai review`;
+config in `.coderabbit.yaml` (`reviews.auto_review.enabled: false` is the manual-only switch, and the file overrides the CodeRabbit dashboard's settings for this repository).
 `.github/CODEOWNERS` makes those files owner-reviewed.
 Keep `BUGBOT.md` in step with this file when an invariant changes.
 

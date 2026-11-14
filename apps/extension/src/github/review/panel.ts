@@ -540,6 +540,10 @@ export interface PanelHandlers {
   readonly onView: (view: DigestView) => void;
   /** Open the Flow diagram of the changed files. */
   readonly onFlow: () => void;
+  /** Open or close the chat sidebar; the button is where focus returns when it closes. */
+  readonly onChat: (from: HTMLElement) => void;
+  /** The pointer or focus reached the Chat button: its view can start loading. */
+  readonly onChatIntent: () => void;
   /** Open Geld's settings: the toolbar popup where the browser allows it, else the options page. */
   readonly onSettings: () => void;
   /** Resolve/unresolve the thread holding `anchor` (GitHub's own button). */
@@ -711,6 +715,8 @@ function iconButton(markup: string, label: string, extra: Readonly<Record<string
  * content that opened under it settles.
  */
 const ATTR_FOCUS = 'data-geld-focus';
+/** The chat sidebar is built and kept working but offered nowhere until it is ready to show. */
+const CHAT_BUTTON_SHOWN = false;
 /** Marks the span in an open row that receives the comment's header. */
 export const ATTR_HEAD_SLOT = 'data-geld-head-slot';
 /** Marks the span in the open CI row that receives GitHub's checks-settings gear. */
@@ -4026,6 +4032,14 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   const tools = createElement('div', { class: `${PANEL_CLASS}__tools` });
   const aiControl = aiButton(model.ai, handlers);
   if (aiControl !== null) tools.append(aiControl);
+  const chat = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__chat-btn`, 'aria-label': 'Chat about this pull request', 'aria-pressed': String(document.documentElement.hasAttribute('data-geld-chat-open')), title: 'Chat about this pull request, or with the agent that wrote it', [ATTR_FOCUS]: 'chat' }, [
+    icon(ICON_COMMENT_DISCUSSION),
+    createElement('span', { class: `${PANEL_CLASS}__chat-label` }, ['Chat']),
+  ]);
+  chat.addEventListener('click', () => handlers.onChat(chat));
+  chat.addEventListener('pointerenter', () => handlers.onChatIntent(), { once: true });
+  chat.addEventListener('focus', () => handlers.onChatIntent(), { once: true });
+  if (CHAT_BUTTON_SHOWN) tools.append(chat);
   const flow = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__flow-btn`, 'aria-label': 'Flow: how the changed files connect', title: 'How the changed files connect', [ATTR_FOCUS]: 'flow' }, [
     icon(ICON_WORKFLOW),
     createElement('span', { class: `${PANEL_CLASS}__flow-label` }, ['Flow']),

@@ -3926,7 +3926,7 @@ svg.geld-lucide {
 }
 
 /* The Flow control: the same icon button as the grouping control, its mark and its name. */
-.geld-review__icon.geld-review__flow-btn {
+.geld-review__icon:is(.geld-review__flow-btn, .geld-review__chat-btn) {
   width: auto;
   gap: 5px;
   padding: 0 8px 0 7px;
@@ -3934,7 +3934,7 @@ svg.geld-lucide {
   font-weight: 500;
 }
 
-.geld-review__flow-btn .octicon {
+.geld-review__icon:is(.geld-review__flow-btn, .geld-review__chat-btn) .octicon {
   width: 16px;
   height: 16px;
 }
@@ -3976,11 +3976,11 @@ svg.geld-lucide {
 }
 
 /* A Geld row too narrow for its words (`fit-chips.ts`): every button is its mark alone, the copy button's square. */
-.geld-review__head[data-geld-fit-tools='icons'] :is(.geld-review__grouping-label, .geld-review__view-label, .geld-review__flow-label, .geld-review__ai-label, .geld-review__since-visit-label) {
+.geld-review__head[data-geld-fit-tools='icons'] :is(.geld-review__grouping-label, .geld-review__view-label, .geld-review__flow-label, .geld-review__chat-label, .geld-review__ai-label, .geld-review__since-visit-label) {
   display: none;
 }
 
-.geld-review__head[data-geld-fit-tools='icons'] .geld-review__icon:is(.geld-review__grouping-btn, .geld-review__view-btn, .geld-review__flow-btn, .geld-review__ai-btn) {
+.geld-review__head[data-geld-fit-tools='icons'] .geld-review__icon:is(.geld-review__grouping-btn, .geld-review__view-btn, .geld-review__flow-btn, .geld-review__chat-btn, .geld-review__ai-btn) {
   width: 28px;
   padding: 0;
 }
@@ -11323,9 +11323,10 @@ div:has(> [data-geld-overview-merge]) {
 
 /* GitHub's merge in the recommended action is green from its first frame (`greenMerges` in overview-merge.ts does the
    same by script): found by the action names GitHub's ButtonWithDropdown writes on both halves, under the review group's
-   hint, which is set before the content script's first await. A merge GitHub makes inactive keeps its grey. Mirrors
-   Primer React's primary variant, whose `:where()` selectors weigh one class. */
-html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']) {
+   hint, which is set before the content script's first await. The group is green only while its merge half is active:
+   GitHub keeps the method caret usable while it blocks the merge (an approval required), and a green caret stood beside
+   a grey merge (mintlify/customer-apps#7). Mirrors Primer React's primary variant, whose `:where()` selectors weigh one class. */
+html[data-geld-quick-review] section[aria-label='Recommended action'] [data-component='ButtonGroup']:has(button:is([data-dd-action-name='pull_requests.merge.open'], [data-dd-action-name='pull_requests.merge_queue.open']):not(:disabled, [aria-disabled='true'], [data-inactive='true'])) :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']) {
   --geld-merge-bg: var(--button-primary-bgColor-rest, #1f883d);
   --geld-merge-border: var(--button-primary-borderColor-rest, #1f232826);
   --geld-merge-shadow: var(--shadow-resting-small, 0 1px 1px 0 #1f23280a, 0 1px 2px 0 #1f232808);
@@ -11336,26 +11337,26 @@ html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button
   transition: none;
 }
 
-html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']):hover {
+html[data-geld-quick-review] section[aria-label='Recommended action'] [data-component='ButtonGroup']:has(button:is([data-dd-action-name='pull_requests.merge.open'], [data-dd-action-name='pull_requests.merge_queue.open']):not(:disabled, [aria-disabled='true'], [data-inactive='true'])) :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']):hover {
   --geld-merge-bg: var(--button-primary-bgColor-hover, #1c8139);
   --geld-merge-border: var(--button-primary-borderColor-hover, #1f232826);
 }
 
-html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']):is(:active, [aria-expanded='true']) {
+html[data-geld-quick-review] section[aria-label='Recommended action'] [data-component='ButtonGroup']:has(button:is([data-dd-action-name='pull_requests.merge.open'], [data-dd-action-name='pull_requests.merge_queue.open']):not(:disabled, [aria-disabled='true'], [data-inactive='true'])) :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']):is(:active, [aria-expanded='true']) {
   --geld-merge-bg: var(--button-primary-bgColor-active, #197935);
   --geld-merge-shadow: var(--button-primary-shadow-selected, inset 0 1px 0 0 #002d114d);
 }
 
-html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']):focus-visible {
+html[data-geld-quick-review] section[aria-label='Recommended action'] [data-component='ButtonGroup']:has(button:is([data-dd-action-name='pull_requests.merge.open'], [data-dd-action-name='pull_requests.merge_queue.open']):not(:disabled, [aria-disabled='true'], [data-inactive='true'])) :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge.open_method'], button[data-dd-action-name='pull_requests.merge_queue.open'], button[data-dd-action-name='pull_requests.merge_queue.open_method'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']):focus-visible {
   --geld-merge-shadow: inset 0 0 0 3px var(--fgColor-onEmphasis, #ffffff);
 }
 
-html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge_queue.open'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']) [class*='Button-CounterLabel'] {
+html[data-geld-quick-review] section[aria-label='Recommended action'] [data-component='ButtonGroup']:has(button:is([data-dd-action-name='pull_requests.merge.open'], [data-dd-action-name='pull_requests.merge_queue.open']):not(:disabled, [aria-disabled='true'], [data-inactive='true'])) :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge_queue.open'])[data-variant='default'] [class*='Button-CounterLabel'] {
   background-color: var(--buttonCounter-primary-bgColor-rest, #002d1133) !important;
   color: var(--button-primary-fgColor-rest, #ffffff) !important;
 }
 
-html[data-geld-quick-review] section[aria-label='Recommended action'] :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge_queue.open'])[data-variant='default']:not(:disabled, [aria-disabled='true'], [data-inactive='true']) [class*='Button-Visual'] {
+html[data-geld-quick-review] section[aria-label='Recommended action'] [data-component='ButtonGroup']:has(button:is([data-dd-action-name='pull_requests.merge.open'], [data-dd-action-name='pull_requests.merge_queue.open']):not(:disabled, [aria-disabled='true'], [data-inactive='true'])) :is(button[data-dd-action-name='pull_requests.merge.open'], button[data-dd-action-name='pull_requests.merge_queue.open'])[data-variant='default'] [class*='Button-Visual'] {
   color: var(--button-primary-fgColor-rest, #ffffff);
 }
 
@@ -11389,16 +11390,21 @@ button[data-geld-merge-variant] {
  * The Overview's review comments in a chat, laid out as the conversation's (its markup differs: a header grid of
  * picture, name and time, actions and badges; the body and the reactions toolbar in one wrapper). The picture stands
  * in the gutter up and to the left of the bubble, the name and the time on one line above it; the ⋯ and the picker
- * are moved beside the bubble and the pills under it by chat.ts (`placeOverviewControls`).
+ * are moved beside the bubble and the pills under it by chat.ts (`placeOverviewControls`). GitHub holds the header to
+ * its 28px control height on a display line height, and a border: the line is the classic 20px, so the picture and the
+ * name stand as close to the bubble as in the conversation.
  */
 .geld-review__chat [data-geld-part='meta'] [data-testid='comment-header'],
 .geld-review__chat [data-geld-part='meta'] [data-testid='comment-header'] > div {
   display: flex !important;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   min-width: 0;
+  min-height: 0 !important;
   margin: 0 !important;
   padding: 0 !important;
+  border: 0 !important;
+  line-height: 20px !important;
 }
 
 .geld-review__chat [data-geld-part='meta'] [data-testid='comment-header'] [class*='AvatarContainer'] {
@@ -11418,14 +11424,18 @@ button[data-geld-merge-variant] {
   height: var(--geld-chat-avatar) !important;
 }
 
+/* One line that overflows past a narrower bubble, as the classic one does, the time at its 12px. */
 .geld-review__chat [data-geld-part='meta'] [data-testid='comment-header-left-side-items'],
 .geld-review__chat [data-geld-part='meta'] [data-testid='comment-header-left-side-items'] > * {
   display: flex !important;
   flex-direction: row !important;
+  flex-wrap: nowrap !important;
   align-items: baseline;
   gap: 6px;
   margin: 0 !important;
   padding: 0 !important;
+  font-size: 12px !important;
+  line-height: 20px !important;
   white-space: nowrap;
 }
 
@@ -11679,4 +11689,42 @@ html[data-geld-on] [class*='ReactionsMenuOption'] [data-component='ActionList.It
   font-size: 11px;
   font-weight: 500;
   line-height: 16px;
+}
+
+/* ---- the chat sidebar (`chat-sidebar.ts`, its view in `src/chat`) ---------- */
+
+/* Docked to the window's right edge; the page gives it room rather than sitting under it, down to a width where it
+   covers the page instead. Everything inside is the shadow root's, styled by `src/chat/chat.css`. */
+html[data-geld-chat-open] {
+  --geld-chat-width: 420px;
+}
+
+@media (min-width: 1012px) {
+  html[data-geld-chat-open] body {
+    margin-right: var(--geld-chat-width);
+  }
+}
+
+.geld-chat {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 90;
+  width: min(var(--geld-chat-width, 420px), 100vw);
+  border-left: 1px solid var(--borderColor-default, #d1d9e0);
+  background: var(--bgColor-default, #fff);
+  box-shadow: var(--shadow-floating-small, 0 0 0 1px #d1d9e080, 0 6px 12px -3px #25292e0a);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .geld-chat {
+    transition: translate 180ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  @starting-style {
+    .geld-chat {
+      translate: 100% 0;
+    }
+  }
 }

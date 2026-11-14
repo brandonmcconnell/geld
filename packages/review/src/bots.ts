@@ -505,6 +505,15 @@ function hasHeading(text: string, heading: RegExp): boolean {
 
 function countShapedBy(botId: string, text: string, reviewBody: boolean): number | null {
   switch (botId) {
+    case 'devin': {
+      // Devin Review fixes some of what it finds and counts what is left: "found 2 findings. Devin automatically fixed
+      // all 2 findings." (or "…fixed it."), "found 4 findings. Devin fixed 3 findings; 1 finding is left for you to
+      // triage below." (surveyed Nov 2026). Its other words ("found 1 new potential issue") are read as any bot's.
+      if (!/\bfound \d+ findings?\b/i.test(text)) return null;
+      const left = /(\d+) findings? (?:is|are) left\b/i.exec(text);
+      if (left?.[1] !== undefined) return Number.parseInt(left[1], 10);
+      return /\bdevin (?:automatically )?fixed (?:it|them|all)\b/i.test(text) ? 0 : null;
+    }
     case 'claude': {
       const match = /(\d+)[^\S\n]*P1,[^\S\n]*(\d+)[^\S\n]*P2/i.exec(text);
       return match?.[1] !== undefined && match[2] !== undefined ? Number.parseInt(match[1], 10) + Number.parseInt(match[2], 10) : null;
@@ -654,6 +663,12 @@ export function findingSeverity(body: string): FindingSeverity | null {
 
 const SEVERITY_RANK: Readonly<Record<FindingSeverity, number>> = { high: 3, medium: 2, low: 1 };
 
+/**
+ * What Devin fixed itself ("Fixed by Devin (3)" over a list), which grades nothing still open: raw in its
+ * `<details>`, as the page reads it up to the "View findings in Devin Review" line.
+ */
+const DEVIN_FIXED_LIST = /fixed by devin\s*\(\d+\)[\s\S]*?(?=<\/details>|^\s*\[?view findings in devin review|(?![\s\S]))/gim;
+
 export function parseBotBody(body: string, botId: string, anchor?: string): ParsedBotBody {
   // HTML comments are the bots' own markers (Cursor's automation ids, Greptile's score), never words to weigh.
   const text = body.replace(/\r\n?/g, '\n').replace(/<!--[\s\S]*?-->/g, '').trim();
@@ -720,14 +735,16 @@ export function parseBotBody(body: string, botId: string, anchor?: string): Pars
   // "Needs a human reviewer." (Sourcery's assessment), "Needs Human Approval" (Macroscope's verdict): the bot would
   // not sign off, whatever kind words came before ("they look great!").
   // ...a negated one ("does not need human approval") is no verdict; "not only needs human approval" is one still.
-  const needsHuman = /\bneeds? (?:a )?human (?:review(?:er)?|approval)\b/i.test(text.replace(/\b(?:not|no|never|without|doesn.t|does not|don.t|do not|didn.t|did not)\b(?!\s+(?:only|just|merely)\b)(?:\s+\w+){0,2}\s+needs? (?:a )?human (?:review(?:er)?|approval)\b/gi, ''));
+  // What Devin already fixed states no verdict and grades nothing still open.
+  const weighed = botId === 'devin' ? text.replace(DEVIN_FIXED_LIST, '') : text;
+  const needsHuman = /\bneeds? (?:a )?human (?:review(?:er)?|approval)\b/i.test(weighed.replace(/\b(?:not|no|never|without|doesn.t|does not|don.t|do not|didn.t|did not)\b(?!\s+(?:only|just|merely)\b)(?:\s+\w+){0,2}\s+needs? (?:a )?human (?:review(?:er)?|approval)\b/gi, ''));
   // "The PR is ready to merge" (Amazon Q) — unless the sentence says it is not ("not yet ready to merge", "isn't
   // ready to merge", "before it is ready to merge").
   const readyToMerge =
-    /\bready to merge\b/i.test(text) &&
-    !/\b(?:not|isn.t|aren.t|never|before|until|far from|nowhere near)\b(?:\s+\w+){0,3}\s+ready to merge\b/i.test(text) &&
+    /\bready to merge\b/i.test(weighed) &&
+    !/\b(?:not|isn.t|aren.t|never|before|until|far from|nowhere near)\b(?:\s+\w+){0,3}\s+ready to merge\b/i.test(weighed) &&
     // ...nor with a condition after it ("ready to merge after the failing check is fixed", "once …", "if …").
-    !/\bready to merge\s+(?:after|once|when|if|provided|pending|following|as soon as|but|except|unless)\b/i.test(text);
+    !/\bready to merge\s+(?:after|once|when|if|provided|pending|following|as soon as|but|except|unless)\b/i.test(weighed);
   // CodeRabbit's chat answers in anyone's words ("The fix is correct. No issues found."): only its review's own clean
   // word, or a review that counts none, is clean.
   const clean =
@@ -743,7 +760,7 @@ export function parseBotBody(body: string, botId: string, anchor?: string): Pars
           (count === 0 && (score === null || botId === 'greptile' || shaped !== null)));
   // A severity word under a negation is not a severity: "no established behavioral blocker", "no critical issues",
   // "without security risk". The denied phrase goes before the words are weighed.
-  const affirmed = text.replace(/\b(?:no|not|without|zero|non-)(?:\s+\w+){0,3}[\s-]+(?:high severity|critical|blockers?|blocking|security (?:issues?|vulnerabilit(?:y|ies)|risks?))\b/gi, '');
+  const affirmed = weighed.replace(/\b(?:no|not|without|zero|non-)(?:\s+\w+){0,3}[\s-]+(?:high severity|critical|blockers?|blocking|security (?:issues?|vulnerabilit(?:y|ies)|risks?))\b/gi, '');
   const severity: FindingSeverity | null = /\b(?:high severity|critical|blocker|security (?:issue|vulnerability|risk))\b/i.test(affirmed)
     ? 'high'
     : /\bmedium(?: severity| risk)?\b/i.test(affirmed)
@@ -751,7 +768,7 @@ export function parseBotBody(body: string, botId: string, anchor?: string): Pars
       : /\blow(?: severity| risk)?\b/i.test(affirmed)
         ? 'low'
         : null;
-  const changesRequested = /\b(?:verdict|assessment)\W{0,6}(?:request(?:s|ed)? changes|changes requested)\b/i.test(text);
+  const changesRequested = /\b(?:verdict|assessment)\W{0,6}(?:request(?:s|ed)? changes|changes requested)\b/i.test(weighed);
   // CodeRabbit scores nothing and states no verdict in words: a "5/5" or "Verdict: …" from it is chat.
   const coderabbit = botId === 'coderabbit';
   const verdict = coderabbit ? {} : needsHuman ? ({ verdict: 'needs-human' } as const) : changesRequested ? ({ verdict: 'changes-requested' } as const) : {};
