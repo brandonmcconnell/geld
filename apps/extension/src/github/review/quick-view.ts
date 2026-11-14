@@ -529,10 +529,10 @@ const EVENT_GLYPH: Readonly<Record<string, string>> = {
   head_ref_restored: ICON_GIT_BRANCH,
   base_ref_changed: ICON_GIT_BRANCH,
   convert_to_draft: ICON_GIT_PULL_REQUEST_DRAFT,
-  auto_merge_enabled: ICON_GIT_MERGE,
-  auto_squash_enabled: ICON_GIT_MERGE,
-  auto_rebase_enabled: ICON_GIT_MERGE,
-  auto_merge_disabled: ICON_GIT_MERGE,
+  auto_merge_enabled: ICON_GIT_PULL_REQUEST,
+  auto_squash_enabled: ICON_GIT_PULL_REQUEST,
+  auto_rebase_enabled: ICON_GIT_PULL_REQUEST,
+  auto_merge_disabled: ICON_GIT_PULL_REQUEST,
   added_to_merge_queue: ICON_GIT_MERGE_QUEUE,
   removed_from_merge_queue: ICON_GIT_MERGE_QUEUE,
   referenced: ICON_BOOKMARK,
@@ -548,15 +548,16 @@ function eventPartNode(part: EventPart): Node {
 }
 
 /**
- * The pull request's own events as lines, on the mentions' grid: the actor's picture, the event's glyph, who did what
- * (the only part that truncates), then when. For the Overview, whose page holds no event rows to lend.
+ * The pull request's own events as lines, set as the conversation's event rows are in the digest: the event's glyph in
+ * the rows' glyph column, the actor's picture, who did what (the only part that truncates), then when. For the
+ * Overview, whose page holds no event rows to lend.
  */
 export function renderEventsView(slot: HTMLElement, lines: readonly EventLine[]): void {
-  const list = createElement('ul', { class: 'geld-review__mentions geld-review__activity-events', role: 'list' });
+  const list = createElement('ul', { class: 'geld-review__activity-events', role: 'list' });
   for (const line of lines) {
     const words = createElement('span', { class: 'geld-review__activity-words', title: eventText(line.words) }, [...(line.actor === null ? [] : [line.actor, ' ']), ...line.words.map(eventPartNode)]);
-    const what = createElement('span', { class: 'geld-review__mention-link' }, [createElement('span', { class: 'geld-review__mention-state', 'aria-hidden': 'true' }, [svgFromString(EVENT_GLYPH[line.type] ?? ICON_HISTORY)]), words]);
-    const row = createElement('li', { class: 'geld-review__mention', ...(line.state === null ? {} : { 'data-state': line.state }) }, [line.avatar ?? createElement('span', { class: 'geld-review__mention-who', 'aria-hidden': 'true' }), what]);
+    const glyph = createElement('span', { class: 'geld-review__activity-glyph', 'aria-hidden': 'true' }, [svgFromString(EVENT_GLYPH[line.type] ?? ICON_HISTORY)]);
+    const row = createElement('li', { class: 'geld-review__activity-event', ...(line.state === null ? {} : { 'data-state': line.state }) }, [glyph, line.avatar ?? createElement('span', { class: 'geld-review__activity-who', 'aria-hidden': 'true' }), words]);
     if (line.at !== '') row.append(relativeTimeElement(line.at, 'geld-review__time'));
     list.append(row);
   }

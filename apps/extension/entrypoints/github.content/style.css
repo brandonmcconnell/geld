@@ -8682,7 +8682,62 @@ a.geld-review__rerun:hover {
   white-space: nowrap;
 }
 
-/* An event line (the Overview's events, read from data): who in bold, then what they did, in one truncating line. */
+/*
+ * An event line (the Overview's events, read from data), set as the conversation's event rows are in the digest: the
+ * 16px glyph in the rows' glyph column, 8px to the 20px picture, 8px to the words, 28px lines, 12px type.
+ */
+.geld-review__activity-events {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.geld-review__activity-event {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  font-size: 12px;
+}
+
+.geld-review__activity-glyph {
+  display: inline-flex;
+  flex: 0 0 16px;
+  justify-content: center;
+  color: var(--geld-review-muted);
+}
+
+.geld-review__activity-glyph .octicon {
+  width: 16px;
+  height: 16px;
+}
+
+.geld-review__activity-event[data-state='open'] .geld-review__activity-glyph {
+  color: var(--fgColor-open, var(--color-open-fg, #1a7f37));
+}
+
+.geld-review__activity-event[data-state='merged'] .geld-review__activity-glyph {
+  color: var(--fgColor-done, var(--color-done-fg, #8250df));
+}
+
+.geld-review__activity-event[data-state='closed'] .geld-review__activity-glyph {
+  color: var(--fgColor-closed, var(--color-closed-fg, #d1242f));
+}
+
+.geld-review__activity-who {
+  display: inline-flex;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+}
+
+.geld-review__activity-event > .geld-review__time {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: 12px;
+}
+
+/* Who in bold, then what they did, in one truncating line. */
 .geld-review__activity-words {
   flex: 0 1 auto;
   min-width: 0;

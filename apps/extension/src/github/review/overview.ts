@@ -1102,6 +1102,9 @@ function overviewEventsGroup(events: readonly TimelineEvent[]): FoldGroup | null
   };
 }
 
+/** Events the conversation's rows say without the actor's name ("closed this"): the picture beside them says who. */
+const NAMELESS_EVENTS = new Set(['closed', 'reopened', 'merged', 'head_ref_deleted', 'head_ref_restored']);
+
 function eventLines(events: readonly TimelineEvent[]): readonly EventLine[] {
   const branches = eventBranches();
   return events.map((event) => {
@@ -1113,10 +1116,10 @@ function eventLines(events: readonly TimelineEvent[]): readonly EventLine[] {
       avatar:
         event.login === '' || event.avatarUrl === ''
           ? null
-          : createElement('a', { class: 'geld-review__mention-who', href, ...whoAttributes(event.login, event.bot) }, [
+          : createElement('a', { class: 'geld-review__activity-who', href, ...whoAttributes(event.login, event.bot) }, [
               createElement('img', { class: 'geld-review__avatar', 'data-kind': event.bot ? 'bot' : 'user', src: event.avatarUrl, alt: `@${event.login}`, width: '20', height: '20' }),
             ]),
-      actor: event.login === '' ? null : createElement('a', { class: 'geld-review__activity-actor', href, ...whoAttributes(event.login, event.bot) }, [event.login]),
+      actor: event.login === '' || NAMELESS_EVENTS.has(event.type) ? null : createElement('a', { class: 'geld-review__activity-actor', href, ...whoAttributes(event.login, event.bot) }, [event.login]),
       words: eventWords(event, branches),
       at: event.at,
     };
