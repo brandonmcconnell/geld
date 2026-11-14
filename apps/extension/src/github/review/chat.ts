@@ -104,6 +104,8 @@ export type ChatFixState = 'idle' | 'running' | 'done' | 'failed';
 
 export interface ChatFix {
   readonly state: ChatFixState;
+  /** Its fix is being applied: asking afresh waits until that lands, or the two would record over each other. */
+  readonly applying: boolean;
   /** Why the model gave no answer, said on the control: Fix asks again. */
   readonly error?: string;
   readonly onFix: () => void;
@@ -116,6 +118,8 @@ export interface CommentFix {
   /** Its open threads a fix can be written for; with none, only This comment is offered. */
   readonly threads: number;
   readonly state: ChatFixState;
+  /** One of its threads' fixes is being applied: Threads and Both wait until that lands. */
+  readonly applying: boolean;
   /** The choice being written or last written, so its button is the one that says so. */
   readonly scope: CommentFixScope | null;
   readonly error?: string;
@@ -133,7 +137,7 @@ const FIX_WORDS: Readonly<Record<ChatFixState, string>> = {
 function threadFixControl(fix: ChatFix): HTMLElement {
   const running = fix.state === 'running';
   const words = fix.state === 'failed' && fix.error !== undefined ? `The model could not answer: ${fix.error} Fix asks again.` : FIX_WORDS[fix.state];
-  const button = createElement('button', { type: 'button', class: 'geld-review__rerun geld-review__chat-fix', title: words, 'data-state': fix.state, ...(running ? { 'data-running': '', disabled: '', 'aria-busy': 'true' } : {}) }, [icon(ICON_SPARKLE_FILL), icon(ICON_SPINNER), createElement('span', {}, ['Fix'])]);
+  const button = createElement('button', { type: 'button', class: 'geld-review__rerun geld-review__chat-fix', title: fix.applying ? 'Its fix is being applied' : words, 'data-state': fix.state, ...(running ? { 'data-running': '', disabled: '', 'aria-busy': 'true' } : fix.applying ? { disabled: '' } : {}) }, [icon(ICON_SPARKLE_FILL), icon(ICON_SPINNER), createElement('span', {}, ['Fix'])]);
   button.addEventListener('click', () => fix.onFix());
   return button;
 }
@@ -154,7 +158,8 @@ function commentFixRow(fix: CommentFix): HTMLElement {
   for (const [scope, label, title] of choices) {
     const primary = scope === 'both' || fix.threads === 0;
     const pressed = running && fix.scope === scope;
-    const button = createElement('button', { type: 'button', class: `btn btn-sm${primary ? ' btn-primary' : ''}`, title, ...(running ? { disabled: '' } : {}), ...(pressed ? { 'aria-busy': 'true' } : {}) }, [pressed ? 'Fixing…' : label]);
+    const waits = fix.applying && scope !== 'comment';
+    const button = createElement('button', { type: 'button', class: `btn btn-sm${primary ? ' btn-primary' : ''}`, title: waits ? 'A fix for its threads is being applied' : title, ...(running || waits ? { disabled: '' } : {}), ...(pressed ? { 'aria-busy': 'true' } : {}) }, [pressed ? 'Fixing…' : label]);
     button.addEventListener('click', () => fix.onFix(scope));
     group.append(button);
   }
@@ -296,7 +301,8 @@ export function renderChatView(slot: HTMLElement, threads: readonly HTMLElement[
     .map((thread) => {
       const source = sources.get(thread) ?? null;
       const shown = source === null ? '' : [source.anchor, source.label, source.preview, source.revision?.state ?? '', source.at ?? '', source.latestAnchor ?? '', source.rerun?.running === true ? 'running' : '', handlers.sourceOpen(thread) ? 'open' : ''].join(',');
-      return `${threadAnchorOf(thread)}:${handlers.pathOf(thread)}:${shown}:${handlers.fixOf?.(thread)?.state ?? ''}`;
+      const fix = handlers.fixOf?.(thread) ?? null;
+      return `${threadAnchorOf(thread)}:${handlers.pathOf(thread)}:${shown}:${fix === null ? '' : `${fix.state}${fix.applying ? ':applying' : ''}`}`;
     })
     .join(' ');
   // The same threads a rebuilt panel carried over (`parkChats`): the chat goes back as it was, loans, reply box and all.
