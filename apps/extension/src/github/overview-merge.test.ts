@@ -179,6 +179,25 @@ describe('syncOverviewMerge', () => {
     expect(variants()).toEqual(['primary', 'primary']);
   });
 
+  it('turns the caret back and forth with its merge when GitHub blocks and unblocks it in place', async () => {
+    render(
+      '<div data-component="ButtonGroup"><div><button data-component="Button" type="button" data-dd-action-name="pull_requests.merge.open" data-variant="default">Squash and merge</button></div><div><button aria-disabled="false" data-component="IconButton" type="button" aria-label="Select merge method" data-dd-action-name="pull_requests.merge.open_method" data-variant="default"></button></div></div>',
+    );
+    const variants = (): (string | null)[] => [...document.querySelectorAll('[data-component="ButtonGroup"] button')].map((button) => button.getAttribute('data-variant'));
+    syncOverviewMerge(null, 'SQUASH', handlers);
+    expect(variants()).toEqual(['primary', 'primary']);
+    const merge = document.querySelector('button[data-component="Button"]');
+    merge?.setAttribute('aria-disabled', 'true');
+    merge?.setAttribute('data-inactive', 'true');
+    await Promise.resolve();
+    expect(variants()).toEqual(['default', 'default']);
+    expect(document.querySelector('[data-geld-merge-variant]')).toBeNull();
+    merge?.setAttribute('aria-disabled', 'false');
+    merge?.removeAttribute('data-inactive');
+    await Promise.resolve();
+    expect(variants()).toEqual(['primary', 'primary']);
+  });
+
   it('leaves a merge GitHub disables grey, and gives it back its grey when GitHub disables it later', () => {
     render('<button data-component="Button" data-variant="default" aria-disabled="true" type="button">Squash and merge</button>');
     syncOverviewMerge(null, 'SQUASH', handlers);
