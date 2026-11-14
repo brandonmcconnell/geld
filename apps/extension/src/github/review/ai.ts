@@ -525,7 +525,7 @@ export interface FixScope {
  * fixes, so a click costs one or two requests. A comment's own findings become rows for an agent, since no thread holds
  * them to suggest in, and replace that comment's rows from before. Resolves with whether a request failed.
  */
-export async function fixFromComments(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings, onProgress: () => void, source: SuggestionSource, scope: FixScope): Promise<{ readonly changed: boolean; readonly failed: boolean }> {
+export async function fixFromComments(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings, onProgress: () => void, source: SuggestionSource, scope: FixScope): Promise<{ readonly changed: boolean; readonly failed: boolean; readonly reason?: string }> {
   if (meta.producer.ai || !(await aiConfigured(settings)) || inFlight.size > 0 || !triageFixesOn(settings)) return { changed: false, failed: false };
   await hydrating;
   const apiKey = (await aiKeyItem.getValue()).trim();
@@ -551,11 +551,12 @@ export async function fixFromComments(meta: GeldPrMeta, comments: readonly RawCo
   if (!still()) return { changed: false, failed: false };
   inFlight.delete('suggest');
   countUsage(failure === null ? 'ai_comment_fix' : 'ai_triage_failed');
-  // The run's own time stays: what the triage read is as old as it was, only the fixes are new.
-  lastRun = recordOf(lastRun?.ranAt ?? new Date().toISOString(), failure);
+  // The run's own time and error stay: what the triage read is as old as it was, only the fixes are new. A chat's
+  // failure is said on that chat's control, whose Fix asks again: the card's Try again reruns the triage, not this.
+  lastRun = recordOf(lastRun?.ranAt ?? new Date().toISOString(), lastRun?.error === undefined ? null : { reason: lastRun.error, ...(lastRun.errorStep === undefined ? {} : { step: lastRun.errorStep }) });
   await store(lastRun);
   onProgress();
-  return { changed: true, failed: failure !== null };
+  return { changed: true, failed: failure !== null, ...(failure === null ? {} : { reason: failure.reason }) };
 }
 
 /** A comment's findings outside its threads, as rows for an agent keyed by the comment (`<anchor>~<n>`). */
@@ -612,6 +613,9 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
     return replies.length === 0 ? {} : { replies };
   };
   const openThreads = new Set(candidates.map(threadKeyOf));
+  // A thread asked about apart from the fix it shares leaves that fix only once its own answer is in: a refused or
+  // unreadable answer leaves the shared fix as it was, every thread still on it.
+  const leaving = new Map<string, string>();
   for (const item of candidates) {
     const key = threadKeyOf(item);
     const existing = suggestionFor(key);
@@ -637,7 +641,7 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
       // A partner follows the fix it shares while that fix's own thread is open and nothing new arrived in its own.
       const shared = suggestions.get(existing.key);
       if (!force && fresh && openThreads.has(existing.key) && shared !== undefined) continue;
-      if (shared !== undefined) suggestions.set(existing.key, { ...shared, threads: shared.threads.filter((thread) => thread !== key) });
+      if (shared !== undefined) leaving.set(key, existing.key);
       asks.push({ item, target });
       continue;
     }
@@ -671,6 +675,11 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
     if (!result.ok) return result.reason;
     const parsed = parseSuggestOutput(result.text, inputs);
     if (parsed === null) return UNREADABLE;
+    for (const { item } of batch) {
+      const sharedKey = leaving.get(threadKeyOf(item));
+      const shared = sharedKey === undefined ? undefined : suggestions.get(sharedKey);
+      if (sharedKey !== undefined && shared !== undefined) suggestions.set(sharedKey, { ...shared, threads: shared.threads.filter((thread) => thread !== threadKeyOf(item)) });
+    }
     const targets = new Map(batch.map(({ item, target }) => [threadKeyOf(item), target]));
     const asked = new Map(batch.map(({ item }) => [threadKeyOf(item), item]));
     const paths = items.flatMap((item) => (item.path === undefined ? [] : [item.path]));

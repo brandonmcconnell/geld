@@ -217,7 +217,7 @@ interface TriageVisit {
   readonly errors: Map<string, string>;
   handedOff: HandedOff | null;
   /** Fixes asked for from a chat, by the thread's key or the comment's anchor, and the choice a comment's was asked with. */
-  readonly chatFixes: Map<string, { readonly state: ChatFixState; readonly scope: CommentFixScope | null }>;
+  readonly chatFixes: Map<string, { readonly state: ChatFixState; readonly scope: CommentFixScope | null; readonly error?: string }>;
 }
 
 /** What the last hand-off did, said under the card, and the finding whose task to offer copying again when a copy failed. */
@@ -4003,7 +4003,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     const headSha = meta.headSha;
     const source: SuggestionSource = { pull: pullIntent(), target: (item) => suggestionTarget(item, rawComments, headSha) };
     void fixFromComments(meta, rawComments, settings, reapply, source, ask).then((run) => {
-      triage.chatFixes.set(key, { state: !run.changed ? 'idle' : run.failed ? 'failed' : 'done', scope });
+      triage.chatFixes.set(key, { state: !run.changed ? 'idle' : run.failed ? 'failed' : 'done', scope, ...(run.reason === undefined ? {} : { error: run.reason }) });
       reapply();
     });
   };
@@ -4017,7 +4017,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     const item = fixableItemAt(threadAnchorOf(thread));
     if (item === null) return null;
     const key = threadKeyOf(item);
-    return { state: visit.triage.chatFixes.get(key)?.state ?? 'idle', onFix: () => askFix(key, null, { threads: [key], comment: null }) };
+    const asked = visit.triage.chatFixes.get(key);
+    return { state: asked?.state ?? 'idle', ...(asked?.error === undefined ? {} : { error: asked.error }), onFix: () => askFix(key, null, { threads: [key], comment: null }) };
   };
   const commentFixOf = (anchor: string, author: string, links: readonly ChatThreadLink[]): CommentFix | null => {
     if (!chatFixesOn()) return null;
@@ -4034,6 +4035,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       threads: keys.length,
       state: asked?.state ?? 'idle',
       scope: asked?.scope ?? null,
+      ...(asked?.error === undefined ? {} : { error: asked.error }),
       onFix: (scope) => askFix(anchor, scope, { threads: scope === 'comment' ? [] : keys, comment: scope === 'threads' ? null : { anchor, author, text, threads: titles } }),
     };
   };

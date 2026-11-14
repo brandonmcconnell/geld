@@ -8448,6 +8448,20 @@ a.geld-review__rerun:hover {
   font-size: 12px;
 }
 
+.geld-review__chat-fix-choices {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* The triage's button size (`.geld-review__triage .btn-sm`): the merge box's 24px, 10px either side, 12px words. */
+.geld-review__chat-fix-choices .btn-sm {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+  line-height: 22px;
+}
+
 .geld-review__chat-fix-label,
 .geld-review__chat-fix-note {
   color: var(--geld-review-muted);
