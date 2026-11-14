@@ -3926,7 +3926,7 @@ svg.geld-lucide {
 }
 
 /* The Flow control: the same icon button as the grouping control, its mark and its name. */
-.geld-review__icon.geld-review__flow-btn {
+.geld-review__icon:is(.geld-review__flow-btn, .geld-review__chat-btn) {
   width: auto;
   gap: 5px;
   padding: 0 8px 0 7px;
@@ -3934,7 +3934,7 @@ svg.geld-lucide {
   font-weight: 500;
 }
 
-.geld-review__flow-btn .octicon {
+.geld-review__icon:is(.geld-review__flow-btn, .geld-review__chat-btn) .octicon {
   width: 16px;
   height: 16px;
 }
@@ -3976,11 +3976,11 @@ svg.geld-lucide {
 }
 
 /* A Geld row too narrow for its words (`fit-chips.ts`): every button is its mark alone, the copy button's square. */
-.geld-review__head[data-geld-fit-tools='icons'] :is(.geld-review__grouping-label, .geld-review__view-label, .geld-review__flow-label, .geld-review__ai-label, .geld-review__since-visit-label) {
+.geld-review__head[data-geld-fit-tools='icons'] :is(.geld-review__grouping-label, .geld-review__view-label, .geld-review__flow-label, .geld-review__chat-label, .geld-review__ai-label, .geld-review__since-visit-label) {
   display: none;
 }
 
-.geld-review__head[data-geld-fit-tools='icons'] .geld-review__icon:is(.geld-review__grouping-btn, .geld-review__view-btn, .geld-review__flow-btn, .geld-review__ai-btn) {
+.geld-review__head[data-geld-fit-tools='icons'] .geld-review__icon:is(.geld-review__grouping-btn, .geld-review__view-btn, .geld-review__flow-btn, .geld-review__chat-btn, .geld-review__ai-btn) {
   width: 28px;
   padding: 0;
 }
@@ -11599,4 +11599,435 @@ html[data-geld-on] [class*='ReactionsMenuOption'] [data-component='ActionList.It
   font-size: 11px;
   font-weight: 500;
   line-height: 16px;
+}
+
+/* ---- the chat sidebar (`chat-sidebar.ts`) ----------------------------------- */
+
+/* Docked to the window's right edge; the page gives it room rather than sitting under it, down to a width where it covers the page instead. */
+html[data-geld-chat-open] {
+  --geld-chat-width: 420px;
+}
+
+@media (min-width: 1012px) {
+  html[data-geld-chat-open] body {
+    margin-right: var(--geld-chat-width);
+  }
+}
+
+.geld-chat {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  width: min(var(--geld-chat-width, 420px), 100vw);
+  background: var(--bgColor-default, #fff);
+  border-left: 1px solid var(--borderColor-default, #d1d9e0);
+  box-shadow: var(--shadow-floating-small, 0 0 0 1px #d1d9e080, 0 6px 12px -3px #25292e0a);
+  color: var(--fgColor-default, #1f2328);
+  font-size: 14px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .geld-chat {
+    transition: translate 180ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  @starting-style {
+    .geld-chat {
+      translate: 100% 0;
+    }
+  }
+}
+
+.geld-chat__head {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  align-items: center;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid var(--borderColor-muted, #d1d9e0b3);
+}
+
+.geld-chat__tabs {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.geld-chat__tab {
+  display: inline-flex;
+  flex: none;
+  gap: 6px;
+  align-items: center;
+  max-width: 200px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fgColor-muted, #59636e);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.geld-chat__tab:hover {
+  background: var(--control-transparent-bgColor-hover, #818b981a);
+}
+
+.geld-chat__tab[aria-selected='true'] {
+  background: var(--control-transparent-bgColor-selected, #818b9826);
+  color: var(--fgColor-default, #1f2328);
+}
+
+.geld-chat__tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-chat__tab .octicon {
+  flex: none;
+  color: var(--fgColor-done, #8250df);
+}
+
+.geld-chat__mark {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+
+.geld-chat__live {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fgColor-attention, #9a6700);
+}
+
+.geld-chat__icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fgColor-muted, #59636e);
+  cursor: pointer;
+}
+
+.geld-chat__icon:hover {
+  background: var(--control-transparent-bgColor-hover, #818b981a);
+  color: var(--fgColor-default, #1f2328);
+}
+
+.geld-chat__bar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--borderColor-muted, #d1d9e0b3);
+  color: var(--fgColor-muted, #59636e);
+  font-size: 12px;
+}
+
+.geld-chat__status {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--fgColor-default, #1f2328);
+  font-weight: 500;
+}
+
+.geld-chat__status::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fgColor-muted, #59636e);
+  content: '';
+}
+
+.geld-chat__status[data-running='true']::before {
+  background: var(--fgColor-attention, #9a6700);
+}
+
+.geld-chat__bar-note {
+  flex: 1;
+}
+
+.geld-chat__open {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  color: var(--fgColor-accent, #0969da);
+}
+
+.geld-chat__open .octicon {
+  width: 12px;
+  height: 12px;
+}
+
+.geld-chat__log {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  padding: 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.geld-chat__turn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.geld-chat__turn[data-role='user'] {
+  align-items: flex-end;
+}
+
+.geld-chat__bubble {
+  max-width: 88%;
+  max-height: 320px;
+  padding: 8px 12px;
+  overflow-y: auto;
+  border-radius: 12px;
+  background: var(--bgColor-accent-muted, #ddf4ff);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.geld-chat__byline {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--fgColor-muted, #59636e);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.geld-chat__byline .octicon {
+  color: var(--fgColor-done, #8250df);
+}
+
+.geld-chat__text.markdown-body {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.geld-chat__text.markdown-body > :last-child {
+  margin-bottom: 0;
+}
+
+.geld-chat__tools {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--fgColor-muted, #59636e);
+  font-family: var(--fontStack-monospace, ui-monospace, SFMono-Regular, monospace);
+  font-size: 12px;
+}
+
+.geld-chat__tools li {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.geld-chat__tools li span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-chat__tools .octicon {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+
+.geld-chat__tools li[data-done='true'] .octicon {
+  color: var(--fgColor-success, #1a7f37);
+}
+
+.geld-chat__loading {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--fgColor-muted, #59636e);
+  font-size: 13px;
+}
+
+.geld-chat__error {
+  margin: 0;
+  color: var(--fgColor-danger, #d1242f);
+  font-size: 12px;
+}
+
+.geld-chat__note {
+  margin: 0;
+  color: var(--fgColor-muted, #59636e);
+  font-size: 12px;
+}
+
+.geld-chat__image {
+  color: var(--fgColor-muted, #59636e);
+  font-style: italic;
+}
+
+.geld-chat__empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: auto 0;
+  color: var(--fgColor-muted, #59636e);
+  text-align: center;
+  text-wrap: pretty;
+}
+
+.geld-chat__empty p {
+  margin: 0;
+}
+
+.geld-chat__empty-title {
+  color: var(--fgColor-default, #1f2328);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.geld-chat__empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.geld-chat__prompt {
+  padding: 4px 10px;
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 999px;
+  background: var(--bgColor-default, #fff);
+  color: var(--fgColor-default, #1f2328);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.geld-chat__prompt:hover {
+  background: var(--bgColor-muted, #f6f8fa);
+}
+
+.geld-chat__composer {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 12px 12px;
+  padding: 8px;
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 12px;
+  background: var(--bgColor-default, #fff);
+}
+
+.geld-chat__composer:focus-within {
+  border-color: var(--borderColor-accent-emphasis, #0969da);
+  box-shadow: 0 0 0 1px var(--borderColor-accent-emphasis, #0969da);
+}
+
+.geld-chat__input {
+  width: 100%;
+  min-height: 44px;
+  max-height: 200px;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  resize: none;
+  field-sizing: content;
+}
+
+.geld-chat__input:focus {
+  outline: none;
+}
+
+.geld-chat__composer-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.geld-chat__model {
+  min-width: 0;
+  max-width: 260px;
+  height: 26px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fgColor-muted, #59636e);
+  font: inherit;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.geld-chat__model:hover:not(:disabled) {
+  background: var(--control-transparent-bgColor-hover, #818b981a);
+}
+
+.geld-chat__model:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.geld-chat__send {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--button-primary-bgColor-rest, #1f883d);
+  color: var(--button-primary-fgColor-rest, #fff);
+  cursor: pointer;
+}
+
+.geld-chat__send:disabled {
+  background: var(--button-primary-bgColor-disabled, #95d8a6);
+  cursor: default;
+}
+
+.geld-chat__send .octicon {
+  width: 14px;
+  height: 14px;
+}
+
+.geld-chat__stop {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: currentColor;
 }

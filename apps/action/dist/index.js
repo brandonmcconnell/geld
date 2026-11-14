@@ -3030,6 +3030,9 @@ var init_usage_settings = __esm({
       "ai_fix_applied",
       "ai_fix_discarded",
       "agent_handoff",
+      "chat_opened",
+      "chat_assistant_sent",
+      "chat_agent_sent",
       "bot_review_requested",
       "review_approve",
       "review_request_changes",
@@ -35120,6 +35123,10 @@ var suggestOutputSchema = external_exports.object({
     })
   )
 });
+
+// ../../packages/review/src/cursor-agents.ts
+var UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+var AGENT_ID = new RegExp(`^bc-${UUID}$`, "i");
 
 // src/github.ts
 init_src2();

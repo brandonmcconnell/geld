@@ -10,7 +10,7 @@ import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
 import type { GeldSettings } from '@geld/core';
 import { compileAuthorRules, digestViewOf, repoFromPathname } from '@geld/core';
 import type { BotComment, BotVerdictRecord, CommentLane, GeldPrMeta, RawCheckRun, ReviewItem, ReviewerState } from '@geld/review';
-import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, commandReply, firstSentence, isOpenStatus, isReviewShaped, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, mergeCheckRuns, parseBotBody, parsePreviews, refusalReason, REPORT_GRACE_MS, reportsFrom, reportsFromChecks, resolveBotId, verdictsFrom } from '@geld/review';
+import { botAppAvatar, botById, botTitle, isCursorAgentId, checkReporterAvatar, clusterComments, commandReply, firstSentence, isOpenStatus, isReviewShaped, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, mergeCheckRuns, parseBotBody, parsePreviews, refusalReason, REPORT_GRACE_MS, reportsFrom, reportsFromChecks, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage, pullRequestStateWords } from '../page';
@@ -97,7 +97,10 @@ import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, dropOrph
 import { rememberTopCard, setTopCard } from './top-card';
 import { closeOverviewChecks, isOverviewPage, OVERVIEW_FOR_YOU, OVERVIEW_ITEM, openCollapsedThreads, openOverviewChecks, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, showAllOverviewComments } from './overview-page';
 import { pageFetch } from '../page-fetch';
-import { closeFlow, openFlowDialog } from './flow';
+import { closeFlow, flowFiles, openFlowDialog } from './flow';
+import type { ChatFile } from '@geld/review';
+import type { ChatPageContext } from './chat-sidebar';
+import { closeChat, setChatContext, syncChatToPage, toggleChat } from './chat-sidebar';
 import { countUsage } from '../../lib/usage-count';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
@@ -2585,6 +2588,57 @@ function botAvatarByLogin(botId: string): string | null {
 }
 
 /** What the pull request sets out to do, for the triage's fixes: its title and the start of its description. */
+/**
+ * What the chat sidebar reads from this pass: the pull request it is about, the Cursor agents the page links to, and
+ * a reading of the pull request for the assistant, taken when a message is sent.
+ */
+function chatContextFor(pullPath: string, meta: GeldPrMeta, settings: GeldSettings, prAuthor: string | null): ChatPageContext {
+  const prefix = 'cursor:';
+  const linkedAgents = relatedLinksOnPage(reapplySoon)
+    .filter((link) => link.kind === 'agent' && link.key.startsWith(prefix) && isCursorAgentId(link.key.slice(prefix.length)))
+    .map((link) => ({ id: link.key.slice(prefix.length), href: link.href }));
+  const url = `${location.origin}${pullPath}`;
+  return {
+    pageKey: aiRunKey(pullPath),
+    pullPath,
+    prUrl: url,
+    linkedAgents,
+    preferCursor: settings.codingAgent === 'cursor' || settings.codingAgent === 'auto',
+    ai: { enabled: settings.aiEnabled, baseUrl: settings.aiBaseUrl, model: settings.aiModel },
+    pull: () => {
+      const intent = pullIntent();
+      const files = flowFiles(pullPath).map((file) => ({ path: file.path, additions: file.additions, deletions: file.deletions, ...(file.hiddenAs === null ? {} : { hidden: file.hiddenAs }) }));
+      // The sidebar stays open on the pull request's other tabs, where neither the description nor the flow's files are on the page.
+      const kept = lastPullReading?.pullPath === pullPath ? lastPullReading : null;
+      const reading: PullReading = {
+        pullPath,
+        title: intent.title === '' ? (kept?.title ?? '') : intent.title,
+        description: descriptionBody() === null ? (kept?.description ?? '') : intent.description,
+        files: files.length === 0 ? (kept?.files ?? []) : files,
+      };
+      lastPullReading = reading;
+      return {
+        url,
+        title: reading.title,
+        author: prAuthor,
+        description: reading.description,
+        findings: meta.items.map((item) => ({ title: item.title, ...(item.path === undefined ? {} : { path: item.path }), ...(item.line === undefined ? {} : { line: item.line }), open: isOpenStatus(item.status), authors: authorLabels(item) })),
+        files: reading.files,
+      };
+    },
+  };
+}
+
+interface PullReading {
+  readonly pullPath: string;
+  readonly title: string;
+  readonly description: string;
+  readonly files: readonly ChatFile[];
+}
+
+/** The chat's last reading of the pull request, for the tabs that do not show what it read. */
+let lastPullReading: PullReading | null = null;
+
 function pullIntent(): SuggestionSource['pull'] {
   const heading = document.querySelector('.js-issue-title, [data-component="PH_Title"] .markdown-title, h1 bdi.markdown-title, h1 .markdown-title');
   const title = (heading?.textContent ?? document.title.split(' by ')[0] ?? '').replace(/\s+/g, ' ').trim();
@@ -3859,6 +3913,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   if (adopting !== null) void adopting.then(reapplySoon);
   const aiState = aiStateFor(meta, rawComments, settings);
   const prAuthor = prAuthorLogin();
+  setChatContext(chatContextFor(page.stateKey, meta, settings, prAuthor));
 
   const model: PanelModel = {
     meta,
@@ -4127,6 +4182,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     },
     onView: (view) => chooseDigestView(view),
     onFlow: () => openFlowDialog(),
+    onChat: (from) => toggleChat(from),
     onSettings: () => {
       const message: OpenSettingsMessage = { type: 'geld:open-settings' };
       void browser.runtime.sendMessage(message).catch(() => undefined);
@@ -4714,6 +4770,9 @@ export function teardownReviewOverview(why: 'stop' | 'leave' | 'rebuild' = 'stop
   lastSettings = null;
   overviewChecksInDigest = false;
   closeFlow();
+  // The sidebar stays open across the pull request's own tabs and a settings rebuild, and goes with Geld or the pull request.
+  if (why === 'stop') closeChat();
+  else syncChatToPage();
   setAutoLoading(false);
   deferredWhileHidden = false;
   window.removeEventListener('load', onDocumentLoaded);

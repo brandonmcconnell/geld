@@ -23,6 +23,32 @@ export const aiKeyItem = storage.defineItem<string>('local:aiKey', { fallback: '
 /** The user's own TypeSafe key for Jev, for a gateway that does not offer it. Same rules as the gateway key. */
 export const jevKeyItem = storage.defineItem<string>('local:jevKey', { fallback: '' });
 
+/** The reader's Cursor API key, for chatting with a pull request's Cursor agents. Read only by the background. Never synced. */
+export const cursorKeyItem = storage.defineItem<string>('local:cursorApiKey', { fallback: '' });
+
+/** One turn of the assistant's chat on a pull request, as kept on this device. */
+export interface StoredChatTurn {
+  readonly role: 'user' | 'assistant';
+  readonly text: string;
+}
+
+export interface StoredChat {
+  readonly at: string;
+  readonly turns: readonly StoredChatTurn[];
+}
+
+/** The assistant's chats, by pull request (`github[@host]:{owner}/{repo}/pull/{n}`), capped. A Cursor agent's chat is kept by Cursor. */
+export const assistantChatsItem = storage.defineItem<Readonly<Record<string, StoredChat>>>('local:assistantChats', { fallback: {} });
+export const ASSISTANT_CHATS_CAP = 20;
+export const ASSISTANT_TURNS_CAP = 60;
+
+/** The model last chosen in the chat's composer, per kind of thread; empty keeps the default (the writing model, or the agent's own). */
+export interface ChatModels {
+  readonly assistant?: string;
+  readonly cursor?: string;
+}
+export const chatModelsItem = storage.defineItem<ChatModels>('local:chatModels', { fallback: {} });
+
 /**
  * What the gateway last said it offers: the model list and, from it, the id
  * of its Jev model (null when it has none). Written by the options page when

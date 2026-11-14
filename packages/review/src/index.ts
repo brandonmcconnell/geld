@@ -18,3 +18,6 @@ export * from './plan';
 export * from './planner';
 export * from './triage';
 export * from './coding-agents';
+export * from './sse';
+export * from './cursor-agents';
+export * from './chat-context';

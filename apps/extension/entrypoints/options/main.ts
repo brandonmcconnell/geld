@@ -53,7 +53,9 @@ import { formatDiagnostics, readDiagnostics } from '../../src/lib/diagnostics';
 import { collectTabPerf } from '../../src/lib/perf-report';
 import { settingsItem } from '../../src/lib/storage';
 import type { JevSource } from '../../src/lib/local-state';
-import { aiGatewayItem, aiKeyItem, jevKeyItem, jevSourceItem } from '../../src/lib/local-state';
+import { aiGatewayItem, aiKeyItem, cursorKeyItem, jevKeyItem, jevSourceItem } from '../../src/lib/local-state';
+import type { CursorRequest } from '../../src/lib/chat-messages';
+import { CURSOR_ORIGIN, isCursorMeReply } from '../../src/lib/chat-messages';
 import type { ModelInfo } from '@geld/review';
 import { decisionModelsIn, defaultDecisionModel, isEvaluationModel, jevModelFor, knownDecisionModels, TYPESAFE_API } from '@geld/review';
 import { issueTrackerEditor } from '../../src/ui/issue-tracker-editor';
@@ -799,6 +801,7 @@ async function main(): Promise<void> {
       if (!aiRendered) {
         aiRendered = true;
         await renderAiFields();
+        await renderCursorKey();
       }
       continue;
     }
@@ -867,6 +870,62 @@ async function main(): Promise<void> {
       reviewBotsArea = area;
       block([head, area, el('div', 'geld-row options__actions', [statusEl, save])]);
     }
+  }
+
+  /**
+   * The Cursor API key the chat sidebar uses to read and continue a pull request's Cursor agents. Independent of the
+   * AI switch: the agent's chat needs no gateway. Saving asks for api.cursor.com, which only a click here can ask for,
+   * then checks the key.
+   */
+  async function renderCursorKey(): Promise<void> {
+    const label = el('label', 'geld-label', ['Cursor API key']);
+    label.htmlFor = 'cursor-key';
+    const dashboard = el('a', 'options__link', ['Cursor’s dashboard']);
+    dashboard.href = 'https://cursor.com/dashboard?tab=integrations';
+    dashboard.target = '_blank';
+    dashboard.rel = 'noreferrer';
+    const help = el('p', 'geld-help', [
+      'Lets the chat beside a pull request read and continue the Cursor agents that worked on it, in their own conversation, so what you send there shows in Cursor too. Create a key under API Keys in ',
+      dashboard,
+      '. Stored only on this device.',
+    ]);
+    const input = el('input', 'geld-input geld-code options__input options__input--grow');
+    input.id = 'cursor-key';
+    input.type = 'password';
+    input.spellcheck = false;
+    input.placeholder = 'key_…';
+    input.setAttribute('autocomplete', 'off');
+    input.value = await cursorKeyItem.getValue();
+    const statusEl = el('span', 'geld-status');
+    statusEl.setAttribute('aria-live', 'polite');
+    const status = statusReporter(statusEl);
+    const save = el('button', 'geld-button geld-button--primary geld-button--small', ['Save key']);
+    save.type = 'button';
+    const check = async (): Promise<void> => {
+      const request: CursorRequest = { type: 'geld:cursor', action: 'me' };
+      const reply: unknown = await browser.runtime.sendMessage(request).catch(() => null);
+      if (!isCursorMeReply(reply)) status('Geld could not check the key.', 'error');
+      else if (!reply.ok) status(reply.reason, 'error');
+      else status(reply.email === null ? 'Connected.' : `Connected as ${reply.email}.`, 'success');
+    };
+    save.addEventListener('click', async () => {
+      const key = input.value.trim();
+      if (key === '') {
+        await cursorKeyItem.setValue('');
+        status('Cleared. The chat no longer reaches Cursor.', 'success');
+        return;
+      }
+      // Asked first, while the click still counts as the reader's gesture.
+      const allowed = await browser.permissions.request({ origins: [CURSOR_ORIGIN] }).catch(() => false);
+      await cursorKeyItem.setValue(key);
+      if (!allowed) {
+        status('Saved. Allow Geld to reach api.cursor.com to use it.', 'error');
+        return;
+      }
+      status('Checking the key…', 'neutral');
+      await check();
+    });
+    block([el('div', 'options__field-head', [label, help]), input, el('div', 'geld-row options__actions', [statusEl, save])]);
   }
 
   /**

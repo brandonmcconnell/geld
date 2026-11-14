@@ -85,6 +85,11 @@ let failure: FlowFailure | null = null;
 /** The pull request and head the cached reads belong to. */
 let sourceKey = '';
 
+/** The pull request's changed files as the controller last handed them over, for the chat assistant; empty off a pull request. */
+export function flowFiles(pullPath: string): readonly FlowFile[] {
+  return source !== null && source.pullPath === pullPath ? source.files : [];
+}
+
 /** What the diagram is drawn from, set by the controller on every conversation pass (null elsewhere), with the diff's failure while it has none. */
 export function setFlowSource(next: FlowSource | null, failed: FlowFailure | null = null): void {
   source = next;
