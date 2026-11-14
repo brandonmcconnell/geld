@@ -301,4 +301,13 @@ describe('a fix asked for from a chat', () => {
     expect(await away).toEqual({ changed: false, failed: false });
     expect(triageSuggestions(meta, settings)).toEqual([]);
   });
+
+  it('lets one of two asks set up side by side run, so they never share the marker', async () => {
+    await fresh();
+    const meta = metaFor([review]);
+    sendMessage.mockImplementation(async () => ({ ok: true, model: 'm', text: JSON.stringify({ findings: [{ title: 'Handle leaks', task: 'Close it.', path: null, line: null }] }) }));
+    const scope = { threads: [], comment: { anchor: review.anchor, author: review.author, text: review.body, threads: [] } };
+    const [first, second] = await Promise.all([fixFromComments(meta, [review], settings, () => undefined, source, scope), fixFromComments(meta, [review], settings, () => undefined, source, scope)]);
+    expect([first.changed, second.changed].filter(Boolean)).toHaveLength(1);
+  });
 });
