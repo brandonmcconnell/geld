@@ -131,6 +131,16 @@ export const ICON_CHECK = octicon(
   'octicon-check',
 );
 
+export const ICON_ARROW_DOWN = octicon(
+  '<path d="M13.03 8.22a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L3.47 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018l2.97 2.97V3.75a.75.75 0 0 1 1.5 0v7.44l2.97-2.97a.75.75 0 0 1 1.06 0Z"></path>',
+  'octicon-arrow-down',
+);
+
+export const ICON_SQUARE_FILL = octicon(
+  '<path d="M5.75 4h4.5c.966 0 1.75.784 1.75 1.75v4.5A1.75 1.75 0 0 1 10.25 12h-4.5A1.75 1.75 0 0 1 4 10.25v-4.5C4 4.784 4.784 4 5.75 4Z"></path>',
+  'octicon-square-fill',
+);
+
 export const ICON_CHEVRON_DOWN = octicon(
   '<path d="M12.78 5.22a.749.749 0 0 1 0 1.06l-4.25 4.25a.749.749 0 0 1-1.06 0L3.22 6.28a.749.749 0 1 1 1.06-1.06L8 8.939l3.72-3.719a.749.749 0 0 1 1.06 0Z"></path>',
   'octicon-chevron-down',

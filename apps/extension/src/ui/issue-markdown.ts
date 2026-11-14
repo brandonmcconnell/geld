@@ -14,14 +14,14 @@ const FORBID_ATTR = ['style', 'srcset', 'poster', 'background'];
  * the draft stays on this device until the reader sends it, and for the same
  * reason nothing in it is fetched: an image shows as its words and address.
  */
-export function renderIssueMarkdown(markdown: string, imageClass = 'feedback__image'): DocumentFragment {
+export function renderIssueMarkdown(markdown: string): DocumentFragment {
   const html = marked.parse(markdown, { gfm: true, breaks: true, async: false });
   const fragment = DOMPurify.sanitize(html, { RETURN_DOM_FRAGMENT: true, FORBID_TAGS, FORBID_ATTR });
   for (const image of fragment.querySelectorAll('img')) {
     const alt = image.getAttribute('alt')?.trim() ?? '';
     const source = image.getAttribute('src')?.trim() ?? '';
     const stand = document.createElement('span');
-    stand.className = imageClass;
+    stand.className = 'feedback__image';
     stand.textContent = `Image${alt === '' ? '' : `: ${alt}`}${source === '' ? '' : ` (${source})`}`;
     stand.title = 'Images are not loaded in the preview';
     image.replaceWith(stand);

@@ -30,7 +30,7 @@ export async function hasContentScript(tabId: number): Promise<boolean> {
 /** MV2 (Firefox) script injection APIs; not present in the MV3 typings. */
 interface LegacyTabs {
   insertCSS(tabId: number, details: { file: string; runAt: 'document_start' }): Promise<unknown>;
-  executeScript(tabId: number, details: { file: string; runAt: 'document_start' }): Promise<unknown>;
+  executeScript(tabId: number, details: { file: string; runAt?: 'document_start'; frameId?: number }): Promise<unknown>;
 }
 
 function legacyTabs(): LegacyTabs | null {
@@ -58,6 +58,24 @@ async function inject(tabId: number): Promise<void> {
   if (tabs === null) throw new Error('No script injection API available.');
   await tabs.insertCSS(tabId, { file: CONTENT_CSS, runAt: 'document_start' });
   await tabs.executeScript(tabId, { file: CONTENT_JS, runAt: 'document_start' });
+}
+
+/** The chat sidebar's view (entrypoints/chat-ui.ts), injected into the content script's isolated world on first use. */
+const CHAT_UI_JS = '/chat-ui.js';
+
+export async function injectChatUi(tabId: number, frameId: number): Promise<boolean> {
+  try {
+    if (import.meta.env.MANIFEST_VERSION === 3) {
+      await browser.scripting.executeScript({ target: { tabId, frameIds: [frameId] }, files: [CHAT_UI_JS] });
+      return true;
+    }
+    const tabs = legacyTabs();
+    if (tabs === null) return false;
+    await tabs.executeScript(tabId, { file: CHAT_UI_JS, frameId });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

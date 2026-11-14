@@ -1,0 +1,78 @@
+/*
+ * The chat sidebar's styles, inside its shadow root only. Tailwind scans this folder and Streamdown's build and
+ * nothing else, so no class from GitHub's page or the rest of the extension leaks in or out.
+ */
+@import 'tailwindcss' source(none);
+@import 'tw-animate-css';
+@import './shadcn.css';
+
+@source './';
+@source '../../node_modules/streamdown/dist/*.js';
+
+/* GitHub's colour mode, read off the page (`mount.tsx`): the shadcn components' `dark:` styles follow it. */
+@custom-variant dark (&:where([data-dark], [data-dark] *));
+
+@theme inline {
+  --font-sans: var(--fontStack-sansSerif, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif);
+  --font-mono: var(--fontStack-monospace, ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+/*
+ * shadcn's tokens as GitHub's own (Primer's, which the page sets and the shadow root inherits), so the chat takes
+ * GitHub's light, dark, dimmed, high-contrast and colour-blind themes as they are, with no copy of any palette here.
+ */
+:host {
+  --background: var(--bgColor-default, #fff);
+  --foreground: var(--fgColor-default, #1f2328);
+  --card: var(--bgColor-default, #fff);
+  --card-foreground: var(--fgColor-default, #1f2328);
+  --popover: var(--overlay-bgColor, var(--bgColor-default, #fff));
+  --popover-foreground: var(--fgColor-default, #1f2328);
+  --primary: var(--button-primary-bgColor-rest, #1f883d);
+  --primary-foreground: var(--button-primary-fgColor-rest, #fff);
+  --secondary: var(--bgColor-accent-muted, #ddf4ff);
+  --secondary-foreground: var(--fgColor-default, #1f2328);
+  --muted: var(--bgColor-muted, #f6f8fa);
+  --muted-foreground: var(--fgColor-muted, #59636e);
+  --accent: var(--control-transparent-bgColor-hover, #818b981a);
+  --accent-foreground: var(--fgColor-default, #1f2328);
+  --destructive: var(--fgColor-danger, #d1242f);
+  --border: var(--borderColor-default, #d1d9e0);
+  --input: var(--borderColor-default, #d1d9e0);
+  --ring: var(--focus-outlineColor, var(--borderColor-accent-emphasis, #0969da));
+  --radius: 0.5rem;
+  display: block;
+  font-family: var(--font-sans);
+}
+
+/* A reply's code blocks, quotes and tables keep GitHub's look: its code font and muted surfaces. */
+.geld-chat-markdown :where(code, pre) {
+  font-family: var(--font-mono);
+}
+
+.geld-chat-markdown :where(p, ul, ol, pre, blockquote, table) + :where(p, ul, ol, pre, blockquote, table) {
+  margin-top: 0.75rem;
+}
