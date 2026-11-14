@@ -544,6 +544,13 @@ function eventPartNode(part: EventPart): Node {
   if ('code' in part) return createElement('code', { class: 'geld-review__event-ref' }, [part.code]);
   if ('removed' in part) return createElement('del', { class: 'geld-review__activity-was' }, [part.removed]);
   if ('added' in part) return createElement('ins', { class: 'geld-review__activity-now' }, [part.added]);
+  if ('team' in part) {
+    // A team's page is under its organisation; a team named without one has no address to link to.
+    const [org, slug] = part.team.split('/');
+    return org !== undefined && slug !== undefined && org !== '' && slug !== ''
+      ? createElement('a', { class: 'geld-review__activity-user', href: `/orgs/${encodeURIComponent(org)}/teams/${encodeURIComponent(slug)}` }, [part.team])
+      : createElement('span', { class: 'geld-review__activity-user' }, [part.team]);
+  }
   return createElement('a', { class: 'geld-review__activity-user', href: `/${part.user}`, 'data-hovercard-type': 'user', 'data-hovercard-url': `/users/${encodeURIComponent(part.user)}/hovercard` }, [part.user]);
 }
 
@@ -552,7 +559,7 @@ function eventPartNode(part: EventPart): Node {
  * the rows' glyph column, the actor's picture, who did what (the only part that truncates), then when. For the
  * Overview, whose page holds no event rows to lend.
  */
-export function renderEventsView(slot: HTMLElement, lines: readonly EventLine[]): void {
+export function renderEventsView(slot: HTMLElement, lines: readonly EventLine[], complete = true): void {
   const list = createElement('ul', { class: 'geld-review__activity-events', role: 'list' });
   for (const line of lines) {
     const words = createElement('span', { class: 'geld-review__activity-words', title: eventText(line.words) }, [...(line.actor === null ? [] : [line.actor, ' ']), ...line.words.map(eventPartNode)]);
@@ -563,6 +570,7 @@ export function renderEventsView(slot: HTMLElement, lines: readonly EventLine[])
   }
   slot.replaceChildren(list);
   if (lines.length === 0) slot.append(createElement('p', { class: 'geld-review__qv-empty' }, ['Not loaded on this page yet.']));
+  else if (!complete) slot.append(createElement('p', { class: 'geld-review__qv-empty' }, ['The earliest activity only: this timeline is longer than Geld reads. GitHub’s Activity panel has the rest.']));
 }
 
 /** Who wrote the description, for the lines of what it mentions. */

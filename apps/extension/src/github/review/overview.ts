@@ -1072,28 +1072,33 @@ function incomingReadMentions(): readonly MentionLine[] {
  * On the Overview, the pull request's own events (closed, renamed, a review requested…): its page holds no event rows
  * (they live in its activity panel, outside the page until opened), so they are read from the timeline data that panel reads.
  */
-function overviewEvents(): readonly TimelineEvent[] {
-  if (!isOverviewPage()) return [];
+function overviewEvents(): { readonly events: readonly TimelineEvent[]; readonly complete: boolean } {
+  const none = { events: [], complete: true };
+  if (!isOverviewPage()) return none;
   const pullPath = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(location.pathname)?.[0];
-  if (pullPath === undefined) return [];
-  return timelineEventsFor(pullPath, reapplySoon) ?? [];
+  if (pullPath === undefined) return none;
+  return timelineEventsFor(pullPath, reapplySoon) ?? none;
 }
 
 function eventBranches(): { readonly base: string | null; readonly head: string | null } {
   return embeddedPullRequestBranches(location.pathname);
 }
 
-/** The Overview's timeline events row, as the classic page's: headlined by its last state change, timed by it. */
-function overviewEventsGroup(events: readonly TimelineEvent[]): FoldGroup | null {
+/**
+ * The Overview's timeline events row, as the classic page's: headlined by its last state change, timed by it. A reading
+ * cut short holds only the oldest events, so its count is a floor ("200+") and it has no headline, which could be a
+ * close a later reopen undid.
+ */
+function overviewEventsGroup({ events, complete }: { readonly events: readonly TimelineEvent[]; readonly complete: boolean }): FoldGroup | null {
   const first = events[0];
   if (first === undefined) return null;
-  const last = [...events].reverse().find((event) => eventState(event) !== null);
+  const last = complete ? [...events].reverse().find((event) => eventState(event) !== null) : undefined;
   const kind = last === undefined ? null : eventState(last);
   const headline =
     last === undefined || kind === null ? undefined : { kind, actor: last.login, avatarSrc: last.avatarUrl === '' ? null : last.avatarUrl, target: kind === 'merged' ? eventBranches().base : null, anchor: '' };
   return {
     key: 'events',
-    label: `${events.length} timeline event${events.length === 1 ? '' : 's'}`,
+    label: `${events.length}${complete ? '' : '+'} timeline event${events.length === 1 && complete ? '' : 's'}`,
     author: null,
     nodes: [],
     section: 'activity',
@@ -4477,7 +4482,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   if (mounted?.slot !== null && mounted?.slot !== undefined && visit.openKey !== null) {
     const nodes = quickViewFor(visit.openKey, meta, groups);
     // What the description and comments mention has no timeline row, so the Mentions row can stand with no nodes to show.
-    const onlyOutgoing = (visit.openKey === foldKey('mentions') && (conversationMentions().length > 0 || incomingReadMentions().length > 0)) || (visit.openKey === foldKey('events') && nodes.length === 0 && overviewEvents().length > 0);
+    const onlyOutgoing = (visit.openKey === foldKey('mentions') && (conversationMentions().length > 0 || incomingReadMentions().length > 0)) || (visit.openKey === foldKey('events') && nodes.length === 0 && overviewEvents().events.length > 0);
     if (nodes.length === 0 && !onlyOutgoing) {
       // An open thread row (by push) whose thread is momentarily out of the crawl keeps its row through the grace.
       if (!visit.openKey.startsWith('item:') || openLineStillMissing()) {
@@ -4577,7 +4582,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           renderQuickView(mounted.slot, nodes);
         }
       } else if (visit.openKey === foldKey('events') && nodes.length === 0) {
-        renderEventsView(mounted.slot, eventLines(overviewEvents()));
+        const read = overviewEvents();
+        renderEventsView(mounted.slot, eventLines(read.events), read.complete);
       } else if (visit.openKey === foldKey('mentions')) {
         renderMentionsView(mounted.slot, nodes, conversationMentions(true), (href) => refDetails(href, reapplySoon), incomingReadMentions());
       } else if (visit.openKey.startsWith('item:')) {

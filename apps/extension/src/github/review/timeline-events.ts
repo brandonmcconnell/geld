@@ -10,13 +10,19 @@ export interface TimelineEvent {
   readonly bot: boolean;
   /** ISO time of the event. */
   readonly at: string;
-  /** Who the event was about: the assignee, the reviewer asked or dismissed. */
-  readonly subject: string | null;
+  /** Who the event was about: the assignee, the reviewer asked or dismissed (a person, or a team asked to review). */
+  readonly subject: EventSubject | null;
   readonly label: string | null;
   readonly milestone: string | null;
   readonly previousTitle: string | null;
   readonly newTitle: string | null;
   readonly commit: string | null;
+}
+
+/** A person by login, or a team by its name (`org/slug` when the timeline names its organisation). */
+export interface EventSubject {
+  readonly name: string;
+  readonly team: boolean;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
@@ -50,7 +56,7 @@ export function parseTimelineEvents(payload: unknown): readonly TimelineEvent[] 
       avatarUrl: text(user.avatarUrl),
       bot: user.userType === 'USER_TYPE_BOT',
       at: text(item.timestamp),
-      subject: named(event.assigneeLogin, event.reviewerLogin, event.reviewerTeamName, event.requestedTeamName),
+      subject: subjectOf(event),
       label: named(label.name),
       milestone: named(event.milestoneTitle),
       previousTitle: named(event.previousTitle),
@@ -61,8 +67,19 @@ export function parseTimelineEvents(payload: unknown): readonly TimelineEvent[] 
   return events;
 }
 
+/**
+ * Who an event was about. A team asked to review is read from any field naming a team, whatever GitHub calls it, and a
+ * login in `org/slug` form is a team too: a team must never be linked or hovercarded as a person.
+ */
+function subjectOf(event: Record<string, unknown>): EventSubject | null {
+  const team = Object.entries(event).find(([key, value]) => /team/i.test(key) && text(value) !== '')?.[1];
+  if (team !== undefined) return { name: text(team), team: true };
+  const login = named(event.assigneeLogin, event.reviewerLogin);
+  return login === null ? null : { name: login, team: login.includes('/') };
+}
+
 /** A piece of an event's words: plain text, a branch, label or commit (`code`), a person, or a title before and after a rename. */
-export type EventPart = string | { readonly code: string } | { readonly user: string } | { readonly removed: string } | { readonly added: string };
+export type EventPart = string | { readonly code: string } | { readonly user: string } | { readonly team: string } | { readonly removed: string } | { readonly added: string };
 
 export interface EventBranches {
   readonly base: string | null;
@@ -71,8 +88,9 @@ export interface EventBranches {
 
 /** What the event did, after its actor's name, in the words GitHub's timeline uses. */
 export function eventWords(event: TimelineEvent, branches: EventBranches): readonly EventPart[] {
-  const who = event.subject;
-  const self = who !== null && who.toLowerCase() === event.login.toLowerCase();
+  const subject = event.subject;
+  const who: EventPart | null = subject === null ? null : subject.team ? { team: subject.name } : { user: subject.name };
+  const self = subject !== null && !subject.team && subject.name.toLowerCase() === event.login.toLowerCase();
   switch (event.type) {
     case 'closed':
       return ['closed this'];
@@ -87,15 +105,15 @@ export function eventWords(event: TimelineEvent, branches: EventBranches): reado
     case 'renamed':
       return event.previousTitle === null || event.newTitle === null ? ['changed the title'] : ['changed the title ', { removed: event.previousTitle }, ' ', { added: event.newTitle }];
     case 'assigned':
-      return who === null ? ['assigned someone'] : self ? ['self-assigned this'] : ['assigned ', { user: who }];
+      return who === null ? ['assigned someone'] : self ? ['self-assigned this'] : ['assigned ', who];
     case 'unassigned':
-      return who === null ? ['unassigned someone'] : self ? ['removed their assignment'] : ['unassigned ', { user: who }];
+      return who === null ? ['unassigned someone'] : self ? ['removed their assignment'] : ['unassigned ', who];
     case 'review_requested':
-      return who === null ? ['requested a review'] : ['requested a review from ', { user: who }];
+      return who === null ? ['requested a review'] : ['requested a review from ', who];
     case 'review_request_removed':
-      return who === null ? ['removed a request for review'] : ['removed the request for review from ', { user: who }];
+      return who === null ? ['removed a request for review'] : ['removed the request for review from ', who];
     case 'review_dismissed':
-      return who === null ? ['dismissed a review'] : ['dismissed ', { user: who }, '’s review'];
+      return who === null ? ['dismissed a review'] : ['dismissed ', who, '’s review'];
     case 'labeled':
       return event.label === null ? ['added a label'] : ['added the ', { code: event.label }, ' label'];
     case 'unlabeled':
@@ -142,5 +160,5 @@ export function eventState(event: TimelineEvent): ClosureKind | null {
 
 /** The plain words, for a tooltip or a screen reader. */
 export function eventText(parts: readonly EventPart[]): string {
-  return parts.map((part) => (typeof part === 'string' ? part : 'code' in part ? part.code : 'user' in part ? part.user : 'removed' in part ? part.removed : part.added)).join('');
+  return parts.map((part) => (typeof part === 'string' ? part : 'code' in part ? part.code : 'user' in part ? part.user : 'team' in part ? part.team : 'removed' in part ? part.removed : part.added)).join('');
 }

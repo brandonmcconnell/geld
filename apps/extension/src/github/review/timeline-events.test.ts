@@ -27,9 +27,17 @@ describe('parseTimelineEvents', () => {
   it('reads the pull request’s own events, leaving out deployments, force-pushes and other item types', () => {
     const events = parseTimelineEvents(page);
     expect(events.map((entry) => entry.type)).toEqual(['review_requested', 'assigned', 'closed', 'renamed', 'review_dismissed', 'labeled', 'merged', 'head_ref_deleted']);
-    expect(events[0]).toEqual({ id: 'IssueEvent_1', type: 'review_requested', login: 'sandy081', avatarUrl: user.avatarUrl, bot: false, at: '2026-10-21T16:33:46Z', subject: 'Copilot', label: null, milestone: null, previousTitle: null, newTitle: null, commit: null });
+    expect(events[0]).toEqual({ id: 'IssueEvent_1', type: 'review_requested', login: 'sandy081', avatarUrl: user.avatarUrl, bot: false, at: '2026-10-21T16:33:46Z', subject: { name: 'Copilot', team: false }, label: null, milestone: null, previousTitle: null, newTitle: null, commit: null });
     expect(events.find((entry) => entry.type === 'labeled')?.label).toBe('pkg/browser');
     expect(events.find((entry) => entry.type === 'renamed')).toMatchObject({ previousTitle: 'Agents: make it so', newTitle: 'sessions: make it so' });
+  });
+
+  it('reads a team asked to review as a team, whatever its field is called, and a login with a slash as one too', () => {
+    const teams = parseTimelineEvents({ items: [event('a', '2026-11-01T00:00:00Z', { eventType: 'review_requested', requestedTeamSlug: 'acme/core' }), event('b', '2026-11-01T00:00:00Z', { eventType: 'review_requested', reviewerLogin: 'acme/docs' })] });
+    expect(teams.map((entry) => entry.subject)).toEqual([
+      { name: 'acme/core', team: true },
+      { name: 'acme/docs', team: true },
+    ]);
   });
 
   it('reads nothing from an answer that is not a timeline page', () => {
@@ -46,15 +54,20 @@ describe('eventWords', () => {
     expect(words({ type: 'closed' })).toBe('closed this');
     expect(words({ type: 'merged' })).toBe('merged into main');
     expect(words({ type: 'head_ref_deleted' })).toBe('deleted the agents/nested-composer-reuse branch');
-    expect(words({ type: 'review_requested', subject: 'Copilot' })).toBe('requested a review from Copilot');
-    expect(words({ type: 'review_dismissed', subject: 'connor4312' })).toBe('dismissed connor4312’s review');
+    expect(words({ type: 'review_requested', subject: { name: 'Copilot', team: false } })).toBe('requested a review from Copilot');
+    expect(words({ type: 'review_dismissed', subject: { name: 'connor4312', team: false } })).toBe('dismissed connor4312’s review');
     expect(words({ type: 'labeled', label: 'pkg/browser' })).toBe('added the pkg/browser label');
     expect(words({ type: 'auto_squash_enabled' })).toBe('enabled auto-merge (squash)');
   });
 
   it('says “self-assigned” when the actor assigned themselves', () => {
-    expect(words({ type: 'assigned', login: 'sandy081', subject: 'sandy081' })).toBe('self-assigned this');
-    expect(eventWords(one({ type: 'assigned', subject: 'brandonmcconnell' }), branches)).toEqual(['assigned ', { user: 'brandonmcconnell' }]);
+    expect(words({ type: 'assigned', login: 'sandy081', subject: { name: 'sandy081', team: false } })).toBe('self-assigned this');
+    expect(eventWords(one({ type: 'assigned', subject: { name: 'brandonmcconnell', team: false } }), branches)).toEqual(['assigned ', { user: 'brandonmcconnell' }]);
+  });
+
+  it('names a team as a team, never as a person', () => {
+    expect(eventWords(one({ type: 'review_requested', subject: { name: 'acme/core', team: true } }), branches)).toEqual(['requested a review from ', { team: 'acme/core' }]);
+    expect(words({ type: 'assigned', login: 'acme/core', subject: { name: 'acme/core', team: true } })).toBe('assigned acme/core');
   });
 
   it('shows a rename as the old title struck out and the new one', () => {

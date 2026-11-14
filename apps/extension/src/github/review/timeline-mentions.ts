@@ -68,14 +68,19 @@ export function nextTimelinePage(link: string | null): string | null {
   return null;
 }
 
-/** Pages read at most: 25 items each, so the mentions and events of a long conversation's first 200 items. */
-const MAX_PAGES = 8;
+/**
+ * Pages read at most: 25 items each, so a conversation's first 1,000 items. The pages run oldest first, so a longer
+ * timeline is read without its newest items, and the reading says it is not complete.
+ */
+const MAX_PAGES = 40;
 /** A reading is kept this long before it is asked for again, since a mention or an event can land while the page is open. */
 const FRESH_MS = 5 * 60_000;
 
-interface Timeline {
+export interface Timeline {
   readonly mentions: readonly TimelineMention[];
   readonly events: readonly TimelineEvent[];
+  /** False when the timeline ran past `MAX_PAGES`: what was read is its oldest part. */
+  readonly complete: boolean;
 }
 
 interface Reading {
@@ -99,7 +104,7 @@ async function readTimeline(pullPath: string): Promise<Timeline | null> {
     events.push(...parseTimelineEvents(payload));
     next = nextTimelinePage(response.headers.get('link'));
   }
-  return { mentions, events };
+  return { mentions, events, complete: next === null };
 }
 
 /**
@@ -129,9 +134,9 @@ export function timelineMentionsFor(pullPath: string, onLanded: () => void): rea
   return timelineFor(pullPath, onLanded)?.mentions ?? null;
 }
 
-/** The pull request's own events (closed, renamed, a review requested…), on the Overview: null until the timeline has been read. */
-export function timelineEventsFor(pullPath: string, onLanded: () => void): readonly TimelineEvent[] | null {
-  return timelineFor(pullPath, onLanded)?.events ?? null;
+/** The pull request's own events (closed, renamed, a review requested…), on the Overview, and whether the whole timeline was read: null until it has been. */
+export function timelineEventsFor(pullPath: string, onLanded: () => void): Pick<Timeline, 'events' | 'complete'> | null {
+  return timelineFor(pullPath, onLanded);
 }
 
 export function resetTimelineMentions(): void {
