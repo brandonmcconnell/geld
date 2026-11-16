@@ -1649,6 +1649,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Now the triage card shows the reason with "Add an API key", a comment's Fix row says it with the same link, and a thread's Fix turns into "Add API key" (the gear, in the danger colour).
   Each opens Geld's settings at `#ai-key` (`geld:open-settings` with that section), where the options page scrolls to the gateway key field and focuses it, since the field is drawn after the page's own jump to the hash.
   The state stands until a key is saved (`aiKeyItem.watch`) or a later click finds one, and nothing is stored or counted as a failed run.
+  The notice stands above what an earlier run left, its fixes included, since applying them goes through GitHub and needs no key.
+  Saving a key draws the digest again (`onAiKeyChange`), and a chat's Fix that found no key is forgotten once the state no longer needs one, so its control is Fix again.
   **The triage reads what the Review bots row counts, not only open threads** (`unthreadedFindings`, `unthreadedInputs` in consolidate.ts): findings a bot's latest review holds with no thread (CodeRabbit's outside-diff comments and failed pre-merge checks) are work, so the AI control is offered (`nothing` only with neither) and the TL;DR is asked about them.
   They are the verdict's own record (`BotVerdictRecord.unthreaded`: the count, the review that holds them and a digest of its words, set by `verdictsFrom` from `ParsedBotBody.unthreaded`), never the verdict's count less the threads in view, which a capped item list (`max-items`), a thread marked done by hand or threads of two bots merged into one row miscount;
   the record travels in the Action's payload too.

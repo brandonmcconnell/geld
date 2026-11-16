@@ -485,4 +485,20 @@ describe('a run asked for with no API key on this device', () => {
     await fixFromComments(meta, [bug], settings, () => undefined, source, { threads: [bug.anchor], comment: null });
     expect(aiStateFor(meta, [bug], settings).kind).not.toBe('needs-key');
   });
+
+  it('keeps the fixes an earlier run wrote while it asks for a key, since applying them needs none', async () => {
+    stored.set('local:aiRuns', {
+      'github:/o/r/pull/11': {
+        ranAt: at,
+        rewrites: [],
+        seen: [bug.anchor],
+        suggestions: [{ key: bug.anchor, threads: [bug.anchor], headSha: 'head1', path: 'src/b.ts', start: 3, end: 3, original: ['c'], replacement: ['C'], summary: 'Fixes it.', state: 'open', sources: [bug.anchor] }],
+      },
+    });
+    await fresh();
+    const meta = metaFor([bug]);
+    await runAi(meta, [bug], settings, () => undefined, source);
+    expect(aiStateFor(meta, [bug], settings).kind).toBe('needs-key');
+    expect(triageSuggestions(meta, settings).map(({ entry }) => entry.replacement)).toEqual([['C']]);
+  });
 });

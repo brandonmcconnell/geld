@@ -1506,11 +1506,9 @@ function triageCard(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
   }
   if (triage?.collapsed === true && state.kind === 'current') return null;
   const card = createElement('div', { class: `${PANEL_CLASS}__triage`, 'aria-label': 'Geld AI triage', role: 'region' });
-  if (state.kind === 'needs-key') {
-    card.append(aiNoticeRow(NO_KEY_REASON, 'Add an API key', () => handlers.onOpenAiSettings(), 'danger', 'triage-add-key'));
-    return card;
-  }
-  if (state.kind === 'failed') card.append(aiNoticeRow(aiFailureText(state), 'Try again', () => handlers.onRunAi(), 'danger', 'triage-rerun'));
+  // Above whatever a run left: its fixes apply through GitHub with no key, so they stay.
+  if (state.kind === 'needs-key') card.append(aiNoticeRow(NO_KEY_REASON, 'Add an API key', () => handlers.onOpenAiSettings(), 'danger', 'triage-add-key'));
+  else if (state.kind === 'failed') card.append(aiNoticeRow(aiFailureText(state), 'Try again', () => handlers.onRunAi(), 'danger', 'triage-rerun'));
   else if (state.kind === 'stale') {
     const ago = ranAgo(state.ranAt);
     const text = state.reason === 'commits' ? `New commits since the triage ${ago}. Its fixes may no longer fit.` : state.reason === 'both' ? `New commits and comments since the triage ${ago}. Its fixes may no longer fit.` : `New comments or threads since the triage ${ago}.`;

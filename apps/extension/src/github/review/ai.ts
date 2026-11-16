@@ -112,9 +112,17 @@ export function aiSwitchedOn(settings: GeldSettings): boolean {
   return settings.aiEnabled && settings.aiBaseUrl !== '' && settings.aiModel !== '' && !isEvaluationModel(settings.aiModel);
 }
 
+const keyListeners = new Set<() => void>();
+
+/** Run `listener` whenever the API key on this device changes, so a panel waiting on one draws again. */
+export function onAiKeyChange(listener: () => void): void {
+  keyListeners.add(listener);
+}
+
 aiKeyItem.watch(() => {
   // Read again at the next click: a key saved in the settings tab since is the one it finds.
   keyMissing = false;
+  for (const listener of keyListeners) listener();
 });
 
 /**
