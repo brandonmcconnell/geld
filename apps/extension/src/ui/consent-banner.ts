@@ -97,5 +97,13 @@ export function mountConsentBanner(host: HTMLElement, initial: GeldSettings): vo
     host.append(alert);
   };
   render(initial);
-  settingsItem.watch((next) => render(next));
+  let changed = false;
+  settingsItem.watch((next) => {
+    changed = true;
+    render(next);
+  });
+  // `initial` may have been read before the watch existed, so an answer stored in between would otherwise go unseen.
+  void settingsItem.getValue().then((current) => {
+    if (!changed) render(current);
+  });
 }
