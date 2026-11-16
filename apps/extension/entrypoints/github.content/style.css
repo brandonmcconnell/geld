@@ -6677,6 +6677,26 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   margin-top: 0 !important;
 }
 
+/*
+ * The events row reads glyph, picture, words 10px apart (`.geld-review__row` gap), so its lines do too: each line's
+ * badge, picture and words stand under the row's (picture at 42px, words at 72px) where they sat 2px and 4px left.
+ */
+.geld-review__slot[data-geld-slot='fold:events'] .geld-review__qv .TimelineItem {
+  column-gap: 10px !important;
+}
+
+.geld-review__slot[data-geld-slot='fold:events'] .geld-review__event {
+  column-gap: 10px;
+}
+
+.geld-review__slot[data-geld-slot='fold:events'] .geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body .flex-shrink-0.mr-1 {
+  margin-right: 10px !important;
+}
+
+.geld-review__slot[data-geld-slot='fold:events'] .geld-review__qv .TimelineItem:has(> .TimelineItem-badge) .TimelineItem-body:has(> a:not([data-geld-event-hidden]) > .avatar) {
+  padding-left: 30px;
+}
+
 /* The CI checks list fills its area edge to edge and keeps GitHub's own scroll height. */
 .geld-review__slot[data-kind='checks'] .geld-review__slot-body {
   padding: 0;
@@ -8683,8 +8703,8 @@ a.geld-review__rerun:hover {
 }
 
 /*
- * An event line (the Overview's events, read from data), set as the conversation's event rows are in the digest: the
- * 16px glyph in the rows' glyph column, 8px to the 20px picture, 8px to the words, 28px lines, 12px type.
+ * An event line (the Overview's events, read from data), set under the events row: the 16px glyph in the rows' glyph
+ * column, 10px to the 20px picture, 10px to the words (the row's own spacing), 28px lines, 12px type.
  */
 .geld-review__activity-events {
   margin: 0;
@@ -8695,7 +8715,7 @@ a.geld-review__rerun:hover {
 .geld-review__activity-event {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-height: 28px;
   font-size: 12px;
 }
