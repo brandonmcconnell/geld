@@ -315,4 +315,10 @@ describe('a refusal as Geld reports it', () => {
     expect(providerWordsOnly('Model acme-secret-proj does not exist', new Set())).toBe('Model … does not exist');
     expect(providerWordsOnly('Unknown field customer payroll ledger', new Set())).toBe('Unknown field …');
   });
+
+  it('leaves out words in every writing system, and every symbol', () => {
+    expect(providerWordsOnly('Invalid input near: 顧客の秘密情報', new Set())).toBe('Invalid input near: …');
+    expect(providerWordsOnly('Invalid input near: Größe ١٢٣٤ 🔒 café', new Set())).toBe('Invalid input near: …');
+    expect(providerWordsOnly('Invalid value: “Müller”', new Set())).toBe('Invalid value: …');
+  });
 });

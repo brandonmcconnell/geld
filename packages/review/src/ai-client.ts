@@ -201,12 +201,16 @@ export function vocabularyOf(...values: readonly unknown[]): ReadonlySet<string>
 /**
  * A provider's words with everything but known words left out: a word stays when it is one provider refusals are made
  * of or one Geld itself sent (`own`), a number when it has at most three digits (a status code, a limit), and the rest
- * becomes "…". Punctuation stays, so the shape of the message reads.
+ * becomes "…", in any writing system. ASCII punctuation stays, so the shape of the message reads.
  */
 export function providerWordsOnly(text: string, own: ReadonlySet<string>): string {
-  return text
-    .replace(/[A-Za-z_][A-Za-z0-9_]*|\d+/g, (token) => (/^\d+$/.test(token) ? (token.length <= 3 ? token : '…') : PROVIDER_WORDS.has(token.toLowerCase()) || own.has(token.toLowerCase()) ? token : '…'))
-    .replace(/…(?:[\s./-]*…)+/g, '…');
+  return (
+    text
+      .replace(/[\p{L}\p{M}_][\p{L}\p{M}\p{N}_]*|\p{N}+/gu, (token) => (/^[0-9]+$/.test(token) ? (token.length <= 3 ? token : '…') : PROVIDER_WORDS.has(token.toLowerCase()) || own.has(token.toLowerCase()) ? token : '…'))
+      // What is left beside the kept words is punctuation: anything outside printable ASCII (a symbol, an emoji, a word the pattern above split) goes too.
+      .replace(/[^\x20-\x7E\t\n…]+/gu, '…')
+      .replace(/…(?:[\s./-]*…)+/g, '…')
+  );
 }
 
 /**

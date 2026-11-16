@@ -25,9 +25,14 @@ describe('forwarding events to PostHog', () => {
       api_key: 'phc_key',
       batch: [
         { event: 'extension_error', properties: { where: 'background:ai', message: 'Completion failed (400)', $process_person_profile: false, $geoip_disable: true } },
-        { event: 'extension_error', properties: { where: 'content:pass' } },
+        { event: 'extension_error', properties: { where: 'content:pass', $process_person_profile: false, $geoip_disable: true } },
       ],
     });
+    const body = calls[0]?.body;
+    const ids = isBatch(body) ? body.batch.map((event) => event.properties.distinct_id) : [];
+    expect(ids).toHaveLength(2);
+    expect(ids.every((id) => typeof id === 'string' && id !== '')).toBe(true);
+    expect(ids[0]).not.toBe(ids[1]);
   });
 
   it('says why PostHog did not take a batch', async () => {
@@ -40,3 +45,13 @@ describe('forwarding events to PostHog', () => {
     expect(postHogKey()).toBeNull();
   });
 });
+
+function isBatch(value: unknown): value is { readonly batch: ReadonlyArray<{ readonly properties: { readonly distinct_id: unknown } }> } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'batch' in value &&
+    Array.isArray(value.batch) &&
+    value.batch.every((event: unknown) => typeof event === 'object' && event !== null && 'properties' in event && typeof event.properties === 'object' && event.properties !== null && 'distinct_id' in event.properties)
+  );
+}

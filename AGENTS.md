@@ -2257,6 +2257,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Every word is let through on its own, never by the refusal's kind, since a gateway may quote the request under any kind (`providerWordsOnly` in ai-client.ts: "Invalid input near: model privatePayroll = 125000" is classed `model`).
   A word stays when it is in `PROVIDER_WORDS`, the words error messages are made of, or in what Geld itself sent (`vocabularyOf`: the step, the completion's JSON schema and the model, never the messages or a decision's state, which hold the pull request), a number when it has at most three digits, and anything else becomes "…": the schema refusal above goes whole and that one as "Invalid input near: model … = …".
   A new provider wording that reads as gaps is taught by adding its words to `PROVIDER_WORDS`.
+  Words are read in every writing system (`\p{L}`), and anything left beside them that is not printable ASCII goes too, since an ASCII-only reading let Japanese text through whole.
   A message is cut at 600 characters (`MAX_ERROR_MESSAGE`), room for a provider's refusal, so a send carries only the reports that fit in 60 KiB (`fittingReports`, `MAX_PAYLOAD_BYTES`, under the route's 64 KiB, which a no-cors send cannot see refused) and the rest wait for the next.
   A report's times must be ones a date can hold (`isTime`), or the route's date conversion would throw.
   The privacy policy's extension section (`@geld/domain/privacy.ts`) says exactly what is sent: keep it in step with `ErrorReport`.
