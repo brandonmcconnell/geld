@@ -3499,7 +3499,7 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 .geld-review__triage-glyph {
   display: inline-flex;
   flex: 0 0 auto;
-  padding-top: 2px;
+  padding-top: 3.5px;
   color: var(--geld-review-accent);
 }
 
@@ -3508,11 +3508,14 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   height: 14px;
 }
 
+/* The triage's prose reads as a PR description and the chat's bubbles do: GitHub's `markdown-body`, 14px at 1.5. */
 .geld-review__triage-text {
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
   color: var(--fgColor-default, var(--color-fg-default));
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .geld-review__triage-text code,
@@ -3733,16 +3736,21 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
 }
 
 .geld-review__triage-fix-body {
-  padding: 8px 10px 10px;
+  padding: 10px;
   border-top: 1px solid var(--geld-review-border-muted);
+}
+
+/* The last block's own margin would stand over the padding, leaving more room under the content than over it. */
+.geld-review__triage-fix-body > :last-child {
+  margin-bottom: 0;
 }
 
 .geld-review__triage-fix-summary,
 .geld-review__triage-fix-note,
 .geld-review__triage-fix-error {
   margin: 0 0 8px;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .geld-review__triage-fix-note {
