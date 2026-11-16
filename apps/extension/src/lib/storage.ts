@@ -14,8 +14,21 @@ const rawSettingsItem = storage.defineItem<GeldSettings>(SETTINGS_STORAGE_KEY, {
 /** Writes are serialised so two quick toggles cannot overwrite each other. */
 let writeQueue: Promise<unknown> = Promise.resolve();
 
+/**
+ * The queue above is one page's: the popup, the options page and the background each have their own, and each write
+ * reads and writes the whole settings object, so a write from one page landing between another's read and write was
+ * lost (the privacy answer, say, put back unanswered). A Web Lock, shared by every page of the extension's origin,
+ * holds the whole read and write.
+ */
+function locked<T>(task: () => Promise<T>): Promise<T> {
+  if (typeof navigator === 'undefined' || !('locks' in navigator)) return task();
+  // The DOM typings give `request` the callback's own return type, a promise, though the lock resolves it.
+  return navigator.locks.request('geld:settings', task).then((result) => result);
+}
+
 function enqueue<T>(task: () => Promise<T>): Promise<T> {
-  const run = writeQueue.then(task, task);
+  const held = (): Promise<T> => locked(task);
+  const run = writeQueue.then(held, held);
   writeQueue = run.catch(() => undefined);
   return run;
 }
