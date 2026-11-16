@@ -25,6 +25,7 @@ import { authorLabels, botDetail, botHealth, checkStateOfRun, checksHealth, chec
 import type { CheckCounts, CheckState, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
 import type { AiState } from './ai';
+import { NO_KEY_REASON } from '../../lib/ai-key';
 import type { SyntaxPiece } from './snippet-syntax';
 import { highlightLines, snippetLanguage } from './snippet-syntax';
 import type { AiStep } from '../../lib/local-state';
@@ -557,6 +558,8 @@ export interface PanelHandlers {
   readonly onApproveWorkflows: () => void;
   /** Run the model for this pull request now (the AI control). */
   readonly onRunAi: () => void;
+  /** Geld's settings at the AI gateway key, for a run that found none on this device. */
+  readonly onOpenAiSettings: () => void;
   /** Forget this device's run: the repository's Action writes the digest with AI now. */
   readonly onClearAi: () => void;
   /** Show or hide the triage card (the AI control, once nothing new is left to triage). */
@@ -1422,10 +1425,12 @@ function ranAgo(iso: string): string {
  */
 function aiButton(state: AiState, handlers: PanelHandlers): HTMLElement | null {
   if (state.kind === 'off' || state.kind === 'app') return null;
-  const label = state.kind === 'ready' ? 'Triage with AI' : state.kind === 'nothing' ? 'Nothing to triage' : state.kind === 'running' ? 'AI is reading…' : `AI · ${ranAgo(state.ranAt)}`;
+  const label = state.kind === 'ready' || state.kind === 'needs-key' ? 'Triage with AI' : state.kind === 'nothing' ? 'Nothing to triage' : state.kind === 'running' ? 'AI is reading…' : `AI · ${ranAgo(state.ranAt)}`;
   const title =
     state.kind === 'ready'
       ? 'Ask the model what the open threads and the bots’ other findings need, with fixes to preview and apply. Kept on this device only.'
+      : state.kind === 'needs-key'
+        ? NO_KEY_REASON
       : state.kind === 'nothing'
         ? 'AI titles open review threads and summarizes what is still open. No review thread is open here and no bot reports findings outside one, so there is nothing to ask it.'
         : state.kind === 'running'
@@ -1501,7 +1506,9 @@ function triageCard(model: PanelModel, handlers: PanelHandlers): HTMLElement | n
   }
   if (triage?.collapsed === true && state.kind === 'current') return null;
   const card = createElement('div', { class: `${PANEL_CLASS}__triage`, 'aria-label': 'Geld AI triage', role: 'region' });
-  if (state.kind === 'failed') card.append(aiNoticeRow(aiFailureText(state), 'Try again', () => handlers.onRunAi(), 'danger', 'triage-rerun'));
+  // Above whatever a run left: its fixes apply through GitHub with no key, so they stay.
+  if (state.kind === 'needs-key') card.append(aiNoticeRow(NO_KEY_REASON, 'Add an API key', () => handlers.onOpenAiSettings(), 'danger', 'triage-add-key'));
+  else if (state.kind === 'failed') card.append(aiNoticeRow(aiFailureText(state), 'Try again', () => handlers.onRunAi(), 'danger', 'triage-rerun'));
   else if (state.kind === 'stale') {
     const ago = ranAgo(state.ranAt);
     const text = state.reason === 'commits' ? `New commits since the triage ${ago}. Its fixes may no longer fit.` : state.reason === 'both' ? `New commits and comments since the triage ${ago}. Its fixes may no longer fit.` : `New comments or threads since the triage ${ago}.`;

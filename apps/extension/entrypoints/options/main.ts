@@ -53,6 +53,7 @@ import { formatDiagnostics, readDiagnostics } from '../../src/lib/diagnostics';
 import { collectTabPerf } from '../../src/lib/perf-report';
 import { settingsItem } from '../../src/lib/storage';
 import type { JevSource } from '../../src/lib/local-state';
+import { AI_KEY_SECTION } from '../../src/lib/ai-key';
 import { aiGatewayItem, aiKeyItem, cursorKeyItem, jevKeyItem, jevSourceItem } from '../../src/lib/local-state';
 import type { CursorRequest } from '../../src/lib/chat-messages';
 import { CURSOR_ORIGIN, isCursorMeReply } from '../../src/lib/chat-messages';
@@ -796,6 +797,7 @@ async function main(): Promise<void> {
   let reviewBotsArea: HTMLTextAreaElement | null = null;
   const aiFieldKeys = new Set<string>(['aiEnabled', 'aiBaseUrl', 'aiModel', 'aiJev', 'aiDecisionModel']);
   let aiRendered = false;
+  let keyFieldShown = false;
   for (const field of reviewSection?.fields ?? []) {
     if ('key' in field && aiFieldKeys.has(field.key)) {
       if (!aiRendered) {
@@ -1068,6 +1070,14 @@ async function main(): Promise<void> {
       void refreshModels();
     });
     block([el('div', 'options__field-head', [keyLabel, keyHelp]), keyInput, el('div', 'geld-row options__actions', [keyStatusEl, keySave])]);
+    // Opened from a triage that found no key (`#ai-key`): the field is drawn after the page's own jump to the hash, so go to it here, once.
+    if (location.hash === `#${AI_KEY_SECTION}` && !keyFieldShown) {
+      keyFieldShown = true;
+      requestAnimationFrame(() => {
+        keyInput.scrollIntoView({ block: 'center' });
+        keyInput.focus({ preventScroll: true });
+      });
+    }
 
     /* Writing model: a combobox over the gateway's list, disabled with a reason until URL and key are both there. */
     const modelHead = fieldHead(modelField);

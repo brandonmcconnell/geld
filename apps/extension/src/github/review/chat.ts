@@ -17,7 +17,8 @@
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { authorOf } from './crawler';
 import { fitPathInto } from './path-fit';
-import { ICON_CHECK_CIRCLE, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_FILE_SYMLINK_FILE, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_PIN_FILL, ICON_SPARKLE_FILL, ICON_SPINNER, ICON_SYNC, ICON_X } from '../ui/icons';
+import { ICON_CHECK_CIRCLE, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_FILE_SYMLINK_FILE, ICON_GEAR, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_PIN_FILL, ICON_SPARKLE_FILL, ICON_SPINNER, ICON_SYNC, ICON_X } from '../ui/icons';
+import { NO_KEY_REASON } from '../../lib/ai-key';
 import { ATTR_WHO } from './hovercard';
 import { ATTR_EDITED_FOR, ATTR_TIME_FOR } from './panel';
 import { dropOrphanedLoans, isTeleported, moveNode, onRestore, ownedBy, restoreAll, teleportedNodes, teleportInto } from './teleport';
@@ -108,7 +109,10 @@ export interface ChatFix {
   readonly applying: boolean;
   /** Why the model gave no answer, said on the control: Fix asks again. */
   readonly error?: string;
+  /** No API key on this device: the control leads to Geld's settings instead. */
+  readonly needsKey?: boolean;
   readonly onFix: () => void;
+  readonly onAddKey: () => void;
 }
 
 /** What a comment's Fix asks for: its own findings outside its threads, the threads it came with, or both. */
@@ -123,7 +127,10 @@ export interface CommentFix {
   /** The choice being written or last written, so its button is the one that says so. */
   readonly scope: CommentFixScope | null;
   readonly error?: string;
+  /** No API key on this device: the row says so with a way to Geld's settings. */
+  readonly needsKey?: boolean;
   readonly onFix: (scope: CommentFixScope) => void;
+  readonly onAddKey: () => void;
 }
 
 const FIX_WORDS: Readonly<Record<ChatFixState, string>> = {
@@ -135,6 +142,11 @@ const FIX_WORDS: Readonly<Record<ChatFixState, string>> = {
 
 /** A thread chat's Fix, in Rerun's box: the sparkle and the word, GitHub's spinner in the sparkle's place while it is written. */
 function threadFixControl(fix: ChatFix): HTMLElement {
+  if (fix.state === 'failed' && fix.needsKey === true) {
+    const add = createElement('button', { type: 'button', class: 'geld-review__rerun geld-review__chat-fix', title: NO_KEY_REASON, 'data-state': 'needs-key' }, [icon(ICON_GEAR), createElement('span', {}, ['Add API key'])]);
+    add.addEventListener('click', () => fix.onAddKey());
+    return add;
+  }
   const running = fix.state === 'running';
   const words = fix.state === 'failed' && fix.error !== undefined ? `The model could not answer: ${fix.error} Fix asks again.` : FIX_WORDS[fix.state];
   const button = createElement('button', { type: 'button', class: 'geld-review__rerun geld-review__chat-fix', title: fix.applying ? 'Its fix is being applied' : words, 'data-state': fix.state, ...(running ? { 'data-running': '', disabled: '', 'aria-busy': 'true' } : fix.applying ? { disabled: '' } : {}) }, [icon(ICON_SPARKLE_FILL), icon(ICON_SPINNER), createElement('span', {}, ['Fix'])]);
@@ -164,7 +176,11 @@ function commentFixRow(fix: CommentFix): HTMLElement {
     group.append(button);
   }
   const row = createElement('div', { class: 'geld-review__chat-fix-row', 'data-state': fix.state }, [createElement('span', { class: 'geld-review__chat-fix-label' }, ['Fix:']), group]);
-  if (fix.state === 'done' || fix.state === 'failed') row.append(createElement('span', { class: 'geld-review__chat-fix-note', role: 'status' }, [fix.state === 'done' ? 'In the triage at the top of the digest.' : fix.error === undefined ? FIX_WORDS.failed : `The model could not answer: ${fix.error}`]));
+  if (fix.state === 'failed' && fix.needsKey === true) {
+    const add = createElement('button', { type: 'button', class: 'geld-review__chat-fix-link' }, ['Add an API key']);
+    add.addEventListener('click', () => fix.onAddKey());
+    row.append(createElement('span', { class: 'geld-review__chat-fix-note', 'data-tone': 'danger', role: 'alert' }, [NO_KEY_REASON, ' ', add]));
+  } else if (fix.state === 'done' || fix.state === 'failed') row.append(createElement('span', { class: 'geld-review__chat-fix-note', role: 'status' }, [fix.state === 'done' ? 'In the triage at the top of the digest.' : fix.error === undefined ? FIX_WORDS.failed : `The model could not answer: ${fix.error}`]));
   return row;
 }
 

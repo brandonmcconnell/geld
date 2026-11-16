@@ -23,7 +23,9 @@ import { clickResolve, copyText, focusReply, resolveIfOpen, isResolvable, openRe
 import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, commitsInRow, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, revisionMarker, THREAD_SELECTOR, TIMELINE_ROW } from './crawler';
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
-import { adoptOwnReplies, aiPending, aiStateFor, clearAiForPage, discardSuggestion, fixFromComments, jevDecisionsFor, loadAiForPage, markSuggestionApplied, markSuggestionPosted, pendingReplyFor, previewDecisionKey, runAi, threadKeyOf, triageFixesOn, triageNoteFor, triageSuggestions, withAi, withJevDone } from './ai';
+import type { FixRun } from './ai';
+import { AI_KEY_SECTION } from '../../lib/ai-key';
+import { adoptOwnReplies, aiPending, onAiKeyChange, aiStateFor, clearAiForPage, discardSuggestion, fixFromComments, jevDecisionsFor, loadAiForPage, markSuggestionApplied, markSuggestionPosted, pendingReplyFor, previewDecisionKey, runAi, threadKeyOf, triageFixesOn, triageNoteFor, triageSuggestions, withAi, withJevDone } from './ai';
 import type { AiState, FixScope, SuggestionSource, SuggestionTarget } from './ai';
 import { applyFixes, splitOverlapping } from './apply-suggestion';
 import { agentComment, agentLikely, agentsInRelatedLinks, agentTask, CODING_AGENTS, codingAgentById, diffHunks, lineDiff, OPEN_TARGETS, openTargetById, openTargetLikely, recommendAgents } from '@geld/review';
@@ -213,6 +215,14 @@ interface VisitState {
   triage: TriageVisit;
 }
 
+/** How a chat's Fix ask last ended, kept for the visit so its control says so. */
+interface AskedChatFix {
+  readonly state: ChatFixState;
+  readonly scope: CommentFixScope | null;
+  readonly error?: string;
+  readonly needsKey?: boolean;
+}
+
 interface TriageVisit {
   openKey: string | null;
   collapsed: boolean;
@@ -220,7 +230,7 @@ interface TriageVisit {
   readonly errors: Map<string, string>;
   handedOff: HandedOff | null;
   /** Fixes asked for from a chat, by the thread's key or the comment's anchor, and the choice a comment's was asked with. */
-  readonly chatFixes: Map<string, { readonly state: ChatFixState; readonly scope: CommentFixScope | null; readonly error?: string }>;
+  readonly chatFixes: Map<string, AskedChatFix>;
 }
 
 /** What the last hand-off did, said under the card, and the finding whose task to offer copying again when a copy failed. */
@@ -1718,6 +1728,9 @@ function reapplySoon(): void {
   }, 150);
 }
 
+// A key saved in the settings while the digest says one is missing: draw again, so the notice and the chat's Fix go.
+onAiKeyChange(reapplySoon);
+
 let reapplyAtTimer: number | null = null;
 let reapplyAtDue = Number.POSITIVE_INFINITY;
 
@@ -2689,7 +2702,7 @@ function originAuthor(author: string, settings: GeldSettings): string {
 
 /** The triage card's reading: the fixes to show, who to hand the rest to, and what this visit did with them. */
 function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, prAuthor: string | null, knownBots: ReadonlySet<string>): TriageView | null {
-  if (ai.kind !== 'current' && ai.kind !== 'stale' && ai.kind !== 'failed' && ai.kind !== 'running') return null;
+  if (ai.kind !== 'current' && ai.kind !== 'stale' && ai.kind !== 'failed' && ai.kind !== 'running' && ai.kind !== 'needs-key') return null;
   const viewer = document.querySelector('meta[name="user-login"]')?.getAttribute('content') ?? '';
   const services = relatedLinksOnPage(reapplySoon)
     .filter((link) => link.kind === 'agent')
@@ -4064,6 +4077,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     const asked = new Set(threads);
     return triageSuggestions(meta, settings).flatMap(({ entry }) => (entry.threads.some((thread) => asked.has(thread)) ? [entry.key] : []));
   };
+  const openAiSettings = (): void => {
+    const message: OpenSettingsMessage = { type: 'geld:open-settings', section: AI_KEY_SECTION };
+    void browser.runtime.sendMessage(message).catch(() => undefined);
+  };
   const askFix = (key: string, scope: CommentFixScope | null, ask: FixScope): void => {
     const triage = visit.triage;
     // A fix being applied, or written afresh by another ask, and this ask would each record over the other: one at a time.
@@ -4076,9 +4093,9 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     const headSha = meta.headSha;
     const source: SuggestionSource = { pull: pullIntent(), target: (item) => suggestionTarget(item, rawComments, headSha) };
     // However the request ends, its fixes are free to apply again: a mark left by a request that threw held Apply for good.
-    const settle = (run: { readonly changed: boolean; readonly failed: boolean; readonly reason?: string }): void => {
+    const settle = (run: FixRun): void => {
       for (const entry of rewriting) if (triage.busy.get(entry) === 'writing') triage.busy.delete(entry);
-      triage.chatFixes.set(key, { state: !run.changed ? 'idle' : run.failed ? 'failed' : 'done', scope, ...(run.reason === undefined ? {} : { error: run.reason }) });
+      triage.chatFixes.set(key, { state: !run.changed ? 'idle' : run.failed ? 'failed' : 'done', scope, ...(run.reason === undefined ? {} : { error: run.reason }), ...(run.needsKey === true ? { needsKey: true } : {}) });
       reapply();
     };
     void fixFromComments(meta, rawComments, settings, reapply, source, ask).then(settle, () => settle({ changed: true, failed: true, reason: 'The request did not finish.' }));
@@ -4088,14 +4105,19 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === anchor));
     return item === undefined || !isOpenStatus(item.status) || item.path === undefined || threadKeyOf(item) === '' ? null : item;
   };
+  // An ask that found no key is forgotten once one is saved: its control is Fix again, not Add API key.
+  const askedFix = (key: string): AskedChatFix | undefined => {
+    const asked = visit.triage.chatFixes.get(key);
+    return asked?.needsKey === true && aiStateFor(meta, rawComments, settings).kind !== 'needs-key' ? undefined : asked;
+  };
   const threadFixOf = (thread: HTMLElement): ChatFix | null => {
     if (!chatFixesOn()) return null;
     const item = fixableItemAt(threadAnchorOf(thread));
     if (item === null) return null;
     const key = threadKeyOf(item);
-    const asked = visit.triage.chatFixes.get(key);
+    const asked = askedFix(key);
     const applying = fixesFor([key]).some((entry) => visit.triage.busy.get(entry) === 'fix');
-    return { state: asked?.state ?? 'idle', applying, ...(asked?.error === undefined ? {} : { error: asked.error }), onFix: () => askFix(key, null, { threads: [key], comment: null }) };
+    return { state: asked?.state ?? 'idle', applying, ...(asked?.error === undefined ? {} : { error: asked.error }), ...(asked?.needsKey === true ? { needsKey: true } : {}), onFix: () => askFix(key, null, { threads: [key], comment: null }), onAddKey: openAiSettings };
   };
   const commentFixOf = (anchor: string, author: string, links: readonly ChatThreadLink[]): CommentFix | null => {
     if (!chatFixesOn()) return null;
@@ -4107,13 +4129,15 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     });
     const keys = [...new Set(items.map(threadKeyOf))];
     const titles = links.map((link) => meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === link.anchor))?.title ?? link.preview).filter((title) => title !== '');
-    const asked = visit.triage.chatFixes.get(anchor);
+    const asked = askedFix(anchor);
     return {
       threads: keys.length,
       applying: fixesFor(keys).some((entry) => visit.triage.busy.get(entry) === 'fix'),
       state: asked?.state ?? 'idle',
       scope: asked?.scope ?? null,
       ...(asked?.error === undefined ? {} : { error: asked.error }),
+      ...(asked?.needsKey === true ? { needsKey: true } : {}),
+      onAddKey: openAiSettings,
       onFix: (scope) => askFix(anchor, scope, { threads: scope === 'comment' ? [] : keys, comment: scope === 'threads' ? null : { anchor, author, text, threads: titles } }),
     };
   };
@@ -4364,6 +4388,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       button.click();
       window.setTimeout(reapplySoon, 800);
     },
+    onOpenAiSettings: () => openAiSettings(),
     onRunAi: () => {
       visit.triage.collapsed = false;
       const headSha = meta.headSha;
