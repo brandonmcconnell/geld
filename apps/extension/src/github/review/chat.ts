@@ -17,7 +17,7 @@
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { authorOf } from './crawler';
 import { fitPathInto } from './path-fit';
-import { ICON_CHECK_CIRCLE, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_FILE_SYMLINK_FILE, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_PIN_FILL, ICON_SPINNER, ICON_SYNC, ICON_X } from '../ui/icons';
+import { ICON_CHECK_CIRCLE, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_FILE_SYMLINK_FILE, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_PIN_FILL, ICON_SPARKLE_FILL, ICON_SPINNER, ICON_SYNC, ICON_X } from '../ui/icons';
 import { ATTR_WHO } from './hovercard';
 import { ATTR_EDITED_FOR, ATTR_TIME_FOR } from './panel';
 import { dropOrphanedLoans, isTeleported, moveNode, onRestore, ownedBy, restoreAll, teleportedNodes, teleportInto } from './teleport';
@@ -95,6 +95,77 @@ export interface ChatHandlers {
   readonly onToggleSource: (thread: HTMLElement) => void;
   /** Open a comment by its anchor where the panel keeps it (the bot's current word, from "See latest"). */
   readonly onOpenAnchor: (anchor: string) => void;
+  /** The thread's Fix, asking the AI triage for a fix for it; null where the triage cannot write one (AI off, no file). */
+  readonly fixOf?: (thread: HTMLElement) => ChatFix | null;
+}
+
+/** Where a fix asked for from a chat stands: being written, then in the triage at the top of the digest. */
+export type ChatFixState = 'idle' | 'running' | 'done' | 'failed';
+
+export interface ChatFix {
+  readonly state: ChatFixState;
+  /** Its fix is being applied: asking afresh waits until that lands, or the two would record over each other. */
+  readonly applying: boolean;
+  /** Why the model gave no answer, said on the control: Fix asks again. */
+  readonly error?: string;
+  readonly onFix: () => void;
+}
+
+/** What a comment's Fix asks for: its own findings outside its threads, the threads it came with, or both. */
+export type CommentFixScope = 'comment' | 'threads' | 'both';
+
+export interface CommentFix {
+  /** Its open threads a fix can be written for; with none, only This comment is offered. */
+  readonly threads: number;
+  readonly state: ChatFixState;
+  /** One of its threads' fixes is being applied: Threads and Both wait until that lands. */
+  readonly applying: boolean;
+  /** The choice being written or last written, so its button is the one that says so. */
+  readonly scope: CommentFixScope | null;
+  readonly error?: string;
+  readonly onFix: (scope: CommentFixScope) => void;
+}
+
+const FIX_WORDS: Readonly<Record<ChatFixState, string>> = {
+  idle: 'Ask the AI triage for a fix. It appears in the triage at the top of the digest.',
+  running: 'The AI triage is writing the fix.',
+  done: 'The fix is in the triage at the top of the digest. Fix again to write it afresh.',
+  failed: 'The model could not answer. Try again.',
+};
+
+/** A thread chat's Fix, in Rerun's box: the sparkle and the word, GitHub's spinner in the sparkle's place while it is written. */
+function threadFixControl(fix: ChatFix): HTMLElement {
+  const running = fix.state === 'running';
+  const words = fix.state === 'failed' && fix.error !== undefined ? `The model could not answer: ${fix.error} Fix asks again.` : FIX_WORDS[fix.state];
+  const button = createElement('button', { type: 'button', class: 'geld-review__rerun geld-review__chat-fix', title: fix.applying ? 'Its fix is being applied' : words, 'data-state': fix.state, ...(running ? { 'data-running': '', disabled: '', 'aria-busy': 'true' } : fix.applying ? { disabled: '' } : {}) }, [icon(ICON_SPARKLE_FILL), icon(ICON_SPINNER), createElement('span', {}, ['Fix'])]);
+  button.addEventListener('click', () => fix.onFix());
+  return button;
+}
+
+/** A comment chat's Fix row: "Fix:", then This comment, Threads and Both (the primary) as buttons of their own. */
+function commentFixRow(fix: CommentFix): HTMLElement {
+  const running = fix.state === 'running';
+  const threads = fix.threads === 1 ? 'its thread' : `its ${fix.threads} threads`;
+  const choices: ReadonlyArray<readonly [CommentFixScope, string, string]> =
+    fix.threads === 0
+      ? [['comment', 'This comment', 'What this comment asks for, as tasks for an agent']]
+      : [
+          ['comment', 'This comment', 'What this comment asks for outside its threads (findings outside the diff, failed checks), as tasks for an agent'],
+          ['threads', 'Threads', `A fix for ${threads}, to apply as a suggestion`],
+          ['both', 'Both', `What this comment asks for and a fix for ${threads}`],
+        ];
+  const group = createElement('div', { class: 'geld-review__chat-fix-choices', role: 'group', 'aria-label': 'Fix' });
+  for (const [scope, label, title] of choices) {
+    const primary = scope === 'both' || fix.threads === 0;
+    const pressed = running && fix.scope === scope;
+    const waits = fix.applying && scope !== 'comment';
+    const button = createElement('button', { type: 'button', class: `btn btn-sm${primary ? ' btn-primary' : ''}`, title: waits ? 'A fix for its threads is being applied' : title, ...(running || waits ? { disabled: '' } : {}), ...(pressed ? { 'aria-busy': 'true' } : {}) }, [pressed ? 'Fixing…' : label]);
+    button.addEventListener('click', () => fix.onFix(scope));
+    group.append(button);
+  }
+  const row = createElement('div', { class: 'geld-review__chat-fix-row', 'data-state': fix.state }, [createElement('span', { class: 'geld-review__chat-fix-label' }, ['Fix:']), group]);
+  if (fix.state === 'done' || fix.state === 'failed') row.append(createElement('span', { class: 'geld-review__chat-fix-note', role: 'status' }, [fix.state === 'done' ? 'In the triage at the top of the digest.' : fix.error === undefined ? FIX_WORDS.failed : `The model could not answer: ${fix.error}`]));
+  return row;
 }
 
 /** Focus key of a chat's pinned-context toggle, so a rebuild returns focus to it. */
@@ -230,7 +301,8 @@ export function renderChatView(slot: HTMLElement, threads: readonly HTMLElement[
     .map((thread) => {
       const source = sources.get(thread) ?? null;
       const shown = source === null ? '' : [source.anchor, source.label, source.preview, source.revision?.state ?? '', source.at ?? '', source.latestAnchor ?? '', source.rerun?.running === true ? 'running' : '', handlers.sourceOpen(thread) ? 'open' : ''].join(',');
-      return `${threadAnchorOf(thread)}:${handlers.pathOf(thread)}:${shown}`;
+      const fix = handlers.fixOf?.(thread) ?? null;
+      return `${threadAnchorOf(thread)}:${handlers.pathOf(thread)}:${shown}:${fix === null ? '' : `${fix.state}${fix.applying ? ':applying' : ''}`}`;
     })
     .join(' ');
   // The same threads a rebuilt panel carried over (`parkChats`): the chat goes back as it was, loans, reply box and all.
@@ -272,6 +344,8 @@ function dressThreads(list: HTMLElement, threads: readonly HTMLElement[], handle
     }
     const jump = jumpHrefOf(thread);
     if (jump !== null) actions.append(createElement('a', { class: 'geld-review__icon geld-review__chat-jump', href: jump, 'aria-label': 'Jump to the comment in the diff', title: 'Jump to the comment in the diff' }, [icon(ICON_FILE_SYMLINK_FILE)]));
+    const fix = handlers.fixOf?.(thread) ?? null;
+    if (fix !== null) actions.append(threadFixControl(fix));
     const resolve = headResolveControl(thread, body);
     if (resolve !== null) actions.append(resolve);
     const lines = threadLinesOf(thread);
@@ -627,7 +701,7 @@ export interface ChatThreadLink {
  * leading to the thread where it opens (the threads are rows of their own).
  * The comment's own header stays hidden: its ⋯ is worn by the row above.
  */
-export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: ChatByline | null = null, threads: readonly ChatThreadLink[] = [], onOpenThread: ((anchor: string) => void) | null = null): void {
+export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: ChatByline | null = null, threads: readonly ChatThreadLink[] = [], onOpenThread: ((anchor: string) => void) | null = null, fix: CommentFix | null = null): void {
   // Without a byline the row above is the header, and the body needs no gutter to sit under a name.
   const chat = createElement('section', { class: 'geld-review__chat', 'data-geld-chat': 'comment', 'aria-label': 'Comment', ...(byline === null ? { 'data-geld-headless': '' } : {}) });
   if (byline !== null) {
@@ -683,6 +757,7 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
     }
     chat.append(list);
   }
+  if (fix !== null) chat.append(commentFixRow(fix));
   slot.replaceChildren(createElement('div', { class: 'geld-review__chats' }, [chat]));
   teleportInto(body, [node]);
   if (body.childElementCount === 0) {

@@ -455,6 +455,8 @@ export interface PanelModel {
   readonly openSubKey: string | null;
   /** Threads (by first-comment anchor) whose frame shows the comment they came from. */
   readonly openSources: ReadonlySet<string>;
+  /** Fixes asked for from a chat, `key:state:scope`, so the open chat's Fix control is drawn again as one lands. */
+  readonly chatFixes: readonly string[];
   /** Bumps when a looked-up issue/PR title lands, so the mentions view is rebuilt with it. */
   readonly refsVersion: number;
   /** Bumps when a comment's edit history or an old revision lands, so an open chat's pinned source is rebuilt with it. */
@@ -600,8 +602,11 @@ export interface TriageSuggestionView {
   readonly current: boolean;
   /** Why it is not current: a commit since, or a comment in its threads it has not read. */
   readonly behind: 'commit' | 'comments' | null;
-  readonly busy: 'fix' | null;
+  /** `fix`: being applied. `writing`: being written afresh from a chat, so it cannot be applied until that lands. */
+  readonly busy: 'fix' | 'writing' | null;
   readonly error: string | null;
+  /** Who wrote the comment a finding outside its threads came from, when it is one (`StoredSuggestion.origin`). */
+  readonly from: string | null;
 }
 
 export interface TriageAgent {
@@ -1543,6 +1548,7 @@ function bulkActions(triage: TriageView, handlers: PanelHandlers): HTMLElement |
   const open = triage.suggestions.filter((fix) => fix.state === 'open');
   if (open.length < 2) return null;
   const busy = open.some((fix) => fix.busy !== null);
+  const applying = open.some((fix) => fix.busy === 'fix');
   const eligible = open.filter((fix) => fix.kind === 'fix' && fix.current && fix.busy === null);
   // Every eligible fix goes to the handler, which leaves the overlapping ones out and says why on their rows.
   const { batch, overlapping } = splitOverlapping(eligible);
@@ -1552,9 +1558,9 @@ function bulkActions(triage: TriageView, handlers: PanelHandlers): HTMLElement |
   const what = triage.resolves ? 'Post each fix as a suggestion, commit them together, and resolve their threads' : 'Post each fix as a suggestion and commit them together';
   const left = overlapping.length === 0 ? '' : `. ${overlapping.length === 1 ? 'One fix overlaps' : `${overlapping.length} fixes overlap`} another’s lines and waits for the next triage`;
   const title = triage.policyPending ? 'Reading the repository’s Geld config first' : ready.length === 0 ? 'No fix here fits the head commit. Triage again first.' : `${what} (${ready.length} ${ready.length === 1 ? 'fix' : 'fixes'})${left}`;
-  const fixAll = createElement('button', { type: 'button', class: `btn btn-sm btn-primary ${PANEL_CLASS}__triage-apply-all`, title, [ATTR_FOCUS]: 'fix-all', ...(busy || ready.length === 0 || triage.policyPending ? { disabled: '' } : {}), ...(busy ? { 'aria-busy': 'true' } : {}) }, [
-    busy ? 'Applying…' : 'Apply all',
-    ...(ready.length > 0 && !busy ? [createElement('span', { class: `Counter ${PANEL_CLASS}__triage-count` }, [String(ready.length)])] : []),
+  const fixAll = createElement('button', { type: 'button', class: `btn btn-sm btn-primary ${PANEL_CLASS}__triage-apply-all`, title, [ATTR_FOCUS]: 'fix-all', ...(applying || ready.length === 0 || triage.policyPending ? { disabled: '' } : {}), ...(applying ? { 'aria-busy': 'true' } : {}) }, [
+    applying ? 'Applying…' : 'Apply all',
+    ...(ready.length > 0 && !applying ? [createElement('span', { class: `Counter ${PANEL_CLASS}__triage-count` }, [String(ready.length)])] : []),
   ]);
   fixAll.addEventListener('click', () => handlers.onApplyAll(eligible.map((fix) => fix.key)));
   return createElement('div', { class: `${PANEL_CLASS}__triage-fix-actions ${PANEL_CLASS}__triage-bulk` }, [discard, fixAll]);
@@ -1589,6 +1595,10 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
   // The path and its copy button stand under the toggle, not in it: a button cannot hold another.
   const path = createElement('span', { class: `${PANEL_CLASS}__triage-fix-path` }, [where, lineText]);
   const place = createElement('div', { class: `${PANEL_CLASS}__triage-fix-place` }, [path]);
+  if (fix.path === '' && fix.from !== null) {
+    where.setAttribute('data-from', '');
+    where.append(`From ${fix.from}’s comment`);
+  }
   if (fix.path !== '') {
     const copy = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__triage-fix-copy`, [ATTR_FOCUS]: `fix-copy:${fix.key}` }, [icon(ICON_COPY)]);
     const tipped = withTip(copy, 'Copy path');
@@ -1631,13 +1641,13 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
   const notes: string[] = [];
   if (fix.threads > 1) notes.push(`One change for ${fix.threads} threads reporting the same problem (${fix.reporters.join(', ')}). ${triage.resolves ? 'Apply resolves them all.' : 'It answers them all.'}`);
   if (isFix && !fix.current && !applied) notes.push(behindWords(fix));
-  if (!isFix) notes.push('A fix that fits the lines a thread is on can be applied as a suggestion. This one needs more than that, so hand it to an agent.');
+  if (!isFix) notes.push(fix.from !== null ? `${fix.from}’s comment asks for this outside its threads, so there is no thread to suggest a fix in. Hand it to an agent.` : 'A fix that fits the lines a thread is on can be applied as a suggestion. This one needs more than that, so hand it to an agent.');
   for (const note of notes) body.append(createElement('p', { class: `${PANEL_CLASS}__triage-fix-note` }, [note]));
   if (isFix && !applied) {
     const busy = fix.busy !== null;
     const discard = createElement('button', { type: 'button', class: 'btn btn-sm', [ATTR_FOCUS]: `fix-discard:${fix.key}`, ...(busy ? { disabled: '' } : {}) }, [icon(ICON_X), 'Discard']);
     discard.addEventListener('click', () => handlers.onDiscardSuggestion(fix.key));
-    const commit = createElement('button', { type: 'button', class: 'btn btn-sm btn-primary', title: fixWhy(fix, triage), [ATTR_FOCUS]: `fix-commit:${fix.key}`, ...(busy || !fix.current || triage.policyPending ? { disabled: '' } : {}), ...(busy ? { 'aria-busy': 'true' } : {}) }, [busy ? 'Applying…' : 'Apply']);
+    const commit = createElement('button', { type: 'button', class: 'btn btn-sm btn-primary', title: fixWhy(fix, triage), [ATTR_FOCUS]: `fix-commit:${fix.key}`, ...(busy || !fix.current || triage.policyPending ? { disabled: '' } : {}), ...(fix.busy === 'fix' ? { 'aria-busy': 'true' } : {}) }, [fix.busy === 'fix' ? 'Applying…' : 'Apply']);
     commit.addEventListener('click', () => handlers.onApplySuggestion(fix.key));
     body.append(createElement('div', { class: `${PANEL_CLASS}__triage-fix-actions` }, [discard, commit]));
   }
@@ -1819,6 +1829,7 @@ function missingToolHelp(tool: MissingTool, handlers: PanelHandlers, close: () =
 /** What Apply does, for its tooltip: post the suggestion, commit it, and resolve the threads it answers when that is on. */
 function fixWhy(fix: TriageSuggestionView, triage: TriageView): string {
   if (!fix.current) return `Triage again first. ${behindWords(fix)}`;
+  if (fix.busy === 'writing') return 'Being written afresh from its chat';
   if (triage.policyPending) return 'Reading the repository’s Geld config first';
   const threads = fix.threads === 1 ? 'its thread' : `all ${fix.threads} threads`;
   return triage.resolves ? `Post this fix as a suggestion in the thread, commit it, and resolve ${threads}` : 'Post this fix as a suggestion in the thread and commit it';
@@ -1826,9 +1837,9 @@ function fixWhy(fix: TriageSuggestionView, triage: TriageView): string {
 
 function applyControl(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHandlers): HTMLElement {
   const blocked = fix.busy !== null || !fix.current || triage.policyPending;
-  const main = createElement('button', { type: 'button', class: 'btn btn-sm', title: fixWhy(fix, triage), [ATTR_FOCUS]: `fix-head-apply:${fix.key}`, ...(blocked ? { disabled: '' } : {}), ...(fix.busy !== null ? { 'aria-busy': 'true' } : {}) }, [
+  const main = createElement('button', { type: 'button', class: 'btn btn-sm', title: fixWhy(fix, triage), [ATTR_FOCUS]: `fix-head-apply:${fix.key}`, ...(blocked ? { disabled: '' } : {}), ...(fix.busy === 'fix' ? { 'aria-busy': 'true' } : {}) }, [
     icon(ICON_CHECK),
-    createElement('span', { class: `${PANEL_CLASS}__split-label` }, [fix.busy !== null ? 'Applying…' : 'Apply']),
+    createElement('span', { class: `${PANEL_CLASS}__split-label` }, [fix.busy === 'fix' ? 'Applying…' : 'Apply']),
   ]);
   main.addEventListener('click', () => handlers.onApplySuggestion(fix.key));
   return splitButton(main, 'More ways to fix this', `fix-head-more:${fix.key}`, (list, close) => {
@@ -3768,6 +3779,7 @@ function signatureOf(model: PanelModel): string {
     ingesting: model.ingesting,
     openSubKey: model.openSubKey,
     openSources: [...model.openSources].sort(),
+    chatFixes: model.chatFixes,
     refs: model.refsVersion,
     edits: model.editsVersion,
     running: model.running,
