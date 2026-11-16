@@ -9,6 +9,7 @@ import { botByTrigger, botsTriggeredBy, botTitle, commandReply, geldRunAnswer, g
 import type { BotComment, DerivedBotVerdict, RawCheckRun, VerdictOptions } from './bots';
 import { ADDRESSED_JSON_SCHEMA, CONSOLIDATE_JSON_SCHEMA, SUMMARY_JSON_SCHEMA, parseConsolidateOutput } from './prompts';
 import { BODY_JSON_SCHEMA, SUGGEST_JSON_SCHEMA } from './triage';
+import { ROUTE_JSON_SCHEMA } from './fix-route';
 
 const PRODUCER = { kind: 'action' as const, version: '0.1.0', ai: false };
 
@@ -1107,7 +1108,7 @@ describe('bots + prompts', () => {
       for (const [key, value] of entries) found.push(...missing(value, `${path}.${key}`));
       return found;
     };
-    for (const [name, schema] of Object.entries({ CONSOLIDATE_JSON_SCHEMA, SUMMARY_JSON_SCHEMA, ADDRESSED_JSON_SCHEMA, SUGGEST_JSON_SCHEMA, BODY_JSON_SCHEMA })) expect(missing(schema, name)).toEqual([]);
+    for (const [name, schema] of Object.entries({ CONSOLIDATE_JSON_SCHEMA, SUMMARY_JSON_SCHEMA, ADDRESSED_JSON_SCHEMA, SUGGEST_JSON_SCHEMA, BODY_JSON_SCHEMA, ROUTE_JSON_SCHEMA })) expect(missing(schema, name)).toEqual([]);
   });
 
   it('writes nullable fields as anyOf, so every enum value matches the one type it is declared with', () => {
@@ -1124,7 +1125,7 @@ describe('bots + prompts', () => {
       for (const [key, value] of entries) found.push(...mismatched(value, `${path}.${key}`));
       return found;
     };
-    for (const [name, schema] of Object.entries({ CONSOLIDATE_JSON_SCHEMA, SUMMARY_JSON_SCHEMA, ADDRESSED_JSON_SCHEMA, SUGGEST_JSON_SCHEMA, BODY_JSON_SCHEMA })) expect(mismatched(schema, name)).toEqual([]);
+    for (const [name, schema] of Object.entries({ CONSOLIDATE_JSON_SCHEMA, SUMMARY_JSON_SCHEMA, ADDRESSED_JSON_SCHEMA, SUGGEST_JSON_SCHEMA, BODY_JSON_SCHEMA, ROUTE_JSON_SCHEMA })) expect(mismatched(schema, name)).toEqual([]);
   });
 });
 

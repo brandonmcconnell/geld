@@ -258,7 +258,8 @@ describe('a fix asked for from a chat', () => {
     sendMessage.mockImplementation(async (message: unknown) => {
       const second: unknown = typeof message === 'object' && message !== null && 'messages' in message && Array.isArray(message.messages) ? message.messages[1] : null;
       const user = typeof second === 'object' && second !== null && 'content' in second && typeof second.content === 'string' ? second.content : '';
-      if (user !== '') asked.push([...user.matchAll(/"id": "([^"]+)"/g)].map((match) => match[1] ?? ''));
+      const drafting = typeof message === 'object' && message !== null && 'schemaName' in message && message.schemaName === 'geld_suggest';
+      if (drafting && user !== '') asked.push([...user.matchAll(/"id": "([^"]+)"/g)].map((match) => match[1] ?? ''));
       return { ok: true, model: 'm', text: JSON.stringify({ suggestions: [{ ids: [bot.anchor, other.anchor], summary: 'Renames it.', replacement: 'use(total);' }] }) };
     });
     await fixFromComments(meta, [bot, other], settings, () => undefined, source, { threads: [bot.anchor], comment: null });
@@ -309,5 +310,139 @@ describe('a fix asked for from a chat', () => {
     const scope = { threads: [], comment: { anchor: review.anchor, author: review.author, text: review.body, threads: [] } };
     const [first, second] = await Promise.all([fixFromComments(meta, [review], settings, () => undefined, source, scope), fixFromComments(meta, [review], settings, () => undefined, source, scope)]);
     expect([first.changed, second.changed].filter(Boolean)).toHaveLength(1);
+  });
+});
+
+describe('the check before a fix is drafted', () => {
+  beforeEach(() => {
+    stored.clear();
+    sendMessage.mockReset();
+  });
+  const settings = { ...DEFAULT_SETTINGS, aiEnabled: true, aiBaseUrl: 'https://ai-gateway.vercel.sh', aiModel: 'anthropic/claude-sonnet-5' };
+  const bug: RawComment = { anchor: 'discussion_r700', kind: 'thread', author: 'greptile-apps[bot]', body: '`total` counts missing values as zero, here and in `summarize`.', createdAt: at, path: 'src/b.ts', line: 3 };
+  const lines = ['const x = 1;', 'export { x };', 'use(x);', 'end();'];
+  const source = { pull: { title: 't', description: '' }, target: async () => ({ path: 'src/b.ts', start: 3, end: 3, lines }) };
+  const fresh = async (): Promise<void> => {
+    await new Promise<void>((resolve) => loadAiForPage(`github:/o/r/pull/10-${Math.random()}`, resolve));
+    await new Promise<void>((resolve) => loadAiForPage('github:/o/r/pull/10', resolve));
+    stored.set('local:aiKey', 'sk-test');
+  };
+  const schemaOf = (message: unknown): string => (typeof message === 'object' && message !== null && 'schemaName' in message && typeof message.schemaName === 'string' ? message.schemaName : '');
+  const kindOf = (message: unknown): string => (typeof message === 'object' && message !== null && 'type' in message && message.type === 'geld:ai-evaluate' ? 'decision' : schemaOf(message));
+  const drafted = { ok: true, model: 'm', text: JSON.stringify({ suggestions: [{ ids: [bug.anchor], summary: 'Skips missing values.', replacement: 'use(x ?? NaN);' }] }) };
+  const ask = { threads: [bug.anchor], comment: null };
+
+  it('hands a finding the reasoning model calls wider to an agent, with what it needs, and drafts nothing', async () => {
+    await fresh();
+    const meta = metaFor([bug]);
+    const schemas: string[] = [];
+    sendMessage.mockImplementation(async (message: unknown) => {
+      if (kindOf(message) !== '') schemas.push(kindOf(message));
+      return schemaOf(message) === 'geld_route' ? { ok: true, model: 'm', text: JSON.stringify({ routes: [{ id: bug.anchor, scope: 'wider', needs: 'Also skip missing values in `summarize`.' }] }) } : drafted;
+    });
+    await fixFromComments(meta, [bug], settings, () => undefined, source, ask);
+    expect(schemas).toEqual(['geld_route']);
+    const row = triageSuggestions(meta, settings)[0];
+    expect(row?.entry).toMatchObject({ replacement: null, routed: true, summary: 'Also skip missing values in `summarize`.' });
+    expect(row === undefined ? null : triageNoteFor(row.item)).toBe('Also skip missing values in `summarize`.');
+  });
+
+  it('drafts a finding the check keeps to its lines, and one it could not read', async () => {
+    await fresh();
+    const meta = metaFor([bug]);
+    sendMessage.mockImplementation(async (message: unknown) => (schemaOf(message) === 'geld_route' ? { ok: true, model: 'm', text: JSON.stringify({ routes: [{ id: bug.anchor, scope: 'lines', needs: '' }] }) } : drafted));
+    await fixFromComments(meta, [bug], settings, () => undefined, source, ask);
+    expect(triageSuggestions(meta, settings)[0]?.entry).toMatchObject({ replacement: ['use(x ?? NaN);'] });
+    expect(triageSuggestions(meta, settings)[0]?.entry.routed).toBeUndefined();
+    sendMessage.mockImplementation(async (message: unknown) => (schemaOf(message) === 'geld_route' ? { ok: false, reason: 'The gateway refused the request.' } : drafted));
+    await fixFromComments(meta, [bug], settings, () => undefined, source, ask);
+    expect(triageSuggestions(meta, settings)[0]?.entry).toMatchObject({ replacement: ['use(x ?? NaN);'] });
+  });
+
+  it('asks the decision model instead when the reader has one, leaning to an agent from as likely as not', async () => {
+    const decided = (noul: number) => async (message: unknown) => {
+      if (typeof message === 'object' && message !== null && 'type' in message && message.type === 'geld:ai-evaluate') return { ok: true, model: 'jev', answers: { [`wider:${bug.anchor}`]: { type: 'noul', noul } } };
+      return schemaOf(message) === 'geld_route' ? { ok: false, reason: 'not asked' } : drafted;
+    };
+    const withJev = { ...settings, aiJev: true };
+    await fresh();
+    stored.set('local:jevKey', 'ts-test');
+    stored.set('local:jevSource', 'own');
+    const meta = metaFor([bug]);
+    const schemas: string[] = [];
+    sendMessage.mockImplementation(async (message: unknown) => {
+      if (kindOf(message) !== '') schemas.push(kindOf(message));
+      return decided(0.5)(message);
+    });
+    await fixFromComments(meta, [bug], withJev, () => undefined, source, ask);
+    expect(schemas).toEqual(['decision']);
+    expect(triageSuggestions(meta, withJev)[0]?.entry).toMatchObject({ replacement: null, routed: true, summary: '' });
+    sendMessage.mockImplementation(decided(0.3));
+    await fixFromComments(meta, [bug], withJev, () => undefined, source, ask);
+    expect(triageSuggestions(meta, withJev)[0]?.entry).toMatchObject({ replacement: ['use(x ?? NaN);'] });
+  });
+
+  it('keeps the partners of a shared fix on the agent row its own thread goes to, whatever their own answer', async () => {
+    const other: RawComment = { ...bug, anchor: 'discussion_r800', author: 'coderabbitai[bot]', body: 'Same problem.' };
+    stored.set('local:aiRuns', {
+      'github:/o/r/pull/10': {
+        ranAt: at,
+        rewrites: [],
+        seen: [bug.anchor, other.anchor],
+        suggestions: [{ key: bug.anchor, threads: [bug.anchor, other.anchor], headSha: 'head1', path: 'src/b.ts', start: 3, end: 3, original: ['use(x);'], replacement: ['use(y);'], summary: 'Old.', state: 'open', sources: [bug.anchor, other.anchor] }],
+      },
+    });
+    await fresh();
+    const meta = metaFor([bug, other]);
+    sendMessage.mockImplementation(async (message: unknown) => (schemaOf(message) === 'geld_route' ? { ok: true, model: 'm', text: JSON.stringify({ routes: [{ id: bug.anchor, scope: 'wider', needs: 'Change both callers.' }, { id: other.anchor, scope: 'lines', needs: '' }] }) } : drafted));
+    await fixFromComments(meta, [bug, other], settings, () => undefined, source, ask);
+    const rows = triageSuggestions(meta, settings);
+    expect(rows.map(({ entry, partners }) => [entry.threads, entry.routed, partners.length])).toEqual([[[bug.anchor, other.anchor], true, 1]]);
+    expect(rows[0]?.behind).toBeNull();
+  });
+
+  it('checks a row it sent to an agent again at a new commit, though its lines read the same', async () => {
+    const item = metaFor([bug]).items[0];
+    stored.set('local:aiRuns', {
+      'github:/o/r/pull/10': {
+        ranAt: at,
+        rewrites: [],
+        seen: [bug.anchor],
+        summary: { tldr: 'One finding.', updatedAt: at, forItems: [item?.id ?? ''] },
+        suggestions: [{ key: bug.anchor, threads: [bug.anchor], headSha: 'head1', path: 'src/b.ts', start: 3, end: 3, original: ['use(x);'], replacement: null, summary: 'Also change `summarize`.', state: 'open', routed: true, sources: [bug.anchor], itemIds: { [bug.anchor]: item?.id ?? '' } }],
+      },
+    });
+    await fresh();
+    const pushed = { ...metaFor([bug]), headSha: 'head2' };
+    const schemas: string[] = [];
+    sendMessage.mockImplementation(async (message: unknown) => {
+      if (kindOf(message) !== '') schemas.push(kindOf(message));
+      return schemaOf(message) === 'geld_route' ? { ok: true, model: 'm', text: JSON.stringify({ routes: [{ id: bug.anchor, scope: 'lines', needs: '' }] }) } : drafted;
+    });
+    await runAi(pushed, [bug], settings, () => undefined, source);
+    expect(schemas).toEqual(['geld_route', 'geld_suggest']);
+    expect(triageSuggestions(pushed, settings)[0]?.entry).toMatchObject({ headSha: 'head2', replacement: ['use(x ?? NaN);'] });
+  });
+
+  it('asks about a shared row’s partners with its owner at a new commit, so a fresh draft keeps them', async () => {
+    const other: RawComment = { ...bug, anchor: 'discussion_r800', author: 'coderabbitai[bot]', body: 'Same problem.' };
+    const meta0 = metaFor([bug, other]);
+    stored.set('local:aiRuns', {
+      'github:/o/r/pull/10': {
+        ranAt: at,
+        rewrites: [],
+        seen: [bug.anchor, other.anchor],
+        summary: { tldr: 'One finding.', updatedAt: at, forItems: meta0.items.map((each) => each.id).sort() },
+        suggestions: [{ key: bug.anchor, threads: [bug.anchor, other.anchor], headSha: 'head1', path: 'src/b.ts', start: 3, end: 3, original: ['use(x);'], replacement: null, summary: 'Change both callers.', state: 'open', routed: true, sources: [bug.anchor, other.anchor] }],
+      },
+    });
+    await fresh();
+    const pushed = { ...meta0, headSha: 'head2' };
+    sendMessage.mockImplementation(async (message: unknown) => {
+      if (schemaOf(message) === 'geld_route') return { ok: true, model: 'm', text: JSON.stringify({ routes: [bug, other].map((each) => ({ id: each.anchor, scope: 'lines', needs: '' })) }) };
+      return { ok: true, model: 'm', text: JSON.stringify({ suggestions: [{ ids: [bug.anchor, other.anchor], summary: 'Skips missing values.', replacement: 'use(x ?? NaN);' }] }) };
+    });
+    await runAi(pushed, [bug, other], settings, () => undefined, source);
+    expect(triageSuggestions(pushed, settings).map(({ entry, partners }) => [entry.threads, entry.replacement, partners.length])).toEqual([[[bug.anchor, other.anchor], ['use(x ?? NaN);'], 1]]);
   });
 });

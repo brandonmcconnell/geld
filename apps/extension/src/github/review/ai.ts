@@ -58,8 +58,16 @@ import {
   BODY_SYSTEM,
   bodyUserPrompt,
   parseBodyOutput,
+  needsAgent,
+  parseRouteOutput,
+  ROUTE_BATCH,
+  ROUTE_JSON_SCHEMA,
+  ROUTE_SYSTEM,
+  routeRequests,
+  routesFromAnswers,
+  routeUserPrompt,
 } from '@geld/review';
-import type { Carried } from '@geld/review';
+import type { Carried, FixRoute, RouteInput } from '@geld/review';
 import { browser } from 'wxt/browser';
 import type { AiRunRecord, AiStep, JevDecision, StoredSuggestion } from '../../lib/local-state';
 import { AI_RUNS_CAP, aiGatewayItem, aiKeyItem, aiRunsItem, jevDecisionsItem, jevKeyItem, jevSourceItem } from '../../lib/local-state';
@@ -596,6 +604,46 @@ async function proposeCommentFindings(headSha: string, comment: BodyInput & { re
   return null;
 }
 
+/** The lines around a finding the gate reads: enough to see the function it sits in, less than drafting gets. */
+const ROUTE_MARGIN = 12;
+
+function routeInputFor(comments: readonly RawComment[], item: ReviewItem, target: SuggestionTarget): RouteInput {
+  return {
+    id: threadKeyOf(item),
+    title: item.title,
+    path: target.path,
+    excerpts: sourceExcerpts(comments, item),
+    target: { start: target.start, end: target.end, text: target.lines.slice(target.start - 1, target.end).join('\n') },
+    around: numberedLines(target.lines, target.start, target.end, ROUTE_MARGIN),
+  };
+}
+
+/**
+ * The first gate: which findings need more than their thread's lines, asked of the decision model when the reader has
+ * one, else of the reasoning model in the same shape. A batch with no usable answer routes nothing, so its findings are
+ * drafted as before and the drafting model's own refusal is the gate left.
+ */
+async function routeFixes(settings: GeldSettings, apiKey: string, pull: SuggestPullRequest, inputs: readonly RouteInput[], still: () => boolean): Promise<ReadonlyMap<string, FixRoute>> {
+  const routes = new Map<string, FixRoute>();
+  const decider = await jevRoute(settings);
+  if (decider !== null) {
+    for (const request of routeRequests(decider.model, pull, inputs)) {
+      const answers = await evaluate(decider, request);
+      if (!still()) return routes;
+      if (answers !== null) for (const [id, route] of routesFromAnswers(answers)) routes.set(id, route);
+    }
+    return routes;
+  }
+  for (let at = 0; at < inputs.length; at += ROUTE_BATCH) {
+    const batch = inputs.slice(at, at + ROUTE_BATCH);
+    const result = await complete(settings, apiKey, ROUTE_SYSTEM, routeUserPrompt(pull, batch), ROUTE_JSON_SCHEMA, 'geld_route');
+    if (!still()) return routes;
+    const parsed = result.ok ? parseRouteOutput(result.text, batch.map((input) => input.id)) : null;
+    if (parsed !== null) for (const [id, route] of parsed) routes.set(id, route);
+  }
+  return routes;
+}
+
 /**
  * Fixes for the open bot findings that have none for this commit. A fix written for an earlier commit whose lines read
  * the same now is carried to this one without asking; the rest are asked about together, so findings reporting one
@@ -647,22 +695,67 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
     if (existing !== undefined && existing.key !== key) {
       // A partner follows the fix it shares while that fix's own thread is open and nothing new arrived in its own.
       const shared = suggestions.get(existing.key);
-      if (!force && fresh && openThreads.has(existing.key) && shared !== undefined) continue;
+      // Not while that fix is being written afresh this round, though: drafted for its own thread alone, it would drop this one.
+      if (!force && fresh && openThreads.has(existing.key) && shared !== undefined && !asks.some((ask) => threadKeyOf(ask.item) === existing.key)) continue;
       if (shared !== undefined) leaving.set(key, existing.key);
       asks.push({ item, target });
       continue;
     }
     const original = target.lines.slice(target.start - 1, target.end);
-    if (!force && existing !== undefined && fresh && existing.key === key && existing.start === target.start && existing.end === target.end && existing.original.join('\n') === original.join('\n')) {
+    // A row the check sent to an agent is checked again: it read the code around the lines too, which a commit may have changed.
+    if (!force && existing !== undefined && fresh && existing.routed !== true && existing.key === key && existing.start === target.start && existing.end === target.end && existing.original.join('\n') === original.join('\n')) {
       suggestions.set(key, { ...existing, headSha });
       continue;
     }
     asks.push({ item, target });
   }
+  const paths = items.flatMap((item) => (item.path === undefined ? [] : [item.path]));
+  const routes = asks.length === 0 ? new Map<string, FixRoute>() : await routeFixes(settings, apiKey, source.pull, asks.map(({ item, target }) => routeInputFor(comments, item, target)), still);
+  if (!still()) return null;
+  const drafted: typeof asks = [];
+  const routedNow = new Set<string>();
+  for (const ask of asks) {
+    const key = threadKeyOf(ask.item);
+    const route = routes.get(key);
+    const sharedKey = leaving.get(key);
+    const shared = sharedKey === undefined ? undefined : suggestions.get(sharedKey);
+    if (sharedKey !== undefined && shared !== undefined && routedNow.has(sharedKey)) {
+      // The fix it shares went to an agent this round, whatever this thread's own answer: one problem, one agent row.
+      // Owners are asked about first, so their route is known by now.
+      suggestions.set(sharedKey, { ...shared, sources: [...new Set([...(shared.sources ?? []), ...anchorsOf([ask.item])])], itemIds: { ...shared.itemIds, [key]: writtenAs.get(key) ?? ask.item.id } });
+      continue;
+    }
+    if (!needsAgent(route)) {
+      drafted.push(ask);
+      continue;
+    }
+    if (sharedKey !== undefined && shared !== undefined) suggestions.set(sharedKey, { ...shared, threads: shared.threads.filter((thread) => thread !== key) });
+    // A fix this thread owned for partners stays theirs too: they report the same problem, so it needs the same agent.
+    const own = suggestions.get(key);
+    const threads = own !== undefined && own.threads.includes(key) ? own.threads : [key];
+    const partnersKept = threads.length > 1 && own !== undefined;
+    suggestions.set(key, {
+      key,
+      threads,
+      headSha,
+      path: ask.target.path,
+      start: ask.target.start,
+      end: ask.target.end,
+      original: ask.target.lines.slice(ask.target.start - 1, ask.target.end),
+      replacement: null,
+      summary: codeSpans(route?.needs ?? '', paths),
+      state: 'open',
+      routed: true,
+      sources: [...new Set([...(partnersKept ? (own.sources ?? []) : []), ...anchorsOf([ask.item])])],
+      itemIds: { ...(partnersKept ? own.itemIds : {}), [key]: writtenAs.get(key) ?? ask.item.id },
+      ...kept(threads),
+    });
+    routedNow.add(key);
+  }
   const byTitle = new Map<string, string[]>();
-  for (const { item } of asks) byTitle.set(item.title, [...(byTitle.get(item.title) ?? []), threadKeyOf(item)]);
-  for (let at = 0; at < asks.length; at += SUGGEST_BATCH) {
-    const batch = asks.slice(at, at + SUGGEST_BATCH);
+  for (const { item } of drafted) byTitle.set(item.title, [...(byTitle.get(item.title) ?? []), threadKeyOf(item)]);
+  for (let at = 0; at < drafted.length; at += SUGGEST_BATCH) {
+    const batch = drafted.slice(at, at + SUGGEST_BATCH);
     const inputs: SuggestInputItem[] = batch.map(({ item, target }) => {
       const key = threadKeyOf(item);
       const partners = (byTitle.get(item.title) ?? []).filter((other) => other !== key);
@@ -689,7 +782,6 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
     }
     const targets = new Map(batch.map(({ item, target }) => [threadKeyOf(item), target]));
     const asked = new Map(batch.map(({ item }) => [threadKeyOf(item), item]));
-    const paths = items.flatMap((item) => (item.path === undefined ? [] : [item.path]));
     for (const entry of parsed) {
       const key = entry.ids[0] ?? '';
       const target = targets.get(key);
