@@ -3833,10 +3833,45 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   gap: 8px;
 }
 
-/* Discard reads as a quiet link, muted until the pointer is on it, as GitHub's secondary links do. */
-/* Discard stands at the left, away from Apply and Apply and resolve, as GitHub's secondary button with its X. */
-.geld-review__triage-fix-discard-btn {
-  margin-right: auto;
+/* The triage's buttons are the merge box's (`.geld-quick-review__footer .btn-sm`): 24px, 10px either side, 12px words. */
+.geld-review__triage .btn-sm {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+  line-height: 22px;
+}
+
+.geld-review__triage .btn-sm.geld-review__split-caret {
+  padding: 0 6px !important;
+}
+
+/* The agent's 16px mark stands as far from the 24px button's left edge as from its top and bottom. */
+.geld-review__triage .btn-sm.geld-review__split-agent {
+  padding-left: 3px !important;
+}
+
+/* Apply all's count: a 16px disc with bold 10px figures, where Primer's 18px counter filled the 24px button edge to edge.
+ * The button is a flex row so the disc is centred on it: on the words' line box it sat 2px high. */
+.geld-review__triage .btn-sm.geld-review__triage-apply-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.geld-review__triage .btn-sm .Counter.geld-review__triage-count {
+  min-width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* Fix all and Discard all stand under the list, on its edges. */
+.geld-review__triage-bulk {
+  margin: 0 16px 8px 38px;
 }
 
 .geld-review__triage-fix-link {
@@ -3954,6 +3989,7 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   }
 
   .geld-review__triage-fixes,
+  .geld-review__triage-bulk,
   .geld-review__triage-writing,
   .geld-review__triage-status {
     margin-left: 16px;
