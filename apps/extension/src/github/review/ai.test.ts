@@ -400,4 +400,27 @@ describe('the check before a fix is drafted', () => {
     expect(rows.map(({ entry, partners }) => [entry.threads, entry.routed, partners.length])).toEqual([[[bug.anchor, other.anchor], true, 1]]);
     expect(rows[0]?.behind).toBeNull();
   });
+
+  it('checks a row it sent to an agent again at a new commit, though its lines read the same', async () => {
+    const item = metaFor([bug]).items[0];
+    stored.set('local:aiRuns', {
+      'github:/o/r/pull/10': {
+        ranAt: at,
+        rewrites: [],
+        seen: [bug.anchor],
+        summary: { tldr: 'One finding.', updatedAt: at, forItems: [item?.id ?? ''] },
+        suggestions: [{ key: bug.anchor, threads: [bug.anchor], headSha: 'head1', path: 'src/b.ts', start: 3, end: 3, original: ['use(x);'], replacement: null, summary: 'Also change `summarize`.', state: 'open', routed: true, sources: [bug.anchor], itemIds: { [bug.anchor]: item?.id ?? '' } }],
+      },
+    });
+    await fresh();
+    const pushed = { ...metaFor([bug]), headSha: 'head2' };
+    const schemas: string[] = [];
+    sendMessage.mockImplementation(async (message: unknown) => {
+      if (kindOf(message) !== '') schemas.push(kindOf(message));
+      return schemaOf(message) === 'geld_route' ? { ok: true, model: 'm', text: JSON.stringify({ routes: [{ id: bug.anchor, scope: 'lines', needs: '' }] }) } : drafted;
+    });
+    await runAi(pushed, [bug], settings, () => undefined, source);
+    expect(schemas).toEqual(['geld_route', 'geld_suggest']);
+    expect(triageSuggestions(pushed, settings)[0]?.entry).toMatchObject({ headSha: 'head2', replacement: ['use(x ?? NaN);'] });
+  });
 });

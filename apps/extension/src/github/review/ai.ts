@@ -701,7 +701,8 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
       continue;
     }
     const original = target.lines.slice(target.start - 1, target.end);
-    if (!force && existing !== undefined && fresh && existing.key === key && existing.start === target.start && existing.end === target.end && existing.original.join('\n') === original.join('\n')) {
+    // A row the check sent to an agent is checked again: it read the code around the lines too, which a commit may have changed.
+    if (!force && existing !== undefined && fresh && existing.routed !== true && existing.key === key && existing.start === target.start && existing.end === target.end && existing.original.join('\n') === original.join('\n')) {
       suggestions.set(key, { ...existing, headSha });
       continue;
     }
