@@ -386,6 +386,19 @@ export function embeddedStack(pullPath: string, root: ParentNode = document): re
  * payload is missing or another pull request's: the Overview's description box carries no clock of its own.
  */
 export function embeddedPullRequestCreated(pullPath: string, root: ParentNode = document): string | null {
+  const created = stringOf(embeddedPullRequest(pullPath, root)?.createdTime);
+  return created === '' || Number.isNaN(Date.parse(created)) ? null : created;
+}
+
+/** The pull request's base and head branch names (`baseBranch`, `headBranch`) from the payload the React page embeds, or null for either it does not name. */
+export function embeddedPullRequestBranches(pullPath: string, root: ParentNode = document): { readonly base: string | null; readonly head: string | null } {
+  const pull = embeddedPullRequest(pullPath, root);
+  const name = (value: unknown): string | null => (stringOf(value) === '' ? null : stringOf(value));
+  return { base: name(pull?.baseBranch), head: name(pull?.headBranch) };
+}
+
+/** This pull request's record in the React page's payload, or null when the payload is missing or another pull request's. */
+function embeddedPullRequest(pullPath: string, root: ParentNode): Record<string, unknown> | null {
   const page = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(pullPath);
   if (page === null) return null;
   const [, owner = '', repo = '', number = ''] = page;
@@ -394,8 +407,7 @@ export function embeddedPullRequestCreated(pullPath: string, root: ParentNode = 
     if (layout === null || !isRecord(layout.pullRequest) || layout.pullRequest.number !== Number(number)) continue;
     const repository = layout.repository;
     if (!isRecord(repository) || stringOf(repository.ownerLogin).toLowerCase() !== owner.toLowerCase() || stringOf(repository.name).toLowerCase() !== repo.toLowerCase()) continue;
-    const created = stringOf(layout.pullRequest.createdTime);
-    return created === '' || Number.isNaN(Date.parse(created)) ? null : created;
+    return layout.pullRequest;
   }
   return null;
 }
