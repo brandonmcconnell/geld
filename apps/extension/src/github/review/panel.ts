@@ -1580,6 +1580,18 @@ function triageText(text: string, pending: boolean): HTMLElement {
  * "Apply" with its menu (copy the task, or hand the finding to an agent instead). A finding no fix fits: "Fix with"
  * the recommended agent and its menu. The row opens to the diff, or to what the triage says is needed.
  */
+/** What an opened triage row says above and under its diff: the model's sentence, then why it is shaped as it is. */
+export function fixWords(fix: TriageSuggestionView, resolves: boolean): { readonly summary: string; readonly notes: readonly string[] } {
+  const isFix = fix.kind === 'fix';
+  // A row the check sent to an agent had its lines read: only an unread thread lacks a sentence for that reason.
+  const summary = fix.summary !== '' ? fix.summary : isFix || fix.routed ? '' : 'Geld could not read the lines this thread is on, so it proposed no fix here.';
+  const notes: string[] = [];
+  if (fix.threads > 1) notes.push(`One change for ${fix.threads} threads reporting the same problem (${fix.reporters.join(', ')}). ${resolves ? 'Apply resolves them all.' : 'It answers them all.'}`);
+  if (isFix && !fix.current && fix.state !== 'applied') notes.push(behindWords(fix));
+  if (!isFix) notes.push(fix.from !== null ? `${fix.from}’s comment asks for this outside its threads, so there is no thread to suggest a fix in. Hand it to an agent.` : fix.routed ? 'Geld’s check found that a proper fix likely changes more than the lines this thread is on, such as other code, other files or tests. So no suggestion was drafted. Hand it to an agent.' : 'A fix that fits the lines a thread is on can be applied as a suggestion. This one needs more than that, so hand it to an agent.');
+  return { summary, notes };
+}
+
 function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHandlers): HTMLElement {
   const open = triage.openKey === fix.key;
   const applied = fix.state === 'applied';
@@ -1637,14 +1649,10 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
   const row = createElement('li', { class: `${PANEL_CLASS}__triage-fix`, 'data-state': fix.state, 'data-kind': fix.kind, ...(open ? { 'data-open': '' } : {}) }, [head, place]);
   if (!open) return row;
   const body = createElement('div', { class: `${PANEL_CLASS}__triage-fix-body` });
-  const summary = fix.summary !== '' ? fix.summary : isFix ? '' : 'Geld could not read the lines this thread is on, so it proposed no fix here.';
-  if (summary !== '') body.append(createElement('p', { class: `${PANEL_CLASS}__triage-fix-summary` }, [...inlineText(summary)]));
+  const words = fixWords(fix, triage.resolves);
+  if (words.summary !== '') body.append(createElement('p', { class: `${PANEL_CLASS}__triage-fix-summary` }, [...inlineText(words.summary)]));
   if (isFix) body.append(diffTable(fix));
-  const notes: string[] = [];
-  if (fix.threads > 1) notes.push(`One change for ${fix.threads} threads reporting the same problem (${fix.reporters.join(', ')}). ${triage.resolves ? 'Apply resolves them all.' : 'It answers them all.'}`);
-  if (isFix && !fix.current && !applied) notes.push(behindWords(fix));
-  if (!isFix) notes.push(fix.from !== null ? `${fix.from}’s comment asks for this outside its threads, so there is no thread to suggest a fix in. Hand it to an agent.` : fix.routed ? 'Geld’s check found that a proper fix likely changes more than the lines this thread is on, such as other code, other files or tests. So no suggestion was drafted. Hand it to an agent.' : 'A fix that fits the lines a thread is on can be applied as a suggestion. This one needs more than that, so hand it to an agent.');
-  for (const note of notes) body.append(createElement('p', { class: `${PANEL_CLASS}__triage-fix-note` }, [note]));
+  for (const note of words.notes) body.append(createElement('p', { class: `${PANEL_CLASS}__triage-fix-note` }, [note]));
   if (isFix && !applied) {
     const busy = fix.busy !== null;
     const discard = createElement('button', { type: 'button', class: 'btn btn-sm', [ATTR_FOCUS]: `fix-discard:${fix.key}`, ...(busy ? { disabled: '' } : {}) }, [icon(ICON_X), 'Discard']);

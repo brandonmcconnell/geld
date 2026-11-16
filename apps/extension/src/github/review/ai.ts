@@ -715,15 +715,16 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
   for (const ask of asks) {
     const key = threadKeyOf(ask.item);
     const route = routes.get(key);
-    if (!needsAgent(route)) {
-      drafted.push(ask);
-      continue;
-    }
     const sharedKey = leaving.get(key);
     const shared = sharedKey === undefined ? undefined : suggestions.get(sharedKey);
     if (sharedKey !== undefined && shared !== undefined && routedNow.has(sharedKey)) {
-      // The fix it shares went to an agent this round too: one problem, one agent row.
+      // The fix it shares went to an agent this round, whatever this thread's own answer: one problem, one agent row.
+      // Owners are asked about first, so their route is known by now.
       suggestions.set(sharedKey, { ...shared, sources: [...new Set([...(shared.sources ?? []), ...anchorsOf([ask.item])])], itemIds: { ...shared.itemIds, [key]: writtenAs.get(key) ?? ask.item.id } });
+      continue;
+    }
+    if (!needsAgent(route)) {
+      drafted.push(ask);
       continue;
     }
     if (sharedKey !== undefined && shared !== undefined) suggestions.set(sharedKey, { ...shared, threads: shared.threads.filter((thread) => thread !== key) });

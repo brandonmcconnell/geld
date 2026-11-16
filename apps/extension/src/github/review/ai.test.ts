@@ -382,7 +382,7 @@ describe('the check before a fix is drafted', () => {
     expect(triageSuggestions(meta, withJev)[0]?.entry).toMatchObject({ replacement: ['use(x ?? NaN);'] });
   });
 
-  it('keeps the partners of a shared fix on the agent row its own thread goes to', async () => {
+  it('keeps the partners of a shared fix on the agent row its own thread goes to, whatever their own answer', async () => {
     const other: RawComment = { ...bug, anchor: 'discussion_r800', author: 'coderabbitai[bot]', body: 'Same problem.' };
     stored.set('local:aiRuns', {
       'github:/o/r/pull/10': {
@@ -394,7 +394,7 @@ describe('the check before a fix is drafted', () => {
     });
     await fresh();
     const meta = metaFor([bug, other]);
-    sendMessage.mockImplementation(async (message: unknown) => (schemaOf(message) === 'geld_route' ? { ok: true, model: 'm', text: JSON.stringify({ routes: [bug, other].map((each) => ({ id: each.anchor, scope: 'wider', needs: 'Change both callers.' })) }) } : drafted));
+    sendMessage.mockImplementation(async (message: unknown) => (schemaOf(message) === 'geld_route' ? { ok: true, model: 'm', text: JSON.stringify({ routes: [{ id: bug.anchor, scope: 'wider', needs: 'Change both callers.' }, { id: other.anchor, scope: 'lines', needs: '' }] }) } : drafted));
     await fixFromComments(meta, [bug, other], settings, () => undefined, source, ask);
     const rows = triageSuggestions(meta, settings);
     expect(rows.map(({ entry, partners }) => [entry.threads, entry.routed, partners.length])).toEqual([[[bug.anchor, other.anchor], true, 1]]);
