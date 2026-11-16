@@ -19,6 +19,7 @@ vi.mock('wxt/utils/storage', () => ({
 const sendMessage = vi.fn(async (_message: unknown): Promise<unknown> => undefined);
 vi.mock('wxt/browser', () => ({ browser: { runtime: { sendMessage: (message: unknown) => sendMessage(message) } } }));
 
+const { NO_KEY_REASON } = await import('../../lib/ai-key');
 const { adoptOwnReplies, aiStateFor, discardSuggestion, fixFromComments, loadAiForPage, markSuggestionPosted, pendingReplyFor, runAi, triageNoteFor, triageSuggestions, withAi } = await import('./ai');
 
 const at = '2026-11-13T14:24:02Z';
@@ -444,5 +445,44 @@ describe('the check before a fix is drafted', () => {
     });
     await runAi(pushed, [bug, other], settings, () => undefined, source);
     expect(triageSuggestions(pushed, settings).map(({ entry, partners }) => [entry.threads, entry.replacement, partners.length])).toEqual([[[bug.anchor, other.anchor], ['use(x ?? NaN);'], 1]]);
+  });
+});
+
+describe('a run asked for with no API key on this device', () => {
+  beforeEach(() => {
+    stored.clear();
+    sendMessage.mockReset();
+  });
+  const settings = { ...DEFAULT_SETTINGS, aiEnabled: true, aiBaseUrl: 'https://ai-gateway.vercel.sh', aiModel: 'anthropic/claude-sonnet-5' };
+  const bug: RawComment = { anchor: 'discussion_r900', kind: 'thread', author: 'greptile-apps[bot]', body: 'Off by one.', createdAt: at, path: 'src/b.ts', line: 3 };
+  const source = { pull: { title: 't', description: '' }, target: async () => ({ path: 'src/b.ts', start: 3, end: 3, lines: ['a', 'b', 'c'] }) };
+  const fresh = async (): Promise<void> => {
+    await new Promise<void>((resolve) => loadAiForPage(`github:/o/r/pull/11-${Math.random()}`, resolve));
+    await new Promise<void>((resolve) => loadAiForPage('github:/o/r/pull/11', resolve));
+  };
+
+  it('says so in the triage instead of doing nothing, and asks the model nothing', async () => {
+    await fresh();
+    const meta = metaFor([bug]);
+    expect(aiStateFor(meta, [bug], settings).kind).toBe('ready');
+    expect(await runAi(meta, [bug], settings, () => undefined, source)).toEqual({ changed: true });
+    expect(aiStateFor(meta, [bug], settings).kind).toBe('needs-key');
+    expect(sendMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'geld:ai-complete' }));
+  });
+
+  it('answers a chat’s Fix with the reason and that a key is what is missing', async () => {
+    await fresh();
+    const meta = metaFor([bug]);
+    expect(await fixFromComments(meta, [bug], settings, () => undefined, source, { threads: [bug.anchor], comment: null })).toEqual({ changed: true, failed: true, reason: NO_KEY_REASON, needsKey: true });
+  });
+
+  it('runs as usual once a key is saved', async () => {
+    await fresh();
+    const meta = metaFor([bug]);
+    await runAi(meta, [bug], settings, () => undefined, source);
+    stored.set('local:aiKey', 'sk-test');
+    sendMessage.mockImplementation(async () => ({ ok: true, model: 'm', text: JSON.stringify({ suggestions: [{ ids: [bug.anchor], summary: 'Fixes it.', replacement: 'B' }] }) }));
+    await fixFromComments(meta, [bug], settings, () => undefined, source, { threads: [bug.anchor], comment: null });
+    expect(aiStateFor(meta, [bug], settings).kind).not.toBe('needs-key');
   });
 });

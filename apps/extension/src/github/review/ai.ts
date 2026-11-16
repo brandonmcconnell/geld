@@ -74,6 +74,7 @@ import { AI_RUNS_CAP, aiGatewayItem, aiKeyItem, aiRunsItem, jevDecisionsItem, je
 import type { AiCompleteRequest, AiEvaluateRequest } from '../../lib/messages';
 import { isAiCompleteResponse, isAiEvaluateResponse } from '../../lib/messages';
 import { countUsage } from '../../lib/usage-count';
+import { NO_KEY_REASON } from '../../lib/ai-key';
 
 /* ------------------------------------------------------------------------- */
 /* On-demand runs, kept on this device per pull request                        */
@@ -96,30 +97,24 @@ let lastRun: AiRunRecord | null = null;
 let hydrating: Promise<void> | null = null;
 /** Item ids (and `tldr`) a request is in flight for — the rows that shimmer. */
 const inFlight = new Set<string>();
-let configured: boolean | null = null;
+/** A run asked for found no key on this device: the triage says so until a key is saved. */
+let keyMissing = false;
 
 export function aiPending(): ReadonlySet<string> {
   return inFlight;
 }
 
 /**
- * Whether the prose model can be called: the master switch on, a gateway URL,
- * a writing model (never an evaluation model, which produces no text) and a
- * key on this device. With any of them missing, AI behaves as switched off.
+ * Whether AI is on: the master switch, a gateway URL and a writing model (never an evaluation model, which produces no
+ * text). The key on this device is read when a run starts, and a run that finds none says so (`needs-key`).
  */
-export async function aiConfigured(settings: GeldSettings): Promise<boolean> {
-  if (!settings.aiEnabled || settings.aiBaseUrl === '' || settings.aiModel === '' || isEvaluationModel(settings.aiModel)) return false;
-  if (configured === null) configured = (await aiKeyItem.getValue()).trim() !== '';
-  return configured;
-}
-
-/** The same test without the key lookup, for a pass that cannot wait: the key is checked when the run starts. */
 export function aiSwitchedOn(settings: GeldSettings): boolean {
   return settings.aiEnabled && settings.aiBaseUrl !== '' && settings.aiModel !== '' && !isEvaluationModel(settings.aiModel);
 }
 
 aiKeyItem.watch(() => {
-  configured = null;
+  // Read again at the next click: a key saved in the settings tab since is the one it finds.
+  keyMissing = false;
 });
 
 /**
@@ -219,6 +214,7 @@ export async function clearAiForPage(): Promise<void> {
  */
 export type AiState =
   | { readonly kind: 'off' }
+  | { readonly kind: 'needs-key' }
   | { readonly kind: 'app'; readonly hasLocal: boolean }
   | { readonly kind: 'ready' }
   | { readonly kind: 'nothing' }
@@ -233,6 +229,7 @@ export type StaleReason = 'comments' | 'commits' | 'both';
 export function aiStateFor(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings): AiState {
   if (meta.producer.ai) return { kind: 'app', hasLocal: lastRun !== null };
   if (!aiSwitchedOn(settings)) return { kind: 'off' };
+  if (keyMissing) return { kind: 'needs-key' };
   if (inFlight.size > 0) return { kind: 'running' };
   // The model is asked about open review threads and the findings bots report outside them: with neither, a click would ask it nothing.
   // A comment's tasks asked for from its chat stand on their own, with no thread or counted finding beside them.
@@ -457,10 +454,15 @@ export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], s
   // Taken before the first await: answers that land after the reader moved to another visit are dropped.
   const visitAt = visitId;
   const still = (): boolean => visitId === visitAt;
-  if (meta.producer.ai || !(await aiConfigured(settings)) || inFlight.size > 0) return { changed: false };
+  if (meta.producer.ai || !aiSwitchedOn(settings) || inFlight.size > 0) return { changed: false };
   await hydrating;
   const apiKey = (await aiKeyItem.getValue()).trim();
-  if (apiKey === '' || !still()) return { changed: false };
+  if (!still()) return { changed: false };
+  if (apiKey === '') {
+    keyMissing = true;
+    return { changed: true };
+  }
+  keyMissing = false;
   const known: GeldPrMeta = withAi(meta);
   const plan = planConsolidation(known, meta.items, { comments, wantFix: wantFix(settings), seen });
   const pending = plan.pending;
@@ -526,6 +528,14 @@ export async function runAi(meta: GeldPrMeta, comments: readonly RawComment[], s
 
 const UNREADABLE = 'The model answered in a shape Geld could not read.';
 
+/** How a chat's ask ended: whether anything changed, and why it failed when it did (`needsKey`: no key on this device). */
+export interface FixRun {
+  readonly changed: boolean;
+  readonly failed: boolean;
+  readonly reason?: string;
+  readonly needsKey?: boolean;
+}
+
 /** What the reader asked to fix from a chat: threads by their key, and a comment's own findings outside them. */
 export interface FixScope {
   readonly threads: readonly string[];
@@ -537,15 +547,20 @@ export interface FixScope {
  * fixes, so a click costs one or two requests. A comment's own findings become rows for an agent, since no thread holds
  * them to suggest in, and replace that comment's rows from before. Resolves with whether a request failed.
  */
-export async function fixFromComments(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings, onProgress: () => void, source: SuggestionSource, scope: FixScope): Promise<{ readonly changed: boolean; readonly failed: boolean; readonly reason?: string }> {
+export async function fixFromComments(meta: GeldPrMeta, comments: readonly RawComment[], settings: GeldSettings, onProgress: () => void, source: SuggestionSource, scope: FixScope): Promise<FixRun> {
   // Taken before the first await, and checked before anything shared changes: an answer that lands after the reader
   // moved to another visit (another pull request, or this one opened afresh) is that visit's no longer.
   const visitAt = visitId;
   const still = (): boolean => visitId === visitAt;
-  if (meta.producer.ai || !(await aiConfigured(settings)) || inFlight.size > 0 || !triageFixesOn(settings)) return { changed: false, failed: false };
+  if (meta.producer.ai || !aiSwitchedOn(settings) || inFlight.size > 0 || !triageFixesOn(settings)) return { changed: false, failed: false };
   await hydrating;
   const apiKey = (await aiKeyItem.getValue()).trim();
-  if (apiKey === '' || !still()) return { changed: false, failed: false };
+  if (!still()) return { changed: false, failed: false };
+  if (apiKey === '') {
+    keyMissing = true;
+    return { changed: true, failed: true, reason: NO_KEY_REASON, needsKey: true };
+  }
+  keyMissing = false;
   // Checked again with no await before the reservation: two asks set up side by side would share the one marker.
   if (inFlight.size > 0) return { changed: false, failed: false };
   // A thread whose saved fix it shares with others is asked about with them, so the answer still covers every one.

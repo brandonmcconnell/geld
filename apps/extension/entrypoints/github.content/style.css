@@ -8495,6 +8495,25 @@ a.geld-review__rerun:hover {
   color: var(--fgColor-danger, var(--color-danger-fg));
 }
 
+/* With no API key on this device, Fix leads to Geld's settings: the gear in the danger colour, and the row's note a link. */
+.geld-review__chat-fix[data-state='needs-key'] .octicon:not(.geld-spinner) {
+  color: var(--fgColor-danger, var(--color-danger-fg));
+}
+
+.geld-review__chat-fix-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fgColor-accent, var(--color-accent-fg));
+  font: inherit;
+  cursor: pointer;
+}
+
+.geld-review__chat-fix-link:hover,
+.geld-review__chat-fix-link:focus-visible {
+  text-decoration: underline;
+}
+
 /* 24px tall with a 1px border, a 12px glyph: 5px above and below it, so 5px on the left too — the state circle
    is always the first thing in the chip, and it sits concentric with the chip's rounded end. */
 .geld-review__chat-thread {
