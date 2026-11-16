@@ -347,6 +347,16 @@ describe('bots + prompts', () => {
     const findingsRaw = '<h2>Confidence Score: 4/5</h2>\n\nThe PR appears safe to merge, with a non-blocking request for a focused regression test.\n\n<h2>Findings</h2>\n\n1. <img alt="P2">&nbsp;**Review cards lack test coverage** <a href="#">▶</a>\n2. <img alt="P2">&nbsp;**Another one** <a href="#">▶</a>\n\n<details><summary><h3>Summary</h3></summary>\n\nThe PR lets a review\u2019s own body card render as a dressed chat message.\n</details>';
     expect(parseBotBody(findingsRaw, 'greptile')).toMatchObject({ count: 2, score: 4, clean: false });
     expect(parseBotBody('Confidence Score: 4/5\n[Medium impact] Adjusts how review comments are identified.\nThe PR appears safe to merge, with a non-blocking request.\nFindings\n\n**Review cards lack test coverage** ▶\n\nSummary\nThe PR lets a review\u2019s own body card render as a dressed chat message.', 'greptile')).toMatchObject({ count: 1, score: 4, clean: false });
+    // Its short summary lists no findings even when it posts them as threads seconds later: the open threads are the
+    // findings, and the summary's score still stands beside their count.
+    const shortSummary = 'Confidence Score: 4/5\n\n[Medium impact] The change adds a settings page.\n\nFix the race before merging.\n\nReviews (1) · Last reviewed commit: "feat: settings page" · Reviewed by Greptile';
+    const shortRun = verdictsFrom([], [
+      { author: 'greptile-apps[bot]', body: shortSummary, anchor: 'issuecomment-1', createdAt: '2026-10-20T18:00:00Z' },
+      { author: 'greptile-apps[bot]', body: '**Stale response wins**\n\nAn older request replaces a newer result.', anchor: 'discussion_r1', resolved: false, createdAt: '2026-10-20T18:00:03Z' },
+      { author: 'greptile-apps[bot]', body: '**Cache never cleared**\n\nThe list does not update.', anchor: 'discussion_r2', resolved: false, createdAt: '2026-10-20T18:00:03Z' },
+      { author: 'greptile-apps[bot]', body: '**Retries ignore the limit**\n\nThree pools run at once.', anchor: 'discussion_r3', resolved: false, createdAt: '2026-10-20T18:00:04Z' },
+    ], 'aaa');
+    expect(shortRun[0]).toMatchObject({ id: 'greptile', verdict: 'findings', count: 3, score: 4 });
     // A Findings section whose items cannot be read claims nothing either way.
     expect(parseBotBody('Confidence Score: 3/5\nFindings\nsomething unreadable\nSummary\nwords', 'greptile')).toMatchObject({ count: null, clean: false });
     expect(parseBotBody('1 high severity bug found.', 'bugbot').severity).toBe('high');
