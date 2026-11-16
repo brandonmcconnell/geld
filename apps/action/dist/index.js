@@ -34189,6 +34189,9 @@ function refusalKind(status, message) {
   if (status === 429) return "rate-limit";
   return "other";
 }
+var PROVIDER_WORDS = new Set(
+  "a about above access account additional additionalproperties after again all allof allowed an and any anyof api are array as assistant at auth authentication bad balance be been before billing boolean but by cannot characters completion config content context could credit credits day declared defs denied deployment deprecated description did does enum error exceed exceeded exceeds exist exists expected failed field fields for forbidden format found from function gateway got has have hour if in input insufficient integer internal invalid is it items json key keys later length limit limits max maximum maxitems match matches maxlength message messages min minimum minitems minlength minute missing mode model models more must near no not null number object of on oneof only or out output output_config overloaded parameter parameters pattern per permission please properties property provider quota rate received ref request requested requests required response response_format retry role schema second seconds server set should strict string structured support supported system temperature than that the this timed timeout to token tokens too tool tools try type unauthorized unavailable unknown unsupported user using value values was were when which with your json_schema".split(" ")
+);
 function messageIn(value) {
   if (typeof value === "string") return value.trim() === "" ? null : value;
   if (Array.isArray(value)) return messageIn(value[0]);

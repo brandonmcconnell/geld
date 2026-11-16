@@ -4,7 +4,7 @@ import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
 import { aiGatewayLabel, errorReportFrom, parseUnifiedDiff } from '@geld/core';
 import type { Refusal } from '@geld/review';
-import { refusalReport } from '@geld/review';
+import { refusalReport, vocabularyOf } from '@geld/review';
 import { completeChat, decisionModelsPath, evaluateDecision, listModels, servesDecisions, TYPESAFE_API } from '@geld/review';
 import { apiSignedIn, createPullRequest, handleAccountMessage, handleFeedbackMessage, startAccountSync } from '../src/lib/account-service';
 import { senderMayCreatePull } from '../src/lib/create-pull';
@@ -57,14 +57,14 @@ const BUILT_IN_HOSTS = ['github.com', 'patch-diff.githubusercontent.com'];
 
 /**
  * A request the AI gateway refused, as one of Geld's errors: Copy diagnostics (which feedback can attach to a public
- * issue) keeps the short form, and the error report the reader opted into the provider's words when they cannot quote
- * the reader's text (`refusalReport`).
+ * issue) keeps the short form, and the error report the reader opted into adds the provider's words reduced to known
+ * ones, the error vocabulary and what Geld itself sent (`refusalReport`, `sent`: its schema and model).
  */
-function reportAiFailure(step: string, baseUrl: string, failure: Refusal): void {
+function reportAiFailure(step: string, baseUrl: string, failure: Refusal, sent: readonly unknown[] = []): void {
   const where = `AI ${step} via ${aiGatewayLabel(baseUrl)}`;
-  const { logged, sent } = refusalReport(where, failure);
+  const { logged, sent: reported } = refusalReport(where, failure, vocabularyOf(step, ...sent));
   const report = (message: string): ReturnType<typeof errorReportFrom> => errorReportFrom({ where: 'background:ai', kind: 'error', error: message, origin: browser.runtime.getURL('/'), at: Date.now() });
-  void queueErrorReports([report(logged)], [report(sent)]).catch(() => undefined);
+  void queueErrorReports([report(logged)], [report(reported)]).catch(() => undefined);
 }
 
 /** github.com, its diff host, and any Enterprise servers the user configured. */
@@ -644,7 +644,7 @@ export default defineBackground(() => {
         if (denied !== null) return { ok: false as const, reason: denied };
         if (message.apiKey.trim() === '') return { ok: false as const, reason: message.baseUrl === TYPESAFE_API ? 'No TypeSafe key.' : 'No API key.' };
         const result = await evaluateDecision({ fetch, baseUrl: message.baseUrl, apiKey: message.apiKey, request: message.request, timeoutMs: 20_000 });
-        if (!result.ok) reportAiFailure('decision', message.baseUrl, result);
+        if (!result.ok) reportAiFailure('decision', message.baseUrl, result, [message.request.model]);
         return result;
       })().then(sendResponse);
       return true;
@@ -664,7 +664,7 @@ export default defineBackground(() => {
           ...(message.jsonSchema === undefined ? {} : { jsonSchema: message.jsonSchema }),
           ...(message.schemaName === undefined ? {} : { schemaName: message.schemaName }),
         });
-        if (!result.ok) reportAiFailure(message.schemaName ?? 'completion', message.baseUrl, result);
+        if (!result.ok) reportAiFailure(message.schemaName ?? 'completion', message.baseUrl, result, [message.jsonSchema, message.model]);
         return result;
       })().then(sendResponse);
       return true;

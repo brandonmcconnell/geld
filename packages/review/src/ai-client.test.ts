@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { completeChat, joinUrl, listModels, providerMessage, refusalKind, refusalReport } from './ai-client';
+import { completeChat, joinUrl, listModels, providerMessage, providerWordsOnly, refusalKind, refusalReport, vocabularyOf } from './ai-client';
 import type { ChatCompletionOptions } from './ai-client';
 import { evaluateDecision } from './jev';
 
@@ -290,24 +290,29 @@ it('leaves temperature to the provider unless the caller sets one', async () => 
 
 describe('a refusal as Geld reports it', () => {
   const where = 'AI geld_consolidate via Vercel AI Gateway';
+  const schema = { type: 'object', properties: { items: { type: 'array', items: { properties: { severity: { anyOf: [{ type: 'string', enum: ['blocking', 'bug', 'nit'] }, { type: 'null' }] } } } } } };
 
-  it('sends the provider’s words when they are about Geld’s own request, and logs only the kind', () => {
+  it('sends a schema refusal whole: every word is the error vocabulary or Geld’s own schema', () => {
     const reason = "Completion failed (400): output_config.format.schema: Invalid schema: Enum value 'blocking' does not match declared type '['string', 'null']'.";
-    expect(refusalReport(where, { reason, status: 400, kind: 'response-format' })).toEqual({
+    expect(refusalReport(where, { reason, status: 400, kind: 'response-format' }, vocabularyOf('geld_consolidate', schema, 'anthropic/claude-sonnet-5'))).toEqual({
       logged: `${where}: refused (400, response-format)`,
       sent: `${where}: refused (400, response-format): ${reason}`,
     });
   });
 
-  it('sends only the kind of a refusal that can quote what was sent', () => {
-    for (const kind of ['other', 'too-long', 'content-policy'] as const) {
-      const report = refusalReport(where, { reason: 'Invalid input near: privatePayroll = 125000', status: 400, kind });
-      expect(report.sent).toBe(`${where}: refused (400, ${kind})`);
-      expect(report.sent).not.toContain('privatePayroll');
+  it('leaves out what the request said, whatever kind the refusal seems to be', () => {
+    for (const kind of ['model', 'other', 'response-format', 'content-policy'] as const) {
+      const report = refusalReport(where, { reason: 'Invalid input near: model privatePayroll = 125000', status: 400, kind }, vocabularyOf(schema));
+      expect(report.sent).toBe(`${where}: refused (400, ${kind}): Invalid input near: model … = …`);
     }
   });
 
   it('reports one of Geld’s own reasons as it is', () => {
     expect(refusalReport(where, { reason: 'Timed out.' })).toEqual({ logged: `${where}: Timed out.`, sent: `${where}: Timed out.` });
+  });
+
+  it('runs words it does not know together into one gap', () => {
+    expect(providerWordsOnly('Model acme-secret-proj does not exist', new Set())).toBe('Model … does not exist');
+    expect(providerWordsOnly('Unknown field customer payroll ledger', new Set())).toBe('Unknown field …');
   });
 });
