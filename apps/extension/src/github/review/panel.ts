@@ -1771,7 +1771,7 @@ function menuItem(content: readonly (Node | string)[], close: () => void, onSele
 const VARIANT_WORD: Readonly<Record<TriageOpenTarget['variant'], string>> = { web: 'Web', app: 'App' };
 
 /**
- * For one finding, two sections under small sticky headings. "Fix in PR": "Fix with" each agent a comment on the pull
+ * For one finding, two sections under small sticky headings. "Fix in this pull request": "Fix with" each agent a comment on the pull
  * request starts. "Open in agent": "Open in" each service's web app or app, one line per way in, a pill saying which,
  * each with the service's mark. In both, what is likely here comes first (as the review bots' request menu puts the
  * bots it has a sign of first) and the rest wait behind a disclosure; with nothing likely, everything is listed.
@@ -1807,7 +1807,7 @@ function agentItems(list: HTMLElement, key: string, triage: TriageView, handlers
   const show = (agent: TriageAgent): boolean => agent.id !== skip;
   const shown = fixers.first.filter(show);
   const foldedFixers = fixers.folded.filter(show);
-  section('Fix in PR', shown.map(fixItem), foldedFixers.map(fixItem), `Other agents (${foldedFixers.length})`);
+  section('Fix in this pull request', shown.map(fixItem), foldedFixers.map(fixItem), `Other agents (${foldedFixers.length})`);
   const targets = likelyFirst(triage.openTargets);
   const keep = (target: TriageOpenTarget): boolean => target.id !== lead?.opens;
   const shownTargets = targets.first.filter(keep);
