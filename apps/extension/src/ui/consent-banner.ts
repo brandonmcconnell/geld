@@ -38,9 +38,10 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', child
   return node;
 }
 
-function button(text: string, modifier: string, onClick: () => void): HTMLButtonElement {
+function button(text: string, modifier: string, key: string, onClick: () => void): HTMLButtonElement {
   const node = el('button', `geld-button geld-button--small${modifier === '' ? '' : ` ${modifier}`}`, [text]);
   node.type = 'button';
+  node.dataset.geldConsent = key;
   node.addEventListener('click', onClick);
   return node;
 }
@@ -62,7 +63,11 @@ export function mountConsentBanner(host: HTMLElement, initial: GeldSettings): vo
   const decide = async (choice: ConsentChoice): Promise<void> => {
     await settingsItem.patch(consentPatch(honoured(choice), new Date().toISOString()));
   };
+  // The control to focus once the prompt is drawn again: a redraw for a change elsewhere must not drop the reader's place.
+  let focusKey: string | undefined;
   const render = (settings: GeldSettings): void => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && host.contains(active) && active.dataset.geldConsent !== undefined) focusKey ??= active.dataset.geldConsent;
     host.replaceChildren();
     if (!consentPending(settings)) return;
     const refused = globalPrivacyRefused();
@@ -76,25 +81,32 @@ export function mountConsentBanner(host: HTMLElement, initial: GeldSettings): vo
       const track = (): void => {
         draft = { usageStats: usage.input.checked, errorReports: errors.input.checked };
       };
+      usage.input.dataset.geldConsent = 'usage';
+      errors.input.dataset.geldConsent = 'errors';
       usage.input.addEventListener('change', track);
       errors.input.addEventListener('change', track);
       alert.append(
         el('div', 'geld-consent__options', [usage.row, errors.row]),
-        el('div', 'geld-alert__actions', [button(CONSENT_COPY.save, 'geld-button--primary', () => void decide({ usageStats: usage.input.checked, errorReports: errors.input.checked }))]),
+        el('div', 'geld-alert__actions', [button(CONSENT_COPY.save, 'geld-button--primary', 'save', () => void decide({ usageStats: usage.input.checked, errorReports: errors.input.checked }))]),
       );
     } else {
       alert.append(
         el('div', 'geld-alert__actions', [
-          button(CONSENT_COPY.all, 'geld-button--primary', () => void decide({ usageStats: true, errorReports: true })),
-          button(CONSENT_COPY.necessary, '', () => void decide({ usageStats: false, errorReports: false })),
-          button(CONSENT_COPY.manage, '', () => {
+          button(CONSENT_COPY.all, 'geld-button--primary', 'all', () => void decide({ usageStats: true, errorReports: true })),
+          button(CONSENT_COPY.necessary, '', 'necessary', () => void decide({ usageStats: false, errorReports: false })),
+          button(CONSENT_COPY.manage, '', 'manage', () => {
             draft = { usageStats: settings.usageStats, errorReports: settings.errorReports };
+            focusKey = 'usage';
             render(settings);
           }),
         ]),
       );
     }
     host.append(alert);
+    const key = focusKey;
+    focusKey = undefined;
+    if (key === undefined) return;
+    for (const node of host.querySelectorAll<HTMLElement>('[data-geld-consent]')) if (node.dataset.geldConsent === key) node.focus({ preventScroll: true });
   };
   render(initial);
   let changed = false;
