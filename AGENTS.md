@@ -2726,6 +2726,11 @@ So does the comment that started a run whose signer another run recorded meanwhi
 ## Verifying changes
 
 There is no GitHub login available to automation here.
+**Never test on a repository whose project uses Mintlify for its docs**: the owner works at Mintlify, and screenshots, stored test data or any other action touching Mintlify's customers and users can look bad.
+That covers loading their pull requests in a harness, naming them in a pull request or commit, and posting anything there.
+Before using a public repository, check it has no `docs.json` or `mint.json` with Mintlify's schema and that its docs are not served by Mintlify;
+when unsure, use another.
+Prefer this repository's own pull requests (merged ones still keep unresolved threads), or the public pages below.
 Verify against public pages: `https://github.com/wxt-dev/wxt/pull/2544/files` (classic view, 6 test files), `https://github.com/wxt-dev/wxt/commit/d05ac55ba78b7d01c5ab9feb0e862775e45509ef` (React view), `https://github.com/vitest-dev/vitest/pull/10554/files` (124 files, progressive loading), `https://github.com/wxt-dev/wxt/pulls` (PR list).
 Branded Chrome ignores `--load-extension`;
 install the built folder with Puppeteer's `browser.installExtension()` after launching with `enableExtensions: true`, `pipe: true` and `--enable-unsafe-extension-debugging` in `args` — all three (the option only drops Puppeteer's default `--disable-extensions`, without which the install "succeeds" but the extension stays inert: no service worker, `ERR_BLOCKED_BY_CLIENT` on its pages;
