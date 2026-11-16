@@ -164,6 +164,24 @@ export function refusalKind(status: number, message: string | null): RefusalKind
   return 'other';
 }
 
+/**
+ * Refusals whose words are about Geld's own request, never the reader's text: a response format the provider rejects
+ * quotes the schema Geld wrote, and a model, a rate limit, a quota or a key names the setup. Any other kind (`other`,
+ * `too-long`, `content-policy`) can quote what was sent, the pull request's text, so only its kind is reported.
+ */
+const WORDED_REFUSALS: ReadonlySet<RefusalKind> = new Set<RefusalKind>(['response-format', 'model', 'rate-limit', 'quota', 'key']);
+
+/**
+ * A refusal as Geld reports it: `logged` for Copy diagnostics, which feedback can attach to a public issue, and `sent`
+ * for the error report the reader opted into, with the provider's words for the kinds in `WORDED_REFUSALS`. A failure
+ * with no status is one of Geld's own fixed reasons (a timeout, an empty answer), the same in both.
+ */
+export function refusalReport(where: string, failure: Pick<Refusal, 'reason' | 'status' | 'kind'>): { readonly logged: string; readonly sent: string } {
+  if (failure.status === undefined) return { logged: `${where}: ${failure.reason}`, sent: `${where}: ${failure.reason}` };
+  const logged = `${where}: refused (${failure.status}, ${failure.kind ?? 'other'})`;
+  return { logged, sent: failure.kind !== undefined && WORDED_REFUSALS.has(failure.kind) ? `${logged}: ${failure.reason}` : logged };
+}
+
 export interface Refusal {
   readonly ok: false;
   /** Shown to the reader and kept on the device: the provider's own words included. */

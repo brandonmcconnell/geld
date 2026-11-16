@@ -4,6 +4,7 @@ import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
 import { aiGatewayLabel, errorReportFrom, parseUnifiedDiff } from '@geld/core';
 import type { Refusal } from '@geld/review';
+import { refusalReport } from '@geld/review';
 import { completeChat, decisionModelsPath, evaluateDecision, listModels, servesDecisions, TYPESAFE_API } from '@geld/review';
 import { apiSignedIn, createPullRequest, handleAccountMessage, handleFeedbackMessage, startAccountSync } from '../src/lib/account-service';
 import { senderMayCreatePull } from '../src/lib/create-pull';
@@ -55,16 +56,13 @@ const MAX_FILE_BYTES = 256 * 1024;
 const BUILT_IN_HOSTS = ['github.com', 'patch-diff.githubusercontent.com'];
 
 /**
- * A request the AI gateway refused, as one of Geld's errors. Copy diagnostics, which feedback can attach to a public
- * issue, says only what kind of refusal it was; the error report the reader opted into also carries the gateway's own
- * words, scrubbed like every report, so a refusal can be told apart from the next (a schema the provider rejects, a
- * model it does not serve). A content-policy refusal sends its kind alone: its words can quote the pull request's text.
- * A failure with no status is one of Geld's own fixed reasons (a timeout, an empty answer) and is reported as it is.
+ * A request the AI gateway refused, as one of Geld's errors: Copy diagnostics (which feedback can attach to a public
+ * issue) keeps the short form, and the error report the reader opted into the provider's words when they cannot quote
+ * the reader's text (`refusalReport`).
  */
 function reportAiFailure(step: string, baseUrl: string, failure: Refusal): void {
   const where = `AI ${step} via ${aiGatewayLabel(baseUrl)}`;
-  const logged = failure.status === undefined ? `${where}: ${failure.reason}` : `${where}: refused (${failure.status}, ${failure.kind ?? 'other'})`;
-  const sent = failure.status === undefined || failure.kind === 'content-policy' ? logged : `${logged}: ${failure.reason}`;
+  const { logged, sent } = refusalReport(where, failure);
   const report = (message: string): ReturnType<typeof errorReportFrom> => errorReportFrom({ where: 'background:ai', kind: 'error', error: message, origin: browser.runtime.getURL('/'), at: Date.now() });
   void queueErrorReports([report(logged)], [report(sent)]).catch(() => undefined);
 }

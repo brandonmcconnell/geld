@@ -1,7 +1,7 @@
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import type { ErrorPayload, ErrorReport, GeldSettings, ReportBrowser } from '@geld/core';
-import { ERROR_PAYLOAD_VERSION, mergeErrorReports } from '@geld/core';
+import { ERROR_PAYLOAD_VERSION, fittingReports, mergeErrorReports } from '@geld/core';
 import { recordDiagnostic } from './diagnostics';
 import { settingsItem } from './storage';
 
@@ -78,20 +78,25 @@ async function flushErrorReports(): Promise<void> {
     await browser.alarms.create(ALARM, { delayInMinutes: Math.max(1, wait / 60_000) });
     return;
   }
-  const payload: ErrorPayload = { v: ERROR_PAYLOAD_VERSION, version: browser.runtime.getManifest().version, browser: reportBrowser(), errors: queue };
+  const envelope = { v: ERROR_PAYLOAD_VERSION, version: browser.runtime.getManifest().version, browser: reportBrowser() } as const;
+  // The route refuses a body past 64 KiB and a no-cors send cannot tell: what does not fit waits for the next send.
+  const batch = fittingReports(envelope, queue);
+  if (batch.length === 0) return;
+  const payload: ErrorPayload = { ...envelope, errors: batch };
   try {
     // A simple request (text/plain, no credentials) needs no CORS preflight and no host permission; the answer is not read.
     await fetch(ERROR_ENDPOINT, { method: 'POST', mode: 'no-cors', credentials: 'omit', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(payload) });
   } catch {
-    recordDiagnostic({ kind: 'error-report', subject: `${queue.length} errors`, outcome: 'failed' });
+    recordDiagnostic({ kind: 'error-report', subject: `${batch.length} errors`, outcome: 'failed' });
     await browser.alarms.create(ALARM, { delayInMinutes: MIN_INTERVAL_MS / 60_000 });
     return;
   }
-  recordDiagnostic({ kind: 'error-report', subject: `${queue.length} errors`, outcome: 'sent' });
+  recordDiagnostic({ kind: 'error-report', subject: `${batch.length} errors`, outcome: 'sent' });
   await sentAtItem.setValue(Date.now());
   // An error that arrived or repeated while the request was out (a newer `lastAt`) stays for the next send.
-  const sent = new Set(queue.map(sentKey));
+  const sent = new Set(batch.map(sentKey));
   await serially(async () => queueItem.setValue((await queueItem.getValue()).filter((report) => !sent.has(sentKey(report)))));
+  if (batch.length < queue.length) await browser.alarms.create(ALARM, { delayInMinutes: MIN_INTERVAL_MS / 60_000 });
 }
 
 /** Background start: the alarm sends what is queued; turning the setting off drops the queue. */

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { completeChat, joinUrl, listModels, providerMessage, refusalKind } from './ai-client';
+import { completeChat, joinUrl, listModels, providerMessage, refusalKind, refusalReport } from './ai-client';
 import type { ChatCompletionOptions } from './ai-client';
 import { evaluateDecision } from './jev';
 
@@ -286,4 +286,28 @@ it('leaves temperature to the provider unless the caller sets one', async () => 
   await completeChat({ ...options, temperature: 0.2 });
   expect(bodies[0]).not.toHaveProperty('temperature');
   expect(bodies[1]).toHaveProperty('temperature', 0.2);
+});
+
+describe('a refusal as Geld reports it', () => {
+  const where = 'AI geld_consolidate via Vercel AI Gateway';
+
+  it('sends the provider’s words when they are about Geld’s own request, and logs only the kind', () => {
+    const reason = "Completion failed (400): output_config.format.schema: Invalid schema: Enum value 'blocking' does not match declared type '['string', 'null']'.";
+    expect(refusalReport(where, { reason, status: 400, kind: 'response-format' })).toEqual({
+      logged: `${where}: refused (400, response-format)`,
+      sent: `${where}: refused (400, response-format): ${reason}`,
+    });
+  });
+
+  it('sends only the kind of a refusal that can quote what was sent', () => {
+    for (const kind of ['other', 'too-long', 'content-policy'] as const) {
+      const report = refusalReport(where, { reason: 'Invalid input near: privatePayroll = 125000', status: 400, kind });
+      expect(report.sent).toBe(`${where}: refused (400, ${kind})`);
+      expect(report.sent).not.toContain('privatePayroll');
+    }
+  });
+
+  it('reports one of Geld’s own reasons as it is', () => {
+    expect(refusalReport(where, { reason: 'Timed out.' })).toEqual({ logged: `${where}: Timed out.`, sent: `${where}: Timed out.` });
+  });
 });

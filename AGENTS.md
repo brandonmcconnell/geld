@@ -2253,8 +2253,10 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   a Vercel log drain carries them further.
   It also forwards each error to PostHog as an `extension_error` event (`lib/posthog-forward.ts`, the usage route's sender: `POSTHOG_USAGE_KEY`, a random id per event, no person profile, no GeoIP), with `where`, `message`, `stack`, `count` and the version, so the "Geld · Errors" dashboard groups failures by their words.
   **An AI refusal is reported in the provider's words** (`reportAiFailure`, background.ts, Nov 2026: "refused (400, response-format)" told nothing apart, and a schema bug read the same as a model the gateway does not serve).
-  Those words go only to the opt-in report (`queueErrorReports(logged, sent)`): Copy diagnostics, which the feedback form can attach to a public issue, keeps the short form, and a `content-policy` refusal sends its kind alone, since its words can quote the pull request.
-  A message is cut at 600 characters (`MAX_ERROR_MESSAGE`), room for a provider's refusal.
+  Those words go only to the opt-in report (`queueErrorReports(logged, sent)`): Copy diagnostics, which the feedback form can attach to a public issue, keeps the short form.
+  Only the kinds whose words are about Geld's own request carry them (`refusalReport`, `WORDED_REFUSALS` in ai-client.ts: `response-format`, which quotes Geld's own schema, `model`, `rate-limit`, `quota`, `key`), while `other`, `too-long` and `content-policy` send their kind alone, since their words can quote the pull request ("Invalid input near: …").
+  A message is cut at 600 characters (`MAX_ERROR_MESSAGE`), room for a provider's refusal, so a send carries only the reports that fit in 60 KiB (`fittingReports`, `MAX_PAYLOAD_BYTES`, under the route's 64 KiB, which a no-cors send cannot see refused) and the rest wait for the next.
+  A report's times must be ones a date can hold (`isTime`), or the route's date conversion would throw.
   The privacy policy's extension section (`@geld/domain/privacy.ts`) says exactly what is sent: keep it in step with `ErrorReport`.
 - **Anonymous usage statistics count installs, updates and active installs with no identifier at all** (`usageStats`, General, on by default, extension only, hidden and never sent on Firefox like `errorReports`;
   `src/lib/usage-uplink.ts`, `@geld/core/usage-report.ts`, `apps/site/app/api/usage/route.ts`).

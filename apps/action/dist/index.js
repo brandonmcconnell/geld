@@ -2363,7 +2363,7 @@ function isRecord4(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function isTime(value) {
-  return typeof value === "number" && Number.isFinite(value) && value > 0;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 && value <= MAX_TIME;
 }
 function parseReport(value) {
   if (!isRecord4(value)) return null;
@@ -2387,6 +2387,15 @@ function parseErrorReports(value) {
   const reports = value.map(parseReport);
   return reports.every((report) => report !== null) ? reports : null;
 }
+function fittingReports(envelope, reports, budget = MAX_PAYLOAD_BYTES) {
+  const encoder = new TextEncoder();
+  const fitting = [];
+  for (const report of reports) {
+    if (encoder.encode(JSON.stringify({ ...envelope, errors: [...fitting, report] })).length > budget) break;
+    fitting.push(report);
+  }
+  return fitting;
+}
 function parseErrorPayload(value) {
   if (!isRecord4(value) || value.v !== ERROR_PAYLOAD_VERSION) return null;
   const { version: version2, browser, errors } = value;
@@ -2397,7 +2406,7 @@ function parseErrorPayload(value) {
   if (reports === null || reports.length === 0) return null;
   return { v: ERROR_PAYLOAD_VERSION, version: version2, browser: known, errors: reports };
 }
-var ERROR_PAYLOAD_VERSION, MAX_ERRORS_PER_PAYLOAD, MAX_ERROR_MESSAGE, MAX_STACK_FRAMES, MAX_FRAME, WHERE, VERSION, BROWSERS, FRAME;
+var ERROR_PAYLOAD_VERSION, MAX_ERRORS_PER_PAYLOAD, MAX_ERROR_MESSAGE, MAX_STACK_FRAMES, MAX_PAYLOAD_BYTES, MAX_TIME, MAX_FRAME, WHERE, VERSION, BROWSERS, FRAME;
 var init_error_report = __esm({
   "../../packages/core/src/error-report.ts"() {
     "use strict";
@@ -2405,6 +2414,8 @@ var init_error_report = __esm({
     MAX_ERRORS_PER_PAYLOAD = 25;
     MAX_ERROR_MESSAGE = 600;
     MAX_STACK_FRAMES = 12;
+    MAX_PAYLOAD_BYTES = 60 * 1024;
+    MAX_TIME = 864e13;
     MAX_FRAME = 160;
     WHERE = /^[a-z][a-z0-9:-]{0,40}$/;
     VERSION = /^\d+(?:\.\d+){0,3}$/;
@@ -12314,6 +12325,7 @@ __export(src_exports, {
   ListSurfaceError: () => ListSurfaceError,
   MAX_ERRORS_PER_PAYLOAD: () => MAX_ERRORS_PER_PAYLOAD,
   MAX_ERROR_MESSAGE: () => MAX_ERROR_MESSAGE,
+  MAX_PAYLOAD_BYTES: () => MAX_PAYLOAD_BYTES,
   MAX_STACK_FRAMES: () => MAX_STACK_FRAMES,
   MAX_USAGE_EVENTS: () => MAX_USAGE_EVENTS,
   ORG_CONFIG_PATHS: () => ORG_CONFIG_PATHS,
@@ -12385,6 +12397,7 @@ __export(src_exports, {
   findCategory: () => findCategory,
   findJsonError: () => findJsonError,
   findSettingsGist: () => findSettingsGist,
+  fittingReports: () => fittingReports,
   formatCatalogVersion: () => formatCatalogVersion,
   formatCount: () => formatCount,
   formatCountLike: () => formatCountLike,
