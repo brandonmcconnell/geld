@@ -2262,7 +2262,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   A report's times must be ones a date can hold (`isTime`), or the route's date conversion would throw.
   The privacy policy's extension section (`@geld/domain/privacy.ts`) says exactly what is sent: keep it in step with `ErrorReport`.
 - **The extension asks before it sends anything optional** (`src/ui/consent-banner.ts`, `consentDecidedAt`, Nov 2026): until the reader answers, the popup and the options page open on a privacy prompt in the dashboard's c15t banner's words ("Your work.
-  Your choices.", Opt in to all · Necessary only · Manage), covering `usageStats` and `errorReports`.
+  Your choices.", Opt in to all · Necessary · Manage), covering `usageStats` and `errorReports`.
   An answer writes both with its time (`consentPatch`), and turning either on or off in the options answers it too.
   It is the dashboard's choice kept as settings, not c15t itself: c15t's core keeps the answer in the page's own storage and brings a backend package, while settings sync with the reader's others.
   Global Privacy Control is honoured as a refusal (`honoured`: nothing optional, whatever was ticked), and Firefox builds, which send neither yet, never show it.

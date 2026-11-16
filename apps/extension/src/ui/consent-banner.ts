@@ -13,7 +13,7 @@ export const CONSENT_COPY = {
   title: 'Your work. Your choices.',
   body: 'Geld can send geld.sh anonymous counts of how its features are used and reports of its own errors, which geld.sh forwards to PostHog. Neither names a page, repository, file or person. Usage counts are on until you choose, and error reports stay off unless you opt in.',
   all: 'Opt in to all',
-  necessary: 'Necessary only',
+  necessary: 'Necessary',
   manage: 'Manage',
   save: 'Save choices',
   usage: { label: 'Usage statistics', help: 'How often Geld’s features are used, with no identifier, once a day.' },

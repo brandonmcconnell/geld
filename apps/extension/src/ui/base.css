@@ -675,6 +675,11 @@ summary::-webkit-details-marker {
   margin-top: 8px;
 }
 
+/* Its three choices keep to one line in the popup's 336px: 8px apart, the room the notice gives them at 12px is a few pixels short of a margin for error. */
+.geld-consent .geld-alert__actions {
+  column-gap: 8px;
+}
+
 /* Account widget (popup + options header) ----------------------------------- */
 
 .geld-account {
