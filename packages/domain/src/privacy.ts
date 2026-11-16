@@ -99,7 +99,7 @@ export const PRIVACY_SECTIONS: readonly {
     id: 'changes',
     title: 'Changes to this policy',
     paragraphs: [
-      'This policy was updated on November 10, 2026. Material changes are announced in the product or by account email before they take effect where appropriate. The public source history records policy changes.',
+      `This policy was updated on ${PRIVACY_UPDATED}. Material changes are announced in the product or by account email before they take effect where appropriate. The public source history records policy changes.`,
     ],
   },
 ];

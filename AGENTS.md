@@ -2507,6 +2507,8 @@ Run it with `pnpm --filter @geld/site dev` (or `pnpm dev:site`);
   Only with measurement allowed is `posthog-js` fetched at all (a dynamic import), started with autocapture, a page view per client navigation (`history_change`), page leave with scroll depth, the referrer and GeoIP region PostHog adds, and an anonymous id in `localStorage+cookie`;
   no session replay, no surveys, no person profiles.
   A withdrawn choice stops capture at once (`opt_out_capturing`).
+  Nothing is captured on the pages a visitor is signed in on (`capturedOn`: `/settings`, `/auth`, a `before_send` read from the browser's own location), where a click on Open gist would have sent the address of the visitor's secret settings gist.
+  Privacy settings opens showing the choice as saved, from the banner's Manage and the footer alike (`useOpenPrivacySettings`): the dialog's switch is c15t's pending selection (`selectedConsents`), set from the saved choice before the dialog opens.
   It needs `NEXT_PUBLIC_POSTHOG_KEY` (and optionally `NEXT_PUBLIC_POSTHOG_HOST`) at build time: without a key the site asks for nothing and loads nothing, which is what previews and local builds do.
   PostHog skips headless browsers as bots, so a check with Puppeteer launches Chrome with `--disable-blink-features=AutomationControlled` and an ordinary user agent.
 - **`/feedback` is for installs from before the extension's own feedback form.**

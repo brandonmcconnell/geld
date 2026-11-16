@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import type { PostHog } from 'posthog-js';
 
-import { siteAnalyticsConfig } from '@/lib/site-analytics';
+import { capturedOn, siteAnalyticsConfig } from '@/lib/site-analytics';
 
 let loaded: Promise<PostHog | null> | null = null;
 
@@ -21,6 +21,8 @@ function startPostHog(): Promise<PostHog | null> {
       disable_session_recording: true,
       disable_surveys: true,
       persistence: 'localStorage+cookie',
+      // Every event on a signed-in page is dropped, read from where the browser is, not what the event claims.
+      before_send: (event) => (event !== null && capturedOn(window.location.pathname) ? event : null),
     });
     return posthog;
   });

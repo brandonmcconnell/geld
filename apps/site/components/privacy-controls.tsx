@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { ConsentManagerProvider, useConsentManager } from '@c15t/react';
@@ -52,25 +51,30 @@ export function PrivacySettingsButton({ className }: { readonly className: strin
   return <PrivacySettingsTrigger className={className} />;
 }
 
+/**
+ * Opens Privacy settings showing the choice as saved: the dialog's switch is c15t's pending selection, which a choice
+ * left unsaved, or never made, would otherwise show. The banner's Manage and the footer's Privacy settings both open it here.
+ */
+function useOpenPrivacySettings(): () => void {
+  const { consentInfo, hasConsentFor, setSelectedConsent, setIsPrivacyDialogOpen } = useConsentManager();
+  return () => {
+    setSelectedConsent('measurement', consentInfo !== null && hasConsentFor('measurement') && !globalPrivacyRefused());
+    setIsPrivacyDialogOpen(true);
+  };
+}
+
 function PrivacySettingsTrigger({ className }: { readonly className: string }) {
-  const { setIsPrivacyDialogOpen } = useConsentManager();
+  const open = useOpenPrivacySettings();
   return (
-    <button type="button" className={className} onClick={() => setIsPrivacyDialogOpen(true)}>
+    <button type="button" className={className} onClick={open}>
       Privacy settings
     </button>
   );
 }
 
 function ConsentInterface() {
-  const { showPopup, setShowPopup, saveConsents, consentInfo, setSelectedConsent, hasConsentFor, isPrivacyDialogOpen, setIsPrivacyDialogOpen } = useConsentManager();
-  const measurement = consentInfo !== null && hasConsentFor('measurement');
-  const [draft, setDraft] = useState(false);
-  const manage = (): void => {
-    const allowed = measurement && !globalPrivacyRefused();
-    setDraft(allowed);
-    setSelectedConsent('measurement', allowed);
-    setIsPrivacyDialogOpen(true);
-  };
+  const { showPopup, setShowPopup, saveConsents, selectedConsents, setSelectedConsent, isPrivacyDialogOpen, setIsPrivacyDialogOpen } = useConsentManager();
+  const manage = useOpenPrivacySettings();
   const choose = (type: 'all' | 'necessary' | 'custom'): void => {
     if (globalPrivacyRefused()) {
       setSelectedConsent('measurement', false);
@@ -117,14 +121,7 @@ function ConsentInterface() {
                 <span className="text-sm font-medium">Measurement</span>
                 <span className="text-sm text-muted-foreground">Page visits, the links and buttons you click, how far you scroll, the page you came from and your approximate region, counted with an identifier kept in this browser.</span>
               </span>
-              <Switch
-                checked={draft}
-                disabled={globalPrivacyRefused()}
-                onCheckedChange={(checked) => {
-                  setDraft(checked);
-                  setSelectedConsent('measurement', checked);
-                }}
-              />
+              <Switch checked={selectedConsents.measurement === true} disabled={globalPrivacyRefused()} onCheckedChange={(checked) => setSelectedConsent('measurement', checked)} />
             </label>
             {globalPrivacyRefused() && <p className="text-sm text-muted-foreground">Global Privacy Control is on. Optional measurement is refused.</p>}
             <div className="flex flex-wrap justify-end gap-2">

@@ -16,3 +16,10 @@ export function siteAnalyticsConfig(): SiteAnalyticsConfig | null {
   const host = (process.env.NEXT_PUBLIC_POSTHOG_HOST?.trim() || DEFAULT_HOST).replace(/\/+$/, '');
   return { key, host };
 }
+
+/** The pages a visitor is signed in on (their settings, the sign-in flow): nothing is captured there, since they show what is theirs alone, such as the address of their secret settings gist. */
+const PRIVATE_PATHS: readonly string[] = ['/settings', '/auth'];
+
+export function capturedOn(pathname: string): boolean {
+  return !PRIVATE_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+}
