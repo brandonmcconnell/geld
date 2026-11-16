@@ -1462,25 +1462,29 @@ async function main(): Promise<void> {
   /* Keep the page in sync with changes made elsewhere (popup, other windows, gist sync). */
   // A watch hears only later changes: one stored while the page was being built (the privacy prompt answered in the
   // popup, another window) is read here, or a switch would show the state from before it.
+  // The signature of the settings the category lists were built from, so the read below rebuilds them when it differs.
+  let lastSignature = categorySignature(settings);
+  const syncCategories = (next: GeldSettings): void => {
+    const signature = categorySignature(next);
+    // Rebuilding while someone edits a category would eat their input, draft or Saved status.
+    if (signature === lastSignature) return;
+    if (isEditingCategory() || hasUnsavedEdits()) renderDeferred = true;
+    else {
+      lastSignature = signature;
+      renderAll();
+    }
+  };
   settings = await settingsItem.getValue();
   for (const { field, set } of toggleSwitches) set(settings[field.key]);
   for (const { field, set } of reviewSwitches) set(settings[field.key]);
   for (const show of choiceSetters) show(settings);
-  let lastSignature = categorySignature(settings);
+  syncCategories(settings);
   settingsItem.watch((next) => {
     settings = next;
     for (const { field, set } of toggleSwitches) set(next[field.key]);
     for (const { field, set } of reviewSwitches) set(next[field.key]);
     for (const show of choiceSetters) show(next);
-    const signature = categorySignature(next);
-    // Rebuilding while someone edits a category would eat their input, draft or Saved status.
-    if (signature !== lastSignature) {
-      if (isEditingCategory() || hasUnsavedEdits()) renderDeferred = true;
-      else {
-        lastSignature = signature;
-        renderAll();
-      }
-    }
+    syncCategories(next);
     // Not in the signature (that rebuild would drop unsaved category edits): an import, a reset or another window is shown in place.
     for (const checkbox of document.querySelectorAll<HTMLInputElement>('input[data-auto-viewed]')) {
       const id = checkbox.dataset.autoViewed ?? '';
