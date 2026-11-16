@@ -1,6 +1,7 @@
 import { consentPatch } from '@geld/core';
 import type { ConsentChoice, GeldSettings } from '@geld/core';
 import { settingsItem } from '../lib/storage';
+import { globalPrivacyRefused } from '../lib/privacy-signal';
 
 /**
  * The extension's privacy prompt, in the popup and on the options page until the reader answers it: the same choices
@@ -20,11 +21,6 @@ export const CONSENT_COPY = {
   errors: { label: 'Error reports', help: 'What broke and where in Geld’s code, with an AI provider’s refusal in its own words.' },
   gpc: 'Your browser asks sites not to track you (Global Privacy Control), so Geld sends nothing optional.',
 } as const;
-
-/** The browser's Global Privacy Control, which Firefox, Brave and some extensions turn on: honoured as a refusal. */
-function globalPrivacyRefused(): boolean {
-  return typeof navigator !== 'undefined' && 'globalPrivacyControl' in navigator && navigator.globalPrivacyControl === true;
-}
 
 export function consentPending(settings: GeldSettings): boolean {
   return settings.consentDecidedAt === '' && !import.meta.env.FIREFOX;
@@ -61,7 +57,8 @@ function option(id: string, copy: { readonly label: string; readonly help: strin
 
 /** Shows the prompt in `host` while it waits for an answer, and takes it away once one is given here or anywhere else. */
 export function mountConsentBanner(host: HTMLElement, initial: GeldSettings): void {
-  let managing = false;
+  // Manage's ticks until they are saved: a settings change elsewhere redraws the prompt, and must not undo them.
+  let draft: ConsentChoice | null = null;
   const decide = async (choice: ConsentChoice): Promise<void> => {
     await settingsItem.patch(consentPatch(honoured(choice), new Date().toISOString()));
   };
@@ -72,9 +69,15 @@ export function mountConsentBanner(host: HTMLElement, initial: GeldSettings): vo
     const alert = el('section', 'geld-alert geld-alert--notice geld-consent', [el('p', 'geld-alert__title', [CONSENT_COPY.title]), el('p', 'geld-alert__text', [CONSENT_COPY.body])]);
     alert.setAttribute('aria-label', 'Privacy choices');
     if (refused) alert.append(el('p', 'geld-help geld-consent__gpc', [CONSENT_COPY.gpc]));
-    if (managing) {
-      const usage = option('consent-usage', CONSENT_COPY.usage, settings.usageStats && !refused, refused);
-      const errors = option('consent-errors', CONSENT_COPY.errors, settings.errorReports && !refused, refused);
+    if (draft !== null) {
+      const choice = draft;
+      const usage = option('consent-usage', CONSENT_COPY.usage, choice.usageStats && !refused, refused);
+      const errors = option('consent-errors', CONSENT_COPY.errors, choice.errorReports && !refused, refused);
+      const track = (): void => {
+        draft = { usageStats: usage.input.checked, errorReports: errors.input.checked };
+      };
+      usage.input.addEventListener('change', track);
+      errors.input.addEventListener('change', track);
       alert.append(
         el('div', 'geld-consent__options', [usage.row, errors.row]),
         el('div', 'geld-alert__actions', [button(CONSENT_COPY.save, 'geld-button--primary', () => void decide({ usageStats: usage.input.checked, errorReports: errors.input.checked }))]),
@@ -85,7 +88,7 @@ export function mountConsentBanner(host: HTMLElement, initial: GeldSettings): vo
           button(CONSENT_COPY.all, 'geld-button--primary', () => void decide({ usageStats: true, errorReports: true })),
           button(CONSENT_COPY.necessary, '', () => void decide({ usageStats: false, errorReports: false })),
           button(CONSENT_COPY.manage, '', () => {
-            managing = true;
+            draft = { usageStats: settings.usageStats, errorReports: settings.errorReports };
             render(settings);
           }),
         ]),

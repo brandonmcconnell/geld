@@ -4,6 +4,7 @@ import type { GeldSettings, UpdateBlock, UpdateMethod, UpdateMode, UsageBrowser,
 import { MAX_USAGE_EVENTS, USAGE_COUNTER_CAP, USAGE_MAX_AGE_MS, USAGE_PAYLOAD_VERSION, usagePeriods, usageSettingsOf } from '@geld/core';
 import { recordDiagnostic } from './diagnostics';
 import { settingsItem } from './storage';
+import { globalPrivacyRefused } from './privacy-signal';
 
 /**
  * Anonymous usage statistics (`usageStats`, on by default): an event when Geld
@@ -62,7 +63,7 @@ function serially<T>(change: (state: UsageState) => Promise<{ readonly next: Usa
 }
 
 export function sendsUsage(settings: GeldSettings): boolean {
-  return settings.usageStats && !import.meta.env.DEV && !import.meta.env.FIREFOX;
+  return settings.usageStats && !import.meta.env.DEV && !import.meta.env.FIREFOX && !globalPrivacyRefused();
 }
 
 function usageBrowser(): UsageBrowser {

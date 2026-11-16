@@ -2265,9 +2265,11 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Your choices.", Opt in to all · Necessary · Manage), covering `usageStats` and `errorReports`.
   An answer writes both with its time (`consentPatch`), and turning either on or off in the options answers it too.
   It is the dashboard's choice kept as settings, not c15t itself: c15t's core keeps the answer in the page's own storage and brings a backend package, while settings sync with the reader's others.
-  Global Privacy Control is honoured as a refusal (`honoured`: nothing optional, whatever was ticked), and Firefox builds, which send neither yet, never show it.
+  Global Privacy Control is honoured as a refusal everywhere a choice is made or used (`lib/privacy-signal.ts`): the prompt saves nothing optional whatever was ticked (`honoured`), the options switches for both stay off and disabled with a note, and the error and usage senders check it too, so no path sends what the browser refused;
+  Firefox builds, which send neither yet, never show the prompt.
   Usage statistics stay on until the reader answers, as before, since they carry no identifier;
   error reports stay off until the reader opts in.
+  Manage's ticks are kept as a draft until saved, so a settings change elsewhere redraws the prompt without undoing them, and the options page reads the settings again where its watch starts, since a watch hears only later changes.
   `consentDecidedAt` is personal (a repository config may not set it), synced like `digestViewChosenAt`, and on no settings page.
 - **Anonymous usage statistics count installs, updates and active installs with no identifier at all** (`usageStats`, General, on by default, extension only, hidden and never sent on Firefox like `errorReports`;
   `src/lib/usage-uplink.ts`, `@geld/core/usage-report.ts`, `apps/site/app/api/usage/route.ts`).

@@ -4,6 +4,7 @@ import type { ErrorPayload, ErrorReport, GeldSettings, ReportBrowser } from '@ge
 import { ERROR_PAYLOAD_VERSION, fittingReports, mergeErrorReports } from '@geld/core';
 import { recordDiagnostic } from './diagnostics';
 import { settingsItem } from './storage';
+import { globalPrivacyRefused } from './privacy-signal';
 
 /**
  * The background's half of error reports. Every report lands in the session
@@ -33,7 +34,7 @@ function serially<T>(change: () => Promise<T>): Promise<T> {
 }
 
 function sends(settings: GeldSettings): boolean {
-  return settings.errorReports && !import.meta.env.DEV && !import.meta.env.FIREFOX;
+  return settings.errorReports && !import.meta.env.DEV && !import.meta.env.FIREFOX && !globalPrivacyRefused();
 }
 
 function reportBrowser(): ReportBrowser {

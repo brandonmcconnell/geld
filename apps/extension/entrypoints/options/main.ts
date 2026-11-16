@@ -68,6 +68,7 @@ import { polyfillCornerShape } from '../../src/ui/corner-shape';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
 import { installErrorCapture } from '../../src/lib/error-capture';
 import { mountConsentBanner } from '../../src/ui/consent-banner';
+import { globalPrivacyRefused } from '../../src/lib/privacy-signal';
 
 installErrorCapture('options');
 
@@ -207,18 +208,21 @@ async function main(): Promise<void> {
       if (index > 0) host.append(el('hr', 'options__divider'));
       const label = el('span', 'geld-label', [field.label]);
       label.id = `${field.key}-label`;
-      const note = surfaceNotes[field.key];
+      // Turning either of the privacy prompt's settings on or off answers the prompt too; under Global Privacy
+      // Control both stay off, as the prompt keeps them, and the senders refuse them as well.
+      const answers = field.key === 'usageStats' || field.key === 'errorReports';
+      const refused = answers && globalPrivacyRefused();
+      const note = refused ? 'Your browser sends Global Privacy Control, so this stays off.' : surfaceNotes[field.key];
       const help = el('p', 'geld-help', richText(note === undefined ? field.description : `${field.description} ${note}`));
       help.id = `${field.key}-help`;
-      const button = switchButton(field.key, settings[field.key], label.id, help.id);
+      const button = switchButton(field.key, settings[field.key] && !refused, label.id, help.id);
+      if (refused) button.disabled = true;
       host.append(el('div', 'geld-row', [el('div', '', [label, help]), button]));
-      // Turning either of the privacy prompt's settings on or off answers the prompt too.
-      const answers = field.key === 'usageStats' || field.key === 'errorReports';
-      const bound = bindSwitch(button, settings[field.key], async (value) => {
-        settings = await settingsItem.patch({ [field.key]: value, ...(answers ? { consentDecidedAt: new Date().toISOString() } : {}) });
+      const bound = bindSwitch(button, settings[field.key] && !refused, async (value) => {
+        settings = await settingsItem.patch({ [field.key]: value && !refused, ...(answers ? { consentDecidedAt: new Date().toISOString() } : {}) });
         saved('Saved', 'success');
       });
-      toggleSwitches.push({ field, set: bound.set });
+      toggleSwitches.push({ field, set: (checked) => bound.set(checked && !refused) });
     });
   }
 
@@ -1456,6 +1460,12 @@ async function main(): Promise<void> {
   applyCatalog(await catalogItem.getValue());
 
   /* Keep the page in sync with changes made elsewhere (popup, other windows, gist sync). */
+  // A watch hears only later changes: one stored while the page was being built (the privacy prompt answered in the
+  // popup, another window) is read here, or a switch would show the state from before it.
+  settings = await settingsItem.getValue();
+  for (const { field, set } of toggleSwitches) set(settings[field.key]);
+  for (const { field, set } of reviewSwitches) set(settings[field.key]);
+  for (const show of choiceSetters) show(settings);
   let lastSignature = categorySignature(settings);
   settingsItem.watch((next) => {
     settings = next;
