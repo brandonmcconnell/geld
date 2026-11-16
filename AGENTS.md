@@ -1725,6 +1725,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Every colour in the card is GitHub's theme token (`--fgColor-success`/`-danger` for the counts, `--diffBlob-*` for the diff, `--color-prettylights-*` for its syntax), so a colour-blind theme's blue additions and orange deletions come through (checked in light and dark colour-blind, Nov 2026).
   It is fitted to the room its line leaves it (`fitPathInto(…, place)`), since measured against its own box, sized to its text, a rounding cut a path that fitted.
   Under the stale or failed line the fixes stand 8px from it, as far as from the card's foot.
+  Each fix is a box of its own, its four corners rounded, 5px from the next as one author's messages are in a chat: the findings are not a group, and drawn as one flush list they read as one.
   The triage's prose (the TL;DR, a fix's explanation and its notes) is set as a PR description and the chat's bubbles are, GitHub's `markdown-body` at 14px and 1.5: at 12px it read small and cramped beside them.
   An opened fix's content has 10px around it and its last block no margin of its own, so there is as much room under it as over it.
   A fix replaces the lines of one thread in one file, since a GitHub suggestion can only take those lines: a change across files or past the thread's lines is a "Needs an agent" row, not a fix.

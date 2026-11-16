@@ -3543,26 +3543,29 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   margin-top: 8px;
 }
 
+/* Each fix is a box of its own, as far from the next as one author's messages in a chat (5px). */
 .geld-review__triage-fixes {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
   margin: 0 16px 8px 38px;
   padding: 0;
-  border: 1px solid var(--geld-review-border-muted);
-  border-radius: 6px;
   list-style: none;
 }
 
-.geld-review__triage-fix + .geld-review__triage-fix {
-  border-top: 1px solid var(--geld-review-border-muted);
+.geld-review__triage-fix {
+  border: 1px solid var(--geld-review-border-muted);
+  border-radius: 6px;
 }
 
-/* No `overflow: hidden` on the list, which would clip the rows' menus: the first and last rows round themselves. */
-.geld-review__triage-fix:first-child > .geld-review__triage-fix-row {
+/* No `overflow: hidden` on a fix, which would clip its row's menus: its first and last parts round themselves. */
+.geld-review__triage-fix > .geld-review__triage-fix-row {
   border-top-left-radius: 5px;
   border-top-right-radius: 5px;
 }
 
-.geld-review__triage-fix:last-child:not([data-open]) > .geld-review__triage-fix-place,
-.geld-review__triage-fix:last-child > .geld-review__triage-fix-body {
+.geld-review__triage-fix:not([data-open]) > .geld-review__triage-fix-place,
+.geld-review__triage-fix > .geld-review__triage-fix-body {
   border-bottom-left-radius: 5px;
   border-bottom-right-radius: 5px;
 }
