@@ -1743,6 +1743,21 @@ function splitButton(main: HTMLButtonElement, label: string, focusKey: string, f
   return createElement('div', { class: `${PANEL_CLASS}__split` }, [main, details]);
 }
 
+/** A button that only opens its menu: the label with the dropdown caret inside it, the menu placed as a split button's. */
+function menuButton(label: string, title: string, focusKey: string, fill: (list: HTMLElement, close: () => void) => void): HTMLElement {
+  installMenuDismissal();
+  const details = createElement('details', { class: `${PANEL_CLASS}__menu ${PANEL_CLASS}__split-menu` });
+  const summary = createElement('summary', { class: `btn btn-sm ${PANEL_CLASS}__menu-button`, role: 'button', 'aria-haspopup': 'menu', title, [ATTR_FOCUS]: focusKey }, [createElement('span', { class: `${PANEL_CLASS}__split-label` }, [label]), icon(ICON_TRIANGLE_DOWN)]);
+  summary.addEventListener('click', (event) => event.stopPropagation());
+  const list = createElement('div', { class: `${PANEL_CLASS}__menu-list ${PANEL_CLASS}__split-list`, role: 'menu' });
+  fill(list, () => details.removeAttribute('open'));
+  details.addEventListener('toggle', () => {
+    if (!details.open) for (const more of list.querySelectorAll('details[open]')) more.removeAttribute('open');
+  });
+  details.append(summary, list);
+  return createElement('div', { class: `${PANEL_CLASS}__split` }, [details]);
+}
+
 function menuItem(content: readonly (Node | string)[], close: () => void, onSelect: () => void): HTMLElement {
   const node = createElement('button', { type: 'button', class: `${PANEL_CLASS}__menu-item ${PANEL_CLASS}__split-item`, role: 'menuitem' }, [...content]);
   node.addEventListener('click', (event) => {
@@ -1862,17 +1877,11 @@ function applyControl(fix: TriageSuggestionView, triage: TriageView, handlers: P
 function agentControl(key: string, triage: TriageView, handlers: PanelHandlers): HTMLElement {
   const lead = triage.recommended === null ? undefined : triage.agents.find((agent) => agent.id === triage.recommended?.id);
   if (lead === undefined) {
-    const main = createElement('button', { type: 'button', class: 'btn btn-sm', title: 'Hand this finding to a coding agent', [ATTR_FOCUS]: `fix-agent:${key}` }, [createElement('span', { class: `${PANEL_CLASS}__split-label` }, ['Fix with…'])]);
-    const control = splitButton(main, 'Coding agents', `fix-agent-more:${key}`, (list, close) => {
+    // With no agent to lead, a split would be two halves opening one menu: one button, its caret inside, opens it.
+    return menuButton('Fix with agent', 'Hand this finding to a coding agent', `fix-agent:${key}`, (list, close) => {
       copyItem(list, key, handlers, close);
       agentItems(list, key, triage, handlers, close, null);
     });
-    // With no agent to lead, the whole button opens the menu.
-    main.addEventListener('click', (event) => {
-      event.stopPropagation();
-      control.querySelector('details')?.setAttribute('open', '');
-    });
-    return control;
   }
   const why = triage.recommended?.reason === 'used' ? `${lead.name} worked on this pull request` : 'Your coding agent in Geld settings';
   const what = lead.command === null ? `Open this finding in ${lead.name} as a draft on this pull request` : `Post ${lead.command} on the pull request with this finding`;

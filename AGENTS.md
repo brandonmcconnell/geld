@@ -1770,7 +1770,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   An app on the reader's own machine is never guessed at: it counts only as the reader's choice or when the links show it was used.
   They end, under a separator after "Open in agent", in the same help icon, its tip and draft asking for a coding agent.
   Which agent leads is the `codingAgent` setting (Experiments, options page only, `auto` by default), unless the reader is the pull request's author and its related links show another agent worked on it (`recommendAgents`, `agentsInRelatedLinks`): then that one leads, except when the links name the reader's own choice too, which leads.
-  With `auto` and nothing known, "Fix with…" opens the menu.
+  With `auto` and nothing known, the row has one button, "Fix with agent" with the dropdown caret inside it, which opens the menu: a split there was two halves opening one menu.
   The agent's mark stands as far from its button's left edge as from its top and bottom (`.geld-review__split-agent`).
   Nothing yet replies to both threads of a shared fix when the reader writes in one: that is still each thread's own composer.
   **With `aiJev` on, Jev is the stand-in for the deterministic classification** (`jevDecisionsFor` in `ai.ts`, `classificationRequests` in `decisions.ts`): one request per batch of 24 with the top-level comments and open multi-comment threads as *structured* state (`{ comments: [{id, author, bot, text}], threads: [{id, path, first, replies}] }`, the questions naming fields in backticks as TypeSafe's docs ask), a `choice` lane per comment (`trigger` / `status` / `verdict` / `report` / `finding` / `discussion`, criteria in `LANE_CRITERIA`) and a `noul` "do the replies say it is done" per thread.
