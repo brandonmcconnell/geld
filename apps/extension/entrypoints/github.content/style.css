@@ -3946,6 +3946,22 @@ html[data-geld-autoloading] :is(form.ajax-pagination-form, button[data-testid='l
   display: none;
 }
 
+/* One button that opens a menu: the words, then the caret a split button would stand apart. */
+.geld-review__menu-button {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+  list-style: none;
+}
+
+.geld-review__triage .btn-sm.geld-review__menu-button {
+  padding-right: 6px;
+}
+
+.geld-review__menu-button::-webkit-details-marker {
+  display: none;
+}
+
 .geld-review__menu-list.geld-review__split-list {
   min-width: 200px;
 }
