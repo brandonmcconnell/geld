@@ -2717,6 +2717,7 @@ function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, pr
     busy: visit.triage.busy.get(entry.key) ?? null,
     error: visit.triage.errors.get(entry.key) ?? null,
     from: entry.origin === undefined ? null : originAuthor(entry.origin.author, settings),
+    routed: entry.routed === true,
   }));
   return {
     suggestions,

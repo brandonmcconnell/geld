@@ -17,6 +17,7 @@ export * from './inline-markdown';
 export * from './plan';
 export * from './planner';
 export * from './triage';
+export * from './fix-route';
 export * from './coding-agents';
 export * from './sse';
 export * from './cursor-agents';

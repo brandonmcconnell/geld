@@ -127,6 +127,8 @@ export interface StoredSuggestion {
   readonly replacement: readonly string[] | null;
   readonly summary: string;
   readonly state: 'open' | 'discarded' | 'applied';
+  /** Sent to an agent by the gate before drafting: it judged the fix needs more than the thread's lines. */
+  readonly routed?: boolean;
   /** Every comment anchor of its threads the fix was written from: a reply since makes it stale. Absent in records from before. */
   readonly sources?: readonly string[];
   /** The id each of its threads' findings had when the fix was written, which Geld's own replies change (`asWrittenFor`). */

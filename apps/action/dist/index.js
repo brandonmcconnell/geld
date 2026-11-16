@@ -35168,6 +35168,17 @@ var bodyOutputSchema = external_exports.object({
   )
 });
 
+// ../../packages/review/src/fix-route.ts
+var routeOutputSchema = external_exports.object({
+  routes: external_exports.array(
+    external_exports.object({
+      id: external_exports.string().min(1),
+      scope: external_exports.enum(["lines", "wider"]),
+      needs: external_exports.string().max(600).nullish()
+    })
+  )
+});
+
 // ../../packages/review/src/cursor-agents.ts
 var UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 var AGENT_ID = new RegExp(`^bc-${UUID}$`, "i");

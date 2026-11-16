@@ -607,6 +607,8 @@ export interface TriageSuggestionView {
   readonly error: string | null;
   /** Who wrote the comment a finding outside its threads came from, when it is one (`StoredSuggestion.origin`). */
   readonly from: string | null;
+  /** Sent to an agent by the check before drafting, which judged the fix needs more than its thread's lines. */
+  readonly routed: boolean;
 }
 
 export interface TriageAgent {
@@ -1641,7 +1643,7 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHa
   const notes: string[] = [];
   if (fix.threads > 1) notes.push(`One change for ${fix.threads} threads reporting the same problem (${fix.reporters.join(', ')}). ${triage.resolves ? 'Apply resolves them all.' : 'It answers them all.'}`);
   if (isFix && !fix.current && !applied) notes.push(behindWords(fix));
-  if (!isFix) notes.push(fix.from !== null ? `${fix.from}’s comment asks for this outside its threads, so there is no thread to suggest a fix in. Hand it to an agent.` : 'A fix that fits the lines a thread is on can be applied as a suggestion. This one needs more than that, so hand it to an agent.');
+  if (!isFix) notes.push(fix.from !== null ? `${fix.from}’s comment asks for this outside its threads, so there is no thread to suggest a fix in. Hand it to an agent.` : fix.routed ? 'Geld’s check found that a proper fix likely changes more than the lines this thread is on, such as other code, other files or tests. So no suggestion was drafted. Hand it to an agent.' : 'A fix that fits the lines a thread is on can be applied as a suggestion. This one needs more than that, so hand it to an agent.');
   for (const note of notes) body.append(createElement('p', { class: `${PANEL_CLASS}__triage-fix-note` }, [note]));
   if (isFix && !applied) {
     const busy = fix.busy !== null;
