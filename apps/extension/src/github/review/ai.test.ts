@@ -423,4 +423,26 @@ describe('the check before a fix is drafted', () => {
     expect(schemas).toEqual(['geld_route', 'geld_suggest']);
     expect(triageSuggestions(pushed, settings)[0]?.entry).toMatchObject({ headSha: 'head2', replacement: ['use(x ?? NaN);'] });
   });
+
+  it('asks about a shared row’s partners with its owner at a new commit, so a fresh draft keeps them', async () => {
+    const other: RawComment = { ...bug, anchor: 'discussion_r800', author: 'coderabbitai[bot]', body: 'Same problem.' };
+    const meta0 = metaFor([bug, other]);
+    stored.set('local:aiRuns', {
+      'github:/o/r/pull/10': {
+        ranAt: at,
+        rewrites: [],
+        seen: [bug.anchor, other.anchor],
+        summary: { tldr: 'One finding.', updatedAt: at, forItems: meta0.items.map((each) => each.id).sort() },
+        suggestions: [{ key: bug.anchor, threads: [bug.anchor, other.anchor], headSha: 'head1', path: 'src/b.ts', start: 3, end: 3, original: ['use(x);'], replacement: null, summary: 'Change both callers.', state: 'open', routed: true, sources: [bug.anchor, other.anchor] }],
+      },
+    });
+    await fresh();
+    const pushed = { ...meta0, headSha: 'head2' };
+    sendMessage.mockImplementation(async (message: unknown) => {
+      if (schemaOf(message) === 'geld_route') return { ok: true, model: 'm', text: JSON.stringify({ routes: [bug, other].map((each) => ({ id: each.anchor, scope: 'lines', needs: '' })) }) };
+      return { ok: true, model: 'm', text: JSON.stringify({ suggestions: [{ ids: [bug.anchor, other.anchor], summary: 'Skips missing values.', replacement: 'use(x ?? NaN);' }] }) };
+    });
+    await runAi(pushed, [bug, other], settings, () => undefined, source);
+    expect(triageSuggestions(pushed, settings).map(({ entry, partners }) => [entry.threads, entry.replacement, partners.length])).toEqual([[[bug.anchor, other.anchor], ['use(x ?? NaN);'], 1]]);
+  });
 });

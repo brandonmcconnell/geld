@@ -695,7 +695,8 @@ async function proposeFixes(headSha: string, items: readonly ReviewItem[], comme
     if (existing !== undefined && existing.key !== key) {
       // A partner follows the fix it shares while that fix's own thread is open and nothing new arrived in its own.
       const shared = suggestions.get(existing.key);
-      if (!force && fresh && openThreads.has(existing.key) && shared !== undefined) continue;
+      // Not while that fix is being written afresh this round, though: drafted for its own thread alone, it would drop this one.
+      if (!force && fresh && openThreads.has(existing.key) && shared !== undefined && !asks.some((ask) => threadKeyOf(ask.item) === existing.key)) continue;
       if (shared !== undefined) leaving.set(key, existing.key);
       asks.push({ item, target });
       continue;
