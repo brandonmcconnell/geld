@@ -11384,6 +11384,29 @@ button[data-geld-merge-variant] {
   border: 0 !important;
 }
 
+/*
+ * The Overview pads each comment of a thread in a wrapper of its own, 12px above and below, which stood every message a
+ * comment's spacing apart, one author's run included. Between messages only the top padding stays, which spaces an
+ * author change as the classic chat does (37px bubble to bubble), and run-mates sit 5px apart, as there.
+ */
+.geld-review__chat :has(> [data-geld-message][class*='ReviewThreadContainer']):not(:last-child) {
+  padding-bottom: 0 !important;
+}
+
+.geld-review__chat :has(> [data-geld-message][class*='ReviewThreadContainer']:is([data-geld-run='mid'], [data-geld-run='last'])):not(:first-child) {
+  padding-top: 5px !important;
+}
+
+/* The 8px of line GitHub draws above a reply to join it to the one before: an empty box the chat has no use for. */
+.geld-review__chat [data-geld-message][class*='ReviewThreadContainer'] > [class*='ReviewThreadWrapper']:has(> [class*='ReviewThreadBox']:only-child:empty) {
+  display: none !important;
+}
+
+/* A message's reactions holder with no pills in it is only padding under the bubble. */
+.geld-review__chat [data-geld-message] .geld-review__msg-reactions--overview:not(:has(button)) {
+  display: none !important;
+}
+
 /* The pills under the bubble: GitHub's toolbar, 2px down, mirrored on the reader's own side. */
 .geld-review__chat .geld-review__msg-reactions [role='toolbar'],
 .geld-review__chat .geld-review__msg-reactions [role='toolbar'] ~ *,
