@@ -10,7 +10,7 @@ import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
 import type { GeldSettings } from '@geld/core';
 import { compileAuthorRules, digestViewOf, repoFromPathname } from '@geld/core';
 import type { BotComment, BotVerdictRecord, CommentLane, GeldPrMeta, RawCheckRun, ReviewItem, ReviewerState } from '@geld/review';
-import { botAppAvatar, botById, botTitle, checkReporterAvatar, clusterComments, commandReply, firstSentence, isOpenStatus, isReviewShaped, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, mergeCheckRuns, parseBotBody, parsePreviews, refusalReason, REPORT_GRACE_MS, reportsFrom, reportsFromChecks, resolveBotId, verdictsFrom } from '@geld/review';
+import { botAppAvatar, botById, botTitle, isCursorAgentId, checkReporterAvatar, clusterComments, commandReply, firstSentence, isOpenStatus, isReviewShaped, isStatusLineComment, isTriggerComment, latestPreviews, latestReports, mergeCheckRuns, parseBotBody, parsePreviews, refusalReason, REPORT_GRACE_MS, reportsFrom, reportsFromChecks, resolveBotId, verdictsFrom } from '@geld/review';
 import type { Preview } from '@geld/review';
 import { detectHeadSha } from '../head-sha';
 import { describePage, pullRequestStateWords } from '../page';
@@ -23,9 +23,11 @@ import { clickResolve, copyText, focusReply, resolveIfOpen, isResolvable, openRe
 import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, commitsInRow, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, revisionMarker, THREAD_SELECTOR, TIMELINE_ROW } from './crawler';
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
-import { adoptOwnReplies, aiPending, aiStateFor, clearAiForPage, discardSuggestion, jevDecisionsFor, loadAiForPage, markSuggestionApplied, markSuggestionPosted, pendingReplyFor, previewDecisionKey, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi, withJevDone } from './ai';
-import type { AiState, SuggestionSource, SuggestionTarget } from './ai';
-import { applyFix } from './apply-suggestion';
+import type { FixRun } from './ai';
+import { AI_KEY_SECTION } from '../../lib/ai-key';
+import { adoptOwnReplies, aiPending, chatFixesOffered, commentReportsOutsideThreads, onAiKeyChange, aiStateFor, clearAiForPage, discardSuggestion, fixFromComments, jevDecisionsFor, loadAiForPage, markSuggestionApplied, markSuggestionPosted, pendingReplyFor, previewDecisionKey, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi, withJevDone } from './ai';
+import type { AiState, FixScope, SuggestionSource, SuggestionTarget } from './ai';
+import { applyFixes, splitOverlapping } from './apply-suggestion';
 import { agentComment, agentLikely, agentsInRelatedLinks, agentTask, CODING_AGENTS, codingAgentById, diffHunks, lineDiff, OPEN_TARGETS, openTargetById, openTargetLikely, recommendAgents } from '@geld/review';
 import type { CodingAgent, OpenTarget } from '@geld/review';
 import { relatedLinksOnPage } from '../related-links';
@@ -40,13 +42,14 @@ import { deploymentEntries, deploymentOf, deploymentsOfPreview, environmentLabel
 import { threadFragmentOf } from './thread-fragment';
 import { clickLoadMore, fragmentHeaders, hasLoadMore, hiddenTimelineItems, loadMorePending, loadMorePendingUntil, loadMoreStalled, loadMoreStanding, sourceAnchorFromHash } from './deeplink';
 import { commitDate, commitTimes, isRewritten } from './commit-dates';
-import { embeddedPullRequestCreated } from '../merge-actions';
+import { embeddedPullRequestBranches, embeddedPullRequestCreated } from '../merge-actions';
 import { editedAt, editsVersion, editTimesOf, refreshEditTimes, resetEditTimes, revisionAsOf, revisionTimesOf } from './edit-times';
 import type { SameRunCandidate } from './revisions';
 import { RUN_SETTLE_MS, threadHeadOf } from './thread-head';
 import { headChecks, nextCheckRefresh, resetHeadChecks } from './check-source';
 import { absoluteTimeText, earliestMoment, relativeTimeText } from './time';
 import { stickyHeaderBottomAt } from './sticky';
+import { keepInPlace, revealOpened, rowDestination, scrollRowTo } from './row-scroll';
 import { fetchReviewerCandidates, hasReviewActions, pressReviewAction, requestReviewers, reviewRequestForm } from './reviewers';
 import type { ReviewerCandidate } from './reviewers';
 import { nextRunGraceEnd, withRunTimes } from './run-starts';
@@ -65,7 +68,7 @@ import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiv
 import type { BotRequestClick } from './bot-requests';
 import { awaitingReaction, botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, requestSentence, triggerAnchors, withBotRequests } from './bot-requests';
 import { pollTriggerReactions, resetTriggerReactions, withFetchedReactions } from './trigger-reactions';
-import { AGENT_NOTES_KEY, pressHeld, ATTR_CHECK_RUNS, ATTR_CTL_SLOT, ATTR_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, descriptionCard, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, reseatPanelNow, openRowGroup, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderCheckRunsList, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel, renderDeploymentsList, renderPreviewsList, DEPLOYMENTS_KEY, whoAttributes } from './panel';
+import { AGENT_NOTES_KEY, menuHoldsRebuild, pressHeld, ATTR_CHECK_RUNS, ATTR_CTL_SLOT, ATTR_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, descriptionCard, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, reseatPanelNow, openRowGroup, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderCheckRunsList, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel, renderDeploymentsList, renderPreviewsList, DEPLOYMENTS_KEY, whoAttributes } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setNoteProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
@@ -82,11 +85,12 @@ import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel, TriageView } from './panel';
 import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots, triggerFor } from './panel-model';
-import { commitShaOf, outgoingMentions, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
-import { timelineMentionsFor } from './timeline-mentions';
-import type { MentionLine } from './quick-view';
+import { commitShaOf, outgoingMentions, renderEventsView, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
+import { eventState, eventWords, type TimelineEvent } from './timeline-events';
+import { timelineEventsFor, timelineMentionsFor } from './timeline-mentions';
+import type { EventLine, MentionLine } from './quick-view';
 import { botCommentControls, chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf, threadLinesOf, parkChats, releaseParkedChats } from './chat';
-import type { ChatByline, ChatLink, ChatRerun, ChatThreadLink } from './chat';
+import type { ChatByline, ChatFix, ChatFixState, ChatLink, ChatRerun, ChatThreadLink, CommentFix, CommentFixScope } from './chat';
 import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
 import { quietClick } from './quiet-click';
@@ -97,7 +101,10 @@ import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, dropOrph
 import { rememberTopCard, setTopCard } from './top-card';
 import { closeOverviewChecks, isOverviewPage, OVERVIEW_FOR_YOU, OVERVIEW_ITEM, openCollapsedThreads, openOverviewChecks, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, showAllOverviewComments } from './overview-page';
 import { pageFetch } from '../page-fetch';
-import { closeFlow, openFlowDialog } from './flow';
+import { closeFlow, flowFiles, openFlowDialog } from './flow';
+import type { ChatFile } from '@geld/review';
+import type { ChatPageContext } from './chat-sidebar';
+import { closeChat, setChatContext, syncChatToPage, toggleChat, warmChat } from './chat-sidebar';
 import { countUsage } from '../../lib/usage-count';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };
@@ -210,12 +217,22 @@ interface VisitState {
   triage: TriageVisit;
 }
 
+/** How a chat's Fix ask last ended, kept for the visit so its control says so. */
+interface AskedChatFix {
+  readonly state: ChatFixState;
+  readonly scope: CommentFixScope | null;
+  readonly error?: string;
+  readonly needsKey?: boolean;
+}
+
 interface TriageVisit {
   openKey: string | null;
   collapsed: boolean;
-  readonly busy: Map<string, 'apply' | 'resolve'>;
+  readonly busy: Map<string, 'fix' | 'writing'>;
   readonly errors: Map<string, string>;
   handedOff: HandedOff | null;
+  /** Fixes asked for from a chat, by the thread's key or the comment's anchor, and the choice a comment's was asked with. */
+  readonly chatFixes: Map<string, AskedChatFix>;
 }
 
 /** What the last hand-off did, said under the card, and the finding whose task to offer copying again when a copy failed. */
@@ -225,7 +242,7 @@ interface HandedOff {
 }
 
 function freshTriage(): TriageVisit {
-  return { openKey: null, collapsed: false, busy: new Map(), errors: new Map(), handedOff: null };
+  return { openKey: null, collapsed: false, busy: new Map(), errors: new Map(), handedOff: null, chatFixes: new Map() };
 }
 
 /** Each bot's trigger comments as the last pass read them: what a request recorded at a click was already there. */
@@ -1067,6 +1084,69 @@ function incomingReadMentions(): readonly MentionLine[] {
   }));
 }
 
+/**
+ * On the Overview, the pull request's own events (closed, renamed, a review requested…): its page holds no event rows
+ * (they live in its activity panel, outside the page until opened), so they are read from the timeline data that panel reads.
+ */
+function overviewEvents(): { readonly events: readonly TimelineEvent[]; readonly complete: boolean } {
+  const none = { events: [], complete: true };
+  if (!isOverviewPage()) return none;
+  const pullPath = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(location.pathname)?.[0];
+  if (pullPath === undefined) return none;
+  return timelineEventsFor(pullPath, reapplySoon) ?? none;
+}
+
+function eventBranches(): { readonly base: string | null; readonly head: string | null } {
+  return embeddedPullRequestBranches(location.pathname);
+}
+
+/**
+ * The Overview's timeline events row, as the classic page's: headlined by its last state change, timed by it. A reading
+ * cut short holds only the oldest events, so its count is a floor ("200+") and it has no headline, which could be a
+ * close a later reopen undid.
+ */
+function overviewEventsGroup({ events, complete }: { readonly events: readonly TimelineEvent[]; readonly complete: boolean }): FoldGroup | null {
+  const first = events[0];
+  if (first === undefined) return null;
+  const last = complete ? [...events].reverse().find((event) => eventState(event) !== null) : undefined;
+  const kind = last === undefined ? null : eventState(last);
+  const headline =
+    last === undefined || kind === null ? undefined : { kind, actor: last.login, avatarSrc: last.avatarUrl === '' ? null : last.avatarUrl, target: kind === 'merged' ? eventBranches().base : null, anchor: '' };
+  return {
+    key: 'events',
+    label: `${events.length}${complete ? '' : '+'} timeline event${events.length === 1 && complete ? '' : 's'}`,
+    author: null,
+    nodes: [],
+    section: 'activity',
+    at: last?.at ?? first.at,
+    ...(headline === undefined ? {} : { headline }),
+  };
+}
+
+/** Events the conversation's rows say without the actor's name ("closed this"): the picture beside them says who. */
+const NAMELESS_EVENTS = new Set(['closed', 'reopened', 'merged', 'head_ref_deleted', 'head_ref_restored']);
+
+function eventLines(events: readonly TimelineEvent[]): readonly EventLine[] {
+  const branches = eventBranches();
+  return events.map((event) => {
+    const state = eventState(event);
+    const href = event.bot ? `/apps/${event.login.replace(/\[bot\]$/, '')}` : `/${event.login}`;
+    return {
+      type: event.type,
+      state: state === 'reopened' ? 'open' : state,
+      avatar:
+        event.login === '' || event.avatarUrl === ''
+          ? null
+          : createElement('a', { class: 'geld-review__activity-who', href, ...whoAttributes(event.login, event.bot) }, [
+              createElement('img', { class: 'geld-review__avatar', 'data-kind': event.bot ? 'bot' : 'user', src: event.avatarUrl, alt: `@${event.login}`, width: '20', height: '20' }),
+            ]),
+      actor: event.login === '' || NAMELESS_EVENTS.has(event.type) ? null : createElement('a', { class: 'geld-review__activity-actor', href, ...whoAttributes(event.login, event.bot) }, [event.login]),
+      words: eventWords(event, branches),
+      at: event.at,
+    };
+  });
+}
+
 /** An activity row's moment as last read, so a row whose nodes are on loan, or on their way home, keeps it. */
 const foldMomentByKey = new Map<string, string>();
 
@@ -1108,7 +1188,7 @@ function foldRows(groups: readonly FoldGroup[]): readonly FoldRow[] {
     const firstAnchor = firstAnchorIn(group.nodes[0] ?? null);
     // A row headlined by its state change keeps that change's time, not the first event's.
     const headlineNode = group.headline === undefined ? null : (group.nodes.find((node) => node.id === group.headline?.anchor) ?? null);
-    const read = group.section === 'activity' ? foldMoment(group, headlineNode) : null;
+    const read = group.section === 'activity' ? (group.at ?? foldMoment(group, headlineNode)) : null;
     if (read !== null) foldMomentByKey.set(group.key, read);
     const at = group.section === 'activity' ? (read ?? foldMomentByKey.get(group.key)) : undefined;
     return {
@@ -1320,83 +1400,6 @@ function mergeBoxText(): string {
   const parts = [home === null ? '' : blockText(home)];
   if (section !== null && (home === null || !home.contains(section))) parts.push(blockText(section));
   return parts.join('\n');
-}
-
-/**
- * Toggle a row without moving it under the pointer: whatever opens or closes
- * above it (a long comment collapsing) is compensated with an instant scroll,
- * and a row that would end up under GitHub's sticky header is brought just
- * below it. The one scroll Geld makes on purpose.
- */
-function keepInPlace(focusKey: string, change: () => void): void {
-  const before = document.querySelector(`[data-geld-focus="${focusKey}"]`)?.getBoundingClientRect().top ?? null;
-  change();
-  const after = document.querySelector(`[data-geld-focus="${focusKey}"]`);
-  if (!(after instanceof HTMLElement)) return;
-  let top = after.getBoundingClientRect().top;
-  if (before !== null && Math.abs(top - before) > 1) {
-    window.scrollBy({ top: top - before, behavior: 'instant' });
-    top = after.getBoundingClientRect().top;
-  }
-  const sticky = stickyHeaderBottomAt(window.scrollY);
-  if (top < sticky) scrollRowTo(top + window.scrollY);
-  else revealOpened(after);
-  // From here until the reader scrolls, the row stays where it landed whatever arrives above it.
-  holdRow(focusKey);
-}
-
-/**
- * After a toggle held its row still: when the row opened and what it opened
- * runs past the bottom of the viewport, scroll just far enough to show it,
- * and never so far that the row itself leaves the top. A row whose content
- * fits does not move at all, so opening and closing stays where the pointer
- * is; a row opened low on the page (one that another row's collapse left
- * there) comes up only by what is missing. The same rule native tree views
- * follow: reveal if needed, by the least amount.
- */
-function revealOpened(control: HTMLElement): void {
-  const row = control.closest<HTMLElement>('li');
-  if (row === null) return;
-  const open = control.getAttribute('aria-expanded') === 'true' || row.hasAttribute('data-open') || row.getAttribute('data-open') === 'true';
-  if (!open) return;
-  const slot = row.nextElementSibling instanceof HTMLElement && row.nextElementSibling.matches('.geld-review__slot') ? row.nextElementSibling : null;
-  const rowTop = row.getBoundingClientRect().top;
-  const blockBottom = (slot ?? row).getBoundingClientRect().bottom;
-  const gap = 8;
-  const overflow = blockBottom + gap - window.innerHeight;
-  if (overflow <= 0) return;
-  // How far up the row may go: to just under the header as it will stand after the scroll. The header's presence
-  // depends on the destination, so the room is settled against the destination it allows.
-  const roomAt = (delta: number): number => rowTop - stickyHeaderBottomAt(window.scrollY + delta) - gap;
-  let delta = Math.min(overflow, roomAt(overflow));
-  if (delta < overflow) delta = Math.min(overflow, roomAt(delta));
-  if (delta > 0) window.scrollBy({ top: delta, behavior: 'instant' });
-}
-
-/**
- * Scroll so the row whose document top is `rowTop` sits just under GitHub's
- * sticky header, as it will be once the page is there. The header is not on
- * screen while the reader is near the top, so its height cannot be read from
- * the current state, and a scroll that puts the row at the viewport's top edge
- * ends with the header sliding over it. `stickyHeaderBottomAt` says what the
- * header will do at a destination, so the two candidate destinations - under
- * the header, or at the top with no header - are tried where they hold.
- */
-function scrollRowTo(rowTop: number): number {
-  const destination = rowDestination(rowTop);
-  window.scrollTo({ top: destination, behavior: 'instant' });
-  return destination;
-}
-
-/** The scroll position that puts a row whose document top is `rowTop` just under the sticky header (see `scrollRowTo`). */
-function rowDestination(rowTop: number): number {
-  const gap = 8;
-  const withHeader = rowTop - stickyHeaderBottomAt(rowTop) - gap;
-  if (stickyHeaderBottomAt(withHeader) > 0) return withHeader;
-  const bare = rowTop - gap;
-  // No header at either destination: the row goes to the top edge. The header would appear only at the bare
-  // destination: stop short of it, where the row sits a header's height down and nothing covers it.
-  return stickyHeaderBottomAt(bare) > 0 ? withHeader : bare;
 }
 
 /**
@@ -1712,6 +1715,9 @@ function reapplySoon(): void {
     reapplyNow();
   }, 150);
 }
+
+// A key saved in the settings while the digest says one is missing: draw again, so the notice and the chat's Fix go.
+onAiKeyChange(reapplySoon);
 
 let reapplyAtTimer: number | null = null;
 let reapplyAtDue = Number.POSITIVE_INFINITY;
@@ -2585,6 +2591,57 @@ function botAvatarByLogin(botId: string): string | null {
 }
 
 /** What the pull request sets out to do, for the triage's fixes: its title and the start of its description. */
+/**
+ * What the chat sidebar reads from this pass: the pull request it is about, the Cursor agents the page links to, and
+ * a reading of the pull request for the assistant, taken when a message is sent.
+ */
+function chatContextFor(pullPath: string, meta: GeldPrMeta, settings: GeldSettings, prAuthor: string | null): ChatPageContext {
+  const prefix = 'cursor:';
+  const linkedAgents = relatedLinksOnPage(reapplySoon)
+    .filter((link) => link.kind === 'agent' && link.key.startsWith(prefix) && isCursorAgentId(link.key.slice(prefix.length)))
+    .map((link) => ({ id: link.key.slice(prefix.length), href: link.href }));
+  const url = `${location.origin}${pullPath}`;
+  return {
+    pageKey: aiRunKey(pullPath),
+    pullPath,
+    prUrl: url,
+    linkedAgents,
+    preferCursor: settings.codingAgent === 'cursor' || settings.codingAgent === 'auto',
+    ai: { enabled: settings.aiEnabled, baseUrl: settings.aiBaseUrl, model: settings.aiModel },
+    pull: () => {
+      const intent = pullIntent();
+      const files = flowFiles(pullPath).map((file) => ({ path: file.path, additions: file.additions, deletions: file.deletions, ...(file.hiddenAs === null ? {} : { hidden: file.hiddenAs }) }));
+      // The sidebar stays open on the pull request's other tabs, where neither the description nor the flow's files are on the page.
+      const kept = lastPullReading?.pullPath === pullPath ? lastPullReading : null;
+      const reading: PullReading = {
+        pullPath,
+        title: intent.title === '' ? (kept?.title ?? '') : intent.title,
+        description: descriptionBody() === null ? (kept?.description ?? '') : intent.description,
+        files: files.length === 0 ? (kept?.files ?? []) : files,
+      };
+      lastPullReading = reading;
+      return {
+        url,
+        title: reading.title,
+        author: prAuthor,
+        description: reading.description,
+        findings: meta.items.map((item) => ({ title: item.title, ...(item.path === undefined ? {} : { path: item.path }), ...(item.line === undefined ? {} : { line: item.line }), open: isOpenStatus(item.status), authors: authorLabels(item) })),
+        files: reading.files,
+      };
+    },
+  };
+}
+
+interface PullReading {
+  readonly pullPath: string;
+  readonly title: string;
+  readonly description: string;
+  readonly files: readonly ChatFile[];
+}
+
+/** The chat's last reading of the pull request, for the tabs that do not show what it read. */
+let lastPullReading: PullReading | null = null;
+
 function pullIntent(): SuggestionSource['pull'] {
   const heading = document.querySelector('.js-issue-title, [data-component="PH_Title"] .markdown-title, h1 bdi.markdown-title, h1 .markdown-title');
   const title = (heading?.textContent ?? document.title.split(' by ')[0] ?? '').replace(/\s+/g, ' ').trim();
@@ -2623,9 +2680,17 @@ function targetIcon(target: OpenTarget): string | null {
   return target.appId === undefined ? null : `https://avatars.githubusercontent.com/in/${target.appId}?s=32&v=4`;
 }
 
+const OVERLAP_WORDS = 'Its lines overlap another fix’s, so it was left out of that commit. Triage again to fit it to the new code.';
+
+/** Who a comment's finding came from, as the digest names them: a review bot by its name, anyone else by login. */
+function originAuthor(author: string, settings: GeldSettings): string {
+  const id = resolveBotId(author, settings.reviewBots);
+  return id === null ? author.replace(/\[bot\]$/i, '') : botTitle(id, author);
+}
+
 /** The triage card's reading: the fixes to show, who to hand the rest to, and what this visit did with them. */
 function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, prAuthor: string | null, knownBots: ReadonlySet<string>): TriageView | null {
-  if (ai.kind !== 'current' && ai.kind !== 'stale' && ai.kind !== 'failed' && ai.kind !== 'running') return null;
+  if (ai.kind !== 'current' && ai.kind !== 'stale' && ai.kind !== 'failed' && ai.kind !== 'running' && ai.kind !== 'needs-key') return null;
   const viewer = document.querySelector('meta[name="user-login"]')?.getAttribute('content') ?? '';
   const services = relatedLinksOnPage(reapplySoon)
     .filter((link) => link.kind === 'agent')
@@ -2652,6 +2717,8 @@ function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, pr
     behind,
     busy: visit.triage.busy.get(entry.key) ?? null,
     error: visit.triage.errors.get(entry.key) ?? null,
+    from: entry.origin === undefined ? null : originAuthor(entry.origin.author, settings),
+    routed: entry.routed === true,
   }));
   return {
     suggestions,
@@ -2672,6 +2739,8 @@ function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, pr
     // Only once the titles and the TL;DR are in: until then their own rows shimmer, and this line would name the wrong step.
     writing: aiPending().has('suggest') && aiPending().size === 1,
     handedOff: visit.triage.handedOff,
+    resolves: settings.resolveOnFix && repoBots.resolveOnFix !== false,
+    policyPending: repoBots.resolveOnFix === 'loading',
   };
 }
 
@@ -2776,8 +2845,9 @@ function dressByline(byline: ChatByline, anchor: string | null): ChatByline {
 }
 
 /** Chat handlers shared by an item opened on its own and inside its round. */
-function threadHandlers(item: ReviewItem | undefined, meta: GeldPrMeta, reapply: () => void, onOpenAnchor: (anchor: string) => void): ChatHandlers {
+function threadHandlers(item: ReviewItem | undefined, meta: GeldPrMeta, reapply: () => void, onOpenAnchor: (anchor: string) => void, fixOf: ((thread: HTMLElement) => ChatFix | null) | null = null): ChatHandlers {
   return {
+    ...(fixOf === null ? {} : { fixOf }),
     pathOf: (node) => threadPathOf(node, item, meta),
     onCopy: (text) => void copyText(text),
     sourceOf: (node) => threadSourceOf(node, item, meta, reapply),
@@ -3430,8 +3500,9 @@ function slotNeedsRender(slot: HTMLElement): boolean {
  */
 function readySlotForRender(slot: HTMLElement): boolean {
   if (slot.querySelector(`[${ATTR_TELEPORTED}]`) === null) return true;
-  // An edit history open from a byline's clock: the panel asks for a pass when it closes.
-  if (slot.querySelector('.geld-review__edited-wrap[open]') !== null) return false;
+  // A menu of the panel's own open in the slot (a nested row's ⋯) or an edit history from a byline's clock: the
+  // panel asks for a pass when it closes.
+  if (menuHoldsRebuild(slot)) return false;
   const active = document.activeElement;
   if (active instanceof Element && slot.contains(active) && active.matches('textarea, input, [contenteditable]')) {
     active.addEventListener('focusout', () => reapplySoon(), { once: true });
@@ -3763,6 +3834,10 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     const leftovers = groupLeftovers(leftoverList, [...conversationMentions(), ...incomingReadMentions()].map((line) => `${line.href} ${line.title} ${line.state}`));
     groups.push(...leftovers);
     foldTargets.push(...leftovers);
+    if (!groups.some((group) => group.key === 'events')) {
+      const events = overviewEventsGroup(overviewEvents());
+      if (events !== null) groups.push(events);
+    }
   }
   // Rounds: what landed between two pushes. A push is a run of commit rows or a force-push event (after a force-push
   // GitHub lists no commits, only "force-pushed from a to b"). Bot run summaries belong to their round rather than to rows of their own.
@@ -3859,6 +3934,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   if (adopting !== null) void adopting.then(reapplySoon);
   const aiState = aiStateFor(meta, rawComments, settings);
   const prAuthor = prAuthorLogin();
+  setChatContext(chatContextFor(page.stateKey, meta, settings, prAuthor));
 
   const model: PanelModel = {
     meta,
@@ -3920,6 +3996,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     progress,
     openSubKey: visit.openSubKey,
     openSources: visit.sourcesShown,
+    chatFixes: [...visit.triage.chatFixes].map(([key, fix]) => `${key}:${fix.state}:${fix.scope ?? ''}`).sort(),
     refsVersion: refsVersion(),
     editsVersion: editsVersion(),
     running: meta.bots.some((bot) => bot.verdict === 'running'),
@@ -3940,7 +4017,124 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   };
   // Asynchronous answers (the AI run's progress and end) re-apply through the mounted check, never past a teardown.
   const reapply = (): void => reapplyNow();
+  /** Apply commits the triage's fixes, several in one commit, and resolves their threads unless the reader or the repository opts out. */
+  const runFixes = (keys: readonly string[]): void => {
+    const listed = triageSuggestions(meta, settings);
+    const candidates = keys.flatMap((key) => {
+      const found = listed.find((entry) => entry.entry.key === key);
+      const replacement = found?.entry.replacement ?? null;
+      return found === undefined || replacement === null || !found.current || found.entry.state === 'applied' || visit.triage.busy.has(key) ? [] : [{ key, found, replacement, path: found.entry.path, start: found.entry.start, end: found.entry.end }];
+    });
+    const { batch: picked, overlapping } = splitOverlapping(candidates);
+    if (picked.length === 0 || repoBots.resolveOnFix === 'loading') return;
+    const triage = visit.triage;
+    for (const { key } of overlapping) triage.errors.set(key, OVERLAP_WORDS);
+    for (const { key } of picked) {
+      triage.busy.set(key, 'fix');
+      triage.errors.delete(key);
+    }
+    reapply();
+    const fixes = picked.map(({ key, found, replacement }) => ({ threadAnchors: found.item.sources.map((source) => source.anchor), path: found.entry.path, replacement, summary: found.entry.summary, title: found.item.title, headSha: meta.headSha, pendingReply: pendingReplyFor(key, rawComments) }));
+    void applyFixes(fixes).then(async (results) => {
+      // Read when the commit lands: the reader's setting may have changed and the repository's config arrived meanwhile.
+      const resolves = (lastSettings ?? settings).resolveOnFix && repoBots.resolveOnFix !== false;
+      let changed = false;
+      for (const [index, { key, found }] of picked.entries()) {
+        triage.busy.delete(key);
+        const result = results[index];
+        if (result === undefined) continue;
+        if (!result.ok) {
+          triage.errors.set(key, result.reason);
+          if (result.reply !== undefined) await markSuggestionPosted(key, result.reply);
+          changed ||= result.posted;
+          continue;
+        }
+        changed = true;
+        countUsage('ai_fix_applied');
+        await markSuggestionApplied(key, result.replyAnchor);
+        // Only Resolve: a partner thread someone resolved meanwhile wears Unresolve, which must not be pressed.
+        if (resolves) for (const each of [found.item, ...found.partners]) if (isOpenStatus(each.status)) resolveIfOpen(threadKeyOf(each));
+      }
+      if (changed) await catchUpAfterPost();
+      reapplySoon();
+    });
+  };
   /** The reader selected the item row `key`: its conversation's anchors, as the model that drew the row knew them. */
+  /** Fixes asked for from a chat: the thread's, or a comment's own findings and its threads, written without a whole triage. */
+  const chatFixesOn = (): boolean => chatFixesOffered(aiStateFor(meta, rawComments, settings), settings);
+  /** The saved fixes an ask would write afresh: those holding any of its threads, a shared one's partners included. */
+  const fixesFor = (threads: readonly string[]): readonly string[] => {
+    const asked = new Set(threads);
+    return triageSuggestions(meta, settings).flatMap(({ entry }) => (entry.threads.some((thread) => asked.has(thread)) ? [entry.key] : []));
+  };
+  const openAiSettings = (): void => {
+    const message: OpenSettingsMessage = { type: 'geld:open-settings', section: AI_KEY_SECTION };
+    void browser.runtime.sendMessage(message).catch(() => undefined);
+  };
+  const askFix = (key: string, scope: CommentFixScope | null, ask: FixScope): void => {
+    const triage = visit.triage;
+    // A fix being applied, or written afresh by another ask, and this ask would each record over the other: one at a time.
+    const rewriting = fixesFor(ask.threads);
+    if (rewriting.some((entry) => triage.busy.has(entry))) return;
+    for (const entry of rewriting) triage.busy.set(entry, 'writing');
+    triage.collapsed = false;
+    triage.chatFixes.set(key, { state: 'running', scope });
+    reapply();
+    const headSha = meta.headSha;
+    const source: SuggestionSource = { pull: pullIntent(), target: (item) => suggestionTarget(item, rawComments, headSha) };
+    // However the request ends, its fixes are free to apply again: a mark left by a request that threw held Apply for good.
+    const settle = (run: FixRun): void => {
+      for (const entry of rewriting) if (triage.busy.get(entry) === 'writing') triage.busy.delete(entry);
+      triage.chatFixes.set(key, { state: !run.changed ? 'idle' : run.failed ? 'failed' : 'done', scope, ...(run.reason === undefined ? {} : { error: run.reason }), ...(run.needsKey === true ? { needsKey: true } : {}) });
+      reapply();
+    };
+    void fixFromComments(meta, rawComments, settings, reapply, source, ask).then(settle, () => settle({ changed: true, failed: true, reason: 'The request did not finish.' }));
+  };
+  /** The open finding a thread (or a thread a comment came with) is, by any of its comments' anchors. */
+  const fixableItemAt = (anchor: string): ReviewItem | null => {
+    const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === anchor));
+    return item === undefined || !isOpenStatus(item.status) || item.path === undefined || threadKeyOf(item) === '' ? null : item;
+  };
+  // An ask that found no key is forgotten once one is saved: its control is Fix again, not Add API key.
+  const askedFix = (key: string): AskedChatFix | undefined => {
+    const asked = visit.triage.chatFixes.get(key);
+    return asked?.needsKey === true && aiStateFor(meta, rawComments, settings).kind !== 'needs-key' ? undefined : asked;
+  };
+  const threadFixOf = (thread: HTMLElement): ChatFix | null => {
+    if (!chatFixesOn()) return null;
+    const item = fixableItemAt(threadAnchorOf(thread));
+    if (item === null) return null;
+    const key = threadKeyOf(item);
+    const asked = askedFix(key);
+    const applying = fixesFor([key]).some((entry) => visit.triage.busy.get(entry) === 'fix');
+    return { state: asked?.state ?? 'idle', applying, ...(asked?.error === undefined ? {} : { error: asked.error }), ...(asked?.needsKey === true ? { needsKey: true } : {}), onFix: () => askFix(key, null, { threads: [key], comment: null }), onAddKey: openAiSettings };
+  };
+  const commentFixOf = (anchor: string, author: string, links: readonly ChatThreadLink[]): CommentFix | null => {
+    if (!chatFixesOn()) return null;
+    const text = rawComments.find((comment) => comment.anchor === anchor)?.body.trim() ?? '';
+    if (text === '') return null;
+    const items = links.flatMap((link) => {
+      const item = fixableItemAt(link.anchor);
+      return item === null ? [] : [item];
+    });
+    const keys = [...new Set(items.map(threadKeyOf))];
+    const titles = links.map((link) => meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === link.anchor))?.title ?? link.preview).filter((title) => title !== '');
+    const asked = askedFix(anchor);
+    // Offered only for what Geld knows is there: findings the comment reports outside its threads, or open threads.
+    const comment = commentReportsOutsideThreads(meta, anchor);
+    if (!comment && keys.length === 0 && asked?.state !== 'running') return null;
+    return {
+      threads: keys.length,
+      comment,
+      applying: fixesFor(keys).some((entry) => visit.triage.busy.get(entry) === 'fix'),
+      state: asked?.state ?? 'idle',
+      scope: asked?.scope ?? null,
+      ...(asked?.error === undefined ? {} : { error: asked.error }),
+      ...(asked?.needsKey === true ? { needsKey: true } : {}),
+      onAddKey: openAiSettings,
+      onFix: (scope) => askFix(anchor, scope, { threads: scope === 'comment' ? [] : keys, comment: scope === 'threads' ? null : { anchor, author, text, threads: titles } }),
+    };
+  };
   const seedOpenItem = (key: string): void => {
     const item = key.startsWith('item:') ? meta.items.find((entry) => itemKey(entry.id) === key) : undefined;
     visit.openItemAnchors = item === undefined ? null : { key, anchors: new Set(item.sources.map((source) => source.anchor)) };
@@ -4127,6 +4321,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     },
     onView: (view) => chooseDigestView(view),
     onFlow: () => openFlowDialog(),
+    onChat: (from) => toggleChat(from),
+    onChatIntent: () => warmChat(),
     onSettings: () => {
       const message: OpenSettingsMessage = { type: 'geld:open-settings' };
       void browser.runtime.sendMessage(message).catch(() => undefined);
@@ -4186,6 +4382,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       button.click();
       window.setTimeout(reapplySoon, 800);
     },
+    onOpenAiSettings: () => openAiSettings(),
     onRunAi: () => {
       visit.triage.collapsed = false;
       const headSha = meta.headSha;
@@ -4213,31 +4410,15 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
       if (visit.triage.openKey === key) visit.triage.openKey = null;
       void discardSuggestion(key).then(reapply);
     },
-    onApplySuggestion: (key, resolve) => {
-      const found = triageSuggestions(meta, settings).find((entry) => entry.entry.key === key);
-      if (found === undefined || found.entry.replacement === null || !found.current || visit.triage.busy.has(key)) return;
-      const replacement = found.entry.replacement;
-      const triage = visit.triage;
-      triage.busy.set(key, resolve ? 'resolve' : 'apply');
-      triage.errors.delete(key);
-      reapply();
-      const pendingReply = pendingReplyFor(key, rawComments);
-      void applyFix({ threadAnchors: found.item.sources.map((source) => source.anchor), path: found.entry.path, replacement, summary: found.entry.summary, title: found.item.title, headSha: meta.headSha, pendingReply }).then(async (result) => {
-        triage.busy.delete(key);
-        if (!result.ok) {
-          triage.errors.set(key, result.reason);
-          if (result.reply !== undefined) await markSuggestionPosted(key, result.reply);
-          if (result.posted) void catchUpAfterPost().then(reapplySoon);
-          reapplySoon();
-          return;
-        }
-        countUsage('ai_fix_applied');
-        await markSuggestionApplied(key, result.replyAnchor);
-        // Only Resolve: a partner thread someone resolved meanwhile wears Unresolve, which must not be pressed.
-        if (resolve) for (const each of [found.item, ...found.partners]) if (isOpenStatus(each.status)) resolveIfOpen(threadKeyOf(each));
-        await catchUpAfterPost();
-        reapplySoon();
-      });
+    onApplySuggestion: (key) => runFixes([key]),
+    onApplyAll: (keys) => runFixes(keys),
+    onDiscardAll: (keys) => {
+      for (const _key of keys) countUsage('ai_fix_discarded');
+      if (visit.triage.openKey !== null && keys.includes(visit.triage.openKey)) visit.triage.openKey = null;
+      void (async () => {
+        for (const key of keys) await discardSuggestion(key);
+        reapply();
+      })();
     },
     onMissingTool: (tool) => {
       const message: OpenFeedbackMessage = { type: 'geld:open-feedback', draft: missingToolDraft(tool) };
@@ -4414,7 +4595,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   if (mounted?.slot !== null && mounted?.slot !== undefined && visit.openKey !== null) {
     const nodes = quickViewFor(visit.openKey, meta, groups);
     // What the description and comments mention has no timeline row, so the Mentions row can stand with no nodes to show.
-    const onlyOutgoing = visit.openKey === foldKey('mentions') && (conversationMentions().length > 0 || incomingReadMentions().length > 0);
+    const onlyOutgoing = (visit.openKey === foldKey('mentions') && (conversationMentions().length > 0 || incomingReadMentions().length > 0)) || (visit.openKey === foldKey('events') && nodes.length === 0 && overviewEvents().events.length > 0);
     if (nodes.length === 0 && !onlyOutgoing) {
       // An open thread row (by push) whose thread is momentarily out of the crawl keeps its row through the grace.
       if (!visit.openKey.startsWith('item:') || openLineStillMissing()) {
@@ -4436,7 +4617,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           renderNoteBody(view.nested, lineNote);
         } else if (view.nested !== null && line !== null && line.anchor !== null && commentNode !== null) {
           const byline = withRerun(dressByline({ login: line.author, bot: true, avatarSrc: line.avatarSrc, time: line.time }, line.anchor), line.author, line.anchor, meta, settings, reapply, panelHandlers.onOpenAnchor);
-          renderCommentChat(view.nested, commentNode, byline, threadLinks(line.threads), panelHandlers.onOpenAnchor);
+          const links = threadLinks(line.threads);
+          renderCommentChat(view.nested, commentNode, byline, links, panelHandlers.onOpenAnchor, commentFixOf(line.anchor, line.author, links));
         } else if (visit.openSubKey !== null && (line !== null || !model.botLines.some((entry) => entry.anchor === visit.openSubKey))) {
           // A comment that left the page, or a summary no longer the bot's latest: nothing to keep open.
           visit.openSubKey = null;
@@ -4486,14 +4668,15 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           const commentNode = view.openComment === null ? null : (entryNodes.get(view.openComment) ?? (thread === null ? timelineRootOf(view.openComment) : null));
           if (view.nested !== null && thread !== null) {
             const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === openEntry?.anchor));
-            renderChatView(view.nested, [thread], threadHandlers(item, meta, reapply, panelHandlers.onOpenAnchor));
+            renderChatView(view.nested, [thread], threadHandlers(item, meta, reapply, panelHandlers.onOpenAnchor, threadFixOf));
           } else if (view.nested !== null && commentNode !== null) {
             const byline = openEntry === null ? null : withRerun(dressByline({ login: openEntry.author, bot: /\[bot\]$/i.test(openEntry.author), avatarSrc: openEntry.avatarSrc, time: openEntry.time }, openEntry.anchor), openEntry.author, openEntry.anchor, meta, settings, reapply, panelHandlers.onOpenAnchor);
             // The threads the review came with, by file, leading to their rows.
-            renderCommentChat(view.nested, commentNode, byline, threadLinks(openEntry?.threads ?? []), panelHandlers.onOpenAnchor);
+            const links = threadLinks(openEntry?.threads ?? []);
+            renderCommentChat(view.nested, commentNode, byline, links, panelHandlers.onOpenAnchor, openEntry === null ? null : commentFixOf(openEntry.anchor, openEntry.author, links));
           } else if (view.nested !== null && view.openItem !== null) {
             const item = view.openItem;
-            renderChatView(view.nested, threadNodes(item), threadHandlers(item, meta, reapply, panelHandlers.onOpenAnchor));
+            renderChatView(view.nested, threadNodes(item), threadHandlers(item, meta, reapply, panelHandlers.onOpenAnchor, threadFixOf));
           } else if (visit.openSubKey !== null && view.openItem === null && commentNode === null) {
             if (openLineStillMissing()) visit.openSubKey = null;
           } else {
@@ -4513,12 +4696,15 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         } else {
           renderQuickView(mounted.slot, nodes);
         }
+      } else if (visit.openKey === foldKey('events') && nodes.length === 0) {
+        const read = overviewEvents();
+        renderEventsView(mounted.slot, eventLines(read.events), read.complete);
       } else if (visit.openKey === foldKey('mentions')) {
         renderMentionsView(mounted.slot, nodes, conversationMentions(true), (href) => refDetails(href, reapplySoon), incomingReadMentions());
       } else if (visit.openKey.startsWith('item:')) {
         // Each review thread as its chat: the path, the hunk, the comment it came from pinned, every message.
         const item = meta.items.find((entry) => itemKey(entry.id) === visit.openKey);
-        renderChatView(mounted.slot, item === undefined ? nodes : threadNodes(item), threadHandlers(item, meta, reapply, panelHandlers.onOpenAnchor));
+        renderChatView(mounted.slot, item === undefined ? nodes : threadNodes(item), threadHandlers(item, meta, reapply, panelHandlers.onOpenAnchor, threadFixOf));
       } else {
         // The Commits fold among these: its rows get their dates as they land.
         renderQuickView(mounted.slot, nodes, reapplySoon, { headSha: meta.headSha });
@@ -4714,6 +4900,9 @@ export function teardownReviewOverview(why: 'stop' | 'leave' | 'rebuild' = 'stop
   lastSettings = null;
   overviewChecksInDigest = false;
   closeFlow();
+  // The sidebar stays open across the pull request's own tabs and a settings rebuild, and goes with Geld or the pull request.
+  if (why === 'stop') closeChat();
+  else syncChatToPage();
   setAutoLoading(false);
   deferredWhileHidden = false;
   window.removeEventListener('load', onDocumentLoaded);

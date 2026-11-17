@@ -23,6 +23,32 @@ export const aiKeyItem = storage.defineItem<string>('local:aiKey', { fallback: '
 /** The user's own TypeSafe key for Jev, for a gateway that does not offer it. Same rules as the gateway key. */
 export const jevKeyItem = storage.defineItem<string>('local:jevKey', { fallback: '' });
 
+/** The reader's Cursor API key, for chatting with a pull request's Cursor agents. Read only by the background. Never synced. */
+export const cursorKeyItem = storage.defineItem<string>('local:cursorApiKey', { fallback: '' });
+
+/** One turn of the assistant's chat on a pull request, as kept on this device. */
+export interface StoredChatTurn {
+  readonly role: 'user' | 'assistant';
+  readonly text: string;
+}
+
+export interface StoredChat {
+  readonly at: string;
+  readonly turns: readonly StoredChatTurn[];
+}
+
+/** The assistant's chats, by pull request (`github[@host]:{owner}/{repo}/pull/{n}`), capped. A Cursor agent's chat is kept by Cursor. */
+export const assistantChatsItem = storage.defineItem<Readonly<Record<string, StoredChat>>>('local:assistantChats', { fallback: {} });
+export const ASSISTANT_CHATS_CAP = 20;
+export const ASSISTANT_TURNS_CAP = 60;
+
+/** The model last chosen in the chat's composer, per kind of thread; empty keeps the default (the writing model, or the agent's own). */
+export interface ChatModels {
+  readonly assistant?: string;
+  readonly cursor?: string;
+}
+export const chatModelsItem = storage.defineItem<ChatModels>('local:chatModels', { fallback: {} });
+
 /**
  * What the gateway last said it offers: the model list and, from it, the id
  * of its Jev model (null when it has none). Written by the options page when
@@ -80,6 +106,8 @@ export interface AiRunRecord {
   /** Comment anchors the model has been shown, so a finding it left as reported is not asked about (and paid for) again. */
   readonly seen?: readonly string[];
   readonly suggestions?: readonly StoredSuggestion[];
+  /** Threads the reader asked Geld to fix from their chat, people's included: the triage writes fixes for them too. */
+  readonly asked?: readonly string[];
 }
 
 /**
@@ -99,6 +127,8 @@ export interface StoredSuggestion {
   readonly replacement: readonly string[] | null;
   readonly summary: string;
   readonly state: 'open' | 'discarded' | 'applied';
+  /** Sent to an agent by the gate before drafting: it judged the fix needs more than the thread's lines. */
+  readonly routed?: boolean;
   /** Every comment anchor of its threads the fix was written from: a reply since makes it stale. Absent in records from before. */
   readonly sources?: readonly string[];
   /** The id each of its threads' findings had when the fix was written, which Geld's own replies change (`asWrittenFor`). */
@@ -109,6 +139,12 @@ export interface StoredSuggestion {
   readonly pendingReply?: number;
   /** That reply's words as the page first showed them, so a reply the reader edited since is posted afresh, not committed. */
   readonly pendingReplyText?: string;
+  /**
+   * A change a comment asks for outside its threads (a review's findings outside the diff, a failed check, a person's
+   * request), read from that comment when the reader asked from its chat. No thread holds it, so it is for an agent:
+   * `replacement` is null, `summary` is the task, and `path`/`start` say where when the comment did.
+   */
+  readonly origin?: { readonly anchor: string; readonly author: string; readonly title: string };
 }
 export const aiRunsItem = storage.defineItem<Readonly<Record<string, AiRunRecord>>>('local:aiRuns', { fallback: {} });
 export const AI_RUNS_CAP = 40;

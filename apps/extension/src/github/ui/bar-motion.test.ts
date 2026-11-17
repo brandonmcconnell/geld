@@ -66,7 +66,7 @@ interface Slide {
 }
 
 /** Every animation the block's script starts, the real animation and the translate it runs between. */
-function watchAnimations(): () => (Slide & { readonly id: string })[] {
+function watchAnimations(): () => (Slide & { readonly id: string; readonly composite: string | undefined })[] {
   const spy = vi.spyOn(Element.prototype, 'animate');
   return () =>
     spy.mock.calls.flatMap(([frames, options], index) => {
@@ -75,7 +75,8 @@ function watchAnimations(): () => (Slide & { readonly id: string })[] {
       const list = Array.isArray(frames) ? frames : [];
       if (!(animation instanceof Animation) || !(element instanceof Element)) return [];
       const id = typeof options === 'object' ? (options.id ?? '') : '';
-      return [{ element, from: String(list[0]?.['translate']), to: String(list[1]?.['translate']), animation, id }];
+      const composite = typeof options === 'object' ? options.composite : undefined;
+      return [{ element, from: String(list[0]?.['translate']), to: String(list[1]?.['translate']), animation, id, composite }];
     });
 }
 
@@ -168,7 +169,7 @@ describe('bar motion', () => {
     expect(inner.querySelector('[data-geld-ghost]')).toBeNull();
   });
 
-  it("carries the arriving and leaving parts past the row's edge, where the block alone left them in the bar's padding", async () => {
+  it("carries the arriving and leaving parts past the row's edge, where the block alone left them in the bar's padding", () => {
     const inner = bar(false);
     fakeLayout(inner);
     animateBarGroup();
@@ -180,14 +181,13 @@ describe('bar motion', () => {
     rightEdge(inner.querySelector('[data-component="StateLabel"]')!, 310);
     animateBarGroup();
     const arriving = all().filter((animation) => animation.id === PAST_EDGE_ID);
-    expect(arriving).toHaveLength(3);
-    expect(new Set(arriving.map((animation) => `${animation.from} → ${animation.to}`))).toEqual(new Set(['-10px 0 → 0px 0']));
+    // The switcher and divider take the carry in their slide; the label, inside the metadata, has the carry alone.
+    expect(arriving.map((animation) => `${animation.from} → ${animation.to}`)).toEqual(['-310px 0 → 0px 0', '-310px 0 → 0px 0', '-10px 0 → 0px 0']);
     // GitHub's metadata clips its overflow, and the label is carried out of its box on the left while it slides.
     const metadata = inner.querySelector('[class*="metadata"]')!;
     expect(metadata.hasAttribute('data-geld-bar-reach')).toBe(true);
-    all()
-      .find((animation) => animation.id !== PAST_EDGE_ID)
-      ?.animation.dispatchEvent(new Event('finish'));
+    all()[0]?.animation.dispatchEvent(new Event('finish'));
+    expect(metadata.hasAttribute('data-geld-bar-reach')).toBe(false);
 
     const before = all().length;
     ghostBarDepartures(unstick());
@@ -197,12 +197,15 @@ describe('bar motion', () => {
       .slice(before)
       .filter((animation) => animation.id === PAST_EDGE_ID);
     expect(leaving.map((animation) => isGhost(animation.element))).toEqual([true, true, true]);
-    expect(new Set(leaving.map((animation) => `${animation.from} → ${animation.to}`))).toEqual(new Set(['0px 0 → -10px 0']));
+    expect(leaving.map((animation) => `${animation.from} → ${animation.to}`)).toEqual(['0px 0 → -310px 0', '0px 0 → -310px 0', '0px 0 → -10px 0']);
     expect(metadata.hasAttribute('data-geld-bar-reach')).toBe(true);
-    for (const animation of all().filter((each) => each.id === PAST_EDGE_ID)) animation.animation.cancel();
-    await Promise.resolve();
-    await Promise.resolve();
+    // One plain animation per element, which the compositor can run.
+    const animated = all().filter((animation) => animation.animation.playState !== 'idle').map((animation) => animation.element);
+    expect(new Set(animated).size).toBe(animated.length);
+    expect(all().every((animation) => animation.composite === undefined)).toBe(true);
+    all()[before]?.animation.dispatchEvent(new Event('finish'));
     expect(metadata.hasAttribute('data-geld-bar-reach')).toBe(false);
+    expect(inner.querySelector('[data-geld-ghost]')).toBeNull();
   });
 
   it('hands a part GitHub replaces mid-slide the rest of its carry past the edge', () => {
@@ -225,6 +228,28 @@ describe('bar motion', () => {
     const handed = all().filter((animation) => animation.id === PAST_EDGE_ID && animation.element === fresh);
     expect(handed.map((animation) => `${animation.from} → ${animation.to}`)).toEqual(['-5px 0 → 0px 0']);
     expect(carry.animation.playState).toBe('idle');
+  });
+
+  it('hands a label replaced inside the metadata mid-slide the rest of its carry, though the block is unchanged', () => {
+    const inner = bar(false);
+    fakeLayout(inner);
+    animateBarGroup();
+    const all = watchAnimations();
+    stick(inner);
+    rightEdge(inner.querySelector('[data-testid="mini-header-tab-switcher-trigger"]')!, 96);
+    rightEdge(inner.querySelector('[class*="navigationDivider"]')!, 110);
+    rightEdge(inner.querySelector('[data-component="StateLabel"]')!, 310);
+    animateBarGroup();
+    const old = inner.querySelector('[data-component="StateLabel"]')!;
+    const carry = all().find((animation) => animation.id === PAST_EDGE_ID && animation.element === old)!;
+    vi.spyOn(carry.animation.effect!, 'getComputedTiming').mockReturnValue({ progress: 0.5 });
+    const pill = document.createElement('button');
+    pill.setAttribute('data-geld-status-pill', '');
+    old.replaceWith(pill);
+    animateBarGroup();
+    const handed = all().filter((animation) => animation.id === PAST_EDGE_ID && animation.element === pill);
+    expect(handed.map((animation) => `${animation.from} → ${animation.to}`)).toEqual(['-5px 0 → 0px 0']);
+    expect(inner.querySelector('[class*="metadata"]')!.hasAttribute('data-geld-bar-reach')).toBe(true);
   });
 
   it('moves nothing when GitHub re-renders its bar with the same parts', () => {

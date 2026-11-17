@@ -60,6 +60,8 @@ export interface FoldGroup {
   readonly closure?: Closure;
   /** The timeline events group: the state change among them, for the row to read at a glance (see `eventHeadline`). */
   readonly headline?: EventHeadline;
+  /** When the row's content began, for a row read from data rather than from nodes of the page (the Overview's events). */
+  readonly at?: string;
   /** The Mentions group: what the description mentions, which has no timeline node to tell an edit by. */
   readonly refs?: readonly string[];
 }

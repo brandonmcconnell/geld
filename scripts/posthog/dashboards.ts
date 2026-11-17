@@ -359,6 +359,7 @@ export const FEATURES_DASHBOARD: DashboardSpec = {
         used('ai_triage_run', 'AI triage runs'),
         used('ai_triage_failed', 'AI triage runs that failed'),
         used('ai_fix_applied', 'AI fixes applied'),
+        used('ai_comment_fix', 'AI fixes asked from a comment'),
         used('ai_fix_discarded', 'AI fixes discarded'),
         used('agent_handoff', 'handed to a coding agent'),
       ],
