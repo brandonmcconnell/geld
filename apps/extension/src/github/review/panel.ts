@@ -4031,6 +4031,17 @@ function syncProgress(root: HTMLElement, progress: number | null): void {
   shownProgress = progress;
 }
 
+/**
+ * The panel's own menus (row ⋯, the triage's Apply and agent menus, grouping, View, Request a review) and edit
+ * histories. Not the hidden-people menu: its Show and Hide redraw the digest with it open, and it reopens itself.
+ */
+const HELD_MENUS = `details.${PANEL_CLASS}__menu:not(.${PANEL_CLASS}__hidden), details.${PANEL_CLASS}__edited-wrap`;
+
+/** Whether one of the panel's own menus is open, which a rebuild would close under the reader: the panel waits for it. */
+export function menuHoldsRebuild(root: ParentNode): boolean {
+  return [...root.querySelectorAll<HTMLDetailsElement>(HELD_MENUS)].some((details) => details.open);
+}
+
 function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOptions): MountedPanel | null {
   const existing = document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}]`);
   const signature = signatureOf(model);
@@ -4048,10 +4059,9 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     // Someone is typing in GitHub's reply box inside the slot: a rebuild would move it and drop focus. Wait.
     const active = document.activeElement;
     if (slot !== null && active instanceof Element && slot.contains(active) && active.matches('textarea, input, [contenteditable]')) return { root: existing, slot };
-    // The Request a review menu is open with boxes ticked: a rebuild would close it and lose the picks. Wait.
-    if (existing.querySelector(`.${PANEL_CLASS}__request[open]`) !== null) return { root: existing, slot };
-    // An edit history is open from a clock: a rebuild would close it and take the reader's focus. Wait.
-    if (existing.querySelector(`.${PANEL_CLASS}__edited-wrap[open]`) !== null) return { root: existing, slot };
+    // A menu of the panel's own or an edit history is open: a rebuild would close it under the reader (and lose the
+    // Request a review menu's picks). Wait, and draw once it closes.
+    if (menuHoldsRebuild(existing)) return { root: existing, slot };
     // A press inside the panel not yet released: a rebuild between its pointerdown and its click moves or replaces
     // what was pressed (the worn gear, a check's ⋯), and the click is lost. Wait for the release.
     if (pressHeld(handlers.onRequestMenuClosed)) return { root: existing, slot };
@@ -4227,7 +4237,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   panel.addEventListener(
     'toggle',
     (event) => {
-      if (event.target instanceof HTMLDetailsElement && !event.target.open && event.target.matches(`.${PANEL_CLASS}__edited-wrap`)) handlers.onRequestMenuClosed();
+      if (event.target instanceof HTMLDetailsElement && !event.target.open && event.target.matches(HELD_MENUS)) handlers.onRequestMenuClosed();
     },
     true,
   );
