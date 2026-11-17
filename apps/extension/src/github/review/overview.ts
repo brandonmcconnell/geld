@@ -25,7 +25,7 @@ import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
 import type { FixRun } from './ai';
 import { AI_KEY_SECTION } from '../../lib/ai-key';
-import { adoptOwnReplies, aiPending, onAiKeyChange, aiStateFor, clearAiForPage, discardSuggestion, fixFromComments, jevDecisionsFor, loadAiForPage, markSuggestionApplied, markSuggestionPosted, pendingReplyFor, previewDecisionKey, runAi, threadKeyOf, triageFixesOn, triageNoteFor, triageSuggestions, withAi, withJevDone } from './ai';
+import { adoptOwnReplies, aiPending, chatFixesOffered, commentReportsOutsideThreads, onAiKeyChange, aiStateFor, clearAiForPage, discardSuggestion, fixFromComments, jevDecisionsFor, loadAiForPage, markSuggestionApplied, markSuggestionPosted, pendingReplyFor, previewDecisionKey, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi, withJevDone } from './ai';
 import type { AiState, FixScope, SuggestionSource, SuggestionTarget } from './ai';
 import { applyFixes, splitOverlapping } from './apply-suggestion';
 import { agentComment, agentLikely, agentsInRelatedLinks, agentTask, CODING_AGENTS, codingAgentById, diffHunks, lineDiff, OPEN_TARGETS, openTargetById, openTargetLikely, recommendAgents } from '@geld/review';
@@ -4137,10 +4137,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   };
   /** The reader selected the item row `key`: its conversation's anchors, as the model that drew the row knew them. */
   /** Fixes asked for from a chat: the thread's, or a comment's own findings and its threads, written without a whole triage. */
-  const chatFixesOn = (): boolean => {
-    const kind = aiStateFor(meta, rawComments, settings).kind;
-    return kind !== 'off' && kind !== 'app' && triageFixesOn(settings);
-  };
+  const chatFixesOn = (): boolean => chatFixesOffered(aiStateFor(meta, rawComments, settings), settings);
   /** The saved fixes an ask would write afresh: those holding any of its threads, a shared one's partners included. */
   const fixesFor = (threads: readonly string[]): readonly string[] => {
     const asked = new Set(threads);
@@ -4199,8 +4196,12 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     const keys = [...new Set(items.map(threadKeyOf))];
     const titles = links.map((link) => meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === link.anchor))?.title ?? link.preview).filter((title) => title !== '');
     const asked = askedFix(anchor);
+    // Offered only for what Geld knows is there: findings the comment reports outside its threads, or open threads.
+    const comment = commentReportsOutsideThreads(meta, settings, anchor);
+    if (!comment && keys.length === 0 && asked?.state !== 'running') return null;
     return {
       threads: keys.length,
+      comment,
       applying: fixesFor(keys).some((entry) => visit.triage.busy.get(entry) === 'fix'),
       state: asked?.state ?? 'idle',
       scope: asked?.scope ?? null,

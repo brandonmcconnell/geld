@@ -1714,6 +1714,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Threads asks for a fix for each open thread it came with, as the triage writes one, and the reader's ask makes a person's thread a candidate (`AiRunRecord.asked`), where the triage on its own writes fixes for bots' threads only.
   This comment asks the model for what the comment asks for outside its threads (`BODY_SYSTEM`, `parseBodyOutput`: a review's findings outside the diff, failed checks, a person's request), each a row for an agent keyed `<anchor>~<n>` (`StoredSuggestion.origin`): no thread holds it to suggest in, so its band says whose comment it came from and its note says so.
   Asking again replaces that comment's rows.
+  **Each choice is offered only when Geld knows there is something for it** (`commentFixScopes`): This comment when the comment reports findings outside its threads, as the triage reads them (`commentReportsOutsideThreads`: an `unthreadedFindings` entry whose `sourceId` is the comment, or tasks written from it before), Threads when it came with open threads, Both when both, and no row at all when neither.
+  It used to offer This comment on every comment, so a clean Greptile summary with only resolved threads carried a Fix the triage's "Nothing to triage" contradicted (geld#721).
+  A chat offers no Fix at all while the AI button reads "Nothing to triage" (`chatFixesOffered`).
   A thread asked about again is written afresh, over a current fix or a discarded one (`proposeFixes`' `only`), where the triage on its own keeps what it has.
   A thread whose saved fix answers other threads too is asked about with them, so the fix written afresh still covers every one and Apply still resolves them all.
   A thread asked about apart from the fix it shares leaves that fix only once its own answer is in (`leaving` in `proposeFixes`), so a refused or unreadable answer leaves the shared fix covering every thread as before.
