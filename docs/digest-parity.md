@@ -125,7 +125,8 @@ Decision needed: keep Merge checks as a provider row, or fold it into CI and the
 | Rerun on the summary | partial: CodeRabbit and Greptile only, "Copy command" and "Open native comment", never posts (`gitlab/bot-request.ts`) | missing | — | — |
 | View (bot site badge) | missing | missing | comment body | — |
 | See latest | missing | missing | — | — |
-| Request a review checklist | missing | missing | — | — |
+| Request a review menu (send glyph, spinner while a bot runs, "Request it" help) | partial: GitHub's control and help (`requestMenu`, shared `missingToolHelp`); its lines open each bot's request, which copies the command, since Geld posts nothing here | partial: same, with no commands yet | — | — |
+| Running bot's spinner | match: GitHub's spinner (`digestSpinner`, the shared `ICON_SPINNER`) | match | — | — |
 | Bot approval distinct from clean | missing (see §2.2) | missing | GL `/approval_state` · BB participants | — |
 
 ### 3.3 Reviews
