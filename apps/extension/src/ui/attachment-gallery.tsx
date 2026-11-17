@@ -2,8 +2,9 @@ import { createRoot } from 'react-dom/client';
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import * as Lightbox from '@ramka/react/lightbox';
 import { useLightboxTriggerContext } from '@ramka/react';
-import { OWN_UI_ATTRIBUTE, svgFromString } from './dom';
-import { ICON_CHEVRON_RIGHT, ICON_DASH, ICON_LINK_EXTERNAL, ICON_PLUS, ICON_X } from './ui/icons';
+import { OWN_UI_ATTRIBUTE, svgFromString } from '../github/dom';
+import { ICON_CHEVRON_RIGHT, ICON_DASH, ICON_LINK_EXTERNAL, ICON_PLUS, ICON_X } from '../github/ui/icons';
+import './lightbox.css';
 
 export interface GalleryImage {
   readonly id: string;
@@ -11,6 +12,19 @@ export interface GalleryImage {
   readonly link: HTMLAnchorElement;
   readonly title: string;
 }
+
+/**
+ * The classes the host's own controls wear: GitHub's Primer buttons, or a provider's, whose host also wears
+ * `geld-primer-bridge` so the shared stylesheet reads in the provider's tokens.
+ */
+export interface GallerySkin {
+  readonly host?: string;
+  readonly button: string;
+  readonly group: string;
+  readonly groupItem: string;
+}
+
+export const GITHUB_GALLERY_SKIN: GallerySkin = { button: 'btn btn-sm', group: 'BtnGroup', groupItem: 'BtnGroup-item' };
 
 interface Size {
   readonly width: number;
@@ -46,7 +60,8 @@ function naturalSize(image: HTMLImageElement): Size {
   return { width: image.naturalWidth || image.width || 1280, height: image.naturalHeight || image.height || 720 };
 }
 
-function Slide({ item, index, total, size, onSize, zoomRef, onZoom }: {
+function Slide({ item, index, total, size, onSize, zoomRef, onZoom, skin }: {
+  readonly skin: GallerySkin;
   readonly item: GalleryImage;
   readonly index: number;
   readonly total: number;
@@ -63,7 +78,7 @@ function Slide({ item, index, total, size, onSize, zoomRef, onZoom }: {
       {failed
         ? <div className="geld-lightbox__status" role="status">
           <p>This image could not be loaded.</p>
-          <button type="button" className="btn btn-sm" onClick={() => { setFailed(false); setAttempt(attempt + 1); }}>Try again</button>
+          <button type="button" className={skin.button} onClick={() => { setFailed(false); setAttempt(attempt + 1); }}>Try again</button>
         </div>
         : <Lightbox.Zoom ref={zoomRef} className="geld-lightbox__zoom-surface" zoomStep={1.5} scrollToZoom wheelSensitivity={500}
           maxZoom={Math.max(4, Math.min(16, size.width / 320))} onZoomChange={onZoom}>
@@ -78,7 +93,8 @@ function Slide({ item, index, total, size, onSize, zoomRef, onZoom }: {
   </Lightbox.Slide>;
 }
 
-function Gallery({ items, initialIndex, host, onClosed }: {
+function Gallery({ items, initialIndex, host, onClosed, skin }: {
+  readonly skin: GallerySkin;
   readonly items: readonly GalleryImage[];
   readonly initialIndex: number;
   readonly host: HTMLElement;
@@ -122,7 +138,7 @@ function Gallery({ items, initialIndex, host, onClosed }: {
         <Lightbox.Stage className="geld-lightbox__body">
           <Lightbox.Slides className="geld-lightbox__slides" aria-label="Images" aria-roledescription="carousel" preload={1}>
             {items.map((item, i) => <Slide key={item.id} item={item} index={i} total={items.length}
-              size={sizes.get(item.id) ?? naturalSize(item.image)} onSize={onSize}
+              size={sizes.get(item.id) ?? naturalSize(item.image)} onSize={onSize} skin={skin}
               onZoom={(value) => { if (i === index) setZoom(value); }}
               zoomRef={(value) => { if (value) zooms.current.set(item.id, value); else zooms.current.delete(item.id); }} />)}
           </Lightbox.Slides>
@@ -132,13 +148,13 @@ function Gallery({ items, initialIndex, host, onClosed }: {
           </>}
         </Lightbox.Stage>
         <footer className="geld-lightbox__footer">
-          <div className="BtnGroup geld-lightbox__zoom" role="group" aria-label={`Image zoom ${Math.round(zoom * 100)}%`}>
-            <Lightbox.ZoomOut className="btn btn-sm BtnGroup-item geld-lightbox__tool" aria-label="Zoom out" title="Zoom out (−)"><Glyph markup={ICON_DASH} /></Lightbox.ZoomOut>
-            <button type="button" className="btn btn-sm BtnGroup-item geld-lightbox__reset" aria-label="Reset zoom" title="Fit image (0)"
+          <div className={`${skin.group} geld-lightbox__zoom`} role="group" aria-label={`Image zoom ${Math.round(zoom * 100)}%`}>
+            <Lightbox.ZoomOut className={`${skin.button} ${skin.groupItem} geld-lightbox__tool`} aria-label="Zoom out" title="Zoom out (−)"><Glyph markup={ICON_DASH} /></Lightbox.ZoomOut>
+            <button type="button" className={`${skin.button} ${skin.groupItem} geld-lightbox__reset`} aria-label="Reset zoom" title="Fit image (0)"
               onClick={() => zooms.current.get(active.id)?.reset()}>{zoom <= 1 ? 'Fit' : `${Math.round(zoom * 100)}%`}</button>
-            <Lightbox.ZoomIn className="btn btn-sm BtnGroup-item geld-lightbox__tool" aria-label="Zoom in" title="Zoom in (+)"><Glyph markup={ICON_PLUS} /></Lightbox.ZoomIn>
+            <Lightbox.ZoomIn className={`${skin.button} ${skin.groupItem} geld-lightbox__tool`} aria-label="Zoom in" title="Zoom in (+)"><Glyph markup={ICON_PLUS} /></Lightbox.ZoomIn>
           </div>
-          <a className="btn btn-sm geld-lightbox__original" href={active.link.href} target="_blank" rel="noopener noreferrer">
+          <a className={`${skin.button} geld-lightbox__original`} href={active.link.href} target="_blank" rel="noopener noreferrer">
             Open original<Glyph markup={ICON_LINK_EXTERNAL} />
           </a>
         </footer>
@@ -148,11 +164,11 @@ function Gallery({ items, initialIndex, host, onClosed }: {
 }
 
 /** Opens the images as one gallery at `index`; the returned function closes it without waiting for its exit. */
-export function openAttachmentGallery(items: readonly GalleryImage[], index: number, onClosed: () => void): () => void {
+export function openAttachmentGallery(items: readonly GalleryImage[], index: number, onClosed: () => void, skin: GallerySkin = GITHUB_GALLERY_SKIN): () => void {
   const trigger = items[index]?.link;
   const host = document.createElement('div');
   host.setAttribute(OWN_UI_ATTRIBUTE, '');
-  host.className = 'geld-lightbox-host';
+  host.className = `geld-lightbox-host ${skin.host ?? ''}`.trim();
   // A modal dialog (note history) leaves everything outside it inert, so the gallery opens inside it, in the top layer.
   (items[index]?.image.closest('dialog[open]') ?? document.body).append(host);
   if (typeof host.showPopover === 'function') {
@@ -169,6 +185,6 @@ export function openAttachmentGallery(items: readonly GalleryImage[], index: num
     if (closedByReader && trigger?.isConnected) trigger.focus({ preventScroll: true });
     onClosed();
   };
-  root.render(<Gallery items={items} initialIndex={index} host={host} onClosed={() => queueMicrotask(() => dispose(true))} />);
+  root.render(<Gallery items={items} initialIndex={index} host={host} skin={skin} onClosed={() => queueMicrotask(() => dispose(true))} />);
   return () => dispose(false);
 }

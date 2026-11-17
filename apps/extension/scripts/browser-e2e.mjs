@@ -2384,16 +2384,18 @@ async function verifyGitLabAttachment(page, item) {
       assert.equal(progress.source.src, progress.source.href);
       assert.equal(new URL(progress.source.src).pathname, '/-/project/56243493/uploads/0acc0b3514c56d8c6949d7c6aaa9c092/image.png');
       await image.evaluate(image => image.scrollIntoView({ block: 'center' }));await image.click();
-      await poll(() => page.evaluate(() => document.querySelector('dialog.geld-provider-lightbox')?.open === true), Boolean, 'Real attachment click opens Geld image dialog');
-      const zoom = 'dialog.geld-provider-lightbox [aria-label="Zoom in"]';
-      await poll(() => page.$eval(zoom, button => !button.disabled), Boolean, 'Attachment dimensions load before zoom');
+      // GitHub's own gallery (Ramka) in the provider's skin: its card wears the token bridge and the provider's buttons.
+      const card = '.geld-lightbox-host.geld-primer-bridge .geld-lightbox--gallery';
+      await poll(() => page.evaluate((card) => document.querySelector(card) !== null, card), Boolean, 'Real attachment click opens the shared gallery');
+      const zoom = `${card} [aria-label="Zoom in"]`;
+      await poll(() => page.$eval(zoom, button => !button.disabled && button.getAttribute('aria-disabled') !== 'true'), Boolean, 'Attachment dimensions load before zoom');
       await page.click(zoom);
-      assert.equal(await page.$eval('dialog.geld-provider-lightbox [aria-label="Reset zoom"]', button => button.textContent), '150%');
-      progress.dialog = await page.$eval('dialog.geld-provider-lightbox', dialog => ({ font: getComputedStyle(dialog).font, color: getComputedStyle(dialog).color, background: getComputedStyle(dialog).backgroundColor, primerClasses: dialog.querySelector('.btn, .BtnGroup') !== null, original: dialog.querySelector('a').href }));
+      await poll(() => page.$eval(`${card} [aria-label="Reset zoom"]`, button => button.textContent), value => value !== 'Fit', 'Zoom in leaves the fitted image');
+      progress.dialog = await page.$eval(card, dialog => ({ font: getComputedStyle(dialog).font, color: getComputedStyle(dialog).color, background: getComputedStyle(dialog).backgroundColor, primerClasses: dialog.querySelector('.btn, .BtnGroup') !== null, original: dialog.querySelector('a.geld-lightbox__original').href }));
       assert.equal(progress.dialog.primerClasses, false);assert.equal(progress.dialog.original, progress.source.href);
       progress.artifacts = await capture(page, 'gitlab-attachment-viewer');
       await page.keyboard.press('Escape');
-      await poll(() => page.$('dialog.geld-provider-lightbox'), value => value === null, 'Escape closes image dialog');
+      await poll(() => page.$('.geld-lightbox--gallery'), value => value === null, 'Escape closes the gallery');
       assert.equal(await image.evaluate(image => document.activeElement === image.closest('a')), true);
     } finally { await discardHandle(image); }
     progress.status = 'passed';

@@ -4,6 +4,16 @@ import { gitLabAttachmentLink } from '../gitlab/attachment';
 import { bitbucketAttachmentLink } from '../bitbucket/attachment';
 import { ProviderAttachmentLightbox } from './attachment-lightbox';
 import type { ProviderAdapter, ProviderReviewPage } from './types';
+import type { GalleryImage, GallerySkin } from '../ui/attachment-gallery';
+
+const gallery = vi.hoisted(() => ({ opened: [] as Array<{ items: readonly GalleryImage[]; index: number; skin: GallerySkin | undefined }>, closed: 0 }));
+// The gallery itself (Ramka) is GitHub's and tested on its own; here only what the provider hands it.
+vi.mock('../ui/attachment-gallery', () => ({
+  openAttachmentGallery: (items: readonly GalleryImage[], index: number, _onClosed: () => void, skin?: GallerySkin) => {
+    gallery.opened.push({ items, index, skin });
+    return () => { gallery.closed += 1; };
+  },
+}));
 
 const page: ProviderReviewPage = { provider: 'gitlab', repository: { provider: 'gitlab', origin: 'https://gitlab.com', path: 'group/project' }, number: '1', kind: 'overview', url: 'https://gitlab.com/group/project/-/merge_requests/1', diffPageUrl: '', diffUrl: '', headSha: null, version: '1' };
 const imageUrl = 'https://gitlab.com/-/project/123/uploads/0acc0b3514c56d8c6949d7c6aaa9c092/image.png';
@@ -22,37 +32,30 @@ beforeEach(() => {
 });
 afterEach(() => { manager.clear();document.body.replaceChildren();vi.restoreAllMocks(); });
 
-it('shares the fitted viewer with native image links, keeps modified clicks and restores focus', () => {
-  const source = image();manager.update(page, true);
-  source.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true }));
-  expect(document.querySelector('dialog')).toBeNull();
-  const click = new MouseEvent('click', { bubbles: true, cancelable: true });source.dispatchEvent(click);
+it('opens GitHub\'s gallery with every image of the same body, in the provider\'s skin, and keeps modified clicks', () => {
+  document.body.innerHTML = `<div id="description"><a href="${imageUrl}"><img src="${imageUrl}" alt="First"></a><a href="${imageUrl.replace('image.png', 'two.png')}"><img src="${imageUrl.replace('image.png', 'two.png')}" alt="image"></a></div>`;
+  const [first, second] = [...document.querySelectorAll('img')];
+  gallery.opened.length = 0;manager.update(page, true);
+  second!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true }));
+  expect(gallery.opened).toHaveLength(0);
+  const click = new MouseEvent('click', { bubbles: true, cancelable: true });second!.dispatchEvent(click);
   expect(click.defaultPrevented).toBe(true);
-  const dialog = document.querySelector('dialog');expect(dialog?.getAttribute('aria-label')).toBe('Test image');
-  expect(dialog?.querySelector('.btn, .BtnGroup')).toBeNull();
-  expect(dialog?.querySelector('a')?.href).toBe(imageUrl);
-  dialog?.dispatchEvent(new Event('cancel', { cancelable: true }));
-  expect(document.querySelector('dialog')).toBeNull();expect(document.activeElement).toBe(source.closest('a'));
+  expect(gallery.opened).toHaveLength(1);
+  const opened = gallery.opened[0]!;
+  expect(opened.items.map((item) => item.image)).toEqual([first, second]);
+  expect(opened.items.map((item) => item.title)).toEqual(['First', 'Image']);
+  expect(opened.index).toBe(1);
+  expect(opened.skin?.host).toBe('geld-primer-bridge');
+  expect(opened.skin?.button).not.toMatch(/\bbtn\b/);
 });
 
 it('restores annotations and closes the viewer on disable or navigation', () => {
   const source = image();manager.update(page, true);source.click();
-  manager.update(page, false);expect(document.querySelector('dialog')).toBeNull();
+  const closed = gallery.closed;
+  manager.update(page, false);expect(gallery.closed).toBe(closed + 1);
   expect(source.hasAttribute('data-geld-provider-lightbox')).toBe(false);
   manager.update(page, true);window.location.href = `${page.url}/diffs`;adapter.describe = () => ({ ...page, url: window.location.href, kind: 'diff' });
   source.click();expect(document.querySelector('dialog')).toBeNull();
-});
-
-it('closes Escape and restores the original link before provider shortcuts prevent cancellation', () => {
-  const source = image();manager.update(page, true);source.click();
-  const shortcut = vi.fn((event: KeyboardEvent) => event.preventDefault());
-  document.addEventListener('keydown', shortcut);
-  try {
-    document.querySelector('dialog button')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
-    expect(shortcut).not.toHaveBeenCalled();
-    expect(document.querySelector('dialog')).toBeNull();
-    expect(document.activeElement).toBe(source.closest('a'));
-  } finally { document.removeEventListener('keydown', shortcut); }
 });
 
 it('does not intercept downloads, unrelated pages or image links with a different destination', () => {

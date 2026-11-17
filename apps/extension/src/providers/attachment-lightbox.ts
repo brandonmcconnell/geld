@@ -1,9 +1,11 @@
 import { repositoryKey } from '@geld/core';
-import { createAttachmentViewer } from '../ui/attachment-viewer';
-import { createElement } from '../github/dom';
+import { openAttachmentGallery } from '../ui/attachment-gallery';
+import type { GalleryImage } from '../ui/attachment-gallery';
 import type { ProviderAdapter, ProviderReviewPage } from './types';
 import { isProviderReviewPage } from './types';
-import { createProviderAttachmentVideo, providerVideoPreview, providerVideoSource, providerVideoUrl } from './attachment-video';
+import { providerVideoPreview, providerVideoSource, providerVideoUrl } from './attachment-video';
+import { createAttachmentVideo } from '../ui/attachment-video';
+import { showLightboxDialog } from '../ui/lightbox-dialog';
 import './attachment-lightbox.css';
 
 export function attachmentLinkFor(image: HTMLImageElement, page: ProviderReviewPage, accepts: (url: URL) => boolean): HTMLAnchorElement | null {
@@ -20,10 +22,13 @@ export function attachmentLinkFor(image: HTMLImageElement, page: ProviderReviewP
 
 export class ProviderAttachmentLightbox {
   private page: ProviderReviewPage | null = null;
-  private dialog: HTMLDialogElement | null = null;
-  private dispose: (() => void) | null = null;
   private videoCurrent: (() => boolean) | null = null;
   private readonly marked = new Set<HTMLImageElement>();
+  /** The rendered body each marked image stands in: one body is one gallery, as on GitHub. */
+  private readonly bodies = new Map<HTMLImageElement, HTMLElement>();
+  private closeGallery: (() => void) | null = null;
+  private nextId = 0;
+  private readonly ids = new WeakMap<HTMLImageElement, string>();
   private readonly videos = new Map<HTMLVideoElement, HTMLButtonElement>();
   constructor(private readonly adapter: ProviderAdapter) {}
 
@@ -34,12 +39,13 @@ export class ProviderAttachmentLightbox {
     this.page = page;
     document.addEventListener('click', this.click, true);
     const candidates = new Set<HTMLImageElement>();
+    this.bodies.clear();
     const body = this.adapter.descriptionHost?.(document);
     const roots = [...(body === null || body === undefined ? [] : [body]), ...(this.adapter.personRoots?.(document) ?? []).map((entry) => entry.root),
       ...document.querySelectorAll<HTMLElement>('.geld-provider-review__source .geld-provider-review__body, .geld-provider-review [data-geld-agent-note]')];
     for (const root of roots) for (const image of root.querySelectorAll<HTMLImageElement>('img')) {
       if (image.closest('pre,code,form,button,[contenteditable],dialog,[role="dialog"]') !== null) continue;
-      if (this.adapter.attachmentLink(image, page) !== null) candidates.add(image);
+      if (this.adapter.attachmentLink(image, page) !== null) { candidates.add(image);if (!this.bodies.has(image)) this.bodies.set(image, root); }
     }
     for (const image of this.marked) if (!candidates.has(image)) { image.removeAttribute('data-geld-provider-lightbox');this.marked.delete(image); }
     for (const image of candidates) { image.setAttribute('data-geld-provider-lightbox', '');this.marked.add(image); }
@@ -61,7 +67,7 @@ export class ProviderAttachmentLightbox {
     document.removeEventListener('click', this.click, true);
     this.close();this.page = null;
     for (const image of this.marked) image.removeAttribute('data-geld-provider-lightbox');
-    this.marked.clear();
+    this.marked.clear();this.bodies.clear();
     for (const button of this.videos.values()) button.remove();this.videos.clear();
   }
 
@@ -73,12 +79,10 @@ export class ProviderAttachmentLightbox {
   }
 
   private close(): void {
-    const dialog = this.dialog;
-    this.dialog = null;
+    const gallery = this.closeGallery;
+    this.closeGallery = null;
     this.videoCurrent = null;
-    this.dispose?.();this.dispose = null;
-    if (dialog?.open) dialog.close();
-    dialog?.remove();
+    gallery?.();
   }
 
   private readonly click = (event: MouseEvent): void => {
@@ -100,60 +104,42 @@ export class ProviderAttachmentLightbox {
     event.preventDefault();event.stopImmediatePropagation();
   };
 
+  /** GitHub's gallery (`ui/attachment-gallery.tsx`): every image of the same rendered body, in the provider's colours and buttons. */
   private show(image: HTMLImageElement, link: HTMLAnchorElement): void {
     this.close();
-    const previousFocus = document.activeElement;
-    const dialog = createElement('dialog', { class: 'geld-provider-lightbox', 'data-geld-ui': '', 'aria-label': image.alt.trim() || 'Image' });
-    const close = createElement('button', { type: 'button', 'aria-label': 'Close image', title: 'Close (Esc)' }, ['Close']);
-    const original = createElement('a', { href: link.href, target: '_blank', rel: 'noopener noreferrer' }, ['Open original']);
-    const viewer = createAttachmentViewer(image, { prefix: 'geld-provider-lightbox', large: true });
-    dialog.append(createElement('header', {}, [createElement('h2', {}, [image.alt.trim() || 'Image']), close]),
-      createElement('div', { class: 'geld-provider-lightbox__body' }, [viewer.stage]), createElement('footer', {}, [viewer.controls, original]));
-    this.dispose = viewer.dispose;
-    close.addEventListener('click', () => this.close());
-    dialog.addEventListener('cancel', (event) => { event.preventDefault();this.close(); });
-    dialog.addEventListener('keydown', (event) => {
-      if (event.key !== 'Escape' || this.dialog !== dialog) return;
-      event.preventDefault();event.stopPropagation();this.close();
-    }, { capture: true });
-    dialog.addEventListener('click', (event) => { if (event.target === dialog) this.close(); });
-    dialog.addEventListener('close', () => {
-      viewer.dispose();dialog.remove();
-      if (this.dialog === dialog) { this.dialog = null;this.dispose = null; }
-      if (link.isConnected) link.focus({ preventScroll: true });
-      else if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus({ preventScroll: true });
-    }, { once: true });
-    document.body.append(dialog);this.dialog = dialog;
-    dialog.showModal();close.focus();
+    const page = this.page;
+    const body = this.bodies.get(image);
+    if (page === null || body === undefined) return;
+    const items: GalleryImage[] = [];
+    for (const candidate of body.querySelectorAll<HTMLImageElement>('img')) {
+      if (!this.marked.has(candidate)) continue;
+      const candidateLink = candidate === image ? link : this.adapter.attachmentLink?.(candidate, page) ?? null;
+      if (candidateLink === null) continue;
+      let id = this.ids.get(candidate);
+      if (id === undefined) { id = `geld-provider-lightbox-${++this.nextId}`;this.ids.set(candidate, id); }
+      const alt = candidate.alt.trim();
+      items.push({ id, image: candidate, link: candidateLink, title: alt === '' || /^image$/i.test(alt) ? 'Image' : alt });
+    }
+    const index = items.findIndex((item) => item.image === image);
+    if (index < 0) return;
+    const dismiss = openAttachmentGallery(items, index, () => { if (this.closeGallery === dismiss) this.closeGallery = null; },
+      { host: 'geld-primer-bridge', button: 'geld-provider-toggle', group: 'geld-lightbox__group', groupItem: '' });
+    this.closeGallery = dismiss;
   }
 
+  /** GitHub's video player (`ui/attachment-video.ts`, video.js) in GitHub's card, in the provider's buttons and colours. */
   private showVideo(source: HTMLVideoElement, url: string, trigger: HTMLElement, page: ProviderReviewPage): void {
     this.close();
-    const dialog = createElement('dialog', { class: 'geld-provider-lightbox', 'data-geld-ui': '', 'aria-label': 'Video' });
-    const close = createElement('button', { type: 'button', 'aria-label': 'Close video', title: 'Close (Esc)' }, ['Close']);
-    const original = createElement('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, ['Open original']);
     const current = (): boolean => {
       const active = this.adapter.describe(new URL(window.location.href), document);
       return active !== null && isProviderReviewPage(active) && active.url === page.url && active.version === page.version
         && repositoryKey(active.repository) === repositoryKey(page.repository) && this.validVideo(source, active)
         && providerVideoUrl(source, active.provider, active.url) === url;
     };
-    const viewer = createProviderAttachmentVideo(source, url, current);
-    dialog.append(createElement('header', {}, [createElement('h2', {}, [source.getAttribute('aria-label') || 'Video']), close]),
-      createElement('div', { class: 'geld-provider-lightbox__body' }, [viewer.stage]), createElement('footer', {}, [viewer.controls, original]));
-    this.dispose = viewer.dispose;
-    close.addEventListener('click', () => this.close());
-    dialog.addEventListener('cancel', event => { event.preventDefault();this.close(); });
-    dialog.addEventListener('keydown', event => {
-      if (event.key !== 'Escape' || this.dialog !== dialog) return;
-      event.preventDefault();event.stopPropagation();this.close();
-    }, { capture: true });
-    dialog.addEventListener('click', event => { if (event.target === dialog) this.close(); });
-    dialog.addEventListener('close', () => {
-      viewer.dispose();dialog.remove();
-      if (this.dialog === dialog) { this.dialog = null;this.dispose = null;this.videoCurrent = null; }
-      if (trigger.isConnected) trigger.focus({ preventScroll: true });
-    }, { once: true });
-    document.body.append(dialog);this.dialog = dialog;this.videoCurrent = current;dialog.showModal();viewer.mount();close.focus();
+    const summary = source.parentElement?.matches('details') ? source.parentElement.querySelector(':scope > summary')?.textContent?.trim() : undefined;
+    const title = source.getAttribute('aria-label')?.trim() || summary || 'Video';
+    const dismiss = showLightboxDialog(createAttachmentVideo(source, url), title, url, trigger, { dialog: 'geld-primer-bridge', button: 'geld-provider-toggle' });
+    this.closeGallery = dismiss;
+    this.videoCurrent = current;
   }
 }

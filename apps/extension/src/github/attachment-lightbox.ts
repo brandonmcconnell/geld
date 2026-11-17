@@ -1,17 +1,17 @@
-import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
-import { attachmentVideoUrl, createAttachmentVideo } from './attachment-video';
+import { createElement, OWN_UI_ATTRIBUTE } from './dom';
+import { attachmentVideoUrl, createAttachmentVideo } from '../ui/attachment-video';
+import { closeLightboxDialog, showLightboxDialog } from '../ui/lightbox-dialog';
 import { createPdfViewer } from './attachment-pdf';
 import { pdfSourceOf } from './pdf-links';
-import { openAttachmentGallery } from './attachment-gallery';
-import type { GalleryImage } from './attachment-gallery';
-import { ICON_LINK_EXTERNAL, ICON_X } from './ui/icons';
+import { openAttachmentGallery } from '../ui/attachment-gallery';
+import type { GalleryImage } from '../ui/attachment-gallery';
 
 const IMAGE_ATTRIBUTE = 'data-geld-lightbox-image';
 const LINK_ATTRIBUTE = 'data-geld-lightbox-link';
 const IMAGE_PATH = /\.(?:avif|gif|jpe?g|png|svg|webp)$/i;
 let activePath: string | null = null;
-let closeDialog: (() => void) | null = null;
 const videoButtons = new Map<HTMLVideoElement, HTMLButtonElement>();
+let galleryClose: (() => void) | null = null;
 const imageIds = new WeakMap<HTMLImageElement, string>();
 let nextImageId = 0;
 
@@ -42,60 +42,6 @@ function titleFor(image: HTMLImageElement): string {
   return alt === '' || /^image$/i.test(alt) ? 'Image' : alt;
 }
 
-interface DialogViewer {
-  readonly stage: HTMLElement;
-  /** The header's control in place of Open original. */
-  readonly action?: HTMLElement;
-  readonly mount?: () => void;
-  readonly dispose: () => void;
-}
-
-function showDialog(viewer: DialogViewer, title: string, href: string, trigger: HTMLElement): void {
-  closeDialog?.();
-  const titleId = `geld-lightbox-title-${Date.now()}`;
-  const dialog = createElement('dialog', {
-    class: 'geld-lightbox',
-    [OWN_UI_ATTRIBUTE]: '',
-    'aria-labelledby': titleId,
-  });
-  const close = createElement('button', {
-    type: 'button', class: 'geld-lightbox__close', 'aria-label': 'Close', title: 'Close (Esc)',
-  }, [svgFromString(ICON_X)]);
-  const original = viewer.action ?? createElement('a', {
-    class: 'btn btn-sm geld-lightbox__original', href, target: '_blank', rel: 'noopener noreferrer',
-  }, ['Open original', svgFromString(ICON_LINK_EXTERNAL)]);
-  dialog.append(
-    createElement('header', { class: 'geld-lightbox__header' }, [
-      createElement('h1', { class: 'geld-lightbox__title', id: titleId }, [title]),
-      original,
-      close,
-    ]),
-    createElement('div', { class: 'geld-lightbox__body' }, [viewer.stage]),
-  );
-  const dismiss = (): void => {
-    if (closeDialog !== dismiss) return;
-    closeDialog = null;
-    viewer.dispose();
-    if (dialog.open) dialog.close();
-    dialog.remove();
-    if (trigger.isConnected) trigger.focus({ preventScroll: true });
-  };
-  close.addEventListener('click', dismiss);
-  dialog.addEventListener('click', (event) => {
-    if (event.target === dialog) dismiss();
-  });
-  dialog.addEventListener('cancel', (event) => {
-    event.preventDefault();
-    dismiss();
-  });
-  dialog.addEventListener('close', dismiss, { once: true });
-  document.body.append(dialog);
-  closeDialog = dismiss;
-  dialog.showModal();
-  viewer.mount?.();
-  close.focus();
-}
-
 function galleryImage(image: HTMLImageElement): GalleryImage | null {
   const link = attachmentLink(image);
   if (link === null) return null;
@@ -116,11 +62,17 @@ function openGallery(image: HTMLImageElement): void {
   });
   const index = items.findIndex((item) => item.image === image);
   if (index < 0) return;
-  closeDialog?.();
+  closeAll();
   const dismiss = openAttachmentGallery(items, index, () => {
-    if (closeDialog === dismiss) closeDialog = null;
+    if (galleryClose === dismiss) galleryClose = null;
   });
-  closeDialog = dismiss;
+  galleryClose = dismiss;
+}
+
+function closeAll(): void {
+  closeLightboxDialog();
+  galleryClose?.();
+  galleryClose = null;
 }
 
 function onClick(event: MouseEvent): void {
@@ -130,7 +82,8 @@ function onClick(event: MouseEvent): void {
   const pdfLink = target.closest('.markdown-body a[href]');
   const pdf = !import.meta.env.FIREFOX && pdfLink instanceof HTMLAnchorElement && !pdfLink.hasAttribute('download') ? pdfSourceOf(pdfLink.href, window.location.origin) : null;
   if (pdfLink instanceof HTMLAnchorElement && pdf !== null) {
-    showDialog(createPdfViewer(pdf, () => closeDialog?.()), pdf.name, pdf.url, pdfLink);
+    galleryClose?.();
+    showLightboxDialog(createPdfViewer(pdf, () => closeLightboxDialog()), pdf.name, pdf.url, pdfLink);
     event.preventDefault();
     event.stopImmediatePropagation();
     return;
@@ -164,7 +117,8 @@ function enhanceVideos(): void {
         ? video.parentElement.querySelector(':scope > summary')?.textContent?.trim()
         : undefined;
       const title = video.getAttribute('aria-label')?.trim() || summary || 'Video';
-      showDialog(createAttachmentVideo(video, url), title, url, button);
+      galleryClose?.();
+      showLightboxDialog(createAttachmentVideo(video, url), title, url, button);
     });
     video.after(button);
     videoButtons.set(video, button);
@@ -176,7 +130,7 @@ export function applyAttachmentLightbox(enabled = true): void {
     removeAttachmentLightbox();
     return;
   }
-  if (activePath !== window.location.pathname) closeDialog?.();
+  if (activePath !== window.location.pathname) closeAll();
   activePath = window.location.pathname;
   document.addEventListener('click', onClick, true);
   enhanceVideos();
@@ -206,7 +160,7 @@ function releaseLink(link: HTMLAnchorElement): void {
 
 export function removeAttachmentLightbox(): void {
   document.removeEventListener('click', onClick, true);
-  closeDialog?.();
+  closeAll();
   for (const button of videoButtons.values()) button.remove();
   videoButtons.clear();
   activePath = null;

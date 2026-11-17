@@ -4021,10 +4021,12 @@ Nightly conflict handling includes the granted GitLab and Bitbucket runtime regi
 Optional provider registration checks the nightly pause state before registering scripts, and conflict evaluation retires pre-existing provider registrations even when no GitHub registration remains.
 Resuming injects already open granted provider tabs, and conflict notices use each provider's native theme tokens without requesting new host access.
 
-Image attachment gestures are shared by GitHub, GitLab and Bitbucket, while each provider qualifies its own attachment links and styles the dialog with native tokens.
+GitLab and Bitbucket open GitHub's own gallery (`src/ui/attachment-gallery.tsx`, Ramka): every qualified image of one rendered body is one gallery, and the provider hands it a skin (its button class, and `geld-primer-bridge` on the host so the shared `src/ui/lightbox.css` reads in its tokens).
+Videos open in GitHub's video.js player (`src/ui/attachment-video.ts`) inside GitHub's card (`src/ui/lightbox-dialog.ts`), skinned the same way.
+PDFs still open as the host serves them on GitLab and Bitbucket: the PDF viewer reads only GitHub's attachment routes.
 GitLab upload links can use the canonical project-qualified path while retaining the shorter uploads path in data-canonical-src, so the actual image and link URLs are compared rather than assuming that attribute is the loaded source.
 Only matching HTTPS image and attachment destinations inside known description or comment bodies are intercepted, preserving modified clicks, download links, avatars and unrelated links.
-The shared viewer keeps fitting, pointer-centered zoom, dragging, pinch gestures, keyboard controls, failure fallback and focus restoration without imposing GitHub button classes on other providers.
+The gallery brings the same arrows, swipe, counter, pinch and wheel zoom, failure fallback and focus restoration on every host, without imposing GitHub button classes on other providers.
 The public GitLab bot fixture includes a description screenshot, and its installed acceptance opens the real attachment, zooms, closes with Escape and verifies focus returns to the source link.
 
 Provider description shortening shares GitHub's heading-range calculation but preserves the provider's original heading and body nodes.
@@ -4108,7 +4110,7 @@ Provider preview parsers need an actual preview or inspector URL, a recognized f
 Review advice containing shell pipes and deployment words is not a linkless Cloudflare deployment;
 keep that comment in its native finding instead of duplicating it under Previews.
 
-The provider image viewer also handles Escape inside its dialog before native page shortcuts can suppress browser cancellation, restoring the original image link on close.
+The shared video and PDF card handles Escape inside its dialog before native page shortcuts can suppress browser cancellation, restoring the original link on close.
 
 A settled public MR can verify preserved round boundaries and source identities without containing unresolved work;
 report the Needs attention interaction as unverified in that case, never fabricate open items to satisfy browser acceptance.
@@ -4189,11 +4191,10 @@ The preview copies a bounded inert version of the already-rendered body, drops I
 Only a registered provider account with a verified summary format can supply a preview, and unknown Bitbucket formats remain non-preview chips.
 Adjacent previews cancel the previous close timer, while Escape, source replacement and digest disposal retire the open card.
 
-Provider image lightboxes fit against the measured enlarged stage, and pointer zoom uses that canvas rather than the letterboxed image dimensions.
 Provider video launch controls bind to a live native video with a qualified same-origin attachment or raw URL, never a copied control attribute or URL guessed from comment text.
 Digest renderers expose an owned Open video control while the original inline player remains native.
-The larger player preserves position, mute, volume and speed, resumes only an already playing source, and returns state only while the review and original source still match.
-Disposal stops the owned media request, and a changed source closes its dialog.
+The larger player preserves position and volume, resumes only an already playing source, and hands its position back to the inline video when it closes, as on GitHub.
+A changed review or source closes its dialog.
 Digest refreshes preserve focus on the first summary of a closed details menu, since its trigger remains visible even when the menu body is hidden.
 An outer closed details body still hides nested summaries, and hidden menu items still lose focus.
 

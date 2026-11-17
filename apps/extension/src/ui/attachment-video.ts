@@ -1,6 +1,6 @@
 import videojs from 'video.js/core.es.js';
 import playerCss from 'video.js/dist/video-js.css?inline';
-import { createElement } from './dom';
+import { createElement } from '../github/dom';
 
 // Only initialize the player inside Geld's dialog, even if the page uses Video.js markup.
 Object.assign(videojs.options, { autoSetup: false });
