@@ -1402,36 +1402,28 @@ function mergeBoxText(): string {
 }
 
 /**
- * Toggle a row without moving it under the pointer: whatever opens or closes
- * above it (a long comment collapsing) is compensated with an instant scroll,
- * and a row that would end up under GitHub's sticky header is brought just
- * below it. The one scroll Geld makes on purpose.
+ * Toggle a row and leave the page where it is unless the row would end up
+ * above the viewport's top (under GitHub's sticky header): a tall row closing
+ * above it can carry it off the top, and then it is brought just under the
+ * header. Anywhere else on screen it stays where the toggle left it, since
+ * compensating every move bounced the page between rows.
  */
 function keepInPlace(focusKey: string, change: () => void): void {
-  const before = document.querySelector(`[data-geld-focus="${focusKey}"]`)?.getBoundingClientRect().top ?? null;
   change();
   const after = document.querySelector(`[data-geld-focus="${focusKey}"]`);
   if (!(after instanceof HTMLElement)) return;
-  let top = after.getBoundingClientRect().top;
-  if (before !== null && Math.abs(top - before) > 1) {
-    window.scrollBy({ top: top - before, behavior: 'instant' });
-    top = after.getBoundingClientRect().top;
-  }
-  const sticky = stickyHeaderBottomAt(window.scrollY);
-  if (top < sticky) scrollRowTo(top + window.scrollY);
-  else revealOpened(after);
+  const top = after.getBoundingClientRect().top;
+  if (top < stickyHeaderBottomAt(window.scrollY)) scrollRowTo(top + window.scrollY);
   // From here until the reader scrolls, the row stays where it landed whatever arrives above it.
   holdRow(focusKey);
 }
 
 /**
- * After a toggle held its row still: when the row opened and what it opened
+ * After a jump to a row (`revealRow`): when the row opened and what it opened
  * runs past the bottom of the viewport, scroll just far enough to show it,
  * and never so far that the row itself leaves the top. A row whose content
- * fits does not move at all, so opening and closing stays where the pointer
- * is; a row opened low on the page (one that another row's collapse left
- * there) comes up only by what is missing. The same rule native tree views
- * follow: reveal if needed, by the least amount.
+ * fits does not move at all. The same rule native tree views follow: reveal
+ * if needed, by the least amount.
  */
 function revealOpened(control: HTMLElement): void {
   const row = control.closest<HTMLElement>('li');
