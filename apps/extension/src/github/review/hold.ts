@@ -5,8 +5,7 @@
  * row the reader had just opened down the page. From the moment a row opens
  * until the reader scrolls on their own, the row's top stays at the same
  * viewport position: whatever grows or shrinks above it is compensated with
- * an instant scroll, the same correction `keepInPlace` makes once at the
- * toggle, kept up for as long as the reader has not moved.
+ * an instant scroll, kept up for as long as the reader has not moved.
  *
  * The reader's own scrolling releases the hold: a wheel turn, a touch, a
  * scroll key, a mouse press (a scrollbar drag starts with one, and so does
