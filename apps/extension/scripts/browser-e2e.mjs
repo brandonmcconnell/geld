@@ -2345,17 +2345,23 @@ async function verifyProviderFlow(page, item) {
   }
   // The digest redraws its toolbar while it settles, so a click can land on a button already replaced.
   await poll(() => page.click('.geld-provider-flow-button').then(() => true, (error) => /detached|not clickable|No element/i.test(String(error)) ? false : Promise.reject(error)), Boolean, 'Flow button takes the click');
+  // The shared Flow dialog (the one GitHub opens) draws nothing until every bounded read has landed, then the cards.
   await poll(() => page.evaluate(() => {
-    const dialog = document.querySelector('dialog.geld-provider-flow');return dialog?.open && !/Reading imports|Loading verified/.test(dialog.querySelector('[role="status"]')?.textContent ?? '');
+    const dialog = document.querySelector('dialog.geld-flow');return dialog?.open && dialog.querySelector('.geld-flow__node') !== null && dialog.querySelector('.geld-flow__message') === null;
   }), Boolean, 'File flow settles its bounded source reads');
-  progress.initial = await page.evaluate(() => ({ cards: document.querySelectorAll('.geld-provider-flow [data-geld-flow-path]').length, edges: document.querySelectorAll('.geld-provider-flow [data-geld-flow-from]').length, message: document.querySelector('.geld-provider-flow [role="status"]')?.textContent }));
+  progress.initial = await page.evaluate(() => ({ skin: document.querySelector('dialog.geld-flow')?.getAttribute('data-skin') ?? null, cards: document.querySelectorAll('dialog.geld-flow .geld-flow__node[data-path]').length, edges: document.querySelectorAll('dialog.geld-flow .geld-flow__link').length }));
+  assert.equal(progress.initial.skin, 'gitlab', 'Flow wears the GitLab skin');
   assert.equal(progress.initial.cards, before.all.files - before.hiddenCount);
-  await page.click('.geld-provider-flow__tools button[aria-pressed="false"]');
-  await poll(() => page.evaluate(() => document.querySelectorAll('.geld-provider-flow [data-geld-flow-path]').length), value => value === before.all.files, 'Flow includes categorized files on demand');
+  // With nothing hidden the toggle is not offered, as on GitHub.
+  const toggle = await page.$('dialog.geld-flow .geld-flow__toggle:not([hidden])');
+  if (toggle !== null) {
+    await toggle.click();
+    await poll(() => page.evaluate(() => document.querySelectorAll('dialog.geld-flow .geld-flow__node[data-path]').length), value => value === before.all.files, 'Flow includes categorized files on demand');
+  }
   progress.artifacts = await capture(page, 'gitlab-file-flow');
   await page.keyboard.press('Escape');
   progress.closed = await poll(() => page.evaluate(() => ({
-    dialogCount: document.querySelectorAll('dialog.geld-provider-flow').length,
+    dialogCount: document.querySelectorAll('dialog.geld-flow').length,
     focused: document.activeElement?.classList.contains('geld-provider-flow-button') === true,
     activeTag: document.activeElement?.tagName ?? null,
     activeClass: document.activeElement?.getAttribute('class') ?? null,

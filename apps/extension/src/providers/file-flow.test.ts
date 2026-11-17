@@ -43,18 +43,20 @@ function fixture(read: NonNullable<ProviderAdapter['wholeTests']>['readSource'])
 it('reads only after the reader opens Flow and draws imports from verified source text', async () => {
   const read = vi.fn(async (revision: ProviderNewFileRevision) => ({ lines: [revision.path === 'a.ts' ? "import './b';" : 'export const b = 1;'], bytes: 30 }));
   const host = fixture(read);expect(read).not.toHaveBeenCalled();host.querySelector('button')?.click();
-  await vi.waitFor(() => expect(document.querySelector('[data-geld-flow-from="a.ts"][data-geld-flow-to="b.ts"]')).not.toBeNull());
+  await vi.waitFor(() => expect(document.querySelector('.geld-flow__link[data-from="a.ts"][data-to="b.ts"]')).not.toBeNull());
   expect(read).toHaveBeenCalledTimes(2);
   for (const [revision] of read.mock.calls) expect(revision.repository.path).toBe('fork/project');
-  expect(document.querySelector('[data-geld-flow-path="a.ts"]')?.getAttribute('href')).toBe(page.diffPageUrl);
+  // The same dialog GitHub opens: its skin is the provider's, its cards lead to the file in the provider's diff tab.
+  expect(document.querySelector('dialog.geld-flow')?.getAttribute('data-skin')).toBe('bitbucket');
+  expect(document.querySelector('.geld-flow__node[data-path="a.ts"]')?.getAttribute('href')).toBe(page.diffPageUrl);
   document.querySelector('dialog')?.dispatchEvent(new Event('cancel', { cancelable: true }));
   expect(document.querySelector('dialog')).toBeNull();expect(document.activeElement).toBe(host.querySelector('button'));
 });
 
-it('reports unreadable sources instead of claiming an empty dependency graph is complete', async () => {
+it('draws every file even when its source cannot be read, as GitHub does', async () => {
   const host = fixture(async () => { throw new Error('Access denied'); });host.querySelector('button')?.click();
-  await vi.waitFor(() => expect(document.querySelector('[role="status"]')?.textContent).toContain('2 unavailable'));
-  expect(document.querySelectorAll('[data-geld-flow-path]')).toHaveLength(2);
+  await vi.waitFor(() => expect(document.querySelectorAll('.geld-flow__node[data-path]')).toHaveLength(2));
+  expect(document.querySelector('.geld-flow__link')).toBeNull();
 });
 
 it('dismisses Escape before provider shortcuts can prevent native dialog cancellation', () => {
@@ -64,7 +66,7 @@ it('dismisses Escape before provider shortcuts can prevent native dialog cancell
   document.addEventListener('keydown', shortcut);
   try {
     const key = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
-    document.querySelector('.geld-provider-flow__tools button')?.dispatchEvent(key);
+    document.querySelector('dialog.geld-flow .geld-flow__toggle')?.dispatchEvent(key);
     expect(key.defaultPrevented).toBe(true);
     expect(shortcut).not.toHaveBeenCalled();
     expect(document.querySelector('dialog')).toBeNull();
