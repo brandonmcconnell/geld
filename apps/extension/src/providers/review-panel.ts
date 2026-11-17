@@ -1,4 +1,5 @@
 import { providerPreviews, providerPreviewDestination } from './previews';
+import { hideAgentRerunControls, takeAgentViewLink } from '../review/agent-badges';
 import { CHAT_BUTTON_SHOWN } from '../review/chat-button';
 import { commentFixRow, threadFixControl } from '../review/chat-fix';
 import type { ChatFix, ChatFixSkin, CommentFix } from '../review/chat-fix';
@@ -568,6 +569,45 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     return wrapper;
   }
 
+  /**
+   * A bot's own badges in its comment, as GitHub's chat wears them (`review/agent-badges.ts`): its "View in <bot>"
+   * badge leaves the bubble for a View link on the byline, its re-trigger badge is hidden, and a summary from an
+   * earlier run offers See latest, which opens the bot's line where its newest summary is.
+   */
+  function botBylineControls(comment: ProviderReviewComment, byline: HTMLElement, body: HTMLElement): void {
+    hideAgentRerunControls(body);
+    const view = takeAgentViewLink(body);
+    const controls = node('span', '', 'geld-provider-review__byline-controls');
+    if (view !== null && safeUrl(view.href) !== null) {
+      const title = view.label === '' ? 'View' : /^(?:view|open|review|see|show)\b/i.test(view.label) ? view.label : `Open ${view.label}`;
+      const link = node('a', '', 'geld-provider-toggle geld-provider-review__byline-control');
+      link.href = view.href;link.target = '_blank';link.rel = 'noopener noreferrer';link.title = title;link.setAttribute('aria-label', title);
+      link.dataset.kind = 'view';
+      link.append(digestIcon('link', doc), node('span', 'View'));
+      controls.append(link);
+    }
+    const botId = (input.bots ?? []).find((bot) => bot.authorId === comment.author.id)?.id;
+    const topLevel = (options.comments ?? []).some((each) => each.anchor === comment.anchor);
+    const latest = botId === undefined || !topLevel ? null : newestProviderBotSummary(input, options.comments ?? [], botId);
+    if (botId !== undefined && latest !== null && latest.anchor !== comment.anchor && Date.parse(latest.createdAt) > Date.parse(comment.createdAt)) {
+      const see = node('button', '', 'geld-provider-toggle geld-provider-review__byline-control');
+      see.type = 'button';see.dataset.kind = 'latest';
+      see.title = 'See this bot\u2019s latest summary';
+      see.append(digestIcon('history', doc), node('span', 'See latest'));
+      see.addEventListener('click', () => {
+        const section = panel.querySelector<ReviewDisclosure>('[data-geld-review-key="bots"]');
+        const row = section?.querySelector<ReviewDisclosure>(`[data-geld-review-bot="${CSS.escape(botId)}"]`) ?? null;
+        if (section === null || row === null) return;
+        section.open = true;row.open = true;
+        const toggle = row.querySelector<HTMLElement>('[data-geld-review-toggle]');
+        toggle?.focus({ preventScroll: true });
+        toggle?.scrollIntoView({ block: 'nearest' });
+      });
+      controls.append(see);
+    }
+    if (controls.childElementCount > 0) byline.append(controls);
+  }
+
   function sourceComment(comment: ProviderReviewComment): HTMLElement {
     const article = node('article', '', 'geld-provider-review__source');
     article.dataset.geldSource = comment.anchor;
@@ -668,6 +708,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       });
     }
     article.append(byline, body);
+    if (automatedAuthor(comment.author)) botBylineControls(comment, byline, body);
     const identify = options.identifyReviewer;
     if (identify !== undefined && comment.author.automated === true && !(input.bots ?? []).some((bot) => bot.authorId === comment.author.id)) {
       const choices = identify.choices.filter((choice) => providerBotSupport(input.subject.provider, choice.id)?.support === 'supported');

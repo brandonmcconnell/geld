@@ -385,3 +385,11 @@ svg.geld-provider-digest-icon[data-geld-outline] > [fill="currentColor"] { fill:
 .geld-provider-review [data-geld-status-row] > .geld-provider-review__request-menu > .geld-provider-review__menu-list { inset-inline: auto 0; min-inline-size: 220px; }
 .geld-provider-review .geld-provider-review__request-menu > .geld-provider-review__menu-list > p { margin: 0; padding: var(--geld-provider-space-3); }
 .geld-provider-review .geld-provider-review__request-menu > summary[data-geld-running] { color: var(--geld-provider-text-subtle); }
+
+/* A bot's own badges in its comment, as GitHub's chat wears them: View on the byline, the re-trigger badge hidden. */
+.geld-provider-review .geld-provider-review__body [data-geld-agent-view],
+.geld-provider-review .geld-provider-review__body [data-geld-agent-rerun] { display: none !important; }
+.geld-provider-review .geld-provider-review__byline-controls { display: inline-flex; gap: 6px; margin-inline-start: auto; }
+.geld-provider-review .geld-provider-review__byline-control { display: inline-flex; align-items: center; gap: 4px; min-block-size: 24px; padding-block: 0; font: var(--geld-provider-font-small); text-decoration: none; }
+.geld-provider-review .geld-provider-review__byline-control > svg { inline-size: 12px; block-size: 12px; }
+.geld-provider-review .geld-provider-review__byline-control[data-kind='latest'] > svg { transform: scaleX(-1); }
