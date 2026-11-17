@@ -1,6 +1,6 @@
 import type { GeldSettings } from '@geld/core';
 import type { GeldPrMeta, ProviderReviewComment, ProviderReviewInput, RawComment, ReviewItem } from '@geld/review';
-import { agentTask, META_VERSION, openTargetById, providerReviewKey, providerReviewUrl } from '@geld/review';
+import { agentComment, agentTask, codingAgentById, META_VERSION, openTargetById, providerReviewKey, providerReviewUrl } from '@geld/review';
 import type { AiState, SuggestionSource, SuggestionTarget } from '../review/ai';
 import { aiPending, aiStateFor, discardSuggestion, leaveAiPage, loadAiForPage, onAiKeyChange, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi } from '../review/ai';
 import type { HandOff, TriageHandlers, TriageSkin, TriageView } from '../review/triage-card';
@@ -15,6 +15,7 @@ import type { AskedChatFix, ChatFixThreadLink } from '../review/chat-fix-control
 import type { ChatFix, CommentFix } from '../review/chat-fix';
 import { createElement } from '../github/dom';
 import './triage.css';
+import { countUsage } from '../lib/usage-count';
 
 /** What the provider's page lends the triage: the review's words, and a changed file's lines at the head. */
 export interface ProviderTriageServices {
@@ -24,6 +25,8 @@ export interface ProviderTriageServices {
   readonly reportMissingTool?: (tool: 'review bot' | 'coding agent') => void;
   /** Commits fixes the host's own way (GitLab's suggestions API); absent where Geld cannot yet (Bitbucket). */
   readonly fixApplier?: (subject: ProviderReviewInput['subject'], threads: () => readonly ProviderReviewInput['threads'][number][]) => FixApplier;
+  /** Post a top-level comment on the review as the reader, for an agent its comment starts here: whether the host took it. */
+  readonly postComment?: (subject: ProviderReviewInput['subject'], text: string) => Promise<boolean>;
   /** Read the review again after a fix was posted, so its note and the resolved thread show. */
   readonly refresh?: () => void;
 }
@@ -144,10 +147,10 @@ export class ProviderTriage {
     const view = buildTriageView({
       meta: this.meta, ai: state, settings: this.settings, knownBots: new Set(),
       viewerIsAuthor: false, agentServices: [], visit: this.visit,
-      resolves: this.applier() !== null && this.settings.resolveOnFix, policyPending: false, host: 'other',
+      resolves: this.applier() !== null && this.settings.resolveOnFix, policyPending: false, host: this.input?.subject.provider === 'bitbucket' ? 'bitbucket' : 'gitlab',
     });
-    // The agents' comment commands are GitHub's: here a task is copied or opened in an agent whose link carries it alone.
-    return view === null ? null : { ...view, agents: [], recommended: null, ...(this.applier() === null ? { cannotApply: true } : {}) };
+    // Agents whose comment starts them on this host only (`agentAnswersOn`); a poster is needed to offer them at all.
+    return view === null ? null : { ...view, ...(this.services.postComment === undefined ? { agents: [], recommended: null } : {}), ...(this.applier() === null ? { cannotApply: true } : {}) };
   }
 
   private applier(): FixApplier | null {
@@ -227,6 +230,21 @@ export class ProviderTriage {
       this.visit.handedOff = { text, copyAgain: copyAgain ? key : null };
       this.changed();
     };
+    if (how === 'comment') {
+      const agent = codingAgentById(id);
+      const post = this.services.postComment;
+      const comment = agent === undefined ? null : agentComment(agent, task);
+      if (agent === undefined || comment === null || post === undefined) return;
+      const preview = comment.length > 600 ? `${comment.slice(0, 600)}…` : comment;
+      const host = this.input.subject.provider === 'bitbucket' ? 'Bitbucket' : 'GitLab';
+      if (!window.confirm(`Post this comment on the pull request to start ${agent.name}?\n\n${preview}`)) return;
+      countUsage('agent_handoff');
+      void post(this.input.subject, comment).then((posted) => {
+        said(posted ? `Posted ${agent.command ?? agent.name} on the pull request` : `${host} did not take the comment for ${agent.name}`, false);
+        if (posted) this.services.refresh?.();
+      });
+      return;
+    }
     const target = how === 'open' ? openTargetById(id) : undefined;
     // Only targets whose link carries the task alone are offered here (`anyHost`), so the pull reference is unused.
     if (target !== undefined && target.anyHost === true) openTask(target, target.url(task, { owner: '', repo: '', number: 0 }), task, said);

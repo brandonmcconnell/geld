@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agentComment, agentLikely, agentsInRelatedLinks, agentTask, codingAgentById, openTargetById, openTargetLikely, recommendAgents } from './coding-agents';
+import { agentAnswersOn, agentComment, CODING_AGENTS, agentLikely, agentsInRelatedLinks, agentTask, codingAgentById, openTargetById, openTargetLikely, recommendAgents } from './coding-agents';
 
 const ids = (agents: readonly { readonly id: string }[]): readonly string[] => agents.map((agent) => agent.id);
 
@@ -109,5 +109,13 @@ describe('OPEN_TARGETS', () => {
     expect(factory === undefined ? null : openTargetLikely(factory, () => true, [])).toBe(false);
     expect(factory === undefined ? null : openTargetLikely(factory, () => false, ['factory'])).toBe(true);
     expect(claude === undefined ? null : openTargetLikely(claude, (id) => id === 'claude', [])).toBe(true);
+  });
+});
+
+describe('agentAnswersOn', () => {
+  it('starts every commanded agent on GitHub, only Cursor on Bitbucket and none on GitLab', () => {
+    expect(CODING_AGENTS.filter((agent) => agentAnswersOn(agent, 'github')).map((agent) => agent.id)).toEqual(['cursor', 'copilot', 'claude', 'codex', 'devin']);
+    expect(CODING_AGENTS.filter((agent) => agentAnswersOn(agent, 'bitbucket')).map((agent) => agent.id)).toEqual(['cursor']);
+    expect(CODING_AGENTS.filter((agent) => agentAnswersOn(agent, 'gitlab'))).toEqual([]);
   });
 });

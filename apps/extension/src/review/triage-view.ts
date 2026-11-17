@@ -1,6 +1,6 @@
 import type { GeldSettings } from '@geld/core';
-import type { CodingAgent, GeldPrMeta, OpenTarget } from '@geld/review';
-import { agentLikely, agentsInRelatedLinks, botAppAvatar, botById, botTitle, codingAgentById, diffHunks, lineDiff, OPEN_TARGETS, openTargetLikely, recommendAgents, resolveBotId } from '@geld/review';
+import type { AgentHost, CodingAgent, GeldPrMeta, OpenTarget } from '@geld/review';
+import { agentAnswersOn, agentLikely, agentsInRelatedLinks, botAppAvatar, botById, botTitle, codingAgentById, diffHunks, lineDiff, OPEN_TARGETS, openTargetLikely, recommendAgents, resolveBotId } from '@geld/review';
 import { browser } from 'wxt/browser';
 import { authorLabels } from '../github/review/panel-model';
 import type { AiState } from './ai';
@@ -31,8 +31,11 @@ export interface TriageViewInput {
   readonly resolves: boolean;
   /** The repository's config is still being read, so whether Apply resolves is not known yet. */
   readonly policyPending: boolean;
-  /** Off GitHub, only the open targets whose link carries the task alone (`OpenTarget.anyHost`). */
-  readonly host?: 'github' | 'other';
+  /**
+   * The host the review is on. Off GitHub, only the open targets whose link carries the task alone
+   * (`OpenTarget.anyHost`), and only the agents whose comment command starts them there (`agentAnswersOn`).
+   */
+  readonly host?: AgentHost;
 }
 
 export function agentIcon(agent: CodingAgent): string | null {
@@ -85,20 +88,23 @@ export function buildTriageView(input: TriageViewInput): TriageView | null {
     from: entry.origin === undefined ? null : originAuthor(entry.origin.author, settings),
     routed: entry.routed === true,
   }));
+  const host = input.host ?? 'github';
+  const here = host === 'github' ? pick.order : pick.order.filter((agent) => agentAnswersOn(agent, host));
+  const recommended = pick.recommended !== null && here.includes(pick.recommended) ? pick.recommended : null;
   return {
     suggestions,
-    agents: pick.order.map((agent) => ({
+    agents: here.map((agent) => ({
       id: agent.id,
       name: agent.name,
       command: agent.command ?? null,
       iconSrc: agentIcon(agent),
-      note: agent.note ?? null,
+      note: (host === 'github' ? agent.note : agent.hostNotes?.[host]) ?? null,
       opens: agent.opens ?? null,
       used: used.includes(agent.id),
       likely: likely(agent.id),
     })),
-    openTargets: OPEN_TARGETS.filter((target) => input.host !== 'other' || target.anyHost === true).map((target) => ({ id: target.id, service: target.service, variant: target.variant, iconSrc: targetIcon(target), likely: openTargetLikely(target, likely, services), copiesTask: target.copiesTask === true })),
-    recommended: pick.recommended === null || pick.reason === null ? null : { id: pick.recommended.id, reason: pick.reason },
+    openTargets: OPEN_TARGETS.filter((target) => host === 'github' || target.anyHost === true).map((target) => ({ id: target.id, service: target.service, variant: target.variant, iconSrc: targetIcon(target), likely: openTargetLikely(target, likely, services), copiesTask: target.copiesTask === true })),
+    recommended: recommended === null || pick.reason === null ? null : { id: recommended.id, reason: pick.reason },
     openKey: input.visit.openKey,
     collapsed: input.visit.collapsed,
     // Only once the titles and the TL;DR are in: until then their own rows shimmer, and this line would name the wrong step.

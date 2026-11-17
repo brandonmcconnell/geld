@@ -29,9 +29,11 @@ import { ProviderHttpAdmission } from '../providers/http-admission';
 import { createGitLabWholeTestAdapter } from './whole-test-context';
 import { GitLabNativeWhitespace } from './native-whitespace';
 import { createGitLabDiffSyntax } from './diff-syntax';
+import { postGitLabComment } from './post-comment';
 
 export const gitlabAdapter: ProviderAdapter = {
   id: 'gitlab',
+  postComment: (subject, text) => postGitLabComment(subject, text),
   viewerAuthorId: (doc) => { const identity = gitLabReviewIdentity(doc);return identity?.startsWith('user:') === true ? identity.slice(5) : null; },
   attachmentLink: gitLabAttachmentLink,
   createNativeView: (doc, changed, choice) => new GitLabNativeWhitespace(doc, changed, choice),

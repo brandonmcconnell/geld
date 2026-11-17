@@ -21,6 +21,7 @@ import { bitbucketReferenceAnchor, readBitbucketReferences } from './references'
 import { createBitbucketWholeTestAdapter } from './whole-test-context';
 import { createBitbucketWhitespaceMode } from './whitespace-mode';
 import { BitbucketSourceReferences } from './source-reference';
+import { postBitbucketComment } from './post-comment';
 
 
 export { BitbucketClient, BitbucketApiError, bitbucketCapabilities } from './api';
@@ -30,6 +31,7 @@ export type { BitbucketReviewSnapshot } from './review';
 
 export const bitbucketAdapter: ProviderAdapter = {
   id: 'bitbucket',
+  postComment: (subject, text) => postBitbucketComment(subject, text),
   viewerAuthorId: (doc) => {
     if (!bitbucketAuthenticated(doc)) return null;
     try {

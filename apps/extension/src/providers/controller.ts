@@ -140,6 +140,7 @@ export class ProviderController {
         pullIntent: () => ({ title: document.title, description: adapter.descriptionHost?.(document)?.innerText ?? '' }),
         reportMissingTool: askForMissingTool,
         ...(adapter.fixApplier === undefined ? {} : { fixApplier: adapter.fixApplier.bind(adapter) }),
+        ...(adapter.postComment === undefined ? {} : { postComment: adapter.postComment.bind(adapter) }),
         ...services.triage,
       },
     });
