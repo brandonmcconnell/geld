@@ -31,7 +31,6 @@ export interface ProviderTriageServices {
 const SKIN: TriageSkin = { button: 'geld-provider-toggle', primary: 'geld-provider-toggle geld-provider-toggle--primary', counter: 'geld-provider-counter' };
 
 /** Bitbucket has no request that commits a suggestion, so a fix there is handed to an agent or copied. */
-const APPLY_BLOCKED = 'Geld cannot commit a fix on this host yet. Copy the task, or hand it to an agent.';
 
 function rawComments(input: ProviderReviewInput, comments: readonly ProviderReviewComment[]): readonly RawComment[] {
   const output = new Map<string, RawComment>();
@@ -148,7 +147,7 @@ export class ProviderTriage {
       resolves: this.applier() !== null && this.settings.resolveOnFix, policyPending: false, host: 'other',
     });
     // The agents' comment commands are GitHub's: here a task is copied or opened in an agent whose link carries it alone.
-    return view === null ? null : { ...view, agents: [], recommended: null, ...(this.applier() === null ? { applyBlocked: APPLY_BLOCKED } : {}) };
+    return view === null ? null : { ...view, agents: [], recommended: null, ...(this.applier() === null ? { cannotApply: true } : {}) };
   }
 
   private applier(): FixApplier | null {
