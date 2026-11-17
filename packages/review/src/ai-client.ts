@@ -167,6 +167,67 @@ export function refusalKind(status: number, message: string | null): RefusalKind
   return 'other';
 }
 
+/**
+ * The words provider refusals are made of: the only ones, beside Geld's own request's, that leave the device in an
+ * error report (`providerWordsOnly`). A refusal can quote what was sent, the pull request's text, whatever its kind,
+ * so its words are let through one by one, never by the kind of refusal they seem to describe.
+ */
+const PROVIDER_WORDS: ReadonlySet<string> = new Set(
+  (
+    'a about above access account additional additionalproperties after again all allof allowed an and any anyof api are array as assistant at auth authentication bad balance be been before billing boolean but by cannot ' +
+    'characters completion config content context could credit credits day declared defs denied deployment deprecated description did does enum error exceed exceeded exceeds exist exists expected failed field ' +
+    'fields for forbidden format found from function gateway got has have hour if in input insufficient integer internal invalid is it items json key keys later length limit limits max maximum maxitems ' +
+    'match matches maxlength message messages min minimum minitems minlength minute missing mode model models more must near no not null number object of on oneof only or out output output_config overloaded parameter ' +
+    'parameters pattern per permission please properties property provider quota rate received ref request requested requests required response response_format retry role schema second seconds server ' +
+    'set should strict string structured support supported system temperature than that the this timed timeout to token tokens too tool tools try type unauthorized unavailable unknown unsupported user ' +
+    'using value values was were when which with your json_schema'
+  ).split(' '),
+);
+
+/** Every word in `values` (strings, and objects' keys and values, deeply): what Geld itself sent, such as its schema's keys and enum values. */
+export function vocabularyOf(...values: readonly unknown[]): ReadonlySet<string> {
+  const words = new Set<string>();
+  const walk = (value: unknown, depth: number): void => {
+    if (depth > 12) return;
+    if (typeof value === 'string') for (const word of value.match(/[A-Za-z_][A-Za-z0-9_]*/g) ?? []) words.add(word.toLowerCase());
+    else if (Array.isArray(value)) for (const entry of value) walk(entry, depth + 1);
+    else if (isRecord(value))
+      for (const [key, entry] of Object.entries(value)) {
+        walk(key, depth + 1);
+        walk(entry, depth + 1);
+      }
+  };
+  for (const value of values) walk(value, 0);
+  return words;
+}
+
+/**
+ * A provider's words with everything but known words left out: a word stays when it is one provider refusals are made
+ * of or one Geld itself sent (`own`), a number when it has at most three digits (a status code, a limit), and the rest
+ * becomes "…", in any writing system. ASCII punctuation stays, so the shape of the message reads.
+ */
+export function providerWordsOnly(text: string, own: ReadonlySet<string>): string {
+  return (
+    text
+      .replace(/[\p{L}\p{M}_][\p{L}\p{M}\p{N}_]*|\p{N}+/gu, (token) => (/^[0-9]+$/.test(token) ? (token.length <= 3 ? token : '…') : PROVIDER_WORDS.has(token.toLowerCase()) || own.has(token.toLowerCase()) ? token : '…'))
+      // What is left beside the kept words is punctuation: anything outside printable ASCII (a symbol, an emoji, a word the pattern above split) goes too.
+      .replace(/[^\x20-\x7E\t\n…]+/gu, '…')
+      .replace(/…(?:[\s./-]*…)+/g, '…')
+  );
+}
+
+/**
+ * A refusal as Geld reports it: `logged` for Copy diagnostics, which feedback can attach to a public issue, says what
+ * kind of refusal it was, and `sent`, for the error report the reader opted into, adds the provider's words reduced to
+ * known ones (`providerWordsOnly`). A failure with no status is one of Geld's own fixed reasons (a timeout, an empty
+ * answer), the same in both.
+ */
+export function refusalReport(where: string, failure: Pick<Refusal, 'reason' | 'status' | 'kind'>, own: ReadonlySet<string> = new Set()): { readonly logged: string; readonly sent: string } {
+  if (failure.status === undefined) return { logged: `${where}: ${failure.reason}`, sent: `${where}: ${failure.reason}` };
+  const logged = `${where}: refused (${failure.status}, ${failure.kind ?? 'other'})`;
+  return { logged, sent: `${logged}: ${providerWordsOnly(failure.reason, own)}` };
+}
+
 export interface Refusal {
   readonly ok: false;
   /** Shown to the reader and kept on the device: the provider's own words included. */

@@ -2363,7 +2363,7 @@ function isRecord4(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function isTime(value) {
-  return typeof value === "number" && Number.isFinite(value) && value > 0;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 && value <= MAX_TIME;
 }
 function parseReport(value) {
   if (!isRecord4(value)) return null;
@@ -2387,6 +2387,15 @@ function parseErrorReports(value) {
   const reports = value.map(parseReport);
   return reports.every((report) => report !== null) ? reports : null;
 }
+function fittingReports(envelope, reports, budget = MAX_PAYLOAD_BYTES) {
+  const encoder = new TextEncoder();
+  const fitting = [];
+  for (const report of reports) {
+    if (encoder.encode(JSON.stringify({ ...envelope, errors: [...fitting, report] })).length > budget) break;
+    fitting.push(report);
+  }
+  return fitting;
+}
 function parseErrorPayload(value) {
   if (!isRecord4(value) || value.v !== ERROR_PAYLOAD_VERSION) return null;
   const { version: version2, browser, errors } = value;
@@ -2397,14 +2406,16 @@ function parseErrorPayload(value) {
   if (reports === null || reports.length === 0) return null;
   return { v: ERROR_PAYLOAD_VERSION, version: version2, browser: known, errors: reports };
 }
-var ERROR_PAYLOAD_VERSION, MAX_ERRORS_PER_PAYLOAD, MAX_ERROR_MESSAGE, MAX_STACK_FRAMES, MAX_FRAME, WHERE, VERSION, BROWSERS, FRAME;
+var ERROR_PAYLOAD_VERSION, MAX_ERRORS_PER_PAYLOAD, MAX_ERROR_MESSAGE, MAX_STACK_FRAMES, MAX_PAYLOAD_BYTES, MAX_TIME, MAX_FRAME, WHERE, VERSION, BROWSERS, FRAME;
 var init_error_report = __esm({
   "../../packages/core/src/error-report.ts"() {
     "use strict";
     ERROR_PAYLOAD_VERSION = 1;
     MAX_ERRORS_PER_PAYLOAD = 25;
-    MAX_ERROR_MESSAGE = 300;
+    MAX_ERROR_MESSAGE = 600;
     MAX_STACK_FRAMES = 12;
+    MAX_PAYLOAD_BYTES = 60 * 1024;
+    MAX_TIME = 864e13;
     MAX_FRAME = 160;
     WHERE = /^[a-z][a-z0-9:-]{0,40}$/;
     VERSION = /^\d+(?:\.\d+){0,3}$/;
@@ -12350,6 +12361,7 @@ __export(src_exports, {
   ListSurfaceError: () => ListSurfaceError,
   MAX_ERRORS_PER_PAYLOAD: () => MAX_ERRORS_PER_PAYLOAD,
   MAX_ERROR_MESSAGE: () => MAX_ERROR_MESSAGE,
+  MAX_PAYLOAD_BYTES: () => MAX_PAYLOAD_BYTES,
   MAX_STACK_FRAMES: () => MAX_STACK_FRAMES,
   MAX_USAGE_EVENTS: () => MAX_USAGE_EVENTS,
   ORG_CONFIG_PATHS: () => ORG_CONFIG_PATHS,
@@ -12421,6 +12433,7 @@ __export(src_exports, {
   findCategory: () => findCategory,
   findJsonError: () => findJsonError,
   findSettingsGist: () => findSettingsGist,
+  fittingReports: () => fittingReports,
   formatCatalogVersion: () => formatCatalogVersion,
   formatCount: () => formatCount,
   formatCountLike: () => formatCountLike,
@@ -34221,6 +34234,9 @@ function refusalKind(status, message) {
   if (status === 429) return "rate-limit";
   return "other";
 }
+var PROVIDER_WORDS = new Set(
+  "a about above access account additional additionalproperties after again all allof allowed an and any anyof api are array as assistant at auth authentication bad balance be been before billing boolean but by cannot characters completion config content context could credit credits day declared defs denied deployment deprecated description did does enum error exceed exceeded exceeds exist exists expected failed field fields for forbidden format found from function gateway got has have hour if in input insufficient integer internal invalid is it items json key keys later length limit limits max maximum maxitems match matches maxlength message messages min minimum minitems minlength minute missing mode model models more must near no not null number object of on oneof only or out output output_config overloaded parameter parameters pattern per permission please properties property provider quota rate received ref request requested requests required response response_format retry role schema second seconds server set should strict string structured support supported system temperature than that the this timed timeout to token tokens too tool tools try type unauthorized unavailable unknown unsupported user using value values was were when which with your json_schema".split(" ")
+);
 function messageIn(value) {
   if (typeof value === "string") return value.trim() === "" ? null : value;
   if (Array.isArray(value)) return messageIn(value[0]);
