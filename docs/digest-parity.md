@@ -108,7 +108,7 @@ Paths are under `apps/extension/src/` unless they start with `packages/`.
 | Rows only when they have something to say | partial: `review-panel.ts` `render()` | partial: same | — | — |
 | Order: Reviews, Review bots, Agent notes, Reports, CI, Previews, Deployments | partial: the same order with the merge checks inside Checks, Deployments missing | partial: same | — | — |
 | Merge checks / requirements | match: inside the Checks row, above CI (`mergeChecksList`, `gitlab/merge-checks.ts`) | match: same (`bitbucket/requirements.ts`) | DOM: merge widget rows / sidebar | should be a slot, today a copy |
-| Deployments row | match: `deploymentsSection` from the merge request's `ci_environments_status` (`gitlab/deployments.ts`) | missing | GL: the merge widget's `ci_environments_status`, answered signed out · BB: `/deployments` (Pipelines) | data |
+| Deployments row | match: `deploymentsSection` from the merge request's `ci_environments_status` (`gitlab/deployments.ts`) | match, signed in: the head commit's latest deployment per environment from `/deployments/` and `/environments/` (`bitbucket/deployments.ts`), not read signed out to keep the anonymous hourly quota | GL: the merge widget's `ci_environments_status`, answered signed out · BB: `/deployments` (Pipelines) | data |
 
 GitHub has no Merge checks row because its merge box sits under the digest and the status pill carries the merge choice.
 Decision needed: keep Merge checks as a provider row, or fold it into CI and the status pill as GitHub does (see §7).
@@ -136,7 +136,7 @@ Decision needed: keep Merge checks as a provider row, or fold it into CI and the
 | Pills per reviewer by latest verdict, grouped approved, changes requested, commented, awaiting | match: one pill per person in that order, each verdict as its glyph, awaiting dashed with the amber dot (`reviewStandings`) | match: same | GL `/approvals`, `/reviewers`, MR `reviewers` · BB `participants` | data |
 | Required approvals fraction | partial: from `approvals_required`/`approvals_left`, no rules (§2.1) | missing: recorded as unavailable, merge checks read from the sidebar | GL `/approval_state` · BB branch restrictions (needs admin), sidebar DOM | — |
 | Index of reviews leading to their round | missing: the Reviews row lists standings, the rounds hold the threads | missing: same | — | — |
-| ⋯ Request reviewers menu | partial: "Reviewer controls" focuses GitLab's sidebar widget | missing | native sidebar | slot (the sidebar widget) |
+| ⋯ Request reviewers menu | match, signed in: GitHub's menu (`review/reviewers-menu.ts`) over the project's members, new reviewers by `reviewer_ids`, re-requests by `mergeRequestReviewerRereview` (`gitlab/reviewer-requests.ts`); signed out "Reviewer controls" focuses GitLab's sidebar widget | match, signed in: the same menu over the workspace's members, written back as the pull request's whole reviewer set; Bitbucket has no re-request, so a reviewer already asked is listed but not ticked (`bitbucket/reviewer-requests.ts`) | native sidebar | slot (the sidebar widget) |
 | Dismiss review, Re-request | missing | n/a for Dismiss (Bitbucket has no dismissal), Re-request missing | GL: approvals reset / `requested_changes` | native controls |
 
 ### 3.4 CI, Previews, Reports

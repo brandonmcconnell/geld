@@ -145,6 +145,27 @@ describe('provider conversation digest', () => {
     expect(panel.element.querySelector('[data-geld-reviewer-controls]')).not.toBeNull();
   });
 
+  it('offers GitHub’s Request a review for people where the host can ask, the ticked ids going to its request', async () => {
+    const request = vi.fn(async () => true);
+    const loadCandidates = vi.fn(async () => [{ id: 9, login: 'bo', name: 'Bo', avatar: '', suggested: false, team: false }]);
+    const native: ProviderReviewInput = { ...input(), reviewers: [{ author: { id: '1', login: 'alice' }, state: 'approved' }] };
+    const panel = renderProviderReviewPanel(host(), native, { reviewerRequests: { hostName: 'Bitbucket', reask: false, loadCandidates, request } });
+    const menu = panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-key="reviewers"] details.geld-provider-review__request-menu');
+    expect(menu?.querySelector('summary')?.getAttribute('aria-label')).toBe('Request a review');
+    // Bitbucket cannot ask a reviewer again: alice is listed, not tickable.
+    expect(menu?.querySelector<HTMLInputElement>('[data-login="alice"] input')?.disabled).toBe(true);
+    expect(panel.element.querySelector('[data-geld-reviewer-controls]')).toBeNull();
+    menu!.open = true;
+    const more = menu!.querySelector<HTMLDetailsElement>('.geld-review__people-more')!;
+    more.open = true;more.dispatchEvent(new Event('toggle'));
+    await vi.waitFor(() => expect(menu!.querySelector('[data-login="bo"]')).not.toBeNull());
+    const bo = menu!.querySelector<HTMLInputElement>('[data-login="bo"] input')!;
+    bo.checked = true;bo.dispatchEvent(new Event('change'));
+    menu!.querySelector<HTMLButtonElement>('.geld-review__request-run')!.click();
+    await vi.waitFor(() => expect(request).toHaveBeenCalledWith([9]));
+    panel.destroy();
+  });
+
   it.each(['head', 'destroy', 'unavailable'] as const)('does not focus native reviewer controls after a queued handoff becomes %s', async (change) => {
     const activate = vi.fn(async () => true);
     const action = { kind: 'reviewer-controls', label: 'Reviewer controls', available: true, activate };

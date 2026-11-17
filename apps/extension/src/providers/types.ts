@@ -8,6 +8,7 @@ import type { ProviderReviewReference } from './references';
 import type { ProviderBotRequest } from './bot-request';
 import type { ProviderDiffSourceFacts, ProviderNativeSourceFrame } from './source-facts';
 import type { ProviderWholeTestAdapter } from './whole-test-context';
+import type { ReviewersMenuCandidate } from '../review/reviewers-menu';
 
 export type ReviewProvider = 'gitlab' | 'bitbucket';
 
@@ -238,6 +239,11 @@ export interface ProviderNativeView {
 export interface ProviderAdapter {
   /** Commits the AI triage's fixes the host's own way (GitLab's suggestions API); absent where Geld cannot yet. */
   fixApplier?(subject: ProviderReviewSubject, threads: () => readonly ProviderReviewThread[]): FixApplier;
+  /**
+   * Asking people to review, as the reader, when the host lets them (signed in): who may be asked, and the request,
+   * which keeps everyone already asked. Null where the reader cannot.
+   */
+  reviewerRequests?(subject: ProviderReviewSubject, doc: Document): ProviderReviewerRequests | null;
   /** Post a top-level comment on the review as the reader (an agent's command): whether the host took it. */
   postComment?(subject: ProviderReviewSubject, text: string): Promise<boolean>;
   /** The signed-in reader's native account id, as review authors carry it; null when signed out or unknown. */
@@ -269,3 +275,13 @@ export interface ProviderAdapter {
   diffFlowHost?(doc: Document): HTMLElement | null;
   fetchReview?(page: ProviderReviewPage, signal: AbortSignal, doc: Document): Promise<ProviderReviewSnapshot>;
 }
+
+/** Who a provider lets the reader ask to review, and the request (`review/reviewers-menu.ts`). */
+export interface ProviderReviewerRequests {
+  readonly hostName: string;
+  /** The host can ask a reviewer who already answered to review again (GitLab's re-request; Bitbucket has none). */
+  readonly reask: boolean;
+  readonly loadCandidates: () => Promise<readonly ReviewersMenuCandidate[] | null>;
+  readonly request: (ids: readonly (string | number)[]) => Promise<boolean>;
+}
+
