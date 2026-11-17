@@ -69,6 +69,15 @@ export interface OpenSettingsMessage {
   readonly section?: string;
 }
 
+/** Content script → background: inject the chat sidebar's view (`chat-ui.js`) into the sender's frame. */
+export interface LoadChatUiMessage {
+  readonly type: 'geld:load-chat-ui';
+}
+
+export function isLoadChatUiMessage(value: unknown): value is LoadChatUiMessage {
+  return typeof value === 'object' && value !== null && Reflect.get(value, 'type') === 'geld:load-chat-ui';
+}
+
 /** Any context → background: Geld's own errors, already scrubbed (`error-capture.ts`). */
 export interface ErrorReportMessage {
   readonly type: 'geld:error-report';

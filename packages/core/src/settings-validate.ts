@@ -76,6 +76,7 @@ const BOOLEAN_KEYS = [
   'relatedLinks',
   'aiEnabled',
   'aiJev',
+  'resolveOnFix',
 ] as const;
 
 /** Why a custom test syntax line cannot be used, or null. */

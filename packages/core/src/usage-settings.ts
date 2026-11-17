@@ -40,6 +40,7 @@ export const USAGE_TOGGLES = [
   'relatedLinks',
   'aiEnabled',
   'aiJev',
+  'resolveOnFix',
 ] as const satisfies readonly (keyof GeldSettings)[];
 export type UsageToggle = (typeof USAGE_TOGGLES)[number];
 
@@ -94,7 +95,11 @@ export const USAGE_COUNTERS = [
   'ai_triage_failed',
   'ai_fix_applied',
   'ai_fix_discarded',
+  'ai_comment_fix',
   'agent_handoff',
+  'chat_opened',
+  'chat_assistant_sent',
+  'chat_agent_sent',
   'bot_review_requested',
   'review_approve',
   'review_request_changes',

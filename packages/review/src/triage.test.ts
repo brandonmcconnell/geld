@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SuggestInputItem } from './triage';
-import { codeSpans, diffCounts, diffHunks, lineDiff, numberedLines, parseSuggestOutput, suggestionReplyBody, textLines } from './triage';
+import { codeSpans, diffCounts, diffHunks, lineDiff, numberedLines, parseBodyOutput, parseSuggestOutput, suggestionReplyBody, textLines } from './triage';
 
 const item = (id: string, text: string): SuggestInputItem => ({ id, title: 't', path: 'src/a.ts', excerpts: [], target: { start: 10, end: 10, text }, around: '' });
 
@@ -94,5 +94,29 @@ describe('suggestion text', () => {
   it('reads lines without the model trailing newline, and numbers the target', () => {
     expect(textLines('a\r\nb\n')).toEqual(['a', 'b']);
     expect(numberedLines(['one', 'two', 'three', 'four'], 2, 3, 1)).toBe('1  one\n2> two\n3> three\n4  four');
+  });
+});
+
+describe('the findings a comment asks for outside its threads', () => {
+  it('keeps each titled task, its place when it has one, and drops empty or placeless lines', () => {
+    const text = JSON.stringify({
+      findings: [
+        { title: 'Null check missing', task: 'Guard `user` in `load` before reading `id`.', path: 'src/a.ts', line: 42 },
+        { title: 'Docstring coverage', task: 'Add docstrings to the exported functions.', path: null, line: null },
+        { title: '  ', task: 'Nothing', path: null, line: null },
+        { title: 'Bad line', task: 'Fix it.', path: '', line: 0 },
+      ],
+    });
+    expect(parseBodyOutput(text)).toEqual([
+      { title: 'Null check missing', task: 'Guard `user` in `load` before reading `id`.', path: 'src/a.ts', line: 42 },
+      { title: 'Docstring coverage', task: 'Add docstrings to the exported functions.', path: null, line: null },
+      { title: 'Bad line', task: 'Fix it.', path: null, line: null },
+    ]);
+  });
+
+  it('reads nothing from an answer in another shape', () => {
+    expect(parseBodyOutput('not json')).toBeNull();
+    expect(parseBodyOutput(JSON.stringify({ items: [] }))).toBeNull();
+    expect(parseBodyOutput('```json\n{"findings": []}\n```')).toEqual([]);
   });
 });

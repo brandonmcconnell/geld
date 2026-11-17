@@ -11,7 +11,7 @@ vi.mock('../page-fetch', () => ({
   },
 }));
 
-const { applyFix, applySuggestionsRequest, lastCommentId, newestCommentId, refusalOf, reviewReplyRequest } = await import('./apply-suggestion');
+const { applyFix, applyFixes, applySuggestionsRequest, commitMessage, splitOverlapping, lastCommentId, newestCommentId, refusalOf, reviewReplyRequest } = await import('./apply-suggestion');
 
 describe('applying a fix', () => {
   const fix = { threadAnchors: ['discussion_r100'], path: 'src/a.ts', replacement: ['x'], summary: 'Fix.', title: 'Fix it', headSha: 'abc' };
@@ -33,6 +33,51 @@ describe('applying a fix', () => {
   });
 });
 
+describe('fixing several findings', () => {
+  const one = { threadAnchors: ['discussion_r100'], path: 'src/a.ts', replacement: ['x'], summary: 'Fix a.', title: 'Fix a', headSha: 'abc' };
+  const two = { threadAnchors: ['discussion_r300'], path: 'src/b.ts', replacement: ['y'], summary: 'Fix b.', title: 'Fix b', headSha: 'abc' };
+  const posted = (after: number, id: number): { readonly status: number; readonly body: unknown } => ({ status: 200, body: { thread: { commentsData: { comments: [{ databaseId: after }, { databaseId: id }] } } } });
+
+  it('posts each suggestion, then commits them all in one commit', async () => {
+    window.history.pushState({}, '', '/o/r/pull/7');
+    requests.length = 0;
+    answers.push(posted(100, 101), posted(300, 301), { status: 200, body: {} });
+    expect(await applyFixes([one, two])).toEqual([
+      { ok: true, replyAnchor: 'discussion_r101' },
+      { ok: true, replyAnchor: 'discussion_r301' },
+    ]);
+    expect(requests).toEqual(['/o/r/pull/7/page_data/create_review_comment', '/o/r/pull/7/page_data/create_review_comment', '/o/r/pull/7/page_data/apply_review_suggestions']);
+  });
+
+  it('commits the rest when GitHub refuses one suggestion', async () => {
+    window.history.pushState({}, '', '/o/r/pull/7');
+    requests.length = 0;
+    answers.push({ status: 422, body: { message: 'Outdated' } }, posted(300, 301), { status: 200, body: {} });
+    expect(await applyFixes([one, two])).toEqual([
+      { ok: false, reason: 'Outdated', posted: false },
+      { ok: true, replyAnchor: 'discussion_r301' },
+    ]);
+    expect(requests.filter((url) => url.endsWith('apply_review_suggestions'))).toHaveLength(1);
+  });
+
+  it('names every posted reply when GitHub refuses the commit', async () => {
+    window.history.pushState({}, '', '/o/r/pull/7');
+    requests.length = 0;
+    answers.push(posted(100, 101), posted(300, 301), { status: 422, body: { message: 'Head was modified' } });
+    expect(await applyFixes([one, two])).toEqual([
+      { ok: false, reason: 'Head was modified The suggestions are in the thread.', posted: true, reply: { anchor: 'discussion_r101', id: 101 } },
+      { ok: false, reason: 'Head was modified The suggestions are in the thread.', posted: true, reply: { anchor: 'discussion_r301', id: 301 } },
+    ]);
+  });
+
+  it('writes one line per finding in a batch’s commit message', () => {
+    expect(commitMessage(['Fix a'])).toBe('Apply suggestion from Geld triage\n\nFix a');
+    expect(commitMessage(['Fix a', 'Fix b'])).toBe('Apply 2 suggestions from Geld triage\n\n- Fix a\n- Fix b');
+    const request = applySuggestionsRequest('/o/r/pull/7', [101, 301], 'm', 'abc', '', 'k');
+    expect(JSON.parse(String(request.init.body))).toMatchObject({ comments: [{ id: 101, suggestionIndex: 0 }, { id: 301, suggestionIndex: 0 }] });
+  });
+});
+
 describe('apply-suggestion requests', () => {
   it('replies in the thread as GitHub’s reply box does', () => {
     const request = reviewReplyRequest('/o/r/pull/7', { text: 'fix', inReplyTo: 12, path: 'src/a.ts' }, 'n0nce');
@@ -43,7 +88,7 @@ describe('apply-suggestion requests', () => {
   });
 
   it('commits the reply’s suggestion against the head it was written for, once', () => {
-    const request = applySuggestionsRequest('/o/r/pull/7', 99, 'Apply', 'abc', '', 'key-1');
+    const request = applySuggestionsRequest('/o/r/pull/7', [99], 'Apply', 'abc', '', 'key-1');
     expect(request.url).toBe('/o/r/pull/7/page_data/apply_review_suggestions');
     expect(JSON.parse(String(request.init.body))).toEqual({ comments: [{ id: 99, suggestionIndex: 0 }], message: 'Apply', expectedHeadOid: 'abc' });
     expect(request.init.headers).toMatchObject({ 'Idempotency-Key': 'key-1' });
@@ -62,5 +107,15 @@ describe('apply-suggestion requests', () => {
     expect(refusalOf({ message: 'Head was modified' }, 422)).toBe('Head was modified');
     expect(refusalOf({ errors: [{ message: 'Not allowed' }] }, 403)).toBe('Not allowed');
     expect(refusalOf(null, 500)).toBe('GitHub answered 500.');
+  });
+});
+
+describe('a batch’s overlapping fixes', () => {
+  const at = (key: string, path: string, start: number, end: number) => ({ key, path, start, end });
+  it('keeps the first of two fixes whose lines overlap in one file, and fixes in other files or apart', () => {
+    const fixes = [at('a', 'src/a.ts', 10, 14), at('b', 'src/a.ts', 14, 20), at('c', 'src/a.ts', 21, 22), at('d', 'src/b.ts', 10, 14)];
+    const { batch, overlapping } = splitOverlapping(fixes);
+    expect(batch.map((fix) => fix.key)).toEqual(['a', 'c', 'd']);
+    expect(overlapping.map((fix) => fix.key)).toEqual(['b']);
   });
 });

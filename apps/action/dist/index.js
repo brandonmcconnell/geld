@@ -2739,7 +2739,8 @@ function normalizeSettings(value) {
     aiJev: bool(record4, "aiJev", DEFAULT_SETTINGS.aiJev),
     aiDecisionModel: typeof record4.aiDecisionModel === "string" ? record4.aiDecisionModel.trim() : DEFAULT_SETTINGS.aiDecisionModel,
     suggestedFixes: isSuggestedFixMode(record4.suggestedFixes) ? record4.suggestedFixes : DEFAULT_SETTINGS.suggestedFixes,
-    codingAgent: isCodingAgentId(record4.codingAgent) ? record4.codingAgent : DEFAULT_SETTINGS.codingAgent
+    codingAgent: isCodingAgentId(record4.codingAgent) ? record4.codingAgent : DEFAULT_SETTINGS.codingAgent,
+    resolveOnFix: bool(record4, "resolveOnFix", DEFAULT_SETTINGS.resolveOnFix)
   };
 }
 function normalizeHost(input3) {
@@ -2852,7 +2853,8 @@ var init_settings = __esm({
       aiJev: false,
       aiDecisionModel: "",
       suggestedFixes: "bots",
-      codingAgent: "auto"
+      codingAgent: "auto",
+      resolveOnFix: true
     };
     SETTINGS_STORAGE_KEY = "sync:settings";
     CATEGORY_ORDER = CATEGORY_IDS;
@@ -3002,7 +3004,8 @@ var init_usage_settings = __esm({
       "attachmentLightbox",
       "relatedLinks",
       "aiEnabled",
-      "aiJev"
+      "aiJev",
+      "resolveOnFix"
     ];
     USAGE_CHOICES = {
       compactTimeline: COMPACT_TIMELINE_MODES,
@@ -3040,7 +3043,11 @@ var init_usage_settings = __esm({
       "ai_triage_failed",
       "ai_fix_applied",
       "ai_fix_discarded",
+      "ai_comment_fix",
       "agent_handoff",
+      "chat_opened",
+      "chat_assistant_sent",
+      "chat_agent_sent",
       "bot_review_requested",
       "review_approve",
       "review_request_changes",
@@ -3701,7 +3708,8 @@ var init_settings_validate = __esm({
       "attachmentLightbox",
       "relatedLinks",
       "aiEnabled",
-      "aiJev"
+      "aiJev",
+      "resolveOnFix"
     ];
   }
 });
@@ -11334,7 +11342,13 @@ function collectRepoConfigIssues(value, catalog = BUNDLED_CATALOG, path = "$", k
   checkCategoryPatterns(issues, at("categoryPatterns"), value.categoryPatterns);
   checkCustomCategories(issues, at("customCategories"), value.customCategories);
   checkReviewBots(issues, at("reviewBots"), value.reviewBots, knownBots);
-  if (value.review !== void 0 && (!isRecord8(value.review) || typeof value.review.ai !== "boolean")) issues.push({ path: at("review.ai"), message: "Expected a boolean AI policy." });
+  if (value.review !== void 0) {
+    if (!isRecord8(value.review)) issues.push({ path: at("review"), message: `Expected a mapping with \`ai\` or \`resolveOnFix\`, got ${describeValue(value.review)}.` });
+    else {
+      if (value.review.ai !== void 0 && typeof value.review.ai !== "boolean") issues.push({ path: at("review.ai"), message: "Expected a boolean AI policy." });
+      if (value.review.resolveOnFix !== void 0 && typeof value.review.resolveOnFix !== "boolean") issues.push({ path: at("review.resolveOnFix"), message: `Expected true or false, got ${describeValue(value.review.resolveOnFix)}.` });
+    }
+  }
   if (value.issueTracker !== void 0 && !parseIssueTracker(value.issueTracker)) issues.push({ path: at("issueTracker"), message: "Expected a supported tracker, allowed keys and an HTTPS origin." });
   return issues;
 }
@@ -11376,9 +11390,17 @@ function parseRepoConfig(text, catalog = BUNDLED_CATALOG, knownBots = null) {
       customCategories: normalized.customCategories,
       reviewBots: reviewBotsOf(value),
       ...issueTracker ? { issueTracker } : {},
-      ...isRecord8(value.review) && typeof value.review.ai === "boolean" ? { review: { ai: value.review.ai } } : {}
+      ...reviewPolicyOf(value.review)
     }
   };
+}
+function reviewPolicyOf(value) {
+  if (!isRecord8(value)) return {};
+  const review = {
+    ...typeof value.ai === "boolean" ? { ai: value.ai } : {},
+    ...typeof value.resolveOnFix === "boolean" ? { resolveOnFix: value.resolveOnFix } : {}
+  };
+  return Object.keys(review).length === 0 ? {} : { review };
 }
 function isEmptyRepoConfig(config2) {
   return Object.keys(config2.categories).length === 0 && Object.keys(config2.groups).length === 0 && Object.values(config2.categoryPatterns).every((lines2) => lines2 === void 0 || lines2.length === 0) && config2.customCategories.length === 0 && config2.reviewBots.length === 0 && config2.review === void 0 && config2.issueTracker === void 0;
@@ -11387,6 +11409,11 @@ function declaredReviewBots(configs) {
   const ids = [];
   for (const config2 of configs) for (const id of config2.reviewBots) if (!ids.includes(id)) ids.push(id);
   return ids;
+}
+function repoResolvesOnFix(configs) {
+  let said = null;
+  for (const config2 of configs) if (config2.review?.resolveOnFix !== void 0) said = config2.review.resolveOnFix;
+  return said;
 }
 function appendPatterns(base, extra) {
   const merged = { ...base };
@@ -11448,6 +11475,7 @@ function describeRepoConfig(config2) {
   const patterns = Object.values(config2.categoryPatterns).reduce((sum, lines2) => sum + (lines2?.length ?? 0), 0) + config2.customCategories.reduce((sum, custom2) => sum + custom2.patterns.length, 0);
   if (patterns > 0) parts2.push(`${patterns} ${patterns === 1 ? "pattern" : "patterns"}`);
   if (config2.reviewBots.length > 0) parts2.push(`${config2.reviewBots.length} review ${config2.reviewBots.length === 1 ? "bot" : "bots"}`);
+  if (config2.review?.resolveOnFix === false) parts2.push("fixes leave threads open");
   return parts2.length === 0 ? "no changes" : parts2.join(", ");
 }
 var import_yaml, REPO_CONFIG_PATH, ORG_CONFIG_REPO, ORG_CONFIG_PATHS, EMPTY_REPO_CONFIG, ALLOWED_KEYS, BOT_ID, PERSONAL_KEYS, SCOPE_RESET;
@@ -12085,6 +12113,14 @@ var init_settings_schema = __esm({
           },
           {
             kind: "toggle",
+            key: "resolveOnFix",
+            label: "Resolve threads when a fix is applied",
+            description: "Apply commits the AI triage\u2019s fix and resolves the threads it answers. Off, the threads stay open for you to resolve. A repository can turn it off for everyone with `review.resolveOnFix: false` in its `geld.yml`.",
+            popup: false,
+            surfaces: ["extension"]
+          },
+          {
+            kind: "toggle",
             key: "aiEnabled",
             label: "AI features",
             description: "Consolidate bot findings, write the TL;DR and propose fixes with a model of your choosing. Off, no request is made and its settings are hidden but kept. On, they show below, and it takes effect once a gateway URL, key and model are set.",
@@ -12474,6 +12510,7 @@ __export(src_exports, {
   readRemoteValidated: () => readRemoteValidated,
   recognizeTickets: () => recognizeTickets,
   repoFromPathname: () => repoFromPathname,
+  repoResolvesOnFix: () => repoResolvesOnFix,
   resolveCatalog: () => resolveCatalog,
   resolveCustomPatterns: () => resolveCustomPatterns,
   scrubErrorText: () => scrubErrorText,
@@ -32506,6 +32543,12 @@ function hasHeading(text, heading) {
 }
 function countShapedBy(botId, text, reviewBody) {
   switch (botId) {
+    case "devin": {
+      if (!/\bfound \d+ findings?\b/i.test(text)) return null;
+      const left = /(\d+) findings? (?:is|are) left\b/i.exec(text);
+      if (left?.[1] !== void 0) return Number.parseInt(left[1], 10);
+      return /\bdevin (?:automatically )?fixed (?:it|them|all)\b/i.test(text) ? 0 : null;
+    }
     case "claude": {
       const match = /(\d+)[^\S\n]*P1,[^\S\n]*(\d+)[^\S\n]*P2/i.exec(text);
       return match?.[1] !== void 0 && match[2] !== void 0 ? Number.parseInt(match[1], 10) + Number.parseInt(match[2], 10) : null;
@@ -32602,6 +32645,7 @@ function findingSeverity(body) {
   return mark === "\u{1F534}" || mark === "\u{1F7E0}" || mark === "\u{1F6D1}" || mark === ":stop_sign:" ? "high" : mark === "\u{1F7E1}" ? "medium" : "low";
 }
 var SEVERITY_RANK = { high: 3, medium: 2, low: 1 };
+var DEVIN_FIXED_LIST = /fixed by devin\s*\(\d+\)[\s\S]*?(?=<\/details>|^\s*\[?view findings in devin review|(?![\s\S]))/gim;
 function parseBotBody(body, botId, anchor2) {
   const text = body.replace(/\r\n?/g, "\n").replace(/<!--[\s\S]*?-->/g, "").trim();
   const reviewBody = anchor2 === void 0 || anchor2.startsWith("pullrequestreview-");
@@ -32629,13 +32673,14 @@ function parseBotBody(body, botId, anchor2) {
     }
   }
   const approved = (count === null || count === 0) && (/\b(?:didn.t|did not|couldn.t|could not) find any(?: \w+)? (?:issues|bugs|problems|findings)\b/i.test(text) || /\b(?:verdict|assessment)\W{0,6}(?:would\s+)?approved?\b/i.test(text) || /\breview complete\s*[\u2014\u2013-]+\s*approved\b/i.test(text) || /^\s*(?:[#>*_\s]*)approved[*_]*\s*(?:[.!:;\u2014\u2013-]|$)/i.test(text));
-  const needsHuman = /\bneeds? (?:a )?human (?:review(?:er)?|approval)\b/i.test(text.replace(/\b(?:not|no|never|without|doesn.t|does not|don.t|do not|didn.t|did not)\b(?!\s+(?:only|just|merely)\b)(?:\s+\w+){0,2}\s+needs? (?:a )?human (?:review(?:er)?|approval)\b/gi, ""));
-  const readyToMerge = /\bready to merge\b/i.test(text) && !/\b(?:not|isn.t|aren.t|never|before|until|far from|nowhere near)\b(?:\s+\w+){0,3}\s+ready to merge\b/i.test(text) && // ...nor with a condition after it ("ready to merge after the failing check is fixed", "once …", "if …").
-  !/\bready to merge\s+(?:after|once|when|if|provided|pending|following|as soon as|but|except|unless)\b/i.test(text);
+  const weighed = botId === "devin" ? text.replace(DEVIN_FIXED_LIST, "") : text;
+  const needsHuman = /\bneeds? (?:a )?human (?:review(?:er)?|approval)\b/i.test(weighed.replace(/\b(?:not|no|never|without|doesn.t|does not|don.t|do not|didn.t|did not)\b(?!\s+(?:only|just|merely)\b)(?:\s+\w+){0,2}\s+needs? (?:a )?human (?:review(?:er)?|approval)\b/gi, ""));
+  const readyToMerge = /\bready to merge\b/i.test(weighed) && !/\b(?:not|isn.t|aren.t|never|before|until|far from|nowhere near)\b(?:\s+\w+){0,3}\s+ready to merge\b/i.test(weighed) && // ...nor with a condition after it ("ready to merge after the failing check is fixed", "once …", "if …").
+  !/\bready to merge\s+(?:after|once|when|if|provided|pending|following|as soon as|but|except|unless)\b/i.test(weighed);
   const clean = botId === "coderabbit" ? (count === null || count === 0) && (/\bno actionable comments were generated\b/i.test(text) || count === 0 && shaped !== null) : !needsHuman && (count === null || count === 0) && (/\bno(?: (?:new|further|additional|other|remaining|potential|actionable|significant|blocking|logic|open))* (?:issues|bugs|findings|problems|defects|errors)\b/i.test(text) || /\bno actionable comments\b/i.test(text) || /\b(?:looks good|lgtm|all clean|no bugs found|nothing blocking|they look great|all reported issues were addressed)\b/i.test(text) || readyToMerge || approved || count === 0 && (score === null || botId === "greptile" || shaped !== null));
-  const affirmed = text.replace(/\b(?:no|not|without|zero|non-)(?:\s+\w+){0,3}[\s-]+(?:high severity|critical|blockers?|blocking|security (?:issues?|vulnerabilit(?:y|ies)|risks?))\b/gi, "");
+  const affirmed = weighed.replace(/\b(?:no|not|without|zero|non-)(?:\s+\w+){0,3}[\s-]+(?:high severity|critical|blockers?|blocking|security (?:issues?|vulnerabilit(?:y|ies)|risks?))\b/gi, "");
   const severity = /\b(?:high severity|critical|blocker|security (?:issue|vulnerability|risk))\b/i.test(affirmed) ? "high" : /\bmedium(?: severity| risk)?\b/i.test(affirmed) ? "medium" : /\blow(?: severity| risk)?\b/i.test(affirmed) ? "low" : null;
-  const changesRequested = /\b(?:verdict|assessment)\W{0,6}(?:request(?:s|ed)? changes|changes requested)\b/i.test(text);
+  const changesRequested = /\b(?:verdict|assessment)\W{0,6}(?:request(?:s|ed)? changes|changes requested)\b/i.test(weighed);
   const coderabbit = botId === "coderabbit";
   const verdict = coderabbit ? {} : needsHuman ? { verdict: "needs-human" } : changesRequested ? { verdict: "changes-requested" } : {};
   const unthreaded = coderabbit ? outsideDiffCount(text) + (reviewBody ? failedPreMergeCount(text) : 0) : 0;
@@ -33241,7 +33286,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const reviewedSha = existing === void 0 ? headSha : shaOver(existing);
     const checkName = existing?.checkName;
     const named = checkName === void 0 ? {} : { checkName };
-    const scored = existing?.verdict === "findings" && existing.score !== void 0 ? { score: existing.score } : {};
+    const scored = (existing?.verdict === "findings" || existing?.verdict === "clean") && existing.score !== void 0 ? { score: existing.score } : {};
     const unthreaded = run2.unthreaded?.count ?? 0;
     if (run2.open + unthreaded > 0) {
       const severity = run2.severity !== void 0 ? { severity: run2.severity } : existing?.verdict === "findings" && existing.severity !== void 0 ? { severity: existing.severity } : {};
@@ -35128,6 +35173,31 @@ var suggestOutputSchema = external_exports.object({
     })
   )
 });
+var bodyOutputSchema = external_exports.object({
+  findings: external_exports.array(
+    external_exports.object({
+      title: external_exports.string().max(200),
+      task: external_exports.string().max(1e3),
+      path: external_exports.string().max(500).nullish(),
+      line: external_exports.number().int().nullish()
+    })
+  )
+});
+
+// ../../packages/review/src/fix-route.ts
+var routeOutputSchema = external_exports.object({
+  routes: external_exports.array(
+    external_exports.object({
+      id: external_exports.string().min(1),
+      scope: external_exports.enum(["lines", "wider"]),
+      needs: external_exports.string().max(600).nullish()
+    })
+  )
+});
+
+// ../../packages/review/src/cursor-agents.ts
+var UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+var AGENT_ID = new RegExp(`^bc-${UUID}$`, "i");
 
 // src/github.ts
 init_src2();

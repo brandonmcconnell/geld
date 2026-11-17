@@ -28,6 +28,7 @@ import { isGhost, leaveGhost } from './ui/bar-motion';
 import { reportError } from '../lib/error-capture';
 import { isOverviewPage } from './review/overview-page';
 import { greenOverviewMerges, liveOverviewMerge, overviewMergeOf, removeOverviewMerge, setOverviewMergeBusy, syncOverviewMerge } from './overview-merge';
+import { removeStuckStatus, syncStuckStatus } from './stuck-status';
 import { countUsage } from '../lib/usage-count';
 import type { UsageCounter } from '@geld/core';
 
@@ -695,6 +696,7 @@ export function removeQuickReview(): void {
   // Pills the hint put in place before the controls were made go too.
   removeStatusPills();
   removeOverviewMerge();
+  removeStuckStatus();
   earlyPillClick = null;
   if (mounted === null) return;
   closePanel();
@@ -1352,6 +1354,7 @@ function showStatus(state: Mounted): void {
     state.pills = syncStatusPills(true, openFromPill);
     showMergedPills(state.pills);
     syncOverviewMerge(null, 'SQUASH', { onMerge: () => undefined, onMethod: () => undefined });
+    syncStuckStatus(null);
     return;
   }
   const actions = state.mergeActions;
@@ -1385,6 +1388,7 @@ function showStatus(state: Mounted): void {
     },
     state.sending,
   );
+  syncStuckStatus(actions?.box.conflicts ?? null);
   // The menu says what the merge button beside it says: a reading that changed it since it opened is shown at once.
   if (state.statusMenu !== null && state.statusMenu.dataset.placeholder === undefined && state.statusOpener?.isConnected === true && state.statusMenu.dataset.options !== menuSignature(actions)) refreshOpenMenu(state);
   if (state.statusMenu !== null && (state.statusOpener === null || !state.pills.includes(state.statusOpener))) {
