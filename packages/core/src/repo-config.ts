@@ -79,6 +79,7 @@ const PERSONAL_KEYS = [
   'prOverview',
   'compactTimeline',
   'digestViewChosenAt',
+  'consentDecidedAt',
   'reviewGrouping',
   'collapseDescription',
   'aiBaseUrl',

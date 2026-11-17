@@ -70,6 +70,8 @@ import { mountAccountWidget } from '../../src/ui/account-widget';
 import { polyfillCornerShape } from '../../src/ui/corner-shape';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
 import { installErrorCapture } from '../../src/lib/error-capture';
+import { mountConsentBanner } from '../../src/ui/consent-banner';
+import { globalPrivacyRefused } from '../../src/lib/privacy-signal';
 
 installErrorCapture('options');
 
@@ -185,6 +187,7 @@ function requireCategoryFields(): { readonly categoriesField: CategoriesField; r
 
 async function main(): Promise<void> {
   let settings = await settingsItem.getValue();
+  mountConsentBanner(requireElement('consent', HTMLDivElement), settings);
   // The active pattern catalog: bundled, or the newer signed copy the background fetched.
   let cachedCatalog = await catalogItem.getValue();
   let catalog: Catalog = catalogFromCache(cachedCatalog);
@@ -208,16 +211,21 @@ async function main(): Promise<void> {
       if (index > 0) host.append(el('hr', 'options__divider'));
       const label = el('span', 'geld-label', [field.label]);
       label.id = `${field.key}-label`;
-      const note = surfaceNotes[field.key];
+      // Turning either of the privacy prompt's settings on or off answers the prompt too; under Global Privacy
+      // Control both stay off, as the prompt keeps them, and the senders refuse them as well.
+      const answers = field.key === 'usageStats' || field.key === 'errorReports';
+      const refused = answers && globalPrivacyRefused();
+      const note = refused ? 'Your browser sends Global Privacy Control, so this stays off.' : surfaceNotes[field.key];
       const help = el('p', 'geld-help', richText(note === undefined ? field.description : `${field.description} ${note}`));
       help.id = `${field.key}-help`;
-      const button = switchButton(field.key, settings[field.key], label.id, help.id);
+      const button = switchButton(field.key, settings[field.key] && !refused, label.id, help.id);
+      if (refused) button.disabled = true;
       host.append(el('div', 'geld-row', [el('div', '', [label, help]), button]));
-      const bound = bindSwitch(button, settings[field.key], async (value) => {
-        settings = await settingsItem.patch({ [field.key]: value });
+      const bound = bindSwitch(button, settings[field.key] && !refused, async (value) => {
+        settings = await settingsItem.patch({ [field.key]: value && !refused, ...(answers ? { consentDecidedAt: new Date().toISOString() } : {}) });
         saved('Saved', 'success');
       });
-      toggleSwitches.push({ field, set: bound.set });
+      toggleSwitches.push({ field, set: (checked) => bound.set(checked && !refused) });
     });
   }
 
@@ -1521,21 +1529,31 @@ async function main(): Promise<void> {
   applyCatalog(await catalogItem.getValue());
 
   /* Keep the page in sync with changes made elsewhere (popup, other windows, gist sync). */
+  // A watch hears only later changes: one stored while the page was being built (the privacy prompt answered in the
+  // popup, another window) is read here, or a switch would show the state from before it.
+  // The signature of the settings the category lists were built from, so the read below rebuilds them when it differs.
   let lastSignature = categorySignature(settings);
+  const syncCategories = (next: GeldSettings): void => {
+    const signature = categorySignature(next);
+    // Rebuilding while someone edits a category would eat their input, draft or Saved status.
+    if (signature === lastSignature) return;
+    if (isEditingCategory() || hasUnsavedEdits()) renderDeferred = true;
+    else {
+      lastSignature = signature;
+      renderAll();
+    }
+  };
+  settings = await settingsItem.getValue();
+  for (const { field, set } of toggleSwitches) set(settings[field.key]);
+  for (const { field, set } of reviewSwitches) set(settings[field.key]);
+  for (const show of choiceSetters) show(settings);
+  syncCategories(settings);
   settingsItem.watch((next) => {
     settings = next;
     for (const { field, set } of toggleSwitches) set(next[field.key]);
     for (const { field, set } of reviewSwitches) set(next[field.key]);
     for (const show of choiceSetters) show(next);
-    const signature = categorySignature(next);
-    // Rebuilding while someone edits a category would eat their input, draft or Saved status.
-    if (signature !== lastSignature) {
-      if (isEditingCategory() || hasUnsavedEdits()) renderDeferred = true;
-      else {
-        lastSignature = signature;
-        renderAll();
-      }
-    }
+    syncCategories(next);
     // Not in the signature (that rebuild would drop unsaved category edits): an import, a reset or another window is shown in place.
     for (const checkbox of document.querySelectorAll<HTMLInputElement>('input[data-auto-viewed]')) {
       const id = checkbox.dataset.autoViewed ?? '';

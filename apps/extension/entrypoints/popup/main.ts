@@ -19,6 +19,7 @@ import { ICON_BEAKER, ICON_EYE_CLOSED, ICON_INFO } from '../../src/github/ui/ico
 import { wireFeedbackLink } from '../../src/ui/feedback-link';
 import { installErrorCapture } from '../../src/lib/error-capture';
 import { mountNightlyPopup } from '../../src/nightly/popup';
+import { mountConsentBanner } from '../../src/ui/consent-banner';
 
 installErrorCapture('popup');
 
@@ -76,6 +77,7 @@ async function main(): Promise<void> {
   // Titles and descriptions come from the active catalog; the popup is short-lived, so one read is enough.
   const catalog = await loadCatalog();
   const status = requireElement('status', HTMLSpanElement);
+  mountConsentBanner(requireElement('consent', HTMLDivElement), settings);
   mountAccountWidget(requireElement('account', HTMLDivElement), {
     variant: 'compact',
     promptHost: requireElement('account-prompt', HTMLDivElement),

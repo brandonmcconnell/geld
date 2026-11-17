@@ -85,6 +85,11 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+/* The privacy prompt stands inside the popup's margins, as the sections' words do. */
+.popup__consent:not(:empty) {
+  padding: 12px 16px 2px;
+}
+
 .popup__section .geld-help {
   font-size: 12px;
 }
