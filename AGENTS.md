@@ -253,6 +253,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   mint#12992 read as findings and pre-ticked Greptile in the request menu over a 5/5 with nothing to rerun for);
   the section's items are the count, and a section whose items cannot be read leaves the count unknown rather than claiming a clean run.
   Open threads still outrank a clean summary (`threadRuns`).
+  The summary's score stays beside their count ("4/5 · 3 issues"), as it does beside a counted summary's: Greptile's short summary (the score, a sentence or two and its "Reviews (N)" line) lists no findings even when it posts them as threads seconds later, and the chip showed the count alone.
   A later comment with nothing to count (no count, score, clean word or verdict: `isReviewShaped` false) is more of the run whose threads stand, not a new run: Greptile posts its "Comments Outside Diff" seconds after its threads, and read as a report it dropped them and carried the summary's count over a run whose every thread was resolved (geld#352 read "1 issue" over its one resolved thread).
   Those outside findings are not counted yet (`.cursor/ideas/greptile-outside-diff.md`).
   The other bots' clean and refused words were surveyed on public pull requests at the same time (Oct 2026) and `parseBotBody` / `refusalReason` read them: HTML comments go before any words are weighed (Cursor's automation markers lead its reviews);

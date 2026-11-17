@@ -33273,7 +33273,7 @@ function verdictsFrom(checks, comments, headSha, extraLogins = [], now = Date.no
     const reviewedSha = existing === void 0 ? headSha : shaOver(existing);
     const checkName = existing?.checkName;
     const named = checkName === void 0 ? {} : { checkName };
-    const scored = existing?.verdict === "findings" && existing.score !== void 0 ? { score: existing.score } : {};
+    const scored = (existing?.verdict === "findings" || existing?.verdict === "clean") && existing.score !== void 0 ? { score: existing.score } : {};
     const unthreaded = run2.unthreaded?.count ?? 0;
     if (run2.open + unthreaded > 0) {
       const severity = run2.severity !== void 0 ? { severity: run2.severity } : existing?.verdict === "findings" && existing.severity !== void 0 ? { severity: existing.severity } : {};

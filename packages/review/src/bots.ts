@@ -1793,8 +1793,9 @@ export function verdictsFrom(
     const reviewedSha = existing === undefined ? headSha : shaOver(existing);
     const checkName = existing?.checkName;
     const named = checkName === undefined ? {} : { checkName };
-    // The run's summary scored the pull request (Greptile's N/5): that stays with the run, open threads or not.
-    const scored = existing?.verdict === 'findings' && existing.score !== undefined ? { score: existing.score } : {};
+    // The run's summary scored the pull request (Greptile's N/5): that stays with the run, open threads or not, and
+    // whatever the summary's own words read as.
+    const scored = (existing?.verdict === 'findings' || existing?.verdict === 'clean') && existing.score !== undefined ? { score: existing.score } : {};
     // Findings the summary holds with no thread (CodeRabbit's outside the diff) stand whatever becomes of its threads.
     const unthreaded = run.unthreaded?.count ?? 0;
     if (run.open + unthreaded > 0) {
