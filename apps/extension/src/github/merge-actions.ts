@@ -53,6 +53,20 @@ export interface MergeBox {
   readonly queued: boolean;
   /** Auto-merge is on: GitHub merges it once its requirements are met. */
   readonly autoMerging: boolean;
+  /** A merge conflict that blocks it, its own or a pull request's below it in its stack; null when there is none. */
+  readonly conflicts: MergeConflicts | null;
+}
+
+/**
+ * A merge conflict as GitHub's merge box states it: this pull request's own (the failed merge conflict condition, with
+ * the files it names), or one further down its stack (the STACK condition's entry whose status is `MERGE_CONFLICTS`).
+ */
+export interface MergeConflicts {
+  readonly own: boolean;
+  /** The conflicting files, for this pull request's own conflict; empty for a stack's. */
+  readonly files: readonly string[];
+  /** The pull request down the stack whose conflict blocks this one; null for this pull request's own. */
+  readonly pull: { readonly number: number; readonly path: string } | null;
 }
 
 export interface ReviewVerdict {
@@ -104,6 +118,24 @@ function methodsIn(listed: readonly unknown[], statuses: readonly string[]): rea
     .filter(isMethod);
 }
 
+/** The merge conflict the box's conditions state, this pull request's own before one down its stack. */
+export function conflictsOf(conditions: readonly unknown[]): MergeConflicts | null {
+  const own = conditions.find((condition): condition is Record<string, unknown> => isRecord(condition) && condition.type === 'PULL_REQUEST_MERGE_CONFLICT_STATE' && condition.result === 'FAILED');
+  if (own !== undefined) {
+    const files = Array.isArray(own.conflicts) ? own.conflicts.filter((file): file is string => typeof file === 'string' && file !== '') : [];
+    return { own: true, files, pull: null };
+  }
+  const stack = conditions.find((condition): condition is Record<string, unknown> => isRecord(condition) && condition.type === 'STACK' && condition.result === 'FAILED');
+  const entries = stack !== undefined && Array.isArray(stack.entries) ? stack.entries : [];
+  for (const entry of entries) {
+    if (!isRecord(entry) || entry.status !== 'MERGE_CONFLICTS' || entry.position === 'CURRENT' || !isRecord(entry.pull)) continue;
+    const number = entry.pull.number;
+    const path = stringOf(entry.pull.url);
+    if (typeof number === 'number' && Number.isInteger(number) && path.startsWith('/')) return { own: false, files: [], pull: { number, path } };
+  }
+  return null;
+}
+
 /** A `page_data/merge_box` answer, or null when it is not one. */
 export function parseMergeBox(payload: unknown): MergeBox | null {
   if (!isRecord(payload) || !isRecord(payload.pullRequest)) return null;
@@ -153,6 +185,7 @@ export function parseMergeBox(payload: unknown): MergeBox | null {
     canAutoMerge: pull.viewerCanEnableAutoMerge === true && !isRecord(pull.autoMergeRequest),
     queued: pull.isInMergeQueue === true,
     autoMerging: isRecord(pull.autoMergeRequest),
+    conflicts: pull.state === 'OPEN' ? conflictsOf(conditions) : null,
   };
 }
 

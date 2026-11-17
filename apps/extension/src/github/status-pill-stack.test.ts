@@ -24,6 +24,7 @@ const box = (over: Partial<MergeBox>): MergeBox => ({
   canAutoMerge: false,
   queued: false,
   autoMerging: false,
+  conflicts: null,
   ...over,
 });
 

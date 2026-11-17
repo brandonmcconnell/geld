@@ -3096,6 +3096,95 @@ html[data-geld-top-card] [class*='CondensedForYouContainer'] [data-testid='for-y
   height: 42px !important;
 }
 
+/*
+ * A loading row GitHub never answers, with a conflict its merge box states (stuck-status.ts): the row stands in its
+ * place set as GitHub's own "Merge conflicts" row is (vercel/next.js#101859), from GitHub's tokens: a 42px muted danger
+ * circle around a 28px solid one and its 12px cross, a 16px title over a 14px muted line, the action on the right.
+ */
+[data-geld-stuck-hidden] {
+  display: none !important;
+}
+
+.geld-stuck-status__row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  grid-template-rows: 20px 22px;
+  grid-template-areas: 'visual title actions' 'visual subText actions';
+  column-gap: 8px;
+  padding: 12px;
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.geld-stuck-status__visual {
+  display: flex;
+  grid-area: visual;
+}
+
+.geld-stuck-status__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background-color: var(--bgColor-danger-muted, var(--color-danger-subtle, #ffebe9));
+}
+
+.geld-stuck-status__glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: var(--bgColor-danger-emphasis, var(--color-danger-emphasis, #cf222e));
+  color: var(--fgColor-onEmphasis, var(--color-fg-on-emphasis, #ffffff));
+}
+
+.geld-stuck-status__title {
+  grid-area: title;
+  overflow: hidden;
+  color: var(--fgColor-default, var(--color-fg-default));
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-stuck-status__subtext {
+  grid-area: subText;
+  overflow: hidden;
+  color: var(--fgColor-muted, var(--color-fg-muted));
+  font-size: 14px;
+  line-height: 19.25px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-stuck-status__files {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  cursor: help;
+}
+
+.geld-stuck-status__pull {
+  color: var(--fgColor-accent, var(--color-accent-fg));
+}
+
+.geld-stuck-status__actions {
+  display: flex;
+  grid-area: actions;
+  align-items: center;
+  gap: 8px;
+}
+
 /* While GitHub streams the card a `<template>` leads it, so its status row is not `:first-child` and takes a second top border. */
 html[data-geld-top-card] [class*='CondensedForYouContainer'] > template:first-child + section {
   border-top-width: 0 !important;
