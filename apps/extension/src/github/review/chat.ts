@@ -1522,8 +1522,11 @@ function annotateMessages(messages: readonly HTMLElement[], viewer: string, pinn
     if (bubble !== null) mark(bubble, ATTR_PART, 'bubble');
     // Review comments keep their reactions in a wrapper of their own beside the body's; an issue comment nests
     // them inside the body's wrapper. The part is the row itself then, so it lays out and floats the same way.
-    if (reactionsHolder !== null && reactionsHolder !== bubble && reactionsHolder !== meta) mark(reactionsHolder, ATTR_PART, 'reactions');
-    else if (reactionsRow !== null && reactionsRow !== bubble && !reactionsRow.matches('[data-geld-part]')) mark(reactionsRow, ATTR_PART, 'reactions');
+    // A row `placeControls` already moved under the bubble stands in Geld's own holder, which its own rules lay out and
+    // hide while it holds no pills: marked again when a reply arrives, every empty holder grew back 6px of padding.
+    const placed = reactionsHolder?.hasAttribute(OWN_UI_ATTRIBUTE) === true;
+    if (!placed && reactionsHolder !== null && reactionsHolder !== bubble && reactionsHolder !== meta) mark(reactionsHolder, ATTR_PART, 'reactions');
+    else if (!placed && reactionsRow !== null && reactionsRow !== bubble && !reactionsRow.matches('[data-geld-part]')) mark(reactionsRow, ATTR_PART, 'reactions');
     for (const form of message.querySelectorAll<HTMLFormElement>(':scope > form.js-comment-update, :scope > form[data-testid="comment-edit-form"]')) mark(form, ATTR_PART, 'edit');
   });
   onRestore(() => {

@@ -273,6 +273,21 @@ describe("a comment's controls after GitHub redraws it", () => {
     releaseParkedChats();
   });
 
+  it('leaves a reactions row already under the bubble to Geld when a reply re-reads the run', () => {
+    const { slot, message } = render(OVERVIEW_THREAD);
+    const holder = message.querySelector<HTMLElement>(':scope > .geld-review__msg-reactions');
+    expect(holder?.hasAttribute('data-geld-part')).toBe(false);
+    // A reply from the same author lands in the thread, as GitHub appends one while the chat is open.
+    const reply = parse(`<div id="discussion_r43" class="ReviewThreadContainer__zrJcUC"><div class="ReviewThreadInnerContainer__cag4y4"><div data-testid="comment-header"><a data-testid="author-link" href="/octocat">octocat</a><button type="button" aria-label="More actions for octocat's comment, 1 day ago">⋯</button></div></div><div class="ReviewThreadWrapper__vspFQB">${OVERVIEW_VIEW}</div></div>`);
+    document.querySelector('[data-testid="review-thread"]')?.append(reply);
+    expect(dressArrivals(document)).toBe(true);
+    expect([...slot.querySelectorAll('[data-geld-message]')].map((entry) => entry.getAttribute('data-geld-run'))).toEqual(['first', 'last']);
+    // Marked as the message's reactions part, Geld's holder took that part's layout and every empty one grew 6px.
+    expect(holder?.hasAttribute('data-geld-part')).toBe(false);
+    expect(message.querySelectorAll(':scope > [data-geld-part="reactions"]')).toHaveLength(0);
+    releaseParkedChats();
+  });
+
   it('puts back a reaction button React made anew inside the toolbar that stands under the bubble', () => {
     const { message } = render(OVERVIEW_THREAD);
     const toolbar = message.querySelector<HTMLElement>('.geld-review__msg-reactions [role="toolbar"]');
