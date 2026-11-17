@@ -404,3 +404,7 @@ svg.geld-provider-digest-icon[data-geld-outline] > [fill="currentColor"] { fill:
 .geld-provider-review .geld-provider-review__chat-head { display: flex; justify-content: flex-end; align-items: center; gap: 6px; padding: var(--geld-provider-space-2) var(--geld-provider-space-4); border-block-end: var(--geld-provider-border-width) solid var(--geld-provider-border); }
 .geld-provider-review .geld-review__chat-fix { display: inline-flex; align-items: center; gap: 4px; min-block-size: 24px; padding-block: 0; font: var(--geld-provider-font-small); }
 .geld-provider-review .geld-review__chat-fix > svg { inline-size: 14px; block-size: 14px; }
+
+/* The host's own CI section lent to the CI row (`native-checks.ts`): it stands in for Geld's list, the merge checks stay. */
+.geld-provider-review [data-geld-ci-checks]:has(> [data-geld-native-checks]) > :not([data-geld-native-checks], .geld-provider-review__check-heading) { display: none; }
+.geld-provider-review__native-checks { padding-block: var(--geld-provider-space-2); }

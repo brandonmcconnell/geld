@@ -22,6 +22,8 @@ import { createBitbucketWholeTestAdapter } from './whole-test-context';
 import { createBitbucketWhitespaceMode } from './whitespace-mode';
 import { BitbucketSourceReferences } from './source-reference';
 import { postBitbucketComment } from './post-comment';
+import { fetchBitbucketDeployments } from './deployments';
+import { bitbucketReviewerRequests } from './reviewer-requests';
 
 
 export { BitbucketClient, BitbucketApiError, bitbucketCapabilities } from './api';
@@ -31,6 +33,7 @@ export type { BitbucketReviewSnapshot } from './review';
 
 export const bitbucketAdapter: ProviderAdapter = {
   id: 'bitbucket',
+  reviewerRequests: (subject, doc) => bitbucketReviewerRequests(subject, doc),
   postComment: (subject, text) => postBitbucketComment(subject, text),
   viewerAuthorId: (doc) => {
     if (!bitbucketAuthenticated(doc)) return null;
@@ -63,7 +66,9 @@ export const bitbucketAdapter: ProviderAdapter = {
   fetchReview: async (page, signal, doc) => {
     const presentation = beginBitbucketAuthorPresentation(doc, page, signal);
     try {
-      const snapshot = await fetchBitbucketReview(page, signal);
+      const review = await fetchBitbucketReview(page, signal);
+      const deployments = await fetchBitbucketDeployments(page, review.input.subject.headSha, signal, bitbucketAuthenticated(doc));
+      const snapshot = deployments === undefined ? review : { ...review, deployments };
       return { ...snapshot, get input() { return syncBitbucketNativeReviewState(snapshot.input, doc); }, get actions() { const pending = readBitbucketPendingReview(doc, page, snapshot.input.subject);return [...readBitbucketActions(doc, page), ...(pending === null ? [] : [pending])]; },
         get requirements() { return readBitbucketRequirements(page, doc); },
         renderComment: (comment, host, context) => renderBitbucketComment(comment, host, doc, context),

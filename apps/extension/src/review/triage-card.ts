@@ -16,6 +16,7 @@ import type { AiState } from './ai';
 import './digest-tokens.css';
 import './digest-kit.css';
 import './triage.css';
+import './request-menu.css';
 
 /**
  * The AI triage card under the digest's Geld row, the same on every host: what the open threads need, one row per fix

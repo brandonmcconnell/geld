@@ -1,0 +1,247 @@
+/*
+ * The digest's request menus on every host: a checkbox per bot or person with its standing, Other bots and Other
+ * reviewers behind a disclosure and a search box, Run or Request and Cancel. Written against Primer's tokens, which a
+ * provider bridges to its own (`geld-primer-bridge`).
+ */
+
+/* ---- Request a review: a checkbox per bot, its last run's state, Other bots, Run and Cancel ---- */
+
+.geld-review__menu-list.geld-review__request-list {
+  min-width: 300px;
+}
+
+.geld-review__request-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font: inherit;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.geld-review__request-item:hover {
+  background: var(--geld-review-hover);
+}
+
+.geld-review__request-item > .geld-review__bot-icon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-right: 0;
+}
+
+.geld-review__request-item > .geld-review__menu-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-review__request-check {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--geld-review-accent);
+  cursor: pointer;
+}
+
+/* The last run's word, coloured like the chip's glyph (grey when it says nothing yet). */
+.geld-review__request-state {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.geld-review__request-state[data-health='bad'] {
+  color: var(--geld-review-danger-fg);
+}
+
+.geld-review__request-state[data-health='severe'] {
+  color: var(--geld-review-danger-fg);
+}
+
+.geld-review__request-state[data-health='warn'] {
+  color: var(--geld-review-attention-fg);
+}
+
+.geld-review__request-state[data-health='good'] {
+  color: var(--geld-review-done-fg);
+}
+
+.geld-review__request-state > .geld-review__health > .octicon {
+  width: 12px;
+  height: 12px;
+}
+
+.geld-review__request-sep {
+  height: 1px;
+  margin: 6px 0;
+  background: var(--geld-review-border);
+}
+
+/* Inset as the items are, so the help glyph stands under the checkboxes and Cancel ends where "Not run" does. */
+.geld-review__request-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px 0;
+}
+
+.geld-review__request-footer > .geld-review__help-wrap {
+  /* The 24px target's glyph stands where the checkboxes do. */
+  margin: 0 auto 0 -5px;
+}
+
+.geld-review__split-list > .geld-review__help-wrap {
+  padding: 0 2px;
+}
+
+.geld-review__help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--geld-review-muted);
+  cursor: pointer;
+}
+
+/*
+ * Static grey in every state: the icon only opens its tip. Raised above `.geld-review__help:is(:hover, …)`, the blue
+ * link #663 shipped, since an older Geld installed beside this one injects its stylesheet into the page too.
+ */
+.geld-review .geld-review__help:is(:hover, :focus, :focus-visible, :active, [aria-expanded='true']) {
+  background: none;
+  color: var(--geld-review-muted);
+}
+
+.geld-review__help-link:is(:hover, :focus-visible) {
+  text-decoration: underline;
+}
+
+.geld-review__request-run[disabled] {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* ---- Request a review, for people (the Reviews row's ⋯): standings, Other reviewers behind a search box ---- */
+
+.geld-review__menu-list.geld-review__request-list:has(.geld-review__people-more) {
+  width: 380px;
+  min-width: 0;
+  max-width: calc(100vw - 32px);
+  /* The menu's own width decides whether a standing's words fit beside the name (below). */
+  container-type: inline-size;
+}
+
+.geld-review__people-avatar {
+  border-radius: 50%;
+}
+
+/* Login, then the name and GitHub's "suggested" after it on the one line (the shared text box is a column). */
+.geld-review__people-item > .geld-review__menu-text {
+  display: block;
+}
+
+.geld-review__people-name {
+  margin-left: 6px;
+  color: var(--geld-review-muted);
+}
+
+/* A person's standing: its glyphs (a check, a dot — both when they approved and are awaited again) and the words. */
+.geld-review__people-state {
+  gap: 3px;
+}
+
+.geld-review__people-glyph {
+  display: inline-flex;
+}
+
+.geld-review__people-glyph > .octicon {
+  width: 12px;
+  height: 12px;
+}
+
+.geld-review__people-state[data-health='pending'] {
+  color: var(--geld-review-attention-fg);
+}
+
+.geld-review__people-words {
+  margin-left: 2px;
+}
+
+/* On a narrow menu the words go and the glyphs stay, the title holding the words. */
+@container (width < 340px) {
+  .geld-review__people-words {
+    display: none;
+  }
+}
+
+.geld-review__people-hint {
+  padding: 4px 8px;
+}
+
+/* What went wrong with a request, beside the buttons; empty until it does. */
+.geld-review__request-problem {
+  align-self: center;
+  color: var(--geld-review-danger-fg);
+}
+
+.geld-review__request-problem:empty {
+  display: none;
+}
+
+.geld-review__people-filter {
+  padding: 4px 8px 6px;
+}
+
+.geld-review__people-search {
+  box-sizing: border-box;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--geld-review-border);
+  border-radius: 6px;
+  background: var(--geld-review-bg);
+  color: var(--fgColor-default, var(--color-fg-default));
+  font: inherit;
+  font-size: 12px;
+}
+
+.geld-review__people-search:focus {
+  outline: 2px solid var(--geld-review-accent);
+  outline-offset: -1px;
+}
+
+.geld-review__people-options {
+  max-height: 260px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* The arrow keys' choice reads like a hover; a suggestion of GitHub's is marked. */
+.geld-review__people-item[data-active] {
+  background: var(--geld-review-hover);
+}
+
+.geld-review__people-item[data-suggested] > .geld-review__menu-text::after {
+  content: 'suggested';
+  margin-left: 6px;
+  color: var(--geld-review-muted);
+  font-size: 11px;
+}
+

@@ -272,6 +272,17 @@ export class ProviderConversation {
           return JSON.stringify(latest.bots) === JSON.stringify(native.bots);
         }).filter((request) => !native.bots?.some((bot) => bot.id === request.botId && people.people.some((person) => person.id === bot.authorId && !person.shown))) ?? [],
         references,
+        ...(this.adapter.nativeChecks === undefined ? {} : { nativeChecks: (): HTMLElement | null => this.adapter.nativeChecks?.(document) ?? null }),
+        ...(() => {
+          const requests = this.adapter.reviewerRequests?.(input.subject, document) ?? null;
+          if (requests === null) return {};
+          // A request that lands refreshes the review, so the new reviewers show where GitHub's sidebar would.
+          return { reviewerRequests: { ...requests, request: async (ids: readonly (string | number)[]) => {
+            const posted = await requests.request(ids);
+            if (posted) this.refreshSoon();
+            return posted;
+          } } };
+        })(),
         ...(this.adapter.referenceAnchor === undefined ? {} : { onRevealReference: (reference: ProviderReviewReference): boolean => {
           const current = (): ProviderReviewPage | null => {
             if (this.generation !== actionGeneration || this.key !== actionKey || this.snapshot !== snapshot || snapshot.input.subject.headSha !== actionHead) return null;

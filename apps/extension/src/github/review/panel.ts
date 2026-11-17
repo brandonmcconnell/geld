@@ -48,6 +48,7 @@ import { relativeTimeElement } from './time';
 import { DIGEST_VIEW_OPTIONS, digestViewLabel, viewChoice, viewLabel } from './digest-view';
 import { takeViewFocus } from './view-focus';
 import type { MissingTool } from '../../lib/feedback';
+import { personStanding, reviewersMenu as sharedReviewersMenu } from '../../review/reviewers-menu';
 
 export const PANEL_CLASS = 'geld-review';
 export const ATTR_PANEL = 'data-geld-review-panel';
@@ -1718,20 +1719,10 @@ function requestMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | 
   return details;
 }
 
-/** How a person's standing reads in the people menu: glyph(s) and a word, "approved · awaiting" when both hold. */
+/** How a person's standing reads in the people menu (`personStanding`, shared with the providers' menu). */
 function statusWords(status: ReviewerStatus): { readonly glyphs: readonly string[]; readonly words: string; readonly health: Health | null } {
-  const glyphs: string[] = [];
-  const parts: string[] = [];
-  if (status.verdict !== null) {
-    glyphs.push(ENTRY_GLYPH[status.verdict]);
-    parts.push(REVIEWER_GROUP_WORD[status.verdict]);
-  }
-  if (status.awaiting) {
-    glyphs.push(ICON_DOT_FILL);
-    parts.push('awaiting');
-  }
-  const health: Health | null = status.verdict === 'approved' ? 'good' : status.verdict === 'changes_requested' ? 'bad' : status.awaiting ? 'pending' : null;
-  return { glyphs, words: parts.join(' · '), health };
+  const { glyphs, words, health } = personStanding(status.verdict, status.awaiting);
+  return { glyphs, words, health: health === null ? null : health === 'pending' ? 'pending' : health === 'good' ? 'good' : 'bad' };
 }
 
 /** Which hidden people menu stays open across a rebuild (Show rebuilds the panel). */
@@ -1839,234 +1830,15 @@ function hiddenMenu(model: PanelModel, handlers: PanelHandlers, scope: 'people' 
  */
 function reviewersMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
   if (!model.canRequestReviewers) return null;
-  installMenuDismissal();
-  const details = createElement('details', { class: `${PANEL_CLASS}__menu ${PANEL_CLASS}__request ${PANEL_CLASS}__people` });
-  const summary = createElement('summary', { class: `${PANEL_CLASS}__icon`, 'aria-label': 'Request a review', title: 'Request a review', role: 'button', [ATTR_FOCUS]: 'reviewers' }, [icon(ICON_KEBAB_HORIZONTAL)]);
-  summary.addEventListener('click', (event) => event.stopPropagation());
-  details.addEventListener('toggle', () => {
-    if (!details.open) handlers.onRequestMenuClosed();
+  return sharedReviewersMenu({
+    hostName: 'GitHub',
+    standing: model.reviewerStatuses.map((status) => ({ login: status.login, avatar: status.avatar.src, ...statusWords(status), reviewed: status.verdict !== null })),
+    loadCandidates: () => handlers.loadReviewerCandidates(),
+    request: (users, teams) => handlers.onRequestReviewers(users.filter((id): id is number => typeof id === 'number'), teams.filter((id): id is number => typeof id === 'number')),
+    onClosed: () => handlers.onRequestMenuClosed(),
+    button: 'btn btn-sm',
+    primary: 'btn btn-sm btn-primary',
   });
-  const list = createElement('div', { class: `${PANEL_CLASS}__menu-list ${PANEL_CLASS}__request-list` });
-  list.append(createElement('div', { class: `${PANEL_CLASS}__menu-title` }, ['Request a review']));
-
-  /** Ticked reviewers by kind and login (`u:` a person, `t:` a team — a team's slug may read like a login); candidates carry the ids the form wants. */
-  const ticked = new Map<string, HTMLInputElement>();
-  const keyOf = (login: string, team: boolean): string => `${team ? 't' : 'u'}:${login.toLowerCase()}`;
-  const picked = (): string[] => [...ticked.entries()].filter(([, input]) => input.checked).map(([key]) => key);
-  const request = createElement('button', { type: 'button', class: `btn btn-sm btn-primary ${PANEL_CLASS}__request-run` }, ['Request']);
-  const problem = createElement('span', { class: `${PANEL_CLASS}__menu-hint ${PANEL_CLASS}__request-problem`, role: 'alert' });
-  let busy = false;
-  const syncRequest = (): void => {
-    if (busy) return;
-    const count = picked().length;
-    request.textContent = count === 0 ? 'Request' : count === 1 ? 'Request review' : `Request ${count} reviews`;
-    request.toggleAttribute('disabled', count === 0);
-  };
-  const personLine = (login: string, team: boolean, avatarSrc: string, name: string, status: ReviewerStatus | null, title: string): HTMLElement => {
-    const key = keyOf(login, team);
-    const input = ticked.get(key) ?? createElement('input', { type: 'checkbox', class: `${PANEL_CLASS}__request-check`, 'aria-label': team ? `${login} (team)` : login });
-    ticked.set(key, input);
-    input.addEventListener('change', syncRequest);
-    const picture = avatarSrc !== '' ? createElement('img', { class: `${PANEL_CLASS}__bot-icon ${PANEL_CLASS}__people-avatar`, src: avatarSrc, alt: '', width: '16', height: '16' }) : createElement('span', { class: `${PANEL_CLASS}__bot-icon ${PANEL_CLASS}__bot-icon--blank`, 'aria-hidden': 'true' });
-    const children: Node[] = [input, picture, createElement('span', { class: `${PANEL_CLASS}__menu-text` }, [login, ...(name === '' || name === login ? [] : [createElement('span', { class: `${PANEL_CLASS}__people-name` }, [name])])])];
-    if (status !== null) {
-      const { glyphs, words, health } = statusWords(status);
-      if (glyphs.length > 0) {
-        children.push(
-          createElement('span', { class: `${PANEL_CLASS}__request-state ${PANEL_CLASS}__people-state`, ...(health === null ? {} : { 'data-health': health }), title: words }, [
-            ...glyphs.map((glyph) => createElement('span', { class: `${PANEL_CLASS}__people-glyph`, 'aria-hidden': 'true' }, [icon(glyph)])),
-            createElement('span', { class: `${PANEL_CLASS}__people-words` }, [words]),
-          ]),
-        );
-      }
-    }
-    const label = createElement('label', { class: `${PANEL_CLASS}__request-item ${PANEL_CLASS}__people-item`, title, 'data-login': login }, children);
-    label.addEventListener('click', (event) => event.stopPropagation());
-    return label;
-  };
-
-  const standing = model.reviewerStatuses;
-  for (const status of standing) {
-    const { words } = statusWords(status);
-    list.append(personLine(status.login, false, status.avatar.src, '', status, status.verdict !== null ? `Asks ${status.login} to review again · ${words}` : `${status.login} · ${words}`));
-  }
-  if (standing.length === 0) list.append(createElement('div', { class: `${PANEL_CLASS}__menu-hint ${PANEL_CLASS}__people-hint` }, ['Nobody has been asked yet.']));
-
-  // Other reviewers: the search box and the list, filled from GitHub's candidates when first opened.
-  const more = createElement('details', { class: `${PANEL_CLASS}__request-more ${PANEL_CLASS}__people-more` });
-  const moreSummary = createElement('summary', { class: `${PANEL_CLASS}__request-more-summary` }, [icon(ICON_CHEVRON_RIGHT), 'Other reviewers']);
-  moreSummary.addEventListener('click', (event) => event.stopPropagation());
-  const listboxId = `geld-people-${Math.random().toString(36).slice(2, 8)}`;
-  const search = createElement('input', { type: 'text', class: `${PANEL_CLASS}__people-search`, placeholder: 'Type or choose a user', 'aria-label': 'Type or choose a user', autocomplete: 'off', spellcheck: 'false', role: 'combobox', 'aria-expanded': 'true', 'aria-controls': listboxId, 'aria-autocomplete': 'list' });
-  const options = createElement('div', { class: `${PANEL_CLASS}__people-options`, id: listboxId, role: 'listbox', 'aria-label': 'Other reviewers' });
-  const hint = createElement('div', { class: `${PANEL_CLASS}__menu-hint ${PANEL_CLASS}__people-hint`, 'aria-live': 'polite' });
-  more.append(moreSummary, createElement('div', { class: `${PANEL_CLASS}__people-filter` }, [search]), hint, options);
-  list.append(more);
-
-  let candidates: readonly ReviewerCandidate[] | null = null;
-  let loading = false;
-  /** GitHub's id for each ticked key, once its candidates have been read. */
-  const ids = new Map<string, number>();
-  const rows: HTMLElement[] = [];
-  let active = -1;
-  const visibleRows = (): HTMLElement[] => rows.filter((row) => !row.hidden);
-  const setActive = (index: number): void => {
-    const shown = visibleRows();
-    active = shown.length === 0 ? -1 : Math.max(0, Math.min(index, shown.length - 1));
-    for (const [position, row] of shown.entries()) {
-      row.toggleAttribute('data-active', position === active);
-      row.setAttribute('aria-selected', String(position === active));
-    }
-    const current = shown[active];
-    if (current !== undefined) {
-      search.setAttribute('aria-activedescendant', current.id);
-      current.scrollIntoView({ block: 'nearest' });
-    } else search.removeAttribute('aria-activedescendant');
-  };
-  const filter = (): void => {
-    const needle = search.value.trim().toLowerCase();
-    let shown = 0;
-    for (const row of rows) {
-      const haystack = row.getAttribute('data-search') ?? '';
-      row.hidden = needle !== '' && !haystack.includes(needle);
-      if (!row.hidden) shown += 1;
-    }
-    if (candidates !== null) hint.textContent = shown === 0 ? 'Nothing to show' : '';
-    setActive(needle === '' ? -1 : 0);
-  };
-  const fill = (found: readonly ReviewerCandidate[]): void => {
-    const standingKeys = new Set(standing.map((entry) => keyOf(entry.login, false)));
-    for (const candidate of found) {
-      const key = keyOf(candidate.login, candidate.team);
-      ids.set(key, candidate.id);
-      if (standingKeys.has(key)) {
-        // Already listed above with their standing; the form still needs their id, which is now known.
-        continue;
-      }
-      const row = personLine(candidate.login, candidate.team, candidate.avatar, candidate.name, null, candidate.team ? `${candidate.login} · team` : candidate.suggested ? `${candidate.login} · suggested` : candidate.login);
-      row.id = `${listboxId}-${rows.length}`;
-      row.setAttribute('role', 'option');
-      row.setAttribute('aria-selected', 'false');
-      row.setAttribute('data-search', `${candidate.login} ${candidate.name}`.toLowerCase());
-      if (candidate.suggested) row.setAttribute('data-suggested', '');
-      rows.push(row);
-      options.append(row);
-    }
-    hint.textContent = rows.length === 0 ? 'Nobody else to ask.' : '';
-    filter();
-  };
-  const load = (): void => {
-    if (candidates !== null || loading) return;
-    loading = true;
-    hint.textContent = 'Loading…';
-    void handlers.loadReviewerCandidates().then((found) => {
-      loading = false;
-      // A failed lookup is not an empty one: `candidates` stays null so opening the section again asks again.
-      candidates = found;
-      if (found === null) {
-        hint.textContent = 'GitHub did not list anyone. Close and reopen to try again.';
-        return;
-      }
-      fill(found);
-    });
-  };
-  more.addEventListener('toggle', () => {
-    if (!more.open) return;
-    load();
-    window.requestAnimationFrame(() => search.focus({ preventScroll: true }));
-  });
-  search.addEventListener('input', filter);
-  search.addEventListener('keydown', (event) => {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      setActive(active + (event.key === 'ArrowDown' ? 1 : -1));
-    } else if (event.key === 'Enter') {
-      event.preventDefault();
-      const current = visibleRows()[active];
-      const input = current?.querySelector<HTMLInputElement>('input[type="checkbox"]');
-      if (input !== undefined && input !== null) {
-        input.checked = !input.checked;
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-    } else if (event.key === 'Escape') {
-      if (search.value !== '') {
-        event.preventDefault();
-        event.stopPropagation();
-        search.value = '';
-        filter();
-      }
-    } else if (event.key === 'Home' || event.key === 'End') {
-      event.preventDefault();
-      setActive(event.key === 'Home' ? 0 : rows.length);
-    }
-  });
-  // Clicks in the box stay in the box: the row toggle above must not see them.
-  search.addEventListener('click', (event) => event.stopPropagation());
-
-  list.append(createElement('div', { class: `${PANEL_CLASS}__request-sep`, role: 'separator' }));
-  const cancel = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__request-cancel` }, ['Cancel']);
-  // Request keeps the menu open until GitHub has answered: a refusal is said here, with the ticks kept for another
-  // try, and Cancel (or the menu closing any other way) while the ids are still loading means nothing is posted.
-  let attempt = 0;
-  request.addEventListener('click', (event) => {
-    event.stopPropagation();
-    const chosen = picked();
-    if (chosen.length === 0 || busy) return;
-    attempt += 1;
-    const mine = attempt;
-    const still = (): boolean => details.open && details.isConnected && attempt === mine;
-    busy = true;
-    problem.textContent = '';
-    request.toggleAttribute('disabled', true);
-    request.textContent = 'Requesting…';
-    const settle = (message: string | null): void => {
-      busy = false;
-      if (message === null) {
-        details.removeAttribute('open');
-        return;
-      }
-      problem.textContent = message;
-      syncRequest();
-    };
-    void (async () => {
-      // Someone listed by their standing alone has no id yet: GitHub's list supplies it.
-      if (!chosen.every((key) => ids.has(key))) {
-        const found = await handlers.loadReviewerCandidates();
-        if (!still()) return;
-        for (const candidate of found ?? []) ids.set(keyOf(candidate.login, candidate.team), candidate.id);
-      }
-      const users: number[] = [];
-      const teams: number[] = [];
-      for (const key of chosen) {
-        const id = ids.get(key);
-        if (id !== undefined) (key.startsWith('t:') ? teams : users).push(id);
-      }
-      if (users.length + teams.length === 0) {
-        settle('GitHub does not list them among the reviewers that can be asked here.');
-        return;
-      }
-      const posted = await handlers.onRequestReviewers(users, teams).catch(() => false);
-      if (!still()) return;
-      settle(posted ? null : 'GitHub did not take the request. Try again.');
-    })();
-  });
-  cancel.addEventListener('click', (event) => {
-    event.stopPropagation();
-    details.removeAttribute('open');
-  });
-  // Closing the menu by any means ends a request still waiting on ids; a menu rebuilt by the panel is a new one.
-  details.addEventListener('toggle', () => {
-    if (!details.open) {
-      attempt += 1;
-      busy = false;
-      problem.textContent = '';
-      syncRequest();
-    }
-  });
-  list.append(createElement('div', { class: `${PANEL_CLASS}__request-footer` }, [request, cancel, problem]));
-  syncRequest();
-  details.append(summary, list);
-  return details;
 }
 
 /** GitHub's own status ring: one arc per state, in its colours, drawn around a 16px circle. */

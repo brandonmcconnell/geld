@@ -380,6 +380,19 @@ export class BitbucketClient {
     return items;
   }
 
+  /**
+   * The repository's deployments and environments, raw, for the Deployments row: two collections Bitbucket's
+   * Deployments page reads too, a deployment naming its environment by uuid alone. Bounded to a page of each.
+   */
+  async deploymentSources(signal: AbortSignal): Promise<{ readonly deployments: unknown; readonly environments: unknown }> {
+    this.reviewPage();
+    const [deployments, environments] = await Promise.all([
+      this.json(new URL(`${API_ORIGIN}${this.repositoryPath}/deployments/?pagelen=100`), signal),
+      this.json(new URL(`${API_ORIGIN}${this.repositoryPath}/environments/?pagelen=100`), signal),
+    ]);
+    return { deployments, environments };
+  }
+
   async pullRequest(signal: AbortSignal): Promise<BitbucketPullRequest> {
     const page = this.reviewPage();
     const value = record(await this.json(new URL(`${API_ORIGIN}${this.pullPath}`), signal, 'no-cache'));

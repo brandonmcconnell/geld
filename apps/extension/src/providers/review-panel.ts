@@ -5,6 +5,9 @@ import { commentFixRow, threadFixControl } from '../review/chat-fix';
 import type { ChatFix, ChatFixSkin, CommentFix } from '../review/chat-fix';
 import type { ChatFixThreadLink } from '../review/chat-fix-controller';
 import { missingToolHelp } from '../review/triage-card';
+import { personStanding, reviewersMenu } from '../review/reviewers-menu';
+import type { ProviderReviewerRequests } from './types';
+import { NativeChecksLoan } from './native-checks';
 import { absoluteTimeText, relativeTimeText } from '../review/time';
 import { settleToggledRow, stickyBarsBottom } from '../review/row-scroll';
 import { watchRenderHold } from '../review/render-hold';
@@ -108,6 +111,10 @@ export interface ProviderReviewPanelOptions {
 
   readonly reviewerControls?: ProviderReviewSourceAction;
   readonly botRequests?: readonly ProviderBotRequest[];
+  /** The host's own CI section, lent to the CI row while it is open (`native-checks.ts`); null while the host shows none. */
+  readonly nativeChecks?: () => HTMLElement | null;
+  /** Who the reader may ask to review, and the request (`review/reviewers-menu.ts`): the Reviews row's ⋯. */
+  readonly reviewerRequests?: ProviderReviewerRequests;
   readonly updating?: boolean;
   readonly version?: number;
   readonly actionsForSource?: (comment: ProviderReviewComment) => readonly ProviderReviewSourceAction[];
@@ -447,7 +454,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   doc.addEventListener('pointerdown', dismissMenus);
   // A background update (a check ticking, a bot rewriting its comment) waits while the reader has a menu open,
   // is pressing or typing in the digest, as on GitHub, and draws once they are done.
-  const renderHold = watchRenderHold(panel, { menus: HELD_MENUS, onRelease: () => { if (!destroyed && !panel.hidden) render(); } });
+  const renderHold = watchRenderHold(panel, { menus: HELD_MENUS, onRelease: () => { if (!destroyed && !panel.hidden) draw(); } });
 
   function disclosure(key: string, label: string, initiallyOpen: boolean): ReviewDisclosure {
     const section = Object.assign(node('section', '', 'geld-provider-review__section'), { open: false });
@@ -471,6 +478,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       section.dataset.geldReviewOpen = String(open);
       toggle.setAttribute('aria-expanded', String(open));
       expanded.set(key, open);
+      if (key === 'checks') queueMicrotask(syncNativeChecks);
     };
     Object.defineProperty(section, 'open', {
       get: () => section.dataset.geldReviewOpen === 'true',
@@ -944,6 +952,30 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     if (fix !== null) container.append(commentFixRow(fix, CHAT_FIX_SKIN));
   }
 
+  /** The Reviews row's ⋯: GitHub's "Request a review" for people, with this host's list and request. */
+  function peopleMenu(requests: ProviderReviewerRequests, reviewers: readonly ProviderReviewReviewer[]): HTMLDetailsElement {
+    const menu = rowMenu('Request a review');
+    menu.classList.add('geld-provider-review__request-menu', 'geld-review-tokens', 'geld-primer-bridge');
+    menu.dataset.geldRowMenu = '';
+    menu.querySelector('.geld-provider-review__menu-list')?.remove();
+    const standing = reviewers.map((reviewer) => {
+      const verdict = reviewer.state === 'approved' || reviewer.state === 'changes_requested' || reviewer.state === 'commented' ? reviewer.state : null;
+      const awaiting = reviewer.state === 'pending' || reviewer.reviewRequest === 'pending';
+      const asked = input.reviewers?.some((entry) => entry.author.id === reviewer.author.id) === true;
+      return { login: reviewer.author.login, avatar: '', ...personStanding(verdict, awaiting), reviewed: verdict !== null, askable: requests.reask || !asked };
+    });
+    reviewersMenu({
+      hostName: requests.hostName,
+      standing,
+      loadCandidates: requests.loadCandidates,
+      request: (users) => requests.request(users),
+      onClosed: () => undefined,
+      button: 'geld-provider-toggle',
+      primary: 'geld-provider-toggle geld-provider-toggle--primary',
+    }, menu);
+    return menu;
+  }
+
   function reviewStandings(): HTMLElement {
     const reviewers = (input.reviewers ?? []).filter(reviewer => !automatedAuthor(reviewer.author));
     for (const item of items) {
@@ -959,7 +991,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     preview.setAttribute('aria-label', summary.label);
     if (summary.coverage !== 'complete' || (reviewers?.length ?? 0) === 0) preview.append(node('span', summary.label.replace(/^Reviews(?: · )?/, ''), 'geld-provider-review__muted'));
     summaryElement?.append(preview);
-    if (options.reviewerControls?.available === true) {
+    if (options.reviewerRequests !== undefined) section.append(peopleMenu(options.reviewerRequests, reviewers));
+    else if (options.reviewerControls?.available === true) {
       const controls = node('div', '', 'geld-provider-review__source-actions');
       const button = node('button', 'Reviewer controls');
       button.type = 'button';
@@ -2016,7 +2049,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const common = [route.href, (options.agentNotes ?? []).map(note => [note.id, note.signature]), options.comments, options.events, options.references, options.complete, options.unavailable, options.suggestedFixes, options.reviewGrouping, options.hasViewChoice, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], triageOption === undefined ? null : triageOption.signature, options.identifyReviewer?.choices, requestSignature, commentSignatures, nativeSignatures, eventSignatures, actionSignatures, derived, options.onOpenSettings !== undefined, options.onGrouping !== undefined, options.renderComment !== undefined];
     const conversationData = (value: ProviderReviewInput | undefined): unknown => value === undefined ? null : [value.subject, value.threads, value.bots, value.complete, value.closed];
     const conversationSignature = JSON.stringify([common, conversationData(input), conversationData(options.sourceInput)]);
-    const signature = JSON.stringify([common, input, options.sourceInput, options.reviewerControls?.available, options.approvalsRequired, options.approvalsLeft, options.requirements, options.deployments]);
+    const signature = JSON.stringify([common, input, options.sourceInput, options.reviewerControls?.available, options.reviewerRequests?.hostName, options.approvalsRequired, options.approvalsLeft, options.requirements, options.deployments]);
     if (signature === lastSignature) {
       syncUpdating();syncTimes();refreshComments();releaseHiddenFocus();
       return;
@@ -2024,7 +2057,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     lastSignature = signature;
     const statusSignatures = new Map([
       ['bots', JSON.stringify(input.reviewers)],
-      ['reviewers', JSON.stringify([input.reviewers, options.reviewerControls?.available, options.approvalsRequired, options.approvalsLeft])],
+      ['reviewers', JSON.stringify([input.reviewers, options.reviewerControls?.available, options.reviewerRequests?.hostName, options.approvalsRequired, options.approvalsLeft])],
       ['reports', JSON.stringify(input.checks ?? null)],
       ['checks', JSON.stringify([input.checks, input.checksCoverage, options.requirements ?? null])],
       ['deployments', JSON.stringify(options.deployments ?? null)],
@@ -2338,7 +2371,21 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     }
   }
 
-  render();
+  /** The host's own CI section in the open CI row, sent home whenever the row closes or is drawn again. */
+  function syncNativeChecks(): void {
+    if (destroyed) return;
+    const section = [...panel.querySelectorAll<ReviewDisclosure>('[data-geld-review-key]')].find((each) => each.dataset.geldReviewKey === 'checks');
+    const slot = section?.open === true ? section.querySelector<HTMLElement>('[data-geld-ci-checks]') : null;
+    nativeChecks.sync(slot ?? null, slot === null || slot === undefined ? null : options.nativeChecks?.() ?? null);
+  }
+  const nativeChecks = new NativeChecksLoan(() => syncNativeChecks());
+
+  const draw = (): void => {
+    nativeChecks.return();
+    render();
+    syncNativeChecks();
+  };
+  draw();
   return {
     element: panel,
     update(nextInput, nextOptions = options) {
@@ -2347,13 +2394,15 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       input = nextInput;
       options = nextOptions;
       if (renderHold.held()) return;
-      render();
+      draw();
     },
     suspend() {
       if (destroyed) return;
+      nativeChecks.return();
       panel.inert = true;panel.hidden = true;disposeComments();lastSignature = '';lastConversationSignature = '';
     },
     destroy() {
+      nativeChecks.return();
       destroyed = true;
       renderHold.dispose();
       summaryPreviews.destroy();

@@ -30,9 +30,13 @@ import { createGitLabWholeTestAdapter } from './whole-test-context';
 import { GitLabNativeWhitespace } from './native-whitespace';
 import { createGitLabDiffSyntax } from './diff-syntax';
 import { postGitLabComment } from './post-comment';
+import { gitLabReviewerRequests } from './reviewer-requests';
+import { gitLabNativeChecks } from './native-checks';
 
 export const gitlabAdapter: ProviderAdapter = {
   id: 'gitlab',
+  reviewerRequests: (subject, doc) => (gitLabReviewIdentity(doc)?.startsWith('user:') === true ? gitLabReviewerRequests(subject, doc) : null),
+  nativeChecks: gitLabNativeChecks,
   postComment: (subject, text) => postGitLabComment(subject, text),
   viewerAuthorId: (doc) => { const identity = gitLabReviewIdentity(doc);return identity?.startsWith('user:') === true ? identity.slice(5) : null; },
   attachmentLink: gitLabAttachmentLink,
