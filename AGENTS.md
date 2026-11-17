@@ -412,6 +412,7 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   closing it calls `onRequestMenuClosed` → `reapplySoon`, so whatever changed meanwhile renders then.
   The same holds for every menu of the panel's own (`menuHoldsRebuild`, `details.geld-review__menu`): a row's ⋯, the triage's Apply and Fix with menus, grouping and View, as for edit histories, since a background update (a check ticking, a bot rewriting its comment) rebuilt the panel and closed the menu under the reader.
   Its closing asks for the pass that waited (the panel's capturing `toggle` listener).
+  The open slot's own re-render waits for them too (`readySlotForRender`), since sending its loans home and drawing it again would close a nested row's ⋯.
   The hidden-people menu is left out: its Show and Hide redraw the digest with it open, and it reopens itself.
   The Review bots row therefore shows on every PR conversation, with "No reviews yet" until a verdict exists.
   An open item's notes link to each source bot's run summary (`bots[].sourceId`).
