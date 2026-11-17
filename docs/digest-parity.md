@@ -143,7 +143,7 @@ Decision needed: keep Merge checks as a provider row, or fold it into CI and the
 
 | GitHub feature | GitLab | Bitbucket | Source | Slot |
 | --- | --- | --- | --- | --- |
-| CI row shows the host's own checks section | missing: re-rendered from jobs (`checksSection`) | missing: re-rendered from statuses | GL `/pipelines`, jobs · BB `/statuses` | **slot**: GitLab's pipeline mini-graph or merge widget pipeline section, Bitbucket's builds panel |
+| CI row shows the host's own checks section | match: GitLab's pipeline section (status, pipeline link, stage mini-graph and its menus) is lent to the open CI row, moved never cloned, and sent home on close (`providers/native-checks.ts`, `gitlab/native-checks.ts`); Geld's list stands while GitLab is still checking the pipeline | missing: re-rendered from statuses (Bitbucket's builds UI could not be inspected from this environment) | GL `/pipelines`, jobs · BB `/statuses` | **slot**: GitLab's pipeline mini-graph or merge widget pipeline section, Bitbucket's builds panel |
 | Status ring and counts | partial: counts by state with host icons, no ring | partial: same | — | — |
 | Workflows awaiting approval ("Run") | n/a as such; GL manual jobs and blocked pipelines are the nearest | n/a | GL jobs `manual` | — |
 | Previews pills, links, last successful | partial: `previewsSection`, shared parsers since #561 | partial: same | comment bodies | data |

@@ -244,6 +244,8 @@ export interface ProviderAdapter {
    * which keeps everyone already asked. Null where the reader cannot.
    */
   reviewerRequests?(subject: ProviderReviewSubject, doc: Document): ProviderReviewerRequests | null;
+  /** The host's own CI section, for the CI row to show while it is open (`native-checks.ts`). */
+  nativeChecks?(doc: Document): HTMLElement | null;
   /** Post a top-level comment on the review as the reader (an agent's command): whether the host took it. */
   postComment?(subject: ProviderReviewSubject, text: string): Promise<boolean>;
   /** The signed-in reader's native account id, as review authors carry it; null when signed out or unknown. */

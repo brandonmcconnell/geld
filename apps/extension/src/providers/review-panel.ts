@@ -7,6 +7,7 @@ import type { ChatFixThreadLink } from '../review/chat-fix-controller';
 import { missingToolHelp } from '../review/triage-card';
 import { personStanding, reviewersMenu } from '../review/reviewers-menu';
 import type { ProviderReviewerRequests } from './types';
+import { NativeChecksLoan } from './native-checks';
 import { absoluteTimeText, relativeTimeText } from '../review/time';
 import { settleToggledRow, stickyBarsBottom } from '../review/row-scroll';
 import { watchRenderHold } from '../review/render-hold';
@@ -110,6 +111,8 @@ export interface ProviderReviewPanelOptions {
 
   readonly reviewerControls?: ProviderReviewSourceAction;
   readonly botRequests?: readonly ProviderBotRequest[];
+  /** The host's own CI section, lent to the CI row while it is open (`native-checks.ts`); null while the host shows none. */
+  readonly nativeChecks?: () => HTMLElement | null;
   /** Who the reader may ask to review, and the request (`review/reviewers-menu.ts`): the Reviews row's ⋯. */
   readonly reviewerRequests?: ProviderReviewerRequests;
   readonly updating?: boolean;
@@ -451,7 +454,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   doc.addEventListener('pointerdown', dismissMenus);
   // A background update (a check ticking, a bot rewriting its comment) waits while the reader has a menu open,
   // is pressing or typing in the digest, as on GitHub, and draws once they are done.
-  const renderHold = watchRenderHold(panel, { menus: HELD_MENUS, onRelease: () => { if (!destroyed && !panel.hidden) render(); } });
+  const renderHold = watchRenderHold(panel, { menus: HELD_MENUS, onRelease: () => { if (!destroyed && !panel.hidden) draw(); } });
 
   function disclosure(key: string, label: string, initiallyOpen: boolean): ReviewDisclosure {
     const section = Object.assign(node('section', '', 'geld-provider-review__section'), { open: false });
@@ -475,6 +478,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       section.dataset.geldReviewOpen = String(open);
       toggle.setAttribute('aria-expanded', String(open));
       expanded.set(key, open);
+      if (key === 'checks') queueMicrotask(syncNativeChecks);
     };
     Object.defineProperty(section, 'open', {
       get: () => section.dataset.geldReviewOpen === 'true',
@@ -2367,7 +2371,21 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     }
   }
 
-  render();
+  /** The host's own CI section in the open CI row, sent home whenever the row closes or is drawn again. */
+  function syncNativeChecks(): void {
+    if (destroyed) return;
+    const section = [...panel.querySelectorAll<ReviewDisclosure>('[data-geld-review-key]')].find((each) => each.dataset.geldReviewKey === 'checks');
+    const slot = section?.open === true ? section.querySelector<HTMLElement>('[data-geld-ci-checks]') : null;
+    nativeChecks.sync(slot ?? null, slot === null || slot === undefined ? null : options.nativeChecks?.() ?? null);
+  }
+  const nativeChecks = new NativeChecksLoan(() => syncNativeChecks());
+
+  const draw = (): void => {
+    nativeChecks.return();
+    render();
+    syncNativeChecks();
+  };
+  draw();
   return {
     element: panel,
     update(nextInput, nextOptions = options) {
@@ -2376,13 +2394,15 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       input = nextInput;
       options = nextOptions;
       if (renderHold.held()) return;
-      render();
+      draw();
     },
     suspend() {
       if (destroyed) return;
+      nativeChecks.return();
       panel.inert = true;panel.hidden = true;disposeComments();lastSignature = '';lastConversationSignature = '';
     },
     destroy() {
+      nativeChecks.return();
       destroyed = true;
       renderHold.dispose();
       summaryPreviews.destroy();

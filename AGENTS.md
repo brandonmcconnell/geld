@@ -4171,6 +4171,10 @@ The Reviews row's ⋯ is GitHub's "Request a review" for people on every host (`
 GitLab lists the project's members (`/users`), adds new reviewers by writing `reviewer_ids` (the whole set, read afresh) and asks a reviewer again with `mergeRequestReviewerRereview` (`gitlab/reviewer-requests.ts`).
 Bitbucket lists the workspace's members and writes the pull request's whole reviewer set back with its title, and has no re-request, so a reviewer already asked is listed and not ticked (`bitbucket/reviewer-requests.ts`).
 Both writes were checked only against mocked answers.
+**GitLab's own pipeline section stands in the open CI row** (`providers/native-checks.ts`, `gitlab/native-checks.ts`), as GitHub's checks section does: the merge widget's `[data-testid="pipeline-container"] > .mr-widget-section`, once it shows a pipeline, is moved (`moveNode`, never cloned) into a holder in the row and goes home before every redraw, on close and on teardown, its place kept by a comment.
+The section's first child is lent rather than the container, since Vue anchors a sibling's insertion on the node beside it, and a node Vue replaces while away lands in the holder and goes home with it.
+Verified live on gitlab-org/cli!4463 (Nov 2026, signed out): a stage menu opened from the moved section loaded its jobs, GitLab kept polling, no page errors, and the section worked at home after its return.
+Bitbucket's builds UI did not render in the environment this was built in, so its CI row keeps Geld's list.
 GitLab and Bitbucket show one Checks row: its preview leads with the merge checks ("3/4 merge checks", in the worst rule's state) and then the CI tally, and it opens to Merge checks above CI.
 Long rule names stay inside the row, never in its label.
 The inline combined view uses the Geld and provider marks with a plus sign and an accessible full label, while its View menu option also spells out Digest and Timeline.

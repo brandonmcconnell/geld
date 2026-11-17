@@ -272,6 +272,7 @@ export class ProviderConversation {
           return JSON.stringify(latest.bots) === JSON.stringify(native.bots);
         }).filter((request) => !native.bots?.some((bot) => bot.id === request.botId && people.people.some((person) => person.id === bot.authorId && !person.shown))) ?? [],
         references,
+        ...(this.adapter.nativeChecks === undefined ? {} : { nativeChecks: (): HTMLElement | null => this.adapter.nativeChecks?.(document) ?? null }),
         ...(() => {
           const requests = this.adapter.reviewerRequests?.(input.subject, document) ?? null;
           if (requests === null) return {};
