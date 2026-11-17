@@ -145,6 +145,8 @@ export interface TriageView {
   readonly resolves: boolean;
   /** The repository's config is still being read, so whether Apply resolves is not known yet: Apply waits. */
   readonly policyPending: boolean;
+  /** Why this host cannot apply a fix from here, when it cannot: Apply stays, greyed out, and says so. */
+  readonly applyBlocked?: string;
 }
 
 
@@ -329,8 +331,8 @@ function bulkActions(triage: TriageView, handlers: TriageHandlers): HTMLElement 
   discard.addEventListener('click', () => handlers.onDiscardAll(open.map((fix) => fix.key)));
   const what = triage.resolves ? 'Post each fix as a suggestion, commit them together, and resolve their threads' : 'Post each fix as a suggestion and commit them together';
   const left = overlapping.length === 0 ? '' : `. ${overlapping.length === 1 ? 'One fix overlaps' : `${overlapping.length} fixes overlap`} another’s lines and waits for the next triage`;
-  const title = triage.policyPending ? 'Reading the repository’s Geld config first' : ready.length === 0 ? 'No fix here fits the head commit. Triage again first.' : `${what} (${ready.length} ${ready.length === 1 ? 'fix' : 'fixes'})${left}`;
-  const fixAll = createElement('button', { type: 'button', class: `${skin.primary} ${PANEL_CLASS}__triage-apply-all`, title, [ATTR_FOCUS]: 'fix-all', ...(applying || ready.length === 0 || triage.policyPending ? { disabled: '' } : {}), ...(applying ? { 'aria-busy': 'true' } : {}) }, [
+  const title = triage.applyBlocked !== undefined ? triage.applyBlocked : triage.policyPending ? 'Reading the repository’s Geld config first' : ready.length === 0 ? 'No fix here fits the head commit. Triage again first.' : `${what} (${ready.length} ${ready.length === 1 ? 'fix' : 'fixes'})${left}`;
+  const fixAll = createElement('button', { type: 'button', class: `${skin.primary} ${PANEL_CLASS}__triage-apply-all`, title, [ATTR_FOCUS]: 'fix-all', ...(applying || ready.length === 0 || triage.policyPending || triage.applyBlocked !== undefined ? { disabled: '' } : {}), ...(applying ? { 'aria-busy': 'true' } : {}) }, [
     applying ? 'Applying…' : 'Apply all',
     ...(ready.length > 0 && !applying ? [createElement('span', { class: `${skin.counter} ${PANEL_CLASS}__triage-count` }, [String(ready.length)])] : []),
   ]);
@@ -427,7 +429,7 @@ function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: TriageH
     const busy = fix.busy !== null;
     const discard = createElement('button', { type: 'button', class: skin.button, [ATTR_FOCUS]: `fix-discard:${fix.key}`, ...(busy ? { disabled: '' } : {}) }, [icon(ICON_X), 'Discard']);
     discard.addEventListener('click', () => handlers.onDiscardSuggestion(fix.key));
-    const commit = createElement('button', { type: 'button', class: skin.primary, title: fixWhy(fix, triage), [ATTR_FOCUS]: `fix-commit:${fix.key}`, ...(busy || !fix.current || triage.policyPending ? { disabled: '' } : {}), ...(fix.busy === 'fix' ? { 'aria-busy': 'true' } : {}) }, [fix.busy === 'fix' ? 'Applying…' : 'Apply']);
+    const commit = createElement('button', { type: 'button', class: skin.primary, title: fixWhy(fix, triage), [ATTR_FOCUS]: `fix-commit:${fix.key}`, ...(busy || !fix.current || triage.policyPending || triage.applyBlocked !== undefined ? { disabled: '' } : {}), ...(fix.busy === 'fix' ? { 'aria-busy': 'true' } : {}) }, [fix.busy === 'fix' ? 'Applying…' : 'Apply']);
     commit.addEventListener('click', () => handlers.onApplySuggestion(fix.key));
     body.append(createElement('div', { class: `${PANEL_CLASS}__triage-fix-actions` }, [discard, commit]));
   }
@@ -623,6 +625,7 @@ export function missingToolHelp(tool: MissingTool, handlers: TriageHandlers, clo
 
 /** What Apply does, for its tooltip: post the suggestion, commit it, and resolve the threads it answers when that is on. */
 function fixWhy(fix: TriageSuggestionView, triage: TriageView): string {
+  if (triage.applyBlocked !== undefined) return triage.applyBlocked;
   if (!fix.current) return `Triage again first. ${behindWords(fix)}`;
   if (fix.busy === 'writing') return 'Being written afresh from its chat';
   if (triage.policyPending) return 'Reading the repository’s Geld config first';
@@ -631,7 +634,7 @@ function fixWhy(fix: TriageSuggestionView, triage: TriageView): string {
 }
 
 function applyControl(fix: TriageSuggestionView, triage: TriageView, handlers: TriageHandlers): HTMLElement {
-  const blocked = fix.busy !== null || !fix.current || triage.policyPending;
+  const blocked = fix.busy !== null || !fix.current || triage.policyPending || triage.applyBlocked !== undefined;
   const main = createElement('button', { type: 'button', class: skin.button, title: fixWhy(fix, triage), [ATTR_FOCUS]: `fix-head-apply:${fix.key}`, ...(blocked ? { disabled: '' } : {}), ...(fix.busy === 'fix' ? { 'aria-busy': 'true' } : {}) }, [
     icon(ICON_CHECK),
     createElement('span', { class: `${PANEL_CLASS}__split-label` }, [fix.busy === 'fix' ? 'Applying…' : 'Apply']),

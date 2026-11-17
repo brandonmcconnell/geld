@@ -10,7 +10,7 @@ import { describeBitbucketPage } from './page';
 import { bitbucketReferenceAnchor, readBitbucketReferences } from './references';
 
 vi.mock('wxt/browser', () => ({ browser: { runtime: { sendMessage: vi.fn(() => { throw new Error('Unexpected transport.'); }) } } }));
-vi.mock('wxt/utils/storage', () => ({ storage: { defineItem: () => ({ getValue: async () => ({}), setValue: async () => undefined }) } }));
+vi.mock('wxt/utils/storage', () => ({ storage: { defineItem: () => ({ getValue: async () => ({}), setValue: async () => undefined, watch: () => () => undefined }) } }));
 
 const url = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/27';
 const target = 'https://bitbucket.org/atlassian/bitbucket-upload-file/pull-requests/22';

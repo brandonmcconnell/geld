@@ -132,6 +132,20 @@ aiKeyItem.watch(() => {
  * then, so the pass can re-apply with the words); synchronous callers see the
  * previous page's words cleared at once.
  */
+/** Leave the review the module points at: an answer still on its way is dropped, and the next review loads afresh. */
+export function leaveAiPage(): void {
+  if (runKey === null) return;
+  runKey = null;
+  visitId += 1;
+  rewrites.clear();
+  summary = undefined;
+  seen.clear();
+  suggestions.clear();
+  askedThreads.clear();
+  lastRun = null;
+  inFlight.clear();
+}
+
 export function loadAiForPage(key: string, onLoaded: () => void): void {
   if (runKey === key) return;
   runKey = key;

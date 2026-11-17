@@ -89,6 +89,21 @@ export class ProviderFileFlow {
     this.review = '';
   }
 
+  /**
+   * A changed file's lines at the verified head, read through the host's own source reader (its admission and
+   * cooldowns), or null when it cannot be had. Flow reads imports from it, and the AI triage the lines a fix rewrites.
+   */
+  async headLines(path: string, signal: AbortSignal = new AbortController().signal): Promise<readonly string[] | null> {
+    const page = this.page;
+    const read = this.adapter.wholeTests?.readSource;
+    const result = this.result;
+    if (page === null || read === undefined || result === null || !this.current(page)) return null;
+    const source = providerFlowRevision(page, result, path);
+    if (source === null) return null;
+    const body = await read(source, signal, () => this.current(page) && !signal.aborted);
+    return body.lines;
+  }
+
   private current(page: ProviderReviewPage): boolean {
     const active = this.adapter.describe(new URL(window.location.href), document);
     const known = this.page;
@@ -106,13 +121,8 @@ export class ProviderFileFlow {
       concurrency: { prefetch: 0, open: 1 },
       maxReads: MAX_READS,
       read: async (path, signal) => {
-        const read = this.adapter.wholeTests?.readSource;
-        const result = this.result;
-        if (read === undefined || result === null || !this.current(page)) return null;
-        const source = providerFlowRevision(page, result, path);
-        if (source === null) return null;
-        const body = await read(source, signal, () => this.current(page) && !signal.aborted);
-        return body.lines.join('\n');
+        const lines = await this.headLines(path, signal);
+        return lines === null ? null : lines.join('\n');
       },
       filesHref: () => new URL(page.diffPageUrl, window.location.href).href,
       fileHref: (path) => {

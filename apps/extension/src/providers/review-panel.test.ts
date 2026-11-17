@@ -1,8 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildProviderReviewItems, providerReviewKey } from '@geld/review';
-import type { ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, ProviderReviewThread } from '@geld/review';
-import type { ProviderAiState } from './ai';
+import { buildProviderReviewItems } from '@geld/review';
+import type { ReviewItem, ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, ProviderReviewThread } from '@geld/review';
 import type { ProviderCommentRenderContext } from './comment-render';
 import { renderProviderReviewPanel } from './review-panel';
 import type { ProviderReviewAuthorPresentation, ProviderReviewPanelEvent, ProviderSourceActionContext } from './review-panel';
@@ -866,27 +865,20 @@ describe('provider conversation digest', () => {
     expect(panel.element.querySelector('.geld-provider-reviewer-identity')).toBeNull();
   });
 
-  it('runs and cancels AI only from controls and keeps original human text alongside transformed findings', () => {
+  it('places the shared triage control in the Geld row and its card under the row, keeping original text', () => {
     const original = input([thread('a')]);
-    const base = buildProviderReviewItems(original);
-    const run = vi.fn();
-    const cancel = vi.fn();
-    const state: ProviderAiState = { kind: 'ready', key: providerReviewKey(original.subject), pending: new Set(), stale: false, summary: { tldr: '<script>plain text</script>', updatedAt: '2026-11-01T13:00:00Z', forItems: base.map((item) => item.id) } };
-    const options = { ai: { enabled: true, state, run, cancel }, transformItems: (items: typeof base) => items.map((item) => ({ ...item, title: 'AI consolidated title', context: 'Additional context', rewritten: true })) };
+    const control = document.createElement('button');control.dataset.geldFocus = 'ai';control.textContent = 'Triage with AI';
+    const card = document.createElement('div');card.className = 'geld-provider-triage';card.textContent = '<script>plain text</script>';
+    const options = {
+      transformItems: (items: readonly ReviewItem[]) => items.map((item) => ({ ...item, title: 'AI consolidated title', rewritten: true })),
+      triage: { signature: 1, summary: 'TL;DR', button: () => control, card: () => card },
+    } satisfies Parameters<typeof renderProviderReviewPanel>[2];
     const panel = renderProviderReviewPanel(host(), original, options);
-    expect(run).not.toHaveBeenCalled();
-    expect(cancel).not.toHaveBeenCalled();
+    expect(panel.element.querySelector('.geld-provider-review__tools [data-geld-focus="ai"]')).toBe(control);
+    expect(panel.element.querySelector('.geld-provider-triage')).toBe(card);
+    expect(panel.element.querySelector('script')).toBeNull();
     expect(panel.element.querySelector('[data-geld-item] > [data-geld-review-toggle]')?.textContent).toContain('AI consolidated title');
     expect(panel.element.querySelector('.geld-provider-review__body')?.textContent).toBe(comment('1').body);
-    expect(panel.element.querySelector('[data-geld-ai-summary]')?.textContent).toContain('<script>plain text</script>');
-    expect(panel.element.querySelector('script')).toBeNull();
-    panel.element.querySelector<HTMLButtonElement>('[data-geld-ai-run]')?.click();
-    expect(run).toHaveBeenCalledTimes(1);
-    panel.update(original, { ...options, ai: { ...options.ai, state: { ...state, kind: 'running', pending: new Set(['tldr']) } } });
-    expect(panel.element.querySelector<HTMLButtonElement>('[data-geld-ai-run]')?.disabled).toBe(true);
-    panel.element.querySelector<HTMLButtonElement>('[data-geld-ai-cancel]')?.click();
-    expect(cancel).toHaveBeenCalledTimes(1);
-    expect(run).toHaveBeenCalledTimes(1);
   });
 
   it('keeps edited human comments in their creation round and seats new comments after the next native push', () => {
@@ -1337,21 +1329,6 @@ it('binds every batch-history disclosure to its current content and label after 
     expect(document.getElementById(content?.getAttribute('aria-labelledby') ?? '')).toBe(button);
   }
   panel.destroy();
-});
-
-
-describe('empty provider triage control', () => {
-  it('explains why triage is unavailable and cannot start a request', () => {
-    const run = vi.fn();
-    const panel = renderProviderReviewPanel(host(), input([]), { ai: { enabled: true, state: { kind: 'idle', key: providerReviewKey(subject), pending: new Set(), stale: false }, run, cancel: vi.fn() } });
-    const button = panel.element.querySelector<HTMLButtonElement>('[data-geld-ai-run]');
-    expect(button?.textContent).toBe('Nothing to triage');
-    expect(button?.disabled).toBe(true);
-    expect(button?.title).toContain('no open review threads');
-    button?.click();
-    expect(run).not.toHaveBeenCalled();
-    panel.destroy();
-  });
 });
 
 

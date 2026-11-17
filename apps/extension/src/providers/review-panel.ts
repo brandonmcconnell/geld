@@ -5,7 +5,6 @@ import type { ProviderCommentRenderContext } from './comment-render';
 import { botAppAvatar, botHealth, botById, digestFromProvider, reviewsSummary, buildProviderBotVerdicts, buildProviderReviewItems, CHECK_REPORTERS, fixVisible, isOpenStatus, latestPreviews, latestReports, newestProviderBotSummary, parseInlineMarkdown, providerBotSupport, providerReviewKey, providerReviewUrl, readCheckReport, renderProviderItemMarkdown, sourceLink, threadCounts } from '@geld/review';
 import type { ReviewsSummary, BotVerdictRecord, ProviderPublicationRead, ProviderReviewAuthor, ProviderReviewComment, ProviderReviewInput, ProviderReviewReviewer, RawCheckRun, ReviewItem, ReviewItemStatus, ReviewerState } from '@geld/review';
 import type { RepositoryIdentity } from '@geld/core';
-import type { ProviderAiState } from './ai';
 import { captureProviderSourceSelection } from './source-selection';
 import { ProviderSummaryPreviews } from './summary-preview';
 import type { ProviderSourceActionContext, ProviderSourceSelection } from './source-selection';
@@ -121,11 +120,12 @@ export interface ProviderReviewPanelOptions {
     readonly error?: string;
     readonly set: (item: ReviewItem, reviewed: boolean) => void;
   };
-  readonly ai?: {
-    readonly enabled: boolean;
-    readonly state: ProviderAiState;
-    readonly run: () => void;
-    readonly cancel: () => void;
+  /** The shared AI triage (`providers/triage.ts`): its control for the Geld row and its card under the row. */
+  readonly triage?: {
+    readonly signature: unknown;
+    readonly summary?: string;
+    readonly button: () => HTMLElement | null;
+    readonly card: () => HTMLElement | null;
   };
   readonly identifyReviewer?: {
     readonly repository: RepositoryIdentity;
@@ -1756,8 +1756,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       lines.push(reviews.label);
     }
     for (const reviewer of input.reviewers ?? []) lines.push(`- ${reviewer.author.login}: ${reviewerLabel(reviewer)}`);
-    const summary = options.ai?.enabled === true && options.ai.state.key === identity ? options.ai.state.summary : undefined;
-    if (summary !== undefined) lines.push('', `AI summary: ${summary.tldr}`, '');
+    const summary = options.triage?.summary;
+    if (summary !== undefined) lines.push('', `AI summary: ${summary}`, '');
     for (const bot of bots) lines.push(`- ${botById(bot.id)?.title ?? bot.id}: ${verdictLabel(bot)}`);
     for (const requirement of options.requirements ?? []) lines.push(`- Merge requirement: ${requirement.label}: ${REQUIREMENT_STATE[requirement.state]}`);
     const coverage = providerChecksCoverage(input);
@@ -1837,7 +1837,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const at = Date.parse(time.dateTime);
       if (Number.isFinite(at) && time.textContent?.trim()) nativeTimes.set(at, time.textContent.trim());
     }
-    const ai = options.ai;
+    const triageOption = options.triage;
     authorPresentations.clear();
     const readPresentation = options.authorPresentation;
     if (readPresentation !== undefined) for (const comment of [...input.threads.flatMap((thread) => thread.comments), ...(options.comments ?? [])]) {
@@ -1873,7 +1873,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     let derived: readonly unknown[] | null = null;
     try { derived = [buildProviderBotVerdicts(input, options.comments ?? []), options.transformItems?.(buildProviderReviewItems(input))]; } catch { /* Invalid input follows the unavailable rendering path. */ }
     const route = new URL(doc.URL);route.hash = '';
-    const common = [route.href, (options.agentNotes ?? []).map(note => [note.id, note.signature]), options.comments, options.events, options.references, options.complete, options.unavailable, options.suggestedFixes, options.reviewGrouping, options.hasViewChoice, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], ai === undefined ? null : [ai.enabled, ai.state.kind, ai.state.key, ai.state.stale, ai.state.summary, ai.state.ranAt, ai.state.error, [...ai.state.pending]], options.identifyReviewer?.choices, requestSignature, commentSignatures, nativeSignatures, eventSignatures, actionSignatures, derived, options.onOpenSettings !== undefined, options.onGrouping !== undefined, options.renderComment !== undefined];
+    const common = [route.href, (options.agentNotes ?? []).map(note => [note.id, note.signature]), options.comments, options.events, options.references, options.complete, options.unavailable, options.suggestedFixes, options.reviewGrouping, options.hasViewChoice, options.originalConversation?.shown, publicationSignature, [...authorPresentations], options.localReviewed === undefined ? null : [[...options.localReviewed.ids], [...options.localReviewed.pending], options.localReviewed.error], triageOption === undefined ? null : triageOption.signature, options.identifyReviewer?.choices, requestSignature, commentSignatures, nativeSignatures, eventSignatures, actionSignatures, derived, options.onOpenSettings !== undefined, options.onGrouping !== undefined, options.renderComment !== undefined];
     const conversationData = (value: ProviderReviewInput | undefined): unknown => value === undefined ? null : [value.subject, value.threads, value.bots, value.complete, value.closed];
     const conversationSignature = JSON.stringify([common, conversationData(input), conversationData(options.sourceInput)]);
     const signature = JSON.stringify([common, input, options.sourceInput, options.reviewerControls?.available, options.approvalsRequired, options.approvalsLeft, options.requirements, options.deployments]);
@@ -1936,7 +1936,6 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     }
     if (identity !== key) { expanded.clear(); touched.clear(); sourceDetails.clear(); }
     identity = key;
-    const activeAi = ai?.state.key === key ? ai : undefined;
     panel.dataset.provider = input.subject.provider;
     panel.dataset.geldReviewHead = input.subject.headSha;
     panel.dataset.state = (options.complete ?? input.complete) === false || (options.unavailable?.length ?? 0) > 0 ? 'partial' : 'ready';
@@ -2009,26 +2008,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       });
       tools.append(settings, status);
     }
-    if (activeAi?.enabled === true) {
-      const controls = node('div', '', 'geld-provider-review__source-actions');
-      const hasOpenItems = items.some((item) => isOpenStatus(item.status));
-      const triage = node('button', !hasOpenItems ? 'Nothing to triage' : activeAi.state.kind === 'running' ? 'Triaging…' : activeAi.state.kind === 'ready' && !activeAi.state.stale ? 'Triage is current' : 'Triage with AI');
-      triage.type = 'button';
-      triage.dataset.geldAiRun = '';
-      triage.disabled = !hasOpenItems || activeAi.state.kind === 'running';
-      if (!hasOpenItems) triage.title = 'There are no open review threads to triage.';
-      triage.addEventListener('click', () => { if (!destroyed) activeAi.run(); });
-      controls.append(triage);
-      if (activeAi.state.kind === 'running') {
-        const cancel = node('button', 'Cancel AI triage');
-        cancel.type = 'button';
-        cancel.dataset.geldAiCancel = '';
-        cancel.title = 'Stop the remaining triage; the current gateway request may still finish.';
-        cancel.addEventListener('click', () => { if (!destroyed) activeAi.cancel(); });
-        controls.append(cancel);
-      }
-      tools.prepend(controls);
-    }
+    const aiControl = triageOption?.button() ?? null;
+    if (aiControl !== null) tools.prepend(aiControl);
     const children: HTMLElement[] = [header];
     const published = publicationSection();
     if (published !== null) children.push(published);
@@ -2037,17 +2018,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       error.setAttribute('role', 'alert');
       children.push(error);
     }
-    if (activeAi?.enabled === true && activeAi.state.error !== undefined) {
-      const error = node('p', `AI triage: ${activeAi.state.error}`, 'geld-provider-review__unavailable');
-      error.setAttribute('role', 'alert');
-      children.push(error);
-    }
-    if (activeAi?.enabled === true && activeAi.state.summary !== undefined) {
-      const summary = node('p', '', 'geld-provider-review__summary');
-      summary.dataset.geldAiSummary = '';
-      summary.append(node('strong', 'AI summary '), doc.createTextNode(activeAi.state.summary.tldr));
-      children.push(summary);
-    }
+    // The triage card stands right under the Geld row, as on GitHub.
+    const triageCard = triageOption?.card() ?? null;
+    if (triageCard !== null) children.push(triageCard);
     if (panel.dataset.state === 'partial') {
       const unavailable = node('span', 'Partial review', 'geld-provider-review__muted');
       unavailable.title = 'Some review data is unavailable.';
