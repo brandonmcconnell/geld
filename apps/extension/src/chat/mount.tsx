@@ -16,6 +16,8 @@ export interface MountOptions {
   readonly actions: ChatActions;
   /** An error the view could not recover from, reported by the content script, whose error capture this bundle does not share. */
   readonly onError: (error: unknown) => void;
+  /** The host page's own classes for the sidebar: a provider's `geld-primer-bridge`, so the view reads in its colours. */
+  readonly hostClass?: string;
 }
 
 /** Keys typed in the chat stay in it: past the shadow root GitHub's shortcuts see the host, not a field, and act on them. */
@@ -57,7 +59,7 @@ function githubDark(): boolean {
 /** The sidebar's host, docked by the page's stylesheet (`.geld-chat`), with the React view in its shadow root. */
 export function mountChat(options: MountOptions): ChatHost {
   const host = document.createElement('div');
-  host.className = 'geld-chat';
+  host.className = options.hostClass === undefined ? 'geld-chat' : `geld-chat ${options.hostClass}`;
   host.setAttribute(OWN_UI_ATTRIBUTE, '');
   host.setAttribute('role', 'complementary');
   host.setAttribute('aria-label', 'Geld chat');

@@ -180,7 +180,7 @@ Decision needed: keep Merge checks as a provider row, or fold it into CI and the
 | Flow | match: GitHub's dialog (`src/review/flow.ts`) with a provider `FlowHost` | match | — | — |
 | Image gallery and video player | match: GitHub's Ramka gallery and video.js card (`src/ui/`) | match | — | — |
 | PDF viewer | match: GitHub's viewer page and dialog (`ui/attachment-pdf.ts`, `ui/pdf-links.ts`) for uploads and raw files | match: raw files | — | — |
-| Chat sidebar (hidden on GitHub too) | missing | missing | — | — |
+| Chat sidebar (hidden on GitHub too) | match: GitHub's sidebar (`src/review/chat-sidebar.ts`) with a provider context (`providers/chat-context.ts`), behind the same hidden button | match | — | — |
 | View menu and intro | partial: View option, placement above or below | partial: same | — | — |
 | Status pill menu (merge, queue, draft, close, bypass) | partial: opens GitLab's own actions menu | partial: opens Bitbucket's "More actions" | — | the host's menu, acceptable as a slot |
 | Review group (approve, request changes, comment) | match in shape (`renderProviderActionControls`) | match in shape, comment plus verdict hands off to the native writer | — | — |

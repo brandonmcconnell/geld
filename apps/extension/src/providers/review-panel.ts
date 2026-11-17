@@ -1,4 +1,5 @@
 import { providerPreviews, providerPreviewDestination } from './previews';
+import { CHAT_BUTTON_SHOWN } from '../review/chat-button';
 import { commentFixRow, threadFixControl } from '../review/chat-fix';
 import type { ChatFix, ChatFixSkin, CommentFix } from '../review/chat-fix';
 import type { ChatFixThreadLink } from '../review/chat-fix-controller';
@@ -86,6 +87,9 @@ export interface ProviderReviewRequirement {
 }
 
 export interface ProviderReviewPanelOptions {
+  /** The Chat button (shown once `CHAT_BUTTON_SHOWN` is on): open or close the chat sidebar, and load its view ahead. */
+  readonly onChat?: (from: HTMLElement) => void;
+  readonly onChatIntent?: () => void;
   /** A thread's and a comment's Fix, asking the AI triage for a fix (`review/chat-fix-controller.ts`); null where none is offered. */
   readonly chatFix?: {
     readonly thread: (anchor: string) => ChatFix | null;
@@ -2090,6 +2094,18 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       const menu = toolbarMenu('View', 'eye', 'How pull requests look');
       const slot = node('div', '', 'geld-provider-review__menu-list');slot.dataset.geldViewSlot = '';
       menu.append(slot);tools.append(menu);
+    }
+    // GitHub's Chat, hidden on every host until the owner turns it on (`CHAT_BUTTON_SHOWN`).
+    const onChat = options.onChat;
+    if (CHAT_BUTTON_SHOWN && onChat !== undefined) {
+      const chat = node('button', '', 'geld-provider-review__tool');chat.type = 'button';chat.title = 'Chat';chat.setAttribute('aria-label', 'Chat about this review');
+      chat.dataset.geldToolbarControl = 'chat';chat.dataset.geldFocus = 'chat';
+      chat.setAttribute('aria-pressed', String(doc.documentElement.hasAttribute('data-geld-chat-open')));
+      chat.append(digestIcon('comment', doc));
+      chat.addEventListener('pointerenter', () => options.onChatIntent?.());
+      chat.addEventListener('focus', () => options.onChatIntent?.());
+      chat.addEventListener('click', () => onChat(chat));
+      tools.append(chat);
     }
     tools.append(copy);
     if (options.onOpenSettings !== undefined) {

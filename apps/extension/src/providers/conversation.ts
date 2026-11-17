@@ -1,4 +1,6 @@
 import { providerAgentNotes } from './agent-notes';
+import { closeChat, setChatContext, toggleChat, warmChat } from '../review/chat-sidebar';
+import { providerChatContext } from './chat-context';
 import { ProviderDescription } from './description';
 import { renderProviderActionControls } from './action-controls';
 import type { ProviderActionControls } from './action-controls';
@@ -233,6 +235,7 @@ export class ProviderConversation {
       const reviewerControls = snapshot.reviewerControls;
       const viewerId = this.adapter.viewerAuthorId?.(document);
       const chatFix = this.ai.chatFix();
+      setChatContext(providerChatContext(input, buildProviderReviewItems(input), settings, this.services.triage?.pullIntent));
       const options = {
         agentNotes,
         onRevealAgentNote: (note: (typeof agentNotes)[number]): void => {
@@ -342,6 +345,8 @@ export class ProviderConversation {
         ...(snapshot.deployments === undefined ? {} : { deployments: snapshot.deployments }),
         transformItems: (items: readonly ReviewItem[]) => this.ai.items(hidden ? items : publication?.items ?? items).map((item) => hidden ? { ...item, id: originalId(item.id) } : item),
         ...(chatFix === null ? {} : { chatFix }),
+        onChat: (from: HTMLElement) => toggleChat(from),
+        onChatIntent: () => warmChat(),
         triage: {
           signature: this.ai.signature(),
           ...(aiSummary === undefined ? {} : { summary: aiSummary }),
@@ -652,6 +657,7 @@ export class ProviderConversation {
   }
 
   clear(): void {
+    closeChat();
     this.viewControls?.remove(); this.viewControls = null; this.viewSignature = '';
     this.viewFocus = null;
     this.hiddenPeople.clear(); this.shownPeople.clear(); this.related.clear();

@@ -107,8 +107,8 @@ import { closeOverviewChecks, isOverviewPage, OVERVIEW_FOR_YOU, OVERVIEW_ITEM, o
 import { pageFetch } from '../page-fetch';
 import { closeFlow, flowFiles, openFlowDialog } from './flow';
 import type { ChatFile } from '@geld/review';
-import type { ChatPageContext } from './chat-sidebar';
-import { closeChat, setChatContext, syncChatToPage, toggleChat, warmChat } from './chat-sidebar';
+import type { ChatPageContext } from '../../review/chat-sidebar';
+import { closeChat, setChatContext, syncChatToPage, toggleChat, warmChat } from '../../review/chat-sidebar';
 import { countUsage } from '../../lib/usage-count';
 
 const PRODUCER = { kind: 'crawler' as const, version: '0.1.0', ai: false };

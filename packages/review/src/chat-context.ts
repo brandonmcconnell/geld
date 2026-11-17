@@ -27,6 +27,8 @@ export interface PullChatContext {
   readonly description: string;
   readonly findings: readonly ChatFinding[];
   readonly files: readonly ChatFile[];
+  /** Where the review is, for the assistant's words: GitHub's pull request unless a host says otherwise. */
+  readonly host?: { readonly name: string; readonly noun: string };
 }
 
 const DESCRIPTION_CHARS = 6000;
@@ -37,13 +39,15 @@ const cut = (value: string, max: number): string => (value.length > max ? `${val
 
 /** The assistant's instructions with the pull request laid out under them, within a fixed budget. */
 export function assistantSystemPrompt(context: PullChatContext): string {
+  const name = context.host?.name ?? 'GitHub';
+  const noun = context.host?.noun ?? 'pull request';
   const lines = [
-    'You are the Geld review assistant, open beside a GitHub pull request the reader is reviewing.',
-    'Answer what they ask about this pull request: what it changes, what could break, what the review threads want, how to word a comment.',
+    `You are the Geld review assistant, open beside a ${name} ${noun} the reader is reviewing.`,
+    `Answer what they ask about this ${noun}: what it changes, what could break, what the review threads want, how to word a comment.`,
     'Be brief and specific. Use Markdown, with code, paths and identifiers in backticks.',
     'Say plainly when the answer is not in what you were given, rather than guessing at code you cannot see.',
     '',
-    `Pull request: ${context.title}`,
+    `${noun.charAt(0).toUpperCase()}${noun.slice(1)}: ${context.title}`,
     `URL: ${context.url}`,
   ];
   if (context.author !== null) lines.push(`Author: ${context.author}`);
