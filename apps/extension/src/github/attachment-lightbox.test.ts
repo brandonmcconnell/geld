@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { GalleryImage } from './attachment-gallery';
+import type { GalleryImage } from '../ui/attachment-gallery';
 import { applyAttachmentLightbox, removeAttachmentLightbox } from './attachment-lightbox';
 import { blockText } from './review/crawler';
 
@@ -14,7 +14,7 @@ interface Opened {
 
 const gallery = vi.hoisted((): { opened: Opened[] } => ({ opened: [] }));
 
-vi.mock('./attachment-gallery', () => ({
+vi.mock('../ui/attachment-gallery', () => ({
   openAttachmentGallery: (items: readonly GalleryImage[], index: number, onClosed: () => void): (() => void) => {
     const opened: Opened = { items, index, closed: false };
     gallery.opened.push(opened);

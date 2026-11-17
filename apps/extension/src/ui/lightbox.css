@@ -1,0 +1,391 @@
+.markdown-body img[data-geld-lightbox-image] {
+  cursor: zoom-in;
+}
+
+/* Ramka hides the image it morphs from while the gallery is open; its sheet is adopted after ours, hence !important. */
+.markdown-body img[data-geld-lightbox-image][data-morph-target] {
+  opacity: 1 !important;
+}
+
+:is(dialog.geld-lightbox, .geld-lightbox--gallery) {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  width: fit-content;
+  min-width: min(320px, calc(100vw - 32px));
+  height: fit-content;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  color: var(--fgColor-default, #1f2328);
+  background: var(--overlay-bgColor, var(--bgColor-default, #fff));
+  border: var(--borderWidth-thin, 1px) solid var(--borderColor-default, #d1d9e0);
+  border-radius: var(--borderRadius-large, 12px);
+  box-shadow: var(--shadow-floating-large, 0 0 0 1px #d1d9e0, 0 40px 80px 0 #25292e3d);
+  font: 14px/1.5 var(--fontStack-system, sans-serif);
+}
+
+.geld-lightbox::backdrop,
+.geld-lightbox__backdrop {
+  background: var(--overlay-backdrop-bgColor, rgb(31 35 40 / 50%));
+}
+
+/* The gallery's host is a popover only to reach the top layer: no box of its own, its content fixed to the viewport. */
+.geld-lightbox-host {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  color: inherit;
+  background: none;
+  border: 0;
+}
+
+.geld-lightbox__backdrop {
+  position: fixed;
+  inset: 0;
+}
+
+.geld-lightbox__header {
+  /* The image sets the dialog's width, and a long title ellipsizes inside it rather than widening it. */
+  contain: inline-size;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: var(--borderWidth-thin, 1px) solid var(--borderColor-default, #d1d9e0);
+}
+
+.geld-lightbox__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 8px;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+:is(dialog.geld-lightbox[open]:has(.geld-lightbox__stage--large), .geld-lightbox--gallery) {
+  box-sizing: border-box;
+  width: min(1120px, 84vw);
+  min-width: 0;
+  max-width: none;
+  height: min(720px, 80dvh);
+  max-height: none;
+}
+
+.geld-lightbox:is(:has(.geld-lightbox__stage--large), .geld-lightbox--gallery) .geld-lightbox__body {
+  flex: 1;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  place-items: stretch;
+}
+
+.geld-lightbox:is(:has(.geld-lightbox__stage--large), .geld-lightbox--gallery) :is(.geld-lightbox__header, .geld-lightbox__footer) {
+  flex: none;
+}
+
+.geld-lightbox:is(:has(.geld-lightbox__stage--large), .geld-lightbox--gallery) .geld-lightbox__footer {
+  padding: 8px;
+}
+
+.geld-lightbox__stage--large .geld-lightbox__status {
+  box-sizing: border-box;
+  width: min(320px, 100%);
+}
+
+.geld-lightbox__close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--fgColor-muted, #59636e);
+  background: transparent;
+  border: 0;
+  border-radius: var(--borderRadius-medium, 6px);
+  cursor: pointer;
+}
+
+.geld-lightbox__close:hover {
+  color: var(--fgColor-default, #1f2328);
+  background: var(--control-transparent-bgColor-hover, var(--bgColor-neutral-muted, #818b981f));
+}
+
+:is(.geld-lightbox__close, .geld-lightbox__nav, .geld-lightbox__glyph) svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.geld-lightbox__body {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  background: var(--bgColor-muted, #f6f8fa);
+}
+
+.geld-lightbox__stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.geld-lightbox__counter {
+  flex: none;
+  color: var(--fgColor-muted, #59636e);
+  font-variant-numeric: tabular-nums;
+}
+
+.geld-lightbox--gallery .geld-lightbox__body {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+}
+
+.geld-lightbox__slides {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  scrollbar-width: none;
+}
+
+.geld-lightbox__slides::-webkit-scrollbar {
+  display: none;
+}
+
+.geld-lightbox__slide {
+  box-sizing: border-box;
+  flex: 0 0 100%;
+  min-width: 100%;
+  height: 100%;
+  padding: 24px;
+}
+
+.geld-lightbox__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  user-select: none;
+  cursor: zoom-in;
+}
+
+[data-ramka-zoom][data-zoom] .geld-lightbox__image {
+  cursor: grab;
+}
+
+[data-ramka-zoom][data-dragging] .geld-lightbox__image {
+  cursor: grabbing;
+}
+
+.geld-lightbox__slide .geld-lightbox__status {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  height: 100%;
+  align-content: center;
+  margin: auto;
+}
+
+.geld-lightbox__slide .geld-lightbox__status p {
+  margin: 0;
+}
+
+.geld-lightbox__nav {
+  position: absolute;
+  top: 50%;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--fgColor-default, #1f2328);
+  background: var(--button-default-bgColor-rest, #f6f8fa);
+  border: var(--borderWidth-thin, 1px) solid var(--button-default-borderColor-rest, #d1d9e0);
+  border-radius: 50%;
+  box-shadow: var(--shadow-resting-small, 0 1px 1px 0 #1f23280f);
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.geld-lightbox__nav:hover {
+  background: var(--button-default-bgColor-hover, #eff2f5);
+}
+
+.geld-lightbox__nav[data-disabled] {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.geld-lightbox__nav--previous {
+  inset-inline-start: 12px;
+}
+
+.geld-lightbox__nav--next {
+  inset-inline-end: 12px;
+}
+
+.geld-lightbox__nav--previous svg,
+.geld-lightbox__nav--next:dir(rtl) svg {
+  transform: scaleX(-1);
+}
+
+.geld-lightbox__nav--previous:dir(rtl) svg {
+  transform: none;
+}
+
+.geld-lightbox__glyph {
+  display: contents;
+}
+
+.geld-lightbox__status {
+  grid-area: 1 / 1;
+  width: min(320px, calc(100vw - 64px));
+  margin: 0;
+  padding: 16px;
+  color: var(--fgColor-muted, #59636e);
+  text-align: center;
+}
+
+.geld-lightbox [hidden] {
+  display: none;
+}
+
+.geld-lightbox__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 16px;
+  border-top: var(--borderWidth-thin, 1px) solid var(--borderColor-default, #d1d9e0);
+}
+
+.geld-lightbox__zoom {
+  display: flex;
+  flex: none;
+}
+
+.geld-lightbox .geld-lightbox__tool svg {
+  margin: 0;
+}
+
+.geld-lightbox__reset {
+  min-width: 56px;
+  font-variant-numeric: tabular-nums;
+}
+
+.geld-lightbox .geld-lightbox__original {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.geld-lightbox .geld-lightbox__original svg {
+  margin: 0;
+  color: var(--fgColor-muted, #59636e);
+}
+
+.geld-lightbox :focus-visible {
+  outline: 2px solid var(--focus-outlineColor, #0969da);
+  outline-offset: -2px;
+}
+
+/* The card holds focus so the viewer's keys work, and an arrow key makes that focus visible. It is not a control, so no ring. */
+.geld-lightbox.geld-lightbox:is(:focus, :focus-visible) {
+  outline: none;
+}
+
+.geld-lightbox__pdf {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+button.geld-lightbox-trigger {
+  margin: 8px;
+}
+
+.geld-lightbox__stage--video {
+  touch-action: auto;
+}
+
+.geld-lightbox__stage--video .video-js {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  font-size: 13px;
+}
+
+.geld-lightbox__stage--video .vjs-tech {
+  object-fit: contain;
+}
+
+.geld-lightbox__stage--video .video-js .vjs-control-bar {
+  height: 3.25em;
+  background: #161b22;
+}
+
+.geld-lightbox__stage--video .video-js .vjs-progress-control {
+  position: absolute;
+  inset: -.65em .8em auto;
+  width: auto;
+  height: 1.3em;
+}
+
+.geld-lightbox__stage--video .video-js .vjs-time-control {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding-inline: .3em;
+}
+
+.geld-lightbox__stage--video .video-js .vjs-playback-rate {
+  margin-inline-start: auto;
+}
+
+.geld-lightbox__stage--video .vjs-big-play-centered .vjs-big-play-button {
+  width: 1.8em;
+  height: 1.8em;
+  margin: -.9em 0 0 -.9em;
+  border-radius: 50%;
+}
+
+.geld-lightbox__stage--video :is(.vjs-layout-x-small, .vjs-layout-small) button.vjs-control {
+  width: 3em;
+}
+
+.geld-lightbox__stage--video :is(.vjs-layout-x-small, .vjs-layout-small) .vjs-picture-in-picture-control {
+  display: none;
+}
+
+.geld-lightbox__stage--video .video-js:not(.vjs-has-started, .vjs-error) .vjs-control-bar {
+  display: flex;
+  visibility: visible;
+  opacity: 1;
+}
+
+.geld-lightbox__stage--video .video-js .vjs-play-progress,
+.geld-lightbox__stage--video .video-js .vjs-volume-level {
+  background: #58a6ff;
+}
