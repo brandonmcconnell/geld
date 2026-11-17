@@ -9,6 +9,7 @@
  * itself is hidden — its content is this.
  */
 
+import { menusOpen } from '../../review/render-hold';
 import type { DigestView } from '@geld/core';
 import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, RawCheckRun, Report, ReportPart, ReviewItem } from '@geld/review';
 import { botAppAvatar, botById, previewHostById, reportsHealth } from '@geld/review';
@@ -3395,7 +3396,7 @@ const HELD_MENUS = `details.${PANEL_CLASS}__menu:not(.${PANEL_CLASS}__hidden), d
 
 /** Whether one of the panel's own menus is open, which a rebuild would close under the reader: the panel waits for it. */
 export function menuHoldsRebuild(root: ParentNode): boolean {
-  return [...root.querySelectorAll<HTMLDetailsElement>(HELD_MENUS)].some((details) => details.open);
+  return menusOpen(root, HELD_MENUS);
 }
 
 function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOptions): MountedPanel | null {
