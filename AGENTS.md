@@ -911,6 +911,8 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
  The thread model (`ChatTurn`, `AgentLive`) is provider-neutral, so other agents fold in as threads of their own once their APIs can read and continue a conversation.
  The panel reads whether the sidebar is open from `<html data-geld-chat-open>`, never by importing the sidebar: that module pulls in storage items, WXT reads storage as soon as one is defined, and every panel test without the browser stub failed on it.
 - **Flow: the changed files as a diagram of what imports what** (`review/flow.ts`, `@geld/core/file-flow.ts`).
+  One dialog serves every host (`src/review/flow.ts`, its stylesheet `flow.css`): a host hands it a `FlowHost` (how a file is read and linked, the review's words, how many reads may run, its skin) and a `FlowSource`, and GitHub's `github/review/flow.ts` and the providers' `providers/file-flow.ts` are only those adapters.
+  Off GitHub the dialog wears `geld-primer-bridge` (`src/ui/primer-bridge.css`), which points the Primer tokens the shared stylesheets use at the provider's own theme tokens, so the same CSS reads native on GitLab and Bitbucket.
   A "Flow" button (Lucide's `workflow` mark, `ICON_WORKFLOW`;
   Lucide marks are outlines and `svg.geld-lucide` sets `fill: none !important`, since GitHub's `.octicon { fill: currentColor }` otherwise fills their shapes solid) stands in the Geld row just left of the grouping control wherever the digest does (`prOverview`), on every pull request, one file or many: opened before the diff has loaded, the dialog says it is waiting for the diff and draws when the source arrives.
   When the diff cannot be had, the dialog says so in the diagram's place instead of waiting forever (`FlowFailure`, `retriesLater` in diff-source.ts): a failure the diff source still retries says Flow tries again shortly, one it has given up on says why (signed out, a 404, the error) with a Reload button, and an over-20 MB diff says it is too large;
@@ -4037,12 +4039,12 @@ An open finding stays a warning at 5/5, severe open findings are distinct from a
 Provider bot health uses readable labels and native semantic colors, with setup refusals described as unavailable rather than a failed code review.
 The provider digest exposes the shared open-settings message and wraps header controls on narrow pages.
 
-Provider Flow shows changed files and imports with the shared @geld/core graph algorithms, without moving native diff nodes.
+Provider Flow is GitHub's Flow dialog (`src/review/flow.ts`) with a provider `FlowHost`, without moving native diff nodes.
 Surviving source reads start only when the dialog opens and require the exact acquired comparison, full head commit and listed new path.
 Bitbucket Flow follows the explicit source repository from PR metadata, never inferring the target repository for a missing fork identity.
 Source reads reuse the provider admission and cooldown rules, run serially and are bounded to 32 files, 400,000 bytes each and a 15-second per-file deadline.
-Partial inventories and unavailable import sources remain explicit, while removed links come only from the diff's removedImports and a known surviving source or deleted file.
-Category inclusion is local to Flow and never changes the native diff filter, and each card exposes its dependencies as accessible text.
+A partial inventory is said above the diagram, a source that cannot be read draws its card without links as on GitHub, and removed links come only from the diff's removedImports and a known surviving source or deleted file.
+Category inclusion is local to Flow and never changes the native diff filter.
 The GitLab UI public probe checks Flow card counts, category inclusion and focus restoration without treating zero observed edges as proof that every dependency was read.
 
 Provider diff syntax fallback includes plain JavaScript and TypeScript when native token spans have not arrived.

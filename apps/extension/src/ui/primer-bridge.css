@@ -1,0 +1,45 @@
+/*
+ * Geld's shared components (Flow, the gallery, the triage card) are written against GitHub's Primer tokens. On
+ * GitLab and Bitbucket the same component wears `geld-primer-bridge`, which points those tokens at the host's own
+ * through the provider theme (`--geld-provider-*`, set per host in its theme.css), so one stylesheet reads native
+ * on every host. Keep the token names in step with what the shared stylesheets ask for.
+ */
+html[data-geld-provider] .geld-primer-bridge {
+  --fgColor-default: var(--geld-provider-text);
+  --fgColor-muted: var(--geld-provider-text-subtle);
+  --fgColor-accent: var(--geld-provider-link);
+  --fgColor-success: var(--geld-provider-success);
+  --fgColor-danger: var(--geld-provider-danger);
+  --fgColor-attention: var(--geld-provider-warning);
+  --fgColor-done: var(--geld-provider-link);
+  --fgColor-disabled: var(--geld-provider-button-disabled-text);
+  --bgColor-default: var(--geld-provider-bg);
+  --bgColor-muted: var(--geld-provider-bg-subtle);
+  --bgColor-success-muted: color-mix(in srgb, var(--geld-provider-success) 12%, var(--geld-provider-bg));
+  --bgColor-danger-muted: color-mix(in srgb, var(--geld-provider-danger) 12%, var(--geld-provider-bg));
+  --bgColor-attention-muted: color-mix(in srgb, var(--geld-provider-warning) 14%, var(--geld-provider-bg));
+  --bgColor-accent-muted: color-mix(in srgb, var(--geld-provider-link) 12%, var(--geld-provider-bg));
+  --overlay-bgColor: var(--geld-provider-overlay-bg);
+  --overlay-backdrop-bgColor: color-mix(in srgb, var(--geld-provider-text) 45%, transparent);
+  --borderColor-default: var(--geld-provider-border);
+  --borderColor-muted: var(--geld-provider-border);
+  --borderColor-emphasis: var(--geld-provider-text-subtle);
+  --borderColor-accent-emphasis: var(--geld-provider-link);
+  --borderColor-success-muted: color-mix(in srgb, var(--geld-provider-success) 40%, var(--geld-provider-bg));
+  --borderColor-danger-muted: color-mix(in srgb, var(--geld-provider-danger) 40%, var(--geld-provider-bg));
+  --borderColor-attention-muted: color-mix(in srgb, var(--geld-provider-warning) 40%, var(--geld-provider-bg));
+  --focus-outlineColor: var(--geld-provider-link);
+  --shadow-floating-small: var(--geld-provider-overlay-shadow);
+  --shadow-resting-small: var(--geld-provider-shadow);
+  --borderRadius-medium: var(--geld-provider-radius);
+  --borderRadius-large: var(--geld-provider-overlay-radius);
+  --button-default-fgColor-rest: var(--geld-provider-button-text);
+  --button-default-bgColor-rest: var(--geld-provider-button-bg);
+  --button-default-bgColor-hover: var(--geld-provider-button-hover-bg);
+  --button-default-bgColor-active: var(--geld-provider-button-active-bg);
+  --button-default-borderColor-rest: var(--geld-provider-button-border);
+  --button-default-borderColor-hover: var(--geld-provider-button-hover-border);
+  --button-default-shadow-resting: none;
+  color: var(--geld-provider-text);
+  font: var(--geld-provider-font);
+}

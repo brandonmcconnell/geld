@@ -73,7 +73,7 @@ export async function recordProviderWalkthrough(page, item, { provider, artifact
     await optional('digest-return', 'Return to the focused digest', 'Switch back to the digest to reduce the amount of conversation on screen.', async () => { await move('.geld-provider-review__menu:has([data-geld-view-slot]) > summary', null, true);await move('.geld-provider-view button[data-geld-digest-view="digest"]', null, true); });
     if (provider === 'gitlab') await optional('flow', 'Explore changed-file dependencies', 'Flow provides a graph of the changed files and their dependencies. Close it to return to the same digest.', async () => {
       await move('.geld-provider-flow-button', null, true);
-      await poll(() => page.$('dialog.geld-provider-flow[open]'), Boolean, 'Visible Flow dialog', 8000);await pause(2500);
+      await poll(() => page.$('dialog.geld-flow[open]'), Boolean, 'Visible Flow dialog', 8000);await pause(2500);
       await page.keyboard.press('Escape');
     });
     if (provider === 'bitbucket') {
