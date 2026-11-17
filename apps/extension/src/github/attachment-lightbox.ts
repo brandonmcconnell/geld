@@ -1,8 +1,8 @@
 import { createElement, OWN_UI_ATTRIBUTE } from './dom';
 import { attachmentVideoUrl, createAttachmentVideo } from '../ui/attachment-video';
 import { closeLightboxDialog, showLightboxDialog } from '../ui/lightbox-dialog';
-import { createPdfViewer } from './attachment-pdf';
-import { pdfSourceOf } from './pdf-links';
+import { createPdfViewer } from '../ui/attachment-pdf';
+import { pdfSourceOf } from '../ui/pdf-links';
 import { openAttachmentGallery } from '../ui/attachment-gallery';
 import type { GalleryImage } from '../ui/attachment-gallery';
 

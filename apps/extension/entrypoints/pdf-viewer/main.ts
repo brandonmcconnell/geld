@@ -1,8 +1,10 @@
 import { browser } from 'wxt/browser';
-import { framedByGitHub, PDF_CLOSE_MESSAGE, PDF_DOWNLOAD_MESSAGE, PDF_READY_MESSAGE, pdfSourceOf } from '../../src/github/pdf-links';
-import type { PdfSource } from '../../src/github/pdf-links';
+import { framingHost, PDF_CLOSE_MESSAGE, PDF_DOWNLOAD_MESSAGE, PDF_READY_MESSAGE, pdfSourceOf } from '../../src/ui/pdf-links';
+import type { PdfSource } from '../../src/ui/pdf-links';
 
-const GITHUB = 'https://github.com';
+/** The page framing this one, once checked: github.com, gitlab.com or bitbucket.org. */
+let host = '';
+const hostName = (): string => (host === 'https://gitlab.com' ? 'GitLab' : host === 'https://bitbucket.org' ? 'Bitbucket' : 'GitHub');
 const root = document.getElementById('pdf');
 let objectUrl: string | null = null;
 let shown: PdfSource | null = null;
@@ -40,14 +42,14 @@ async function show(source: PdfSource): Promise<void> {
   let blob: Blob;
   try {
     const response = await fetch(source.url, { credentials: source.origins.length === 0 ? 'omit' : 'include' });
-    if (!response.ok) throw new Error(`GitHub answered ${response.status}`);
+    if (!response.ok) throw new Error(`${hostName()} answered ${response.status}`);
     blob = await response.blob();
   } catch {
     message(['This PDF could not be loaded.'], downloadLink(source));
     return;
   }
   if (!(await isPdf(blob))) {
-    message(['GitHub did not send a PDF. You may need to sign in again.'], downloadLink(source));
+    message([`${hostName()} did not send a PDF. You may need to sign in again.`], downloadLink(source));
     return;
   }
   if (objectUrl !== null) URL.revokeObjectURL(objectUrl);
@@ -57,7 +59,7 @@ async function show(source: PdfSource): Promise<void> {
   frame.title = source.name;
   frame.src = objectUrl + new URL(source.url).hash;
   root?.replaceChildren(frame);
-  window.parent.postMessage({ type: PDF_READY_MESSAGE }, GITHUB);
+  window.parent.postMessage({ type: PDF_READY_MESSAGE }, host);
 }
 
 function saveShown(): void {
@@ -70,11 +72,12 @@ function saveShown(): void {
 
 async function start(): Promise<void> {
   const ancestors = window.location.ancestorOrigins === undefined ? undefined : [...window.location.ancestorOrigins];
-  if (!framedByGitHub(window.parent !== window, ancestors, document.referrer)) {
-    message(['Geld shows PDFs here only for github.com.']);
+  host = framingHost(window.parent !== window, ancestors, document.referrer) ?? '';
+  if (host === '') {
+    message(['Geld shows PDFs here only for github.com, gitlab.com and bitbucket.org.']);
     return;
   }
-  const source = pdfSourceOf(new URLSearchParams(window.location.search).get('src') ?? '', GITHUB);
+  const source = pdfSourceOf(new URLSearchParams(window.location.search).get('src') ?? '', host);
   if (source === null) {
     message(['This is not a PDF Geld can show.']);
     return;
@@ -95,18 +98,18 @@ async function start(): Promise<void> {
   });
   const hosts = origins.map((origin) => new URL(origin.replace('/*', '/')).hostname).join(' and ');
   message([
-    `GitHub serves this file from ${hosts}.`,
+    `${hostName()} serves this file from ${hosts}.`,
     'Allow Geld to read files there to show PDFs here. It asks once.',
   ], allow);
 }
 
 window.addEventListener('message', (event) => {
-  if (event.source !== window.parent || event.origin !== GITHUB) return;
+  if (event.source !== window.parent || host === '' || event.origin !== host) return;
   const data: unknown = event.data;
   if (typeof data === 'object' && data !== null && 'type' in data && data.type === PDF_DOWNLOAD_MESSAGE) saveShown();
 });
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') window.parent.postMessage({ type: PDF_CLOSE_MESSAGE }, GITHUB);
+  if (event.key === 'Escape' && host !== '') window.parent.postMessage({ type: PDF_CLOSE_MESSAGE }, host);
 });
 window.addEventListener('pagehide', () => {
   if (objectUrl !== null) URL.revokeObjectURL(objectUrl);

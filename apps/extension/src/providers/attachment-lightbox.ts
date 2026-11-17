@@ -5,7 +5,9 @@ import type { ProviderAdapter, ProviderReviewPage } from './types';
 import { isProviderReviewPage } from './types';
 import { providerVideoPreview, providerVideoSource, providerVideoUrl } from './attachment-video';
 import { createAttachmentVideo } from '../ui/attachment-video';
-import { showLightboxDialog } from '../ui/lightbox-dialog';
+import { closeLightboxDialog, showLightboxDialog } from '../ui/lightbox-dialog';
+import { createPdfViewer } from '../ui/attachment-pdf';
+import { pdfSourceOf } from '../ui/pdf-links';
 import './attachment-lightbox.css';
 
 export function attachmentLinkFor(image: HTMLImageElement, page: ProviderReviewPage, accepts: (url: URL) => boolean): HTMLAnchorElement | null {
@@ -78,6 +80,14 @@ export class ProviderAttachmentLightbox {
     return description?.contains(video) === true || (this.adapter.personRoots?.(document) ?? []).some(entry => entry.root.contains(video));
   }
 
+  /** A link in a rendered body this lightbox serves: the description, a person's comment, or a comment in the digest. */
+  private inBody(link: HTMLAnchorElement): boolean {
+    if (link.closest('pre, code, form, button, [contenteditable]:not([contenteditable="false"]), dialog, [role="dialog"]') !== null) return false;
+    if (link.closest('.geld-provider-review__source .geld-provider-review__body, .geld-provider-review [data-geld-agent-note]') !== null) return true;
+    const description = this.adapter.descriptionHost?.(document);
+    return description?.contains(link) === true || (this.adapter.personRoots?.(document) ?? []).some((entry) => entry.root.contains(link));
+  }
+
   private close(): void {
     const gallery = this.closeGallery;
     this.closeGallery = null;
@@ -94,6 +104,16 @@ export class ProviderAttachmentLightbox {
     if (video !== null && control !== null && this.validVideo(video, current)) {
       const url = providerVideoUrl(video, current.provider, current.url);
       if (url !== null) { this.showVideo(video, url, control, current);event.preventDefault();event.stopImmediatePropagation(); }
+      return;
+    }
+    // A PDF the host would only download opens in GitHub's PDF viewer, as on GitHub (`ui/attachment-pdf.ts`).
+    const pdfLink = event.target.closest('a[href]');
+    const pdf = !import.meta.env.FIREFOX && pdfLink instanceof HTMLAnchorElement && !pdfLink.hasAttribute('download') && this.inBody(pdfLink) ? pdfSourceOf(pdfLink.href, window.location.origin) : null;
+    if (pdfLink instanceof HTMLAnchorElement && pdf !== null) {
+      this.close();
+      const dismiss = showLightboxDialog(createPdfViewer(pdf, () => closeLightboxDialog(), 'geld-provider-toggle'), pdf.name, pdf.url, pdfLink, { dialog: 'geld-primer-bridge', button: 'geld-provider-toggle' });
+      this.closeGallery = dismiss;
+      event.preventDefault();event.stopImmediatePropagation();
       return;
     }
     const image = event.target.closest('img') ?? event.target.closest('a')?.querySelector('img');
