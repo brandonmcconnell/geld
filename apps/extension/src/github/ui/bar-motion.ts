@@ -122,14 +122,13 @@ export function ghostBarDepartures(records: readonly MutationRecord[]): void {
 }
 
 interface Carry {
+  /** The part's own animation: the block's slide with the carry folded in, or for a part nested in a block member, the carry alone. */
   readonly animation: Animation;
   readonly from: number;
   readonly to: number;
-  readonly timing: typeof BAR_ENTER | typeof BAR_LEAVE;
-  /** The block member the part is carried out of, when it is not one itself. */
-  readonly holder: Element | null;
 }
-/** Each part's carry past the edge while it runs, so a node taking the part's place takes it over where it has got to. */
+type Carries = Map<Element, { readonly from: number; readonly to: number }>;
+/** Each part's carry past the edge while it runs, so a takeover, a replacement or a ghost goes on from where it has got to. */
 const carrying = new Map<Element, Carry>();
 /** Where the carry of the part a ghost was cloned from had got to: the ghost leaves from there. */
 const inheritedCarry = new WeakMap<Element, number>();
@@ -138,23 +137,17 @@ function carryNow(element: Element): number | null {
   const carry = carrying.get(element);
   if (carry === undefined) return null;
   if (carry.animation.playState === 'finished') return carry.to;
+  // The carry shares its animation's timing, so the animation's eased progress is the carry's too.
   const progress = carry.animation.effect?.getComputedTiming().progress;
   return typeof progress === 'number' ? carry.from + (carry.to - carry.from) * progress : null;
-}
-
-/** GitHub replaced a part mid-slide: the new node carries on from where the old one's carry had got to. */
-function handOverCarry(old: Element, fresh: Element): void {
-  const carry = carrying.get(old);
-  const now = carryNow(old);
-  if (carry === undefined || now === null) return;
-  carry.animation.cancel();
-  carryPastEdge([fresh], () => now, carry.to, carry.timing);
 }
 
 let lastParts: Map<PartKind, Element> | null = null;
 let running: Animation[] = [];
 /** The block the running slide carries. */
 let carried: readonly Element[] = [];
+/** Block members a nested part is carried out of, which may overflow to the left meanwhile. */
+let reaching: readonly Element[] = [];
 
 function partsOf(inner: HTMLElement): Map<PartKind, Element> {
   const parts = new Map<PartKind, Element>();
@@ -187,33 +180,31 @@ function cancelRunning(): void {
   for (const animation of running) animation.cancel();
   running = [];
   carried = [];
+  carrying.clear();
+  for (const holder of reaching) holder.removeAttribute(ATTR_REACH);
+  reaching = [];
+}
+
+/** Where every running carry has got to, for the slide that takes the running one over; `replaced` maps a new node to the one it replaced. */
+function ongoingCarries(replaced: ReadonlyMap<Element, Element>): Carries {
+  const ongoing: Carries = new Map();
+  for (const [element, carry] of carrying) {
+    const now = carryNow(element);
+    if (now !== null && element.isConnected) ongoing.set(element, { from: now, to: carry.to });
+  }
+  for (const [fresh, old] of replaced) {
+    const carry = carrying.get(old);
+    const now = carryNow(old);
+    if (carry !== undefined && now !== null) ongoing.set(fresh, { from: now, to: carry.to });
+  }
+  return ongoing;
 }
 
 /**
  * The block travels only as far as the number's new place, which leaves the parts it carries out just left of where the
- * block rests (and starts the arriving ones there), in the bar's padding, in view. So those parts also travel by
- * `shift`, from `from` to `to`, far enough that their right edge clears the row's left edge (GitHub clips the row there), as a group. Added to
- * the block's own translate, and left running when a second commit takes the block's slide over.
+ * block rests (and starts the arriving ones there), in the bar's padding, in view. So those parts also travel by how far
+ * their right edge must go to clear the row's left edge (GitHub clips the row there), as a group, from where they rest.
  */
-function carryPastEdge(parts: readonly Element[], fromOf: (part: Element) => number, to: number, timing: typeof BAR_ENTER | typeof BAR_LEAVE): void {
-  for (const part of parts) {
-    const from = fromOf(part);
-    if (Math.abs(from - to) < 0.5) continue;
-    const animation = part.animate([{ translate: `${from}px 0` }, { translate: `${to}px 0` }], { ...timing, composite: 'add', fill: to === 0 ? 'none' : 'forwards', id: PAST_EDGE_ID });
-    // A ghost's holds until the ghost goes, even under the block's newer slide.
-    animation.persist();
-    const holder = part.parentElement?.matches(PERSISTENT_BAR_INNER) === false ? part.parentElement : null;
-    holder?.setAttribute(ATTR_REACH, '');
-    carrying.set(part, { animation, from, to, timing, holder });
-    const forget = (): void => {
-      if (carrying.get(part)?.animation === animation) carrying.delete(part);
-      if (holder !== null && ![...carrying.values()].some((carry) => carry.holder === holder)) holder.removeAttribute(ATTR_REACH);
-    };
-    animation.finished.then(forget, forget);
-  }
-}
-
-/** How far past `offset` the parts must go for their right edge to clear the row's left edge, which clips them, from where they rest. */
 function edgeShift(inner: HTMLElement, parts: readonly Element[], offset: number): number {
   const right = Math.max(...parts.map((part) => part.getBoundingClientRect().right));
   return Number.isFinite(right) ? Math.min(0, inner.getBoundingClientRect().left - (right + offset)) : 0;
@@ -243,10 +234,6 @@ export function animateBarGroup(): void {
   const removed = [...(before?.keys() ?? [])].filter((kind) => !now.has(kind));
   for (const ghost of fresh) if (before === null || !removed.some((kind) => ghost.getAttribute(ATTR_KIND) === kind)) ghost.remove();
   if (before === null || !motionAllowed()) return;
-  for (const [kind, part] of now) {
-    const old = before.get(kind);
-    if (old !== undefined && old !== part) handOverCarry(old, part);
-  }
   const moved = added.length > 0 || removed.length > 0;
   if (!moved && (running.length === 0 || blockOf(inner).every((element) => carried.includes(element)))) return;
   const anchor = inner.querySelector<HTMLElement>(':scope > [class*="metadata"] > [class*="number"]') ?? inner.querySelector<HTMLElement>(':scope > [class*="metadata"] > [class*="title"]');
@@ -255,10 +242,16 @@ export function animateBarGroup(): void {
     for (const ghost of leftGhosts(inner)) ghost.remove();
     return;
   }
+  const replaced = new Map<Element, Element>();
+  for (const [kind, part] of now) {
+    const old = before.get(kind);
+    if (old !== undefined && old !== part) replaced.set(part, old);
+  }
   const newcomers = added.flatMap((kind) => now.get(kind) ?? []);
   hold(newcomers, true);
   const seen = anchor.getBoundingClientRect().left;
   hold(newcomers, false);
+  const carries = ongoingCarries(replaced);
   cancelRunning();
   const ghosts = leftGhosts(inner);
   // Taking a running exit over, its ghosts are still on their way out.
@@ -266,7 +259,8 @@ export function animateBarGroup(): void {
     for (const ghost of ghosts) ghost.remove();
     const from = seen - anchor.getBoundingClientRect().left;
     const shift = edgeShift(inner, newcomers, from);
-    if (slide(inner, from, 0, BAR_ENTER, null)) carryPastEdge(newcomers, () => shift, 0, BAR_ENTER);
+    for (const part of newcomers) carries.set(part, { from: shift, to: 0 });
+    slide(inner, from, 0, BAR_ENTER, null, carries);
     return;
   }
   const withGhosts = anchor.getBoundingClientRect().left;
@@ -276,34 +270,53 @@ export function animateBarGroup(): void {
   hold(ghosts, false);
   const to = without - withGhosts;
   const shift = edgeShift(inner, leaving, to);
-  if (slide(inner, seen - withGhosts, to, BAR_LEAVE, ghosts)) carryPastEdge(leaving, (ghost) => inheritedCarry.get(ghost) ?? 0, shift, BAR_LEAVE);
+  for (const ghost of leaving) carries.set(ghost, { from: inheritedCarry.get(ghost) ?? 0, to: shift });
+  slide(inner, seen - withGhosts, to, BAR_LEAVE, ghosts, carries);
 }
 
-/** Whether the block slides: a slide too short to see, or no animations, ends at once. */
-function slide(inner: HTMLElement, from: number, to: number, timing: typeof BAR_ENTER | typeof BAR_LEAVE, ghosts: readonly HTMLElement[] | null): boolean {
+/**
+ * One plain animation per element, so the compositor runs them all: an additive one, or two on one element, Chrome
+ * runs on the main thread, where GitHub's re-render as the bar sticks stalled the slide for frames at a time.
+ */
+function slide(inner: HTMLElement, from: number, to: number, timing: typeof BAR_ENTER | typeof BAR_LEAVE, ghosts: readonly HTMLElement[] | null, carries: Carries): void {
   const done = (): void => {
     // In the frame the block arrives, before paint: the ghosts go as the layout closes up under the same offset.
     for (const ghost of ghosts ?? []) ghost.remove();
     cancelRunning();
   };
-  if (Math.abs(from - to) < 0.5 || typeof Element.prototype.animate !== 'function') {
+  const visible = [...carries].filter(([element, carry]) => element.isConnected && (Math.abs(carry.from) >= 0.5 || Math.abs(carry.to) >= 0.5));
+  if ((Math.abs(from - to) < 0.5 && visible.length === 0) || typeof Element.prototype.animate !== 'function') {
     done();
-    return false;
+    return;
   }
   const block = blockOf(inner);
-  carried = block;
-  running = block.map((element) => {
-    // Added, not replacing, so a part's own carry past the edge stacks on it whichever was made first.
-    const animation = element.animate([{ translate: `${from}px 0` }, { translate: `${to}px 0` }], { ...timing, composite: 'add', fill: 'forwards' });
+  const animate = (element: Element, start: number, end: number, carry: { readonly from: number; readonly to: number } | undefined): Animation => {
+    const animation = element.animate([{ translate: `${start}px 0` }, { translate: `${end}px 0` }], { ...timing, fill: 'forwards', ...(carry === undefined ? {} : { id: PAST_EDGE_ID }) });
     // Taken over or cancelled, it rejects `finished`, which nothing waits on.
     animation.finished.catch(() => undefined);
+    if (carry !== undefined) carrying.set(element, { animation, from: carry.from, to: carry.to });
     return animation;
+  };
+  const carryOf = (element: Element) => visible.find(([part]) => part === element)?.[1];
+  carried = block;
+  running = block.map((element) => {
+    const carry = carryOf(element);
+    return animate(element, from + (carry?.from ?? 0), to + (carry?.to ?? 0), carry);
   });
+  const holders: Element[] = [];
+  for (const [element, carry] of visible) {
+    if (block.some((member) => member === element)) continue;
+    const holder = block.find((member) => member.contains(element));
+    if (holder === undefined) continue;
+    running.push(animate(element, carry.from, carry.to, carry));
+    if (!holders.includes(holder)) holders.push(holder);
+  }
+  for (const holder of holders) holder.setAttribute(ATTR_REACH, '');
+  reaching = holders;
   const first = running[0];
-  if (first === undefined) return true;
+  if (first === undefined) return;
   const mine = running;
   first.addEventListener('finish', () => {
     if (running === mine) done();
   });
-  return true;
 }
