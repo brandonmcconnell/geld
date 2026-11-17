@@ -825,6 +825,21 @@ describe('provider conversation digest', () => {
     expect(rows[1]?.querySelector('a')).toBeNull();
   });
 
+  it('gives the Review bots row GitHub\'s Request a review menu with the missing-bot help at its foot', () => {
+    const author = { id: 'trusted-bot', login: 'project-reviewer', automated: true };
+    const native: ProviderReviewInput = { ...input([thread('a', { comments: [{ ...comment('1'), author }] })]), bots: [{ id: 'coderabbit', authorId: author.id }] };
+    const onMissingTool = vi.fn();
+    const panel = renderProviderReviewPanel(host(), native, { onMissingTool });
+    const menu = panel.element.querySelector<HTMLDetailsElement>('[data-geld-review-key="bots"] > .geld-provider-review__request-menu');
+    expect(menu?.querySelector('summary')?.getAttribute('aria-label')).toBe('Request a review');
+    expect(menu?.querySelector('summary svg')).not.toBeNull();
+    const request = menu?.querySelector<HTMLButtonElement>('.geld-review__help-link');
+    expect(request?.textContent).toBe('Request it');
+    request?.click();
+    expect(onMissingTool).toHaveBeenCalledWith('review bot');
+    panel.destroy();
+  });
+
   it('uses the native avatar of a bound bot account for its compact summary', () => {
     const author = { id: 'trusted-bot', login: 'project-reviewer', automated: true };
     const source = { ...comment('1'), author };

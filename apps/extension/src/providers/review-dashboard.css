@@ -376,3 +376,12 @@ svg.geld-provider-digest-icon[data-geld-outline] > [fill="currentColor"] { fill:
 
 /* An empty note in an open push or round sits at the rows' word column. */
 .geld-provider-review [data-geld-level='row'] > .geld-provider-review__section-content > p { margin-inline: var(--geld-chat-indent) var(--geld-provider-space-5); }
+
+/* The Review bots row's "Request a review", at the row's end before its chevron as GitHub's: the send glyph, or
+   GitHub's spinner while a bot runs, and the help at the menu's foot. */
+.geld-provider-review [data-geld-status-row]:has(> .geld-provider-review__request-menu) { position: relative; }
+.geld-provider-review [data-geld-status-row] > .geld-provider-review__request-menu { position: absolute; inset-block-start: 6px; inset-inline-end: calc(var(--geld-provider-space-3) + 1em + var(--geld-provider-space-2)); z-index: 3; }
+.geld-provider-review [data-geld-status-row]:has(> .geld-provider-review__request-menu) > .geld-provider-review__section-toggle { padding-inline-end: calc(var(--geld-provider-space-3) + 1em + var(--geld-provider-space-2) + 32px); }
+.geld-provider-review [data-geld-status-row] > .geld-provider-review__request-menu > .geld-provider-review__menu-list { inset-inline: auto 0; min-inline-size: 220px; }
+.geld-provider-review .geld-provider-review__request-menu > .geld-provider-review__menu-list > p { margin: 0; padding: var(--geld-provider-space-3); }
+.geld-provider-review .geld-provider-review__request-menu > summary[data-geld-running] { color: var(--geld-provider-text-subtle); }

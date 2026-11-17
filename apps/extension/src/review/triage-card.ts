@@ -607,7 +607,7 @@ function copyItem(list: HTMLElement, key: string, handlers: TriageHandlers, clos
 const MISSING_TOOL_NOUN: Readonly<Record<MissingTool, string>> = { 'review bot': 'bot', 'coding agent': 'agent' };
 
 /** A help icon whose tip reads "Don't see your preferred bot? Request it", the link opening the feedback page with its draft. */
-export function missingToolHelp(tool: MissingTool, handlers: TriageHandlers, close: () => void, role: 'menuitem' | null = null): HTMLElement {
+export function missingToolHelp(tool: MissingTool, handlers: Pick<TriageHandlers, 'onMissingTool'>, close: () => void, role: 'menuitem' | null = null): HTMLElement {
   const noun = MISSING_TOOL_NOUN[tool];
   const link = createElement('button', { type: 'button', class: `${PANEL_CLASS}__help-link` }, ['Request it']);
   link.addEventListener('click', (event) => {

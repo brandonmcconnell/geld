@@ -1,4 +1,5 @@
 import { ProviderFileFlow } from './file-flow';
+import { askForMissingTool } from '../review/missing-tool';
 import { ProviderAttachmentLightbox } from './attachment-lightbox';
 import type { Catalog, ChangeTotals, FileStats, GeldSettings } from '@geld/core';
 import { allCategories, BUNDLED_CATALOG, compileRepoRules, createMatcher, decideRepo, formatCount, isAutoViewed, isCategoryEnabled, pluralize, providerRepositoryScope, repositoryKey, settingsEqual, subtractTotals } from '@geld/core';
@@ -137,6 +138,7 @@ export class ProviderController {
       triage: {
         headLines: (path) => this.fileFlow.headLines(path).catch(() => null),
         pullIntent: () => ({ title: document.title, description: adapter.descriptionHost?.(document)?.innerText ?? '' }),
+        reportMissingTool: askForMissingTool,
         ...services.triage,
       },
     });
