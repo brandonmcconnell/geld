@@ -1,0 +1,327 @@
+/*
+ * The digest's own primitives, shared by every host: icon buttons, ⋯ menus, chevrons, service marks, skeletons and
+ * help tips. Written against Primer's tokens (through the `--geld-review-*` names in `digest-tokens.css`); a provider
+ * bridges them to its own with `geld-primer-bridge`.
+ */
+
+.geld-review__menu-list > .geld-review__menu-item--choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  line-height: 18px;
+  text-align: left;
+}
+
+/* A radio drawn with the panel's own glyphs: an outlined circle, a filled check once chosen — grey, not a verdict. */
+.geld-review__menu-check {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 18px;
+  align-items: center;
+  color: var(--geld-review-muted);
+}
+
+.geld-review__menu-item--choice[aria-checked='true'] .geld-review__menu-check {
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-review__menu-text {
+  display: flex;
+  flex-direction: column;
+}
+
+/* A bot with no picture on the page: an empty square where the others wear their mark, so the names line up. */
+.geld-review__bot-icon--blank {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 1px dashed var(--geld-review-border);
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+/* The rest of the registry, behind a disclosure in the menu's own type. */
+.geld-review__request-more > summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: 4px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.geld-review__request-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.geld-review__request-more > summary:hover {
+  background: var(--geld-review-hover);
+  color: var(--fgColor-default, var(--color-fg-default));
+}
+
+.geld-review__request-more > summary > .octicon {
+  width: 12px;
+  height: 12px;
+  transition: transform 120ms ease-out;
+}
+
+.geld-review__request-more[open] > summary > .octicon {
+  transform: rotate(90deg);
+}
+
+/* The help icon at the foot of the bot and agent menus; its tip holds the words and the link (help-tip.ts). */
+.geld-review__help-wrap {
+  display: flex;
+  align-items: center;
+}
+
+.geld-review__help-glyph {
+  display: inline-flex;
+}
+
+.geld-review__help-glyph > .octicon {
+  width: 14px;
+  height: 14px;
+}
+
+/* A popover in the top layer: the UA's centring, frame and colours give way to the panel's overlay, placed from the icon. */
+.geld-review__help-tip {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  max-width: 280px;
+  padding: 6px 10px;
+  --geld-help-tip-border: var(--borderColor-default, var(--color-border-default, #d1d9e0));
+  --geld-help-tip-bg: var(--overlay-bgColor, var(--bgColor-default, #fff));
+  border: 1px solid var(--geld-help-tip-border);
+  border-radius: 6px;
+  background: var(--geld-help-tip-bg);
+  box-shadow: var(--shadow-floating-small, 0 8px 24px rgba(31, 35, 40, 0.12));
+  color: var(--fgColor-default, var(--color-fg-default));
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: visible;
+}
+
+/* The caret, as the breakdown tooltip draws it: the border colour's triangle under the surface's, both on the padding edge. */
+.geld-review__help-tip::before,
+.geld-review__help-tip::after {
+  content: '';
+  position: absolute;
+  left: var(--geld-arrow-x, 16px);
+  transform: translateX(-50%);
+  border: 7px solid transparent;
+}
+
+.geld-review__help-tip::after {
+  border-width: 6px;
+}
+
+.geld-review__help-tip[data-placement='above']::before {
+  top: 100%;
+  border-bottom-width: 0;
+  border-top-color: var(--geld-help-tip-border);
+}
+
+.geld-review__help-tip[data-placement='above']::after {
+  top: 100%;
+  border-bottom-width: 0;
+  border-top-color: var(--geld-help-tip-bg);
+}
+
+.geld-review__help-tip[data-placement='below']::before {
+  bottom: 100%;
+  border-top-width: 0;
+  border-bottom-color: var(--geld-help-tip-border);
+}
+
+.geld-review__help-tip[data-placement='below']::after {
+  bottom: 100%;
+  border-top-width: 0;
+  border-bottom-color: var(--geld-help-tip-bg);
+}
+
+.geld-review__help-link {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fgColor-accent, var(--color-accent-fg, #0969da));
+  font: inherit;
+  cursor: pointer;
+}
+
+.geld-review__menu-hint {
+  color: var(--geld-review-muted);
+  font-size: 12px;
+}
+
+/* ---- icon buttons -------------------------------------------------------- */
+
+.geld-review__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--geld-review-muted);
+  cursor: pointer;
+  text-decoration: none;
+  list-style: none;
+}
+
+.geld-review__icon::-webkit-details-marker {
+  display: none;
+}
+
+.geld-review__icon:hover,
+.geld-review__icon:focus-visible,
+.geld-review__menu[open] > .geld-review__icon {
+  background: var(--geld-review-hover);
+  color: var(--fgColor-default, var(--color-fg-default));
+  outline: none;
+}
+
+.geld-review__icon[aria-pressed='true'],
+.geld-review__icon[aria-expanded='true'] {
+  color: var(--geld-review-accent);
+}
+
+.geld-review__bot-icon {
+  width: var(--geld-bot-icon, 16px);
+  height: var(--geld-bot-icon, 16px);
+  border-radius: 4px;
+  background: var(--geld-review-hover);
+}
+
+/* A mark that is a disc (the page draws it round, or its own pixels are a circle on transparent corners, as
+ * Chromatic's - GitHub squares it all the same): a circle, with the same faint ring the square marks wear, which
+ * follows the circle, and nothing left at the corners. */
+.geld-review__bot-icon[data-shape='round'] {
+  border-radius: 50%;
+}
+
+.geld-review__bot-icon--letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--geld-review-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.geld-review__menu-title {
+  padding: 4px 8px 6px;
+  color: var(--geld-review-muted);
+  font-size: 12px;
+}
+
+.geld-review__menu-list > .geld-review__menu-item {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 6px;
+  line-height: 20px;
+}
+
+.geld-review__menu-item > .geld-review__bot-icon {
+  flex: 0 0 auto;
+  margin-right: 8px;
+}
+
+.geld-review__menu-item--primary {
+  color: var(--geld-review-accent);
+  font-weight: 600;
+}
+
+.geld-review__skeleton {
+  display: block;
+  height: 10px;
+  margin: 5px 0;
+  border-radius: 5px;
+  background: linear-gradient(90deg, var(--geld-review-border-muted) 25%, var(--geld-review-hover) 50%, var(--geld-review-border-muted) 75%);
+  background-size: 200% 100%;
+  animation: geld-shimmer 1.8s linear infinite;
+}
+
+.geld-review__bot-icon {
+  --geld-mark-size: var(--geld-bot-icon, 16px);
+}
+
+.geld-review__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--geld-review-muted);
+  cursor: pointer;
+}
+
+.geld-review__chevron:hover {
+  background: var(--geld-review-hover);
+}
+
+.geld-review__chevron .octicon {
+  transition: transform 120ms ease;
+}
+
+.geld-review__chevron[data-open='true'] .octicon {
+  transform: rotate(180deg);
+}
+
+/* ---- ⋯ menu ------------------------------------------------------------- */
+
+.geld-review__menu {
+  position: relative;
+}
+
+.geld-review__menu-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  min-width: 200px;
+  padding: 6px;
+  border: 1px solid var(--geld-review-border);
+  border-radius: 6px;
+  background: var(--overlay-bgColor, var(--geld-review-bg));
+  box-shadow: var(--shadow-floating-small, 0 8px 24px rgba(31, 35, 40, 0.12));
+}
+
+.geld-review__menu-item {
+  display: block;
+  width: 100%;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--fgColor-default, var(--color-fg-default));
+  font: inherit;
+  line-height: 28px;
+  text-align: left;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.geld-review__menu-item:hover {
+  background: var(--geld-review-hover);
+}

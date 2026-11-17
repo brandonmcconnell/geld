@@ -1,0 +1,21 @@
+/*
+ * The digest's colour names, derived from Primer's tokens: on GitHub straight from the page, on GitLab and Bitbucket
+ * from the provider theme through `geld-primer-bridge` on the same element. `.geld-review` is GitHub's panel;
+ * `.geld-review-tokens` gives any other host of the digest's shared parts (the triage card) the same names.
+ */
+.geld-review,
+.geld-review-tokens {
+  --geld-review-border: var(--borderColor-default, var(--color-border-default, #d1d9e0));
+  --geld-review-border-muted: var(--borderColor-muted, var(--color-border-muted, #d8dee4));
+  --geld-review-muted: var(--fgColor-muted, var(--color-fg-muted, #59636e));
+  --geld-review-bg: var(--bgColor-default, var(--color-canvas-default, #fff));
+  --geld-review-subtle: var(--bgColor-muted, var(--color-canvas-subtle, #f6f8fa));
+  --geld-review-hover: var(--bgColor-neutral-muted, var(--color-neutral-muted, rgba(175, 184, 193, 0.2)));
+  --geld-review-done: var(--bgColor-success-muted, var(--color-success-subtle, #dafbe1));
+  --geld-review-done-fg: var(--fgColor-success, var(--color-success-fg, #1a7f37));
+  --geld-review-attention-bg: var(--bgColor-attention-muted, var(--color-attention-subtle, #fff8c5));
+  --geld-review-attention-fg: var(--fgColor-attention, var(--color-attention-fg, #9a6700));
+  --geld-review-danger-bg: var(--bgColor-danger-muted, var(--color-danger-subtle, #ffebe9));
+  --geld-review-danger-fg: var(--fgColor-danger, var(--color-danger-fg, #d1242f));
+  --geld-review-accent: var(--fgColor-accent, var(--color-accent-fg, #0969da));
+}

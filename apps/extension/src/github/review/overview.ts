@@ -22,14 +22,13 @@ import { missingToolDraft } from '../../lib/feedback';
 import { clickResolve, copyText, focusReply, resolveIfOpen, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
 import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, commitsInRow, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, revisionMarker, THREAD_SELECTOR, TIMELINE_ROW } from './crawler';
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
-import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
-import type { FixRun } from './ai';
+import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from '../../review/ai';
+import type { FixRun } from '../../review/ai';
 import { AI_KEY_SECTION } from '../../lib/ai-key';
-import { adoptOwnReplies, aiPending, chatFixesOffered, commentReportsOutsideThreads, onAiKeyChange, aiStateFor, clearAiForPage, discardSuggestion, fixFromComments, jevDecisionsFor, loadAiForPage, markSuggestionApplied, markSuggestionPosted, pendingReplyFor, previewDecisionKey, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi, withJevDone } from './ai';
-import type { AiState, FixScope, SuggestionSource, SuggestionTarget } from './ai';
+import { adoptOwnReplies, aiPending, chatFixesOffered, commentReportsOutsideThreads, onAiKeyChange, aiStateFor, clearAiForPage, discardSuggestion, fixFromComments, jevDecisionsFor, loadAiForPage, markSuggestionApplied, markSuggestionPosted, pendingReplyFor, previewDecisionKey, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi, withJevDone } from '../../review/ai';
+import type { AiState, FixScope, SuggestionSource, SuggestionTarget } from '../../review/ai';
 import { applyFixes, splitOverlapping } from './apply-suggestion';
-import { agentComment, agentLikely, agentsInRelatedLinks, agentTask, CODING_AGENTS, codingAgentById, diffHunks, lineDiff, OPEN_TARGETS, openTargetById, openTargetLikely, recommendAgents } from '@geld/review';
-import type { CodingAgent, OpenTarget } from '@geld/review';
+import { agentComment, agentTask, CODING_AGENTS, codingAgentById, openTargetById } from '@geld/review';
 import { relatedLinksOnPage } from '../related-links';
 import { wholeFileLines } from '../whole-file';
 import { catchUpAfterPost } from './timeline-catchup';
@@ -83,6 +82,7 @@ import type { MarkdownSubject, RequiredReviews } from './panel-model';
 import { fixVisible } from '@geld/review';
 import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel, TriageView } from './panel';
+import { buildTriageView } from '../../review/triage-view';
 import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots, triggerFor } from './panel-model';
 import { commitShaOf, outgoingMentions, renderEventsView, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
@@ -2666,82 +2666,19 @@ function suggestionTarget(item: ReviewItem, comments: readonly RawComment[], hea
   return wholeFileLines(subject.origin, `${subject.owner}/${subject.repo}`, headSha, path).then((file) => (file === null || range.end > file.length || range.start < 1 ? null : { path, start: range.start, end: range.end, lines: file }));
 }
 
-function agentIcon(agent: CodingAgent): string | null {
-  if (agent.icon !== undefined) return browser.runtime.getURL(`/agent-icons/${agent.icon}.png`);
-  if (agent.appId !== undefined) return `https://avatars.githubusercontent.com/in/${agent.appId}?s=32&v=4`;
-  const bot = agent.bot === undefined ? null : botById(agent.bot);
-  return bot === null ? null : botAppAvatar(bot, 32);
-}
-
-/** An open target's mark: its agent's, else its service's GitHub App. */
-function targetIcon(target: OpenTarget): string | null {
-  const agent = target.agent === undefined ? undefined : codingAgentById(target.agent);
-  if (agent !== undefined) return agentIcon(agent);
-  return target.appId === undefined ? null : `https://avatars.githubusercontent.com/in/${target.appId}?s=32&v=4`;
-}
-
 const OVERLAP_WORDS = 'Its lines overlap another fix’s, so it was left out of that commit. Triage again to fit it to the new code.';
 
-/** Who a comment's finding came from, as the digest names them: a review bot by its name, anyone else by login. */
-function originAuthor(author: string, settings: GeldSettings): string {
-  const id = resolveBotId(author, settings.reviewBots);
-  return id === null ? author.replace(/\[bot\]$/i, '') : botTitle(id, author);
-}
-
-/** The triage card's reading: the fixes to show, who to hand the rest to, and what this visit did with them. */
+/** The triage card's reading for this visit (`review/triage-view.ts`). */
 function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, prAuthor: string | null, knownBots: ReadonlySet<string>): TriageView | null {
-  if (ai.kind !== 'current' && ai.kind !== 'stale' && ai.kind !== 'failed' && ai.kind !== 'running' && ai.kind !== 'needs-key') return null;
   const viewer = document.querySelector('meta[name="user-login"]')?.getAttribute('content') ?? '';
-  const services = relatedLinksOnPage(reapplySoon)
-    .filter((link) => link.kind === 'agent')
-    .map((link) => link.key.split(':')[0] ?? '');
-  const used = agentsInRelatedLinks(services);
-  const pick = recommendAgents(settings.codingAgent, used, viewer !== '' && prAuthor !== null && viewer.toLowerCase() === prAuthor.toLowerCase());
-  const likely = (id: string): boolean => {
-    const agent = codingAgentById(id);
-    return agent !== undefined && agentLikely(agent, settings.codingAgent, used, knownBots);
-  };
-  const suggestions = triageSuggestions(meta, settings).map(({ entry, item, partners, current, behind }) => ({
-    key: entry.key,
-    title: item.title,
-    path: entry.path,
-    start: entry.start,
-    end: entry.end,
-    summary: entry.summary,
-    kind: entry.replacement === null ? ('agent' as const) : ('fix' as const),
-    diff: entry.replacement === null ? [] : diffHunks(lineDiff(entry.original, entry.replacement, entry.start)),
-    reporters: [...new Set([item, ...partners].flatMap((each) => authorLabels(each)))],
-    threads: 1 + partners.length,
-    state: entry.state === 'applied' ? ('applied' as const) : ('open' as const),
-    current,
-    behind,
-    busy: visit.triage.busy.get(entry.key) ?? null,
-    error: visit.triage.errors.get(entry.key) ?? null,
-    from: entry.origin === undefined ? null : originAuthor(entry.origin.author, settings),
-    routed: entry.routed === true,
-  }));
-  return {
-    suggestions,
-    agents: pick.order.map((agent) => ({
-      id: agent.id,
-      name: agent.name,
-      command: agent.command ?? null,
-      iconSrc: agentIcon(agent),
-      note: agent.note ?? null,
-      opens: agent.opens ?? null,
-      used: used.includes(agent.id),
-      likely: likely(agent.id),
-    })),
-    openTargets: OPEN_TARGETS.map((target) => ({ id: target.id, service: target.service, variant: target.variant, iconSrc: targetIcon(target), likely: openTargetLikely(target, likely, services), copiesTask: target.copiesTask === true })),
-    recommended: pick.recommended === null || pick.reason === null ? null : { id: pick.recommended.id, reason: pick.reason },
-    openKey: visit.triage.openKey,
-    collapsed: visit.triage.collapsed,
-    // Only once the titles and the TL;DR are in: until then their own rows shimmer, and this line would name the wrong step.
-    writing: aiPending().has('suggest') && aiPending().size === 1,
-    handedOff: visit.triage.handedOff,
+  return buildTriageView({
+    meta, ai, settings, knownBots,
+    viewerIsAuthor: viewer !== '' && prAuthor !== null && viewer.toLowerCase() === prAuthor.toLowerCase(),
+    agentServices: relatedLinksOnPage(reapplySoon).filter((link) => link.kind === 'agent').map((link) => link.key.split(':')[0] ?? ''),
+    visit: visit.triage,
     resolves: settings.resolveOnFix && repoBots.resolveOnFix !== false,
     policyPending: repoBots.resolveOnFix === 'loading',
-  };
+  });
 }
 
 /** The pull request's author, from the page header (the description card when the header is not there). */

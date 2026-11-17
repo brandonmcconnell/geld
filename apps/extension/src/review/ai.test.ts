@@ -19,7 +19,7 @@ vi.mock('wxt/utils/storage', () => ({
 const sendMessage = vi.fn(async (_message: unknown): Promise<unknown> => undefined);
 vi.mock('wxt/browser', () => ({ browser: { runtime: { sendMessage: (message: unknown) => sendMessage(message) } } }));
 // The background owns the stored runs; here a save lands in the same map the storage mock reads.
-vi.mock('../../lib/local-review-write', () => ({
+vi.mock('../lib/local-review-write', () => ({
   writeLocalReview: async (mutation: { readonly kind: string; readonly key?: string; readonly record?: unknown }, validate: () => Promise<void>): Promise<void> => {
     await validate();
     if (mutation.kind !== 'ai' || mutation.key === undefined) return;
@@ -31,7 +31,7 @@ vi.mock('../../lib/local-review-write', () => ({
   },
 }));
 
-const { NO_KEY_REASON } = await import('../../lib/ai-key');
+const { NO_KEY_REASON } = await import('../lib/ai-key');
 const { adoptOwnReplies, aiStateFor, chatFixesOffered, commentReportsOutsideThreads, discardSuggestion, fixFromComments, loadAiForPage, markSuggestionPosted, pendingReplyFor, runAi, triageNoteFor, triageSuggestions, withAi } = await import('./ai');
 
 const at = '2026-11-13T14:24:02Z';
