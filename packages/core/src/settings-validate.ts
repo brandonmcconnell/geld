@@ -70,6 +70,7 @@ const BOOLEAN_KEYS = [
   'usageStats',
   'prOverview',
   'quickReview',
+  'chatSidebar',
   'holdToMerge',
   'collapseDescription',
   'attachmentLightbox',

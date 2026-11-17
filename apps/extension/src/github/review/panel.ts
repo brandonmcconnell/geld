@@ -415,6 +415,8 @@ export interface PanelModel {
   readonly prAuthor: string | null;
   /** How the main list is arranged (`reviewGrouping`). */
   readonly grouping: 'type' | 'batch';
+  /** The Chat button stands in the Geld row (`chatSidebar`). */
+  readonly chat: boolean;
   /** How pull requests look (`digestViewOf`): the View menu's current choice. */
   readonly view: DigestView;
   /** The reader has not chosen a view yet: the intro under the Geld row offers the three. */
@@ -734,8 +736,6 @@ function iconButton(markup: string, label: string, extra: Readonly<Record<string
  * content that opened under it settles.
  */
 const ATTR_FOCUS = 'data-geld-focus';
-/** The chat sidebar is built and kept working but offered nowhere until it is ready to show. */
-const CHAT_BUTTON_SHOWN = false;
 /** Marks the span in an open row that receives the comment's header. */
 export const ATTR_HEAD_SLOT = 'data-geld-head-slot';
 /** Marks the span in the open CI row that receives GitHub's checks-settings gear. */
@@ -4124,7 +4124,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   chat.addEventListener('click', () => handlers.onChat(chat));
   chat.addEventListener('pointerenter', () => handlers.onChatIntent(), { once: true });
   chat.addEventListener('focus', () => handlers.onChatIntent(), { once: true });
-  if (CHAT_BUTTON_SHOWN) tools.append(chat);
+  if (model.chat) tools.append(chat);
   const flow = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__flow-btn`, 'aria-label': 'Flow: how the changed files connect', title: 'How the changed files connect', [ATTR_FOCUS]: 'flow' }, [
     icon(ICON_WORKFLOW),
     createElement('span', { class: `${PANEL_CLASS}__flow-label` }, ['Flow']),
