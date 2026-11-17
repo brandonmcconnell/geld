@@ -1,0 +1,5 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# Manual-trigger only, like Bugbot and Greptile: comment `@coderabbitai review` on a PR.
+reviews:
+  auto_review:
+    enabled: false

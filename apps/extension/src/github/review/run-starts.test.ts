@@ -40,6 +40,28 @@ describe('withRunTimes', () => {
     expect(rerun[0]?.completedAt).toBeUndefined();
   });
 
+  it('knows a check first seen finished had finished by then, as long as it is the same GitHub check run', async () => {
+    // The stored entries load first, so nothing is recorded before they are in.
+    withRunTimes([], 'geld/671', sha, noop);
+    await Promise.resolve();
+    await Promise.resolve();
+    const before = Date.now();
+    const seen = withRunTimes([{ name: 'CodeRabbit', status: 'completed', conclusion: 'success', sha, detailsUrl: 'https://github.com/o/r/runs/7' }], 'geld/671', sha, noop);
+    const doneBy = seen[0]?.doneBy ?? '';
+    expect(Date.parse(doneBy)).toBeGreaterThanOrEqual(before);
+    expect(seen[0]?.startedAt).toBeUndefined();
+    // The merge box names the same run another way: still that run, still finished by the first sighting.
+    const merge = withRunTimes([{ name: 'CodeRabbit', status: 'completed', conclusion: 'success', sha, detailsUrl: 'https://github.com/o/r/pull/671/checks?check_run_id=7' }], 'geld/671', sha, noop);
+    expect(merge[0]?.doneBy).toBe(doneBy);
+    // A new run of it is under way: what was first seen is over.
+    withRunTimes([{ name: 'CodeRabbit', status: 'in_progress', conclusion: null, sha, detailsUrl: 'https://github.com/o/r/runs/8' }], 'geld/671', sha, noop);
+    const next = withRunTimes([{ name: 'CodeRabbit', status: 'completed', conclusion: 'success', sha, detailsUrl: 'https://github.com/o/r/runs/8' }], 'geld/671', sha, noop);
+    expect(Date.parse(next[0]?.doneBy ?? '')).toBeGreaterThanOrEqual(Date.parse(doneBy));
+    // A link to the bot's own site may stay the same across runs, so it names no run and nothing is assumed.
+    const site = withRunTimes([{ name: 'Devin Review', status: 'completed', conclusion: 'success', sha, detailsUrl: 'https://app.devin.ai/review/o/r/pull/671' }], 'geld/671', sha, noop);
+    expect(site[0]?.doneBy).toBeUndefined();
+  });
+
   it('forgets a head\'s runs once the pull request has moved on', () => {
     const next = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
     withRunTimes([{ name: 'Cursor Bugbot', status: 'in_progress', conclusion: null, sha: next, startedAt: '2026-10-07T23:00:00.000Z' }], 'mint/12660', next, noop);

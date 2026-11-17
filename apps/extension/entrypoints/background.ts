@@ -4,21 +4,30 @@ import { isTrackerStatusRequest,readTrackerStatuses } from '../src/lib/tracker-s
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/utils/storage';
 import { defineBackground } from 'wxt/utils/define-background';
-import { parseUnifiedDiff, providerForHost } from '@geld/core';
+import { aiGatewayLabel, errorReportFrom, parseUnifiedDiff, providerForHost } from '@geld/core';
+import type { Refusal } from '@geld/review';
+import { refusalReport, vocabularyOf } from '@geld/review';
 import { completeChat, decisionModelsPath, evaluateDecision, listModels, servesDecisions, TYPESAFE_API } from '@geld/review';
-import { handleAccountMessage, startAccountSync } from '../src/lib/account-service';
+import { apiSignedIn, createPullRequest, handleAccountMessage, handleFeedbackMessage, startAccountSync } from '../src/lib/account-service';
+import { senderMayCreatePull } from '../src/lib/create-pull';
 import { checkCatalog, startCatalogUpdates } from '../src/lib/catalog';
 import { syncEnterpriseHosts } from '../src/lib/enterprise';
 import { hasGatewayPermission } from '../src/lib/ai-gateway';
+import { isAssistantChatSave, isCursorRequest } from '../src/lib/chat-messages';
+import { handleCursorRequest, saveAssistantChat, startChatPorts } from '../src/lib/chat-service';
 import { settingsItem } from '../src/lib/storage';
 import { diagnosticSubject, recordDiagnostic } from '../src/lib/diagnostics';
 import { installErrorCapture } from '../src/lib/error-capture';
 import { queueErrorReports, startErrorReports } from '../src/lib/error-uplink';
+import { addUsageCount, startUsageReports } from '../src/lib/usage-uplink';
 import type { BlockedUsersResponse, FetchDiffResponse, FetchFileResponse, TabState, ToggleHiddenMessage } from '../src/lib/messages';
 import { blockedLoginsIn } from '../src/github/blocked-list';
 import type { EnsureContentResponse } from '../src/lib/messages';
 import {
   isAccountActionMessage,
+  isFeedbackSubmitMessage,
+  isCreatePullMessage,
+  isApiSignedInMessage,
   isAiCompleteRequest,
   isAiEvaluateRequest,
   isAiModelsRequest,
@@ -29,15 +38,19 @@ import {
   isBlockedUsersRequest,
   isFetchFileRequest,
   isClearDiffCacheMessage,
+  isLoadChatUiMessage,
+  isUsageCountMessage,
+  isOpenFeedbackMessage,
   isOpenSettingsMessage,
   isTabStateMessage,
 } from '../src/lib/messages';
+import { openFeedback } from '../src/ui/feedback-link';
 import type { DiffPriority } from '../src/lib/messages';
-import { ensureContentScript, hostOf, tabsOnHosts } from '../src/lib/inject';
+import { ensureContentScript, hostOf, injectChatUi, tabsOnHosts } from '../src/lib/inject';
 import { grantedHosts } from '../src/lib/enterprise';
 import { looksLikeHtml } from '../src/lib/http';
 import { retireDashboardSession } from '../src/lib/dashboard-session';
-import { showTabBadge, startNightly } from '../src/nightly/updater';
+import { nightlyUsage, showTabBadge, startNightly } from '../src/nightly/updater';
 import { isNightlyPaused } from '../src/nightly/state';
 
 /** Refuse to parse diffs larger than this; GitHub's UI is unusable there anyway. */
@@ -46,6 +59,18 @@ const MAX_DIFF_BYTES = 20 * 1024 * 1024;
 const MAX_FILE_BYTES = 256 * 1024;
 
 const BUILT_IN_HOSTS = ['github.com', 'patch-diff.githubusercontent.com'];
+
+/**
+ * A request the AI gateway refused, as one of Geld's errors: Copy diagnostics (which feedback can attach to a public
+ * issue) keeps the short form, and the error report the reader opted into adds the provider's words reduced to known
+ * ones, the error vocabulary and what Geld itself sent (`refusalReport`, `sent`: its schema and model).
+ */
+function reportAiFailure(step: string, baseUrl: string, failure: Refusal, sent: readonly unknown[] = []): void {
+  const where = `AI ${step} via ${aiGatewayLabel(baseUrl)}`;
+  const { logged, sent: reported } = refusalReport(where, failure, vocabularyOf(step, ...sent));
+  const report = (message: string): ReturnType<typeof errorReportFrom> => errorReportFrom({ where: 'background:ai', kind: 'error', error: message, origin: browser.runtime.getURL('/'), at: Date.now() });
+  void queueErrorReports([report(logged)], [report(reported)]).catch(() => undefined);
+}
 
 /** github.com, its diff host, and any Enterprise servers the user configured. */
 async function allowedHosts(): Promise<Set<string>> {
@@ -247,7 +272,7 @@ function writeCache(url: string, response: FetchDiffResponse): void {
  * the extension's host permissions. Cookies are included so private
  * repositories work for signed-in users.
  */
-async function fetchDiff(url: string, priority: DiffPriority): Promise<FetchDiffResponse> {
+async function fetchDiff(url: string, priority: DiffPriority, sha: string | null): Promise<FetchDiffResponse> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -259,15 +284,17 @@ async function fetchDiff(url: string, priority: DiffPriority): Promise<FetchDiff
   }
 
   const subject = diagnosticSubject(parsed.toString()) ?? undefined;
-  const cached = readCache(parsed.toString());
+  // A pull request's `.diff` URL serves whatever its head is now: an answer kept by URL alone was handed out for the
+  // next head after a push, and the page stored it on disk under that head's key, where it is never asked again.
+  const memoryKey = sha === null ? parsed.toString() : `${parsed.toString()}@${sha.toLowerCase()}`;
+  const cached = readCache(memoryKey);
   if (cached !== null) {
     recordDiagnostic({ kind: 'fetch', subject, outcome: cached.ok ? 'memory-hit' : `memory-hit:${cached.reason}` });
     return cached;
   }
-  // A diff this worker already found too large stays too large (a pull request's `.diff` URL serves its current
-  // head, so it is asked again only on a new push, and a page revisited within the session asks again anyway):
-  // answer from memory rather than download the limit again on every pass. Session storage outlives the worker.
-  if (await knownTooLarge(parsed.toString())) {
+  // A diff this worker already found too large stays too large for that head: answer from memory rather than
+  // download the limit again on every pass. Session storage outlives the worker.
+  if (await knownTooLarge(memoryKey)) {
     recordDiagnostic({ kind: 'fetch', subject, outcome: 'memory-hit:too-large' });
     return { ok: false, reason: 'too-large' };
   }
@@ -348,13 +375,13 @@ async function fetchDiff(url: string, priority: DiffPriority): Promise<FetchDiff
   // as much as its pages), so it is not held either: signed in, the next
   // request must succeed at once.
   if (result.ok || result.reason === 'too-large' || (result.reason.startsWith('http-4') && result.reason !== 'http-404')) {
-    writeCache(parsed.toString(), result);
+    writeCache(memoryKey, result);
   }
-  if (!result.ok && result.reason === 'too-large') await rememberTooLarge(parsed.toString());
+  if (!result.ok && result.reason === 'too-large') await rememberTooLarge(memoryKey);
   return result;
 }
 
-/** Diff URLs this session found too large, with when: a pull request's `.diff` is its head's, asked again after a push. */
+/** Diffs this session found too large (by URL and head when the page named one), with when. */
 const tooLargeItem = storage.defineItem<Record<string, number>>('session:diffTooLarge', { fallback: {} });
 const TOO_LARGE_TTL_MS = 60 * 60 * 1000;
 
@@ -417,12 +444,11 @@ async function fetchFile(url: string): Promise<FetchFileResponse> {
 
 const BLOCKED_USERS_PAGE = /^https:\/\/github\.com\/(?:settings|organizations\/[A-Za-z0-9-]+\/settings)\/blocked_users$/;
 
-/** The logins on a GitHub "Blocked users" page; none when the reader may not see it (404) or is signed out. */
+/** The logins on a GitHub "Blocked users" page; a failure when the reader may not see it (404: not a moderator there) or is signed out. */
 async function fetchBlockedUsers(url: string): Promise<BlockedUsersResponse> {
   if (!BLOCKED_USERS_PAGE.test(url)) return { ok: false, reason: 'disallowed-url' };
   try {
     const response = await fetch(url, { credentials: 'include', cache: 'no-store', redirect: 'follow' });
-    if (response.status === 404) return { ok: true, logins: [] };
     if (!response.ok) return { ok: false, reason: `http-${response.status}` };
     if (new URL(response.url).pathname !== new URL(url).pathname) return { ok: false, reason: 'signed-out' };
     return { ok: true, logins: blockedLoginsIn(await response.text()) };
@@ -534,6 +560,7 @@ async function toggleHiddenInActiveTab(): Promise<void> {
 export default defineBackground(() => {
   installErrorCapture('background', (reports) => void queueErrorReports(reports).catch(() => undefined));
   startErrorReports();
+  startUsageReports(__GELD_NIGHTLY__ ? nightlyUsage : null);
   // Each start is a previous stop: a run of these around failing fetches says the worker is being killed mid-request.
   recordDiagnostic({ kind: 'worker-start' });
   const writeLocalReview = createLocalReviewAuthority();
@@ -551,6 +578,10 @@ export default defineBackground(() => {
       return true;
     }
     if(isTrackerStatusRequest(message)){void readTrackerStatuses(message,sender.url??sender.tab?.url).then(sendResponse);return true;}
+    if (isUsageCountMessage(message)) {
+      void addUsageCount(message.counter, message.by).catch(() => undefined);
+      return undefined;
+    }
     if (isErrorReportMessage(message)) {
       void queueErrorReports(message.errors).catch(() => undefined);
       return undefined;
@@ -569,8 +600,26 @@ export default defineBackground(() => {
       void openSettings(sender.tab?.windowId, message.section);
       return undefined;
     }
+    if (isOpenFeedbackMessage(message)) {
+      void openFeedback({ ...(sender.tab?.id === undefined ? {} : { tabId: sender.tab.id }), draft: message.draft }).catch(() => undefined);
+      return undefined;
+    }
     if (isAccountActionMessage(message)) {
       void handleAccountMessage(message).then(sendResponse);
+      return true;
+    }
+    // Only the feedback page may post an issue as the reader, never a content script on a GitHub page.
+    if (isFeedbackSubmitMessage(message) && sender.url?.startsWith(browser.runtime.getURL('/feedback.html')) === true) {
+      void handleFeedbackMessage(message).then(sendResponse);
+      return true;
+    }
+    if (isApiSignedInMessage(message)) {
+      void apiSignedIn(message.viewer).then(sendResponse, () => sendResponse(false));
+      return true;
+    }
+    // Only from github.com's own pages of the repository the pull request is opened on, where the reader was already trying to.
+    if (isCreatePullMessage(message) && senderMayCreatePull(sender.tab?.url, message.attempt)) {
+      void createPullRequest(message.attempt, message.viewer).then(sendResponse);
       return true;
     }
     if (isCatalogCheckMessage(message)) {
@@ -615,8 +664,24 @@ export default defineBackground(() => {
         const denied = await hasGatewayPermission(message.baseUrl);
         if (denied !== null) return { ok: false as const, reason: denied };
         if (message.apiKey.trim() === '') return { ok: false as const, reason: message.baseUrl === TYPESAFE_API ? 'No TypeSafe key.' : 'No API key.' };
-        return evaluateDecision({ fetch, baseUrl: message.baseUrl, apiKey: message.apiKey, request: message.request, timeoutMs: 20_000 });
+        const result = await evaluateDecision({ fetch, baseUrl: message.baseUrl, apiKey: message.apiKey, request: message.request, timeoutMs: 20_000 });
+        if (!result.ok) reportAiFailure('decision', message.baseUrl, result, [message.request.model]);
+        return result;
       })().then(sendResponse);
+      return true;
+    }
+    // Only Geld's own pages and GitHub tabs, where the sidebar runs, may use the reader's Cursor key.
+    if (isCursorRequest(message) && (sender.tab?.id !== undefined || sender.url?.startsWith(browser.runtime.getURL('/')) === true)) {
+      void handleCursorRequest(message).then(sendResponse, () => sendResponse({ ok: false, reason: 'Cursor could not be reached.', code: null }));
+      return true;
+    }
+    // Only into the GitHub tab and frame that asked, where the content script that will use it runs.
+    if (isLoadChatUiMessage(message) && sender.tab?.id !== undefined) {
+      void injectChatUi(sender.tab.id, sender.frameId ?? 0).then(sendResponse);
+      return true;
+    }
+    if (isAssistantChatSave(message) && sender.tab?.id !== undefined) {
+      void saveAssistantChat(message).then(() => sendResponse(true));
       return true;
     }
     if (isAiCompleteRequest(message)) {
@@ -625,7 +690,7 @@ export default defineBackground(() => {
         if (denied !== null) return { ok: false as const, reason: denied };
         if (message.apiKey.trim() === '') return { ok: false as const, reason: 'No API key.' };
         if (message.model.trim() === '') return { ok: false as const, reason: 'No model selected.' };
-        return completeChat({
+        const result = await completeChat({
           fetch,
           baseUrl: message.baseUrl,
           apiKey: message.apiKey,
@@ -634,11 +699,13 @@ export default defineBackground(() => {
           ...(message.jsonSchema === undefined ? {} : { jsonSchema: message.jsonSchema }),
           ...(message.schemaName === undefined ? {} : { schemaName: message.schemaName }),
         });
+        if (!result.ok) reportAiFailure(message.schemaName ?? 'completion', message.baseUrl, result, [message.jsonSchema, message.model]);
+        return result;
       })().then(sendResponse);
       return true;
     }
     if (!isFetchDiffRequest(message)) return undefined;
-    void fetchDiff(message.url, message.priority ?? 'background').then(sendResponse);
+    void fetchDiff(message.url, message.priority ?? 'background', message.sha ?? null).then(sendResponse);
     // Returning true keeps the message channel open for the async response.
     return true;
   });
@@ -681,6 +748,8 @@ export default defineBackground(() => {
       .then((tab) => ensureTab(tab, 'activated'))
       .catch(() => undefined);
   });
+
+  startChatPorts();
 
   // GitHub account: keep settings in the user's secret gist when signed in.
   startAccountSync();

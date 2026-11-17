@@ -6,7 +6,10 @@ import { browser } from 'wxt/browser';
 import type { AuthFlowState, GitHubAccount, RemoteInvalid, SyncState } from './account';
 import { accountItem, authFlowItem, effectiveClientId, EMPTY_SYNC_STATE, syncStateItem, tokensOf, withTokens } from './account';
 import { loadCatalog } from './catalog';
-import type { AccountActionMessage, AccountActionResponse } from './messages';
+import type { CreatePullOutcome, PullAttempt } from './create-pull';
+import { apiRefusal, parseCreatedPull } from './create-pull';
+import { FEEDBACK_REPO, ISSUE_BODY_LIMIT, parseCreatedIssue, refusalMessage } from './feedback';
+import type { AccountActionMessage, AccountActionResponse, FeedbackSubmitMessage, FeedbackSubmitResponse } from './messages';
 import { settingsItem } from './storage';
 
 /**
@@ -343,6 +346,108 @@ async function handleSyncError(error: unknown): Promise<void> {
   // `withToken` already cleared the account and recorded why.
   if (error instanceof SignedOutError) return;
   await setSync({ lastError: error instanceof Error ? error.message : String(error) });
+}
+
+/* ---------------------------------------------------------------- feedback */
+
+function refuse(message: string): FeedbackSubmitResponse {
+  return { ok: false, message };
+}
+
+async function createIssue(token: string, title: string, body: string): Promise<FeedbackSubmitResponse> {
+  const response = await fetch(`https://api.github.com/repos/${FEEDBACK_REPO}/issues`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${token}`,
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json',
+    },
+    // GitHub drops labels from anyone without push access, so this only sorts the owner's own reports.
+    body: JSON.stringify({ title, body, labels: ['feedback'] }),
+  });
+  if (response.status === 401) throw new SignedOutError();
+  const answer: unknown = await response.json().catch(() => null);
+  if (response.ok) {
+    const issue = parseCreatedIssue(answer);
+    return issue === null ? refuse('GitHub opened the issue but its answer could not be read.') : { ok: true, ...issue };
+  }
+  return refuse(refusalMessage(response.status, answer, response.headers.get('x-ratelimit-remaining') === '0'));
+}
+
+/** Open the reader's feedback as an issue from their own account, through the Geld App's user token. */
+async function submitFeedback(message: FeedbackSubmitMessage): Promise<FeedbackSubmitResponse> {
+  const account = await accountItem.getValue();
+  if (account === null) return refuse('Sign in with GitHub to send feedback.');
+  // An OAuth App token only carries the gist scope.
+  if (account.auth !== 'app') return refuse('Sign in with GitHub again to send feedback.');
+  if (message.title.trim() === '' || message.body.trim() === '') return refuse('Add a title and some details first.');
+  if (message.body.length > ISSUE_BODY_LIMIT) return refuse('The details are too long for one GitHub issue. Shorten them and send again.');
+  try {
+    return await withToken((token) => createIssue(token, message.title, message.body));
+  } catch (error) {
+    if (error instanceof SignedOutError) return refuse('GitHub signed Geld out. Sign in again to send it.');
+    return refuse(`Could not reach GitHub: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+export function handleFeedbackMessage(message: FeedbackSubmitMessage): Promise<FeedbackSubmitResponse> {
+  return submitFeedback(message);
+}
+
+/* ------------------------------------------------------- pull request retry */
+
+async function postPull(token: string, attempt: PullAttempt): Promise<CreatePullOutcome> {
+  const response = await fetch(`https://api.github.com/repos/${encodeURIComponent(attempt.owner)}/${encodeURIComponent(attempt.repo)}/pulls`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${token}`,
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      title: attempt.title,
+      body: attempt.body,
+      base: attempt.base,
+      head: attempt.head,
+      ...(attempt.headRepo === null ? {} : { head_repo: attempt.headRepo }),
+      draft: attempt.draft,
+    }),
+  });
+  if (response.status === 401) throw new SignedOutError();
+  const answer: unknown = await response.json().catch(() => null);
+  if (response.ok) {
+    const pull = parseCreatedPull(answer);
+    return pull === null ? { ok: false, reason: 'refused', message: 'GitHub opened the pull request but its answer could not be read.' } : { ok: true, ...pull };
+  }
+  return apiRefusal(response.status, answer);
+}
+
+function sameLogin(a: string, b: string): boolean {
+  return a !== '' && a.toLowerCase() === b.toLowerCase();
+}
+
+/** Signed in with the Geld App as the same account GitHub's page is signed in as. An OAuth App account only carries the gist scope. */
+export async function apiSignedIn(viewer: string): Promise<boolean> {
+  const account = await accountItem.getValue();
+  return account !== null && account.auth === 'app' && sameLogin(account.login, viewer);
+}
+
+/** The request `gh pr create` makes, with the reader's Geld App token, for a pull request GitHub's own form failed to open. */
+export async function createPullRequest(attempt: PullAttempt, viewer: string): Promise<CreatePullOutcome> {
+  const account = await accountItem.getValue();
+  if (account === null) return { ok: false, reason: 'unavailable', message: 'Sign in to Geld with GitHub to retry through the API.' };
+  // An OAuth App token only carries the gist scope.
+  if (account.auth !== 'app') return { ok: false, reason: 'unavailable', message: 'Sign in to Geld with GitHub again to retry through the API.' };
+  // Geld may still hold another account than the one GitHub's page is signed in as: never open it as someone else.
+  if (!sameLogin(account.login, viewer)) return { ok: false, reason: 'unavailable', message: `Geld is signed in as ${account.login}, not as ${viewer === '' ? 'the account on this page' : viewer}.` };
+  try {
+    return await withToken((token) => postPull(token, attempt));
+  } catch (error) {
+    if (error instanceof SignedOutError) return { ok: false, reason: 'unavailable', message: 'GitHub signed Geld out.' };
+    return { ok: false, reason: 'refused', message: `Could not reach GitHub: ${error instanceof Error ? error.message : String(error)}` };
+  }
 }
 
 /* ------------------------------------------------------------------ wiring */

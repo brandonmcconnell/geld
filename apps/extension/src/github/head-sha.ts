@@ -71,11 +71,44 @@ export function detectHeadSha(): string | null {
 }
 
 /**
+ * The head GitHub named when asked (`fetchHeadSha`), for one pull request: it outranks the page's embedded payload,
+ * which GitHub's router keeps from the document's first page across soft navigations (its route data carries no
+ * head), so a pull request reached that way after a push read the head it had when the tab first loaded.
+ */
+let askedHead: { readonly pullPath: string; readonly sha: string } | null = null;
+
+/** `/owner/repo/pull/N` of the current page, or null. */
+function currentPullPath(): string | null {
+  return /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(window.location.pathname)?.[0] ?? null;
+}
+
+export function rememberAskedHead(pullPath: string, sha: string): void {
+  askedHead = { pullPath, sha: sha.toLowerCase() };
+}
+
+export function forgetAskedHead(): void {
+  askedHead = null;
+}
+
+/** Whether the document is no longer at the address it loaded (a copy injected after a soft navigation). */
+export function documentNavigatedSinceLoad(): boolean {
+  if (typeof performance === 'undefined' || typeof performance.getEntriesByType !== 'function') return false;
+  const entry = performance.getEntriesByType('navigation')[0];
+  if (entry === undefined) return false;
+  try {
+    return new URL(entry.name).pathname !== window.location.pathname;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * `embeddedHeadSha` for this page, kept while the element that named it is in the document: the regex runs over
  * GitHub's embedded payload, and this is asked every pass.
  */
 let loadedHead: { readonly source: Element; readonly sha: string } | null = null;
 function loadedHeadSha(): string | null {
+  if (askedHead !== null && askedHead.pullPath === currentPullPath()) return askedHead.sha;
   if (loadedHead !== null && loadedHead.source.isConnected) return loadedHead.sha;
   loadedHead = embeddedHeadSha();
   return loadedHead?.sha ?? null;
@@ -162,21 +195,36 @@ function newestCommit(value: unknown, best: { oid: string; at: number } | null, 
   return found;
 }
 
+/** The last commit the Commits tab lists (oldest first, in groups by day): the head, whatever its dates say. */
+function lastListedCommit(payload: unknown): string | null {
+  const route = isRecord(payload) ? payload.pullRequestsCommitsRoute : null;
+  const groups = isRecord(route) ? route.commitGroups : null;
+  if (!Array.isArray(groups)) return null;
+  const last: unknown = groups.at(-1);
+  const commits = isRecord(last) ? last.commits : null;
+  if (!Array.isArray(commits)) return null;
+  const commit: unknown = commits.at(-1);
+  const oid = isRecord(commit) ? commit.oid : null;
+  return typeof oid === 'string' && SHA.test(oid) ? oid.toLowerCase() : null;
+}
+
 /**
  * The pull request's head from GitHub's own Commits tab data, which the
  * React app serves as a few KB of JSON for `Accept: application/json`:
- * the newest commit's `oid`. Same origin, session cookie, no diff host.
- * `pullPath` is `/owner/repo/pull/N`.
+ * the last commit listed, else the newest by date. Same origin, session
+ * cookie, no diff host. `pullPath` is `/owner/repo/pull/N`.
  */
 export async function fetchHeadSha(pullPath: string): Promise<string | null> {
   try {
     const response = await pageFetch(`${pullPath}/commits`, {
       credentials: 'same-origin',
+      cache: 'no-store',
       headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
     });
     if (!response.ok) return null;
     const body: unknown = await response.json();
-    return newestCommit(isRecord(body) ? body.payload : null, null)?.oid ?? null;
+    const payload = isRecord(body) ? body.payload : null;
+    return lastListedCommit(payload) ?? newestCommit(payload, null)?.oid ?? null;
   } catch {
     return null;
   }

@@ -8,8 +8,13 @@
 
 export const ERROR_PAYLOAD_VERSION = 1;
 export const MAX_ERRORS_PER_PAYLOAD = 25;
-export const MAX_ERROR_MESSAGE = 300;
+/** Room for an AI provider's refusal in its own words (`reportAiFailure`), which runs past two hundred characters. */
+export const MAX_ERROR_MESSAGE = 600;
 export const MAX_STACK_FRAMES = 12;
+/** What one send may weigh, under the diagnostics route's 64 KiB (`MAX_BODY_BYTES` in apps/site/app/api/diagnostics/route.ts): reports past it wait for the next. */
+export const MAX_PAYLOAD_BYTES = 60 * 1024;
+/** The last moment a JavaScript date holds; a time past it would throw where the route turns it into one. */
+const MAX_TIME = 8.64e15;
 const MAX_FRAME = 160;
 
 export type ErrorKind = 'error' | 'rejection';
@@ -139,7 +144,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isTime(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 && value <= MAX_TIME;
 }
 
 function parseReport(value: unknown): ErrorReport | null {
@@ -165,6 +170,17 @@ export function parseErrorReports(value: unknown): ErrorReport[] | null {
   if (!Array.isArray(value) || value.length > MAX_ERRORS_PER_PAYLOAD) return null;
   const reports = value.map(parseReport);
   return reports.every((report): report is ErrorReport => report !== null) ? reports : null;
+}
+
+/** The most reports, oldest first, whose payload stays within `budget` bytes; the rest wait for the next send. */
+export function fittingReports(envelope: Omit<ErrorPayload, 'errors'>, reports: readonly ErrorReport[], budget = MAX_PAYLOAD_BYTES): ErrorReport[] {
+  const encoder = new TextEncoder();
+  const fitting: ErrorReport[] = [];
+  for (const report of reports) {
+    if (encoder.encode(JSON.stringify({ ...envelope, errors: [...fitting, report] })).length > budget) break;
+    fitting.push(report);
+  }
+  return fitting;
 }
 
 /** A payload as received, or `null` when it is not one; scrubbed again, so nothing a modified client sends gets through unchanged. */

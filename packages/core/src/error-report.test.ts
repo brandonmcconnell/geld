@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { errorReportFrom, isOwnError, mergeErrorReports, parseErrorPayload, scrubErrorText, scrubStack } from './error-report';
+import { errorReportFrom, isOwnError, mergeErrorReports, parseErrorPayload, scrubErrorText, scrubStack, fittingReports, MAX_PAYLOAD_BYTES } from './error-report';
 
 const ORIGIN = 'chrome-extension://abcdefghijklmnop/';
 
@@ -16,7 +16,7 @@ describe('scrubErrorText', () => {
   });
 
   it('caps the length', () => {
-    expect(scrubErrorText('x'.repeat(1000))).toHaveLength(300);
+    expect(scrubErrorText('x'.repeat(1000))).toHaveLength(600);
   });
 });
 
@@ -78,5 +78,24 @@ describe('parseErrorPayload', () => {
     expect(parseErrorPayload({ v: 1, version: '1', browser: 'netscape', errors: [report] })).toBeNull();
     expect(parseErrorPayload({ v: 1, version: '1', browser: 'chrome', errors: [] })).toBeNull();
     expect(parseErrorPayload({ v: 1, version: '1', browser: 'chrome', errors: [{ ...report, where: 'Not Valid' }] })).toBeNull();
+  });
+});
+
+describe('what one send may carry', () => {
+  const envelope = { v: 1, version: '0.1.3', browser: 'chrome' } as const;
+  const report = (index: number) => ({ where: 'content:pass', kind: 'error' as const, message: `${'x'.repeat(590)} ${index}`, stack: Array.from({ length: 12 }, () => `fn${'y'.repeat(140)} file.js:1:1`), count: 1, firstAt: 1, lastAt: 1 });
+
+  it('keeps a full queue of the longest reports under the route’s limit, the rest for the next send', () => {
+    const queue = Array.from({ length: 25 }, (_, index) => report(index));
+    const batch = fittingReports(envelope, queue);
+    expect(batch.length).toBeGreaterThan(0);
+    expect(batch.length).toBeLessThan(25);
+    expect(new TextEncoder().encode(JSON.stringify({ ...envelope, errors: batch })).length).toBeLessThanOrEqual(MAX_PAYLOAD_BYTES);
+    expect(batch).toEqual(queue.slice(0, batch.length));
+  });
+
+  it('refuses a time no date can hold, so the route never turns one into a date', () => {
+    expect(parseErrorPayload({ ...envelope, errors: [{ ...report(0), lastAt: 1e16 }] })).toBeNull();
+    expect(parseErrorPayload({ ...envelope, errors: [{ ...report(0), lastAt: Date.parse('2026-11-16T00:00:00Z') }] })).not.toBeNull();
   });
 });

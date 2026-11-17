@@ -4,6 +4,9 @@
  * already has a user/repo key.
  */
 
+import type { SseEvent } from './sse';
+import { SseParser } from './sse';
+
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 export interface ChatMessage {
@@ -26,7 +29,7 @@ export interface ChatCompletionOptions {
 
 export type ChatCompletionResult =
   | { readonly ok: true; readonly text: string; readonly model: string }
-  | { readonly ok: false; readonly reason: string };
+  | Refusal;
 
 /** What a gateway's `/v1/models` says about a model, beyond its id, when it says anything (Vercel and OpenRouter both do). */
 export interface ModelInfo {
@@ -130,23 +133,181 @@ export async function listModels(
   }
 }
 
+const MAX_PROVIDER_MESSAGE = 240;
+
+/**
+ * How a 400 names the `response_format` it cannot take, or the field a gateway turned it into (`output_config.format`,
+ * Anthropic's, behind Vercel's gateway); "schema" or "strict" alone also turn up in errors about other fields.
+ */
+const SCHEMA_REFUSED = /response_format|json_schema|structured outputs?|output_config\.format|output_format/i;
+
+/**
+ * What kind of refusal a provider's words describe, from a fixed list: what may leave the device in an error report,
+ * where the words themselves (which can quote the request) may not.
+ */
+export type RefusalKind = 'response-format' | 'too-long' | 'model' | 'rate-limit' | 'quota' | 'key' | 'content-policy' | 'other';
+
+const REFUSAL_KINDS: ReadonlyArray<readonly [RefusalKind, RegExp]> = [
+  ['response-format', SCHEMA_REFUSED],
+  ['too-long', /context (?:length|window)|maximum .*tokens|too many tokens|too long/i],
+  ['quota', /quota|credits?|billing|insufficient (?:funds|balance)|payment/i],
+  ['rate-limit', /rate.?limit|too many requests/i],
+  ['content-policy', /content (?:policy|filter|management)|safety|moderation/i],
+  ['key', /api.?key|unauthori[sz]ed|authenticat|permission|forbidden/i],
+  // Last: most refusals name the model somewhere.
+  ['model', /model|deployment/i],
+];
+
+export function refusalKind(status: number, message: string | null): RefusalKind {
+  const words = message ?? '';
+  for (const [kind, pattern] of REFUSAL_KINDS) if (pattern.test(words)) return kind;
+  if (status === 401 || status === 403) return 'key';
+  if (status === 404) return 'model';
+  if (status === 429) return 'rate-limit';
+  return 'other';
+}
+
+/**
+ * The words provider refusals are made of: the only ones, beside Geld's own request's, that leave the device in an
+ * error report (`providerWordsOnly`). A refusal can quote what was sent, the pull request's text, whatever its kind,
+ * so its words are let through one by one, never by the kind of refusal they seem to describe.
+ */
+const PROVIDER_WORDS: ReadonlySet<string> = new Set(
+  (
+    'a about above access account additional additionalproperties after again all allof allowed an and any anyof api are array as assistant at auth authentication bad balance be been before billing boolean but by cannot ' +
+    'characters completion config content context could credit credits day declared defs denied deployment deprecated description did does enum error exceed exceeded exceeds exist exists expected failed field ' +
+    'fields for forbidden format found from function gateway got has have hour if in input insufficient integer internal invalid is it items json key keys later length limit limits max maximum maxitems ' +
+    'match matches maxlength message messages min minimum minitems minlength minute missing mode model models more must near no not null number object of on oneof only or out output output_config overloaded parameter ' +
+    'parameters pattern per permission please properties property provider quota rate received ref request requested requests required response response_format retry role schema second seconds server ' +
+    'set should strict string structured support supported system temperature than that the this timed timeout to token tokens too tool tools try type unauthorized unavailable unknown unsupported user ' +
+    'using value values was were when which with your json_schema'
+  ).split(' '),
+);
+
+/** Every word in `values` (strings, and objects' keys and values, deeply): what Geld itself sent, such as its schema's keys and enum values. */
+export function vocabularyOf(...values: readonly unknown[]): ReadonlySet<string> {
+  const words = new Set<string>();
+  const walk = (value: unknown, depth: number): void => {
+    if (depth > 12) return;
+    if (typeof value === 'string') for (const word of value.match(/[A-Za-z_][A-Za-z0-9_]*/g) ?? []) words.add(word.toLowerCase());
+    else if (Array.isArray(value)) for (const entry of value) walk(entry, depth + 1);
+    else if (isRecord(value))
+      for (const [key, entry] of Object.entries(value)) {
+        walk(key, depth + 1);
+        walk(entry, depth + 1);
+      }
+  };
+  for (const value of values) walk(value, 0);
+  return words;
+}
+
+/**
+ * A provider's words with everything but known words left out: a word stays when it is one provider refusals are made
+ * of or one Geld itself sent (`own`), a number when it has at most three digits (a status code, a limit), and the rest
+ * becomes "…", in any writing system. ASCII punctuation stays, so the shape of the message reads.
+ */
+export function providerWordsOnly(text: string, own: ReadonlySet<string>): string {
+  return (
+    text
+      .replace(/[\p{L}\p{M}_][\p{L}\p{M}\p{N}_]*|\p{N}+/gu, (token) => (/^[0-9]+$/.test(token) ? (token.length <= 3 ? token : '…') : PROVIDER_WORDS.has(token.toLowerCase()) || own.has(token.toLowerCase()) ? token : '…'))
+      // What is left beside the kept words is punctuation: anything outside printable ASCII (a symbol, an emoji, a word the pattern above split) goes too.
+      .replace(/[^\x20-\x7E\t\n…]+/gu, '…')
+      .replace(/…(?:[\s./-]*…)+/g, '…')
+  );
+}
+
+/**
+ * A refusal as Geld reports it: `logged` for Copy diagnostics, which feedback can attach to a public issue, says what
+ * kind of refusal it was, and `sent`, for the error report the reader opted into, adds the provider's words reduced to
+ * known ones (`providerWordsOnly`). A failure with no status is one of Geld's own fixed reasons (a timeout, an empty
+ * answer), the same in both.
+ */
+export function refusalReport(where: string, failure: Pick<Refusal, 'reason' | 'status' | 'kind'>, own: ReadonlySet<string> = new Set()): { readonly logged: string; readonly sent: string } {
+  if (failure.status === undefined) return { logged: `${where}: ${failure.reason}`, sent: `${where}: ${failure.reason}` };
+  const logged = `${where}: refused (${failure.status}, ${failure.kind ?? 'other'})`;
+  return { logged, sent: `${logged}: ${providerWordsOnly(failure.reason, own)}` };
+}
+
+export interface Refusal {
+  readonly ok: false;
+  /** Shown to the reader and kept on the device: the provider's own words included. */
+  readonly reason: string;
+  readonly status?: number;
+  readonly kind?: RefusalKind;
+}
+
+function messageIn(value: unknown): string | null {
+  if (typeof value === 'string') return value.trim() === '' ? null : value;
+  // Gemini's OpenAI endpoint answers some errors as a one-element array.
+  if (Array.isArray(value)) return messageIn(value[0]);
+  if (!isRecord(value)) return null;
+  for (const key of ['error', 'message', 'detail']) {
+    const found = messageIn(value[key]);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
+/** What a provider said about a refused request, whole, with the key and anything key-shaped taken out; `refusalFrom` shortens it for the reason. */
+export function providerMessage(body: string, apiKey: string): string | null {
+  let message: string | null;
+  try {
+    message = messageIn(JSON.parse(body));
+  } catch {
+    message = /^\s*</.test(body) ? null : body;
+  }
+  if (message === null) return null;
+  let text = apiKey === '' ? message : message.split(apiKey).join('<key>');
+  text = text
+    .replace(/\b(?:sk|pk|rk|key)-[\w-]{6,}/gi, '<key>')
+    .replace(/[\w-]{32,}/g, '<token>')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text === '' ? null : text;
+}
+
+/** "Completion failed (400)", then the provider's words when it gave any, shortened, as one sentence; the kind is read from all of them. */
+export function refusalFrom(lead: string, status: number, message: string | null): Refusal {
+  const shown = message === null || message.length <= MAX_PROVIDER_MESSAGE ? message : `${message.slice(0, MAX_PROVIDER_MESSAGE - 1)}…`;
+  const reason = shown === null ? `${lead} (${status}).` : `${lead} (${status}): ${/[.!?…]$/.test(shown) ? shown : `${shown}.`}`;
+  return { ok: false, reason, status, kind: refusalKind(status, message) };
+}
+
+async function refusalOf(response: Response, apiKey: string): Promise<{ readonly message: string | null; readonly refusal: Refusal }> {
+  const message = providerMessage(await response.text().catch(() => ''), apiKey);
+  return { message, refusal: refusalFrom('Completion failed', response.status, message) };
+}
+
+/** The schema as an instruction, for a gateway that takes no `response_format`: the parsers read JSON with or without a fence. */
+function withSchemaInPrompt(messages: readonly ChatMessage[], schema: unknown): readonly ChatMessage[] {
+  const instruction = `Answer with one JSON object and nothing else, matching this JSON Schema:\n${JSON.stringify(schema)}`;
+  const system = messages.findIndex((message) => message.role === 'system');
+  if (system === -1) return [{ role: 'system', content: instruction }, ...messages];
+  return messages.map((message, index) => (index === system ? { ...message, content: `${message.content}\n\n${instruction}` } : message));
+}
+
 export async function completeChat(options: ChatCompletionOptions): Promise<ChatCompletionResult> {
   if (options.apiKey === '') return { ok: false, reason: 'No API key.' };
-  const body: Record<string, unknown> = {
+  const base: Record<string, unknown> = {
     model: options.model,
     messages: options.messages,
-    temperature: options.temperature ?? 0,
   };
-  if (options.jsonSchema !== undefined) {
-    body.response_format = {
-      type: 'json_schema',
-      json_schema: {
-        name: options.schemaName ?? 'geld',
-        strict: true,
-        schema: options.jsonSchema,
-      },
-    };
-  }
+  // Reasoning models (OpenAI's gpt-5 and later, o-series) answer 400 to any temperature but their default.
+  if (options.temperature !== undefined) base.temperature = options.temperature;
+  const body =
+    options.jsonSchema === undefined
+      ? base
+      : {
+          ...base,
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: options.schemaName ?? 'geld',
+              strict: true,
+              schema: options.jsonSchema,
+            },
+          },
+        };
   const controller = options.timeoutMs === undefined ? null : new AbortController();
   const timer =
     controller === null || options.timeoutMs === undefined
@@ -159,17 +320,25 @@ export async function completeChat(options: ChatCompletionOptions): Promise<Chat
   try {
     // Detached first: a browser's native fetch called as `options.fetch(…)` throws "Illegal invocation".
     const fetchImpl = options.fetch;
-    const response = await fetchImpl(joinUrl(options.baseUrl, '/v1/chat/completions'), {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${options.apiKey}`,
-        'content-type': 'application/json',
-        accept: 'application/json',
-      },
-      body: JSON.stringify(body),
-      ...(signal ? { signal } : {}),
-    });
-    if (!response.ok) return { ok: false, reason: `Completion failed (${response.status}).` };
+    const post = (payload: Record<string, unknown>): Promise<Response> =>
+      fetchImpl(joinUrl(options.baseUrl, '/v1/chat/completions'), {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${options.apiKey}`,
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify(payload),
+        ...(signal ? { signal } : {}),
+      });
+    let response = await post(body);
+    if (!response.ok) {
+      const first = await refusalOf(response, options.apiKey);
+      const schemaRefused = response.status === 400 && options.jsonSchema !== undefined && first.message !== null && SCHEMA_REFUSED.test(first.message);
+      if (!schemaRefused) return first.refusal;
+      response = await post({ ...base, messages: withSchemaInPrompt(options.messages, options.jsonSchema) });
+      if (!response.ok) return (await refusalOf(response, options.apiKey)).refusal;
+    }
     const payload: unknown = await response.json();
     if (!isRecord(payload) || !Array.isArray(payload.choices))
       return { ok: false, reason: 'Completion response was empty.' };
@@ -186,5 +355,97 @@ export async function completeChat(options: ChatCompletionOptions): Promise<Chat
     };
   } finally {
     if (timer !== null) clearTimeout(timer);
+  }
+}
+
+/** The text one streamed chunk adds (`choices[0].delta.content`), or null for a chunk that adds none (a role, a finish reason, usage). */
+export function chatDeltaOf(chunk: unknown): string | null {
+  if (!isRecord(chunk) || !Array.isArray(chunk.choices)) return null;
+  const first = chunk.choices[0];
+  if (!isRecord(first) || !isRecord(first.delta)) return null;
+  return contentOf(first.delta.content);
+}
+
+export interface StreamChatOptions {
+  readonly fetch: FetchLike;
+  readonly baseUrl: string;
+  readonly apiKey: string;
+  readonly model: string;
+  readonly messages: readonly ChatMessage[];
+  readonly signal?: AbortSignal;
+  /** Each piece of the reply as it arrives. */
+  readonly onDelta: (text: string) => void;
+}
+
+/**
+ * A chat completion read as it is written (`stream: true`, server-sent events), each piece handed to `onDelta`; the
+ * whole reply is the result. A gateway that ignores `stream` and answers with one JSON completion is read as such.
+ */
+export async function streamChat(options: StreamChatOptions): Promise<ChatCompletionResult> {
+  if (options.apiKey === '') return { ok: false, reason: 'No API key.' };
+  const fetchImpl = options.fetch;
+  try {
+    const response = await fetchImpl(joinUrl(options.baseUrl, '/v1/chat/completions'), {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${options.apiKey}`,
+        'content-type': 'application/json',
+        accept: 'text/event-stream',
+      },
+      body: JSON.stringify({ model: options.model, messages: options.messages, stream: true }),
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
+    if (!response.ok) return (await refusalOf(response, options.apiKey)).refusal;
+    if ((response.headers.get('content-type') ?? '').includes('application/json')) {
+      const payload: unknown = await response.json();
+      const first = isRecord(payload) && Array.isArray(payload.choices) ? payload.choices[0] : null;
+      const text = isRecord(first) && isRecord(first.message) ? contentOf(first.message.content) : null;
+      if (text === null) return { ok: false, reason: 'Completion response had no text.' };
+      options.onDelta(text);
+      return { ok: true, text, model: isRecord(payload) && typeof payload.model === 'string' ? payload.model : options.model };
+    }
+    if (response.body === null) return { ok: false, reason: 'Completion response was empty.' };
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const parser = new SseParser();
+    let text = '';
+    let model = options.model;
+    const take = (events: readonly SseEvent[]): Refusal | 'done' | null => {
+      for (const event of events) {
+        if (event.data === '[DONE]') return 'done';
+        let chunk: unknown;
+        try {
+          chunk = JSON.parse(event.data);
+        } catch {
+          continue;
+        }
+        if (isRecord(chunk) && chunk.error !== undefined) {
+          const message = providerMessage(event.data, options.apiKey);
+          return { ok: false, reason: message === null ? 'The provider stopped the reply.' : `The provider stopped the reply: ${message.slice(0, MAX_PROVIDER_MESSAGE)}` };
+        }
+        if (isRecord(chunk) && typeof chunk.model === 'string') model = chunk.model;
+        const delta = chatDeltaOf(chunk);
+        if (delta !== null) {
+          text += delta;
+          options.onDelta(delta);
+        }
+      }
+      return null;
+    };
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        const ended = take(done ? parser.flush() : parser.feed(decoder.decode(value, { stream: true })));
+        if (ended !== null && ended !== 'done') return ended;
+        if (done || ended === 'done') break;
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    if (text === '') return { ok: false, reason: 'Completion response had no text.' };
+    return { ok: true, text, model };
+  } catch {
+    if (options.signal?.aborted === true) return { ok: false, reason: 'Stopped.' };
+    return { ok: false, reason: 'The AI provider could not complete the request.' };
   }
 }

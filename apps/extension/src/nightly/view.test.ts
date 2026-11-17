@@ -29,16 +29,28 @@ const status = (patch: Partial<NightlyStatus>): NightlyStatus => ({
   etag: null,
   limitedUntil: null,
   writing: null,
+  blocked: null,
   ...patch,
 });
 
 describe('nightlyView', () => {
+  it('is about connecting the folder until there is one, whatever build is out', () => {
+    const view = nightlyView(status({ latest: release(3305) }), null, '0.1.2.3301', NOW);
+    expect(view.headline).toBe('Folder not connected');
+    expect(view.detail).toBe('Geld can only install builds once you connect the folder it runs from.');
+    expect(view.tone).toBe('needs-folder');
+    expect(nightlyView(status({ latest: release(3301) }), null, '0.1.2.3301', NOW).tone).toBe('needs-folder');
+    expect(view.action).toEqual({ kind: 'connect', label: 'Connect folder' });
+  });
+
   it('is up to date and says when it last looked', () => {
     expect(nightlyView(status({ latest: release(3301), checkedAt: minutesAgo(5) }), folder, '0.1.2.3301', NOW)).toEqual({
       headline: 'Up to date',
       detail: 'Checked 5 minutes ago.',
       tone: 'ok',
-      action: { kind: 'check', label: 'Check now' },
+      action: null,
+      check: true,
+      rollbackFeedback: null,
     });
   });
 
@@ -51,7 +63,41 @@ describe('nightlyView', () => {
   it('asks for the folder before anything can install, naming the one the installer wrote', () => {
     const view = nightlyView(status({ latest: release(3305) }), null, '0.1.2.3301', NOW);
     expect(view.action?.kind).toBe('connect');
-    expect(nightlyView(status({}), null, '0.1.2.3301', NOW, null, '/Users/me/Geld Nightly/Work').detail).toBe('Connect /Users/me/Geld Nightly/Work so Geld can install builds. Pick it when Chrome asks.');
+    expect(nightlyView(status({}), null, '0.1.2.3301', NOW, { installedIn: '/Users/me/Geld Nightly/Work' }).detail).toBe('Geld can only install builds once you connect /Users/me/Geld Nightly/Work. Pick it when Chrome asks.');
+  });
+
+  it('says why a build Automatic found did not install on its own', () => {
+    const blocked = (need: 'folder' | 'permission', at: string): Partial<NightlyStatus> => ({
+      latest: release(3305),
+      blocked: { version: '0.1.2.3305', need, reason: 'The connected folder is not the one Geld runs from. Connect it again.', at },
+    });
+    expect(nightlyView(status(blocked('permission', minutesAgo(1))), folder, '0.1.2.3301', NOW)).toEqual({
+      headline: 'Build 3305 is ready',
+      detail: 'Chrome needs your OK before Geld can write to its folder. Choose Allow on every visit and later builds install on their own.',
+      tone: 'ready',
+      action: { kind: 'install', label: 'Allow and install' },
+      check: true,
+      rollbackFeedback: null,
+    });
+    const wrongFolder = nightlyView(status(blocked('folder', minutesAgo(1))), folder, '0.1.2.3301', NOW);
+    expect(wrongFolder.detail).toBe('The connected folder is not the one Geld runs from. Connect it again.');
+    expect(wrongFolder.action).toEqual({ kind: 'connect', label: 'Connect folder' });
+    expect(nightlyView(status(blocked('folder', minutesAgo(601))), folder, '0.1.2.3301', NOW).action?.kind).toBe('install');
+    expect(nightlyView(status({ ...blocked('permission', minutesAgo(1)), latest: release(3306) }), folder, '0.1.2.3301', NOW).action?.label).toBe('Install');
+  });
+
+  it('promises installs on their own only in Automatic', () => {
+    const waiting = status({ latest: release(3305), blocked: { version: '0.1.2.3305', need: 'permission', reason: 'x', at: minutesAgo(1) } });
+    expect(nightlyView(waiting, folder, '0.1.2.3301', NOW, { mode: 'manual' }).detail).toBe('Chrome needs your OK before Geld can write to its folder. Choose Allow on every visit and Chrome stops asking.');
+  });
+
+  it('shows whichever of a failure and a blocker came later, and a broken folder before both', () => {
+    const blocked = { version: '0.1.2.3305', need: 'permission' as const, reason: 'x', at: minutesAgo(5) };
+    const failure = (at: string, broken?: true) => ({ version: '0.1.2.3305', stillOn: '0.1.2.3301', reason: 'The download failed (503).', at, restored: true as const, ...(broken === undefined ? {} : { broken }) });
+    const view = (patch: Partial<NightlyStatus>) => nightlyView(status({ latest: release(3305), blocked, ...patch }), folder, '0.1.2.3301', NOW).action?.kind;
+    expect(view({ failure: failure(minutesAgo(10)) })).toBe('install');
+    expect(view({ failure: failure(minutesAgo(1)) })).toBe('retry');
+    expect(view({ failure: failure(minutesAgo(10), true) })).toBe('restore');
   });
 
   it('shows an install under way', () => {
@@ -71,7 +117,27 @@ describe('nightlyView', () => {
       detail: 'Still on build 3301. The browser stopped the download (FILE_NO_SPACE).',
       tone: 'error',
       action: { kind: 'retry', label: 'Try again' },
+      check: true,
+      rollbackFeedback: null,
     });
+  });
+
+  it('says a failed check beside a ready build or a recent update, keeping their action', () => {
+    const ready = nightlyView(status({ latest: release(3305), checkError: 'GitHub did not answer.' }), folder, '0.1.2.3301', NOW);
+    expect(ready.detail).toBe('GitHub did not answer.');
+    expect(ready.action).toEqual({ kind: 'install', label: 'Install' });
+    const updated = status({ latest: release(3305), backup: '0.1.2.3301', checkError: 'GitHub did not answer.', lastInstall: { from: '0.1.2.3301', to: '0.1.2.3305', at: minutesAgo(10), method: 'folder' } });
+    expect(nightlyView(updated, folder, '0.1.2.3305', NOW).detail).toBe('Updated 10 minutes ago. GitHub did not answer.');
+    expect(nightlyView(updated, folder, '0.1.2.3305', NOW).action).toEqual({ kind: 'rollback', label: 'Roll back', title: 'Go back to build 3301' });
+    expect(nightlyView(status({ latest: release(3301), checkError: 'GitHub did not answer.' }), folder, '0.1.2.3301', NOW).detail).toBe('GitHub did not answer.');
+    expect(nightlyView(status({ latest: release(3305), checkError: 'GitHub did not answer.' }), null, '0.1.2.3301', NOW).detail).not.toContain('GitHub');
+  });
+
+  it('offers Check for updates beside any action once a folder is connected, but not while a build installs or Nightly is paused', () => {
+    expect(nightlyView(status({ latest: release(3305) }), folder, '0.1.2.3301', NOW).check).toBe(true);
+    expect(nightlyView(status({ latest: release(3301) }), null, '0.1.2.3301', NOW).check).toBe(false);
+    expect(nightlyView(status({ latest: release(3305), installing: '0.1.2.3305' }), folder, '0.1.2.3301', NOW).check).toBe(false);
+    expect(nightlyView(status({ latest: release(3301) }), folder, '0.1.2.3301', NOW, { conflict: { kind: 'stable', id: 'x' } }).check).toBe(false);
   });
 
   it('offers to restore when the old build could not be put back', () => {
@@ -98,11 +164,19 @@ describe('nightlyView', () => {
     const updated = status({ latest: release(3305), backup: '0.1.2.3301', lastInstall: { from: '0.1.2.3301', to: '0.1.2.3305', at: minutesAgo(10), method: 'folder' } });
     expect(nightlyView(updated, folder, '0.1.2.3305', NOW)).toEqual({
       headline: 'Up to date',
-      detail: 'Updated from build 3301 10 minutes ago.',
+      detail: 'Updated 10 minutes ago',
       tone: 'ok',
-      action: { kind: 'rollback', label: 'Roll back' },
+      action: { kind: 'rollback', label: 'Roll back', title: 'Go back to build 3301' },
+      check: true,
+      rollbackFeedback: null,
     });
-    expect(nightlyView(updated, folder, '0.1.2.3305', NOW + 25 * 3_600_000).action?.kind).toBe('check');
+    expect(nightlyView(updated, folder, '0.1.2.3305', NOW + 25 * 3_600_000).action).toBeNull();
+  });
+
+  it('says a rollback worked and asks why, naming both builds for the feedback draft', () => {
+    const view = nightlyView(status({ latest: release(3301), lastInstall: { from: '0.1.2.3305', to: '0.1.2.3301', at: minutesAgo(2), method: 'folder', rollback: true } }), folder, '0.1.2.3301', NOW);
+    expect(view).toMatchObject({ headline: 'Back on build 3301', detail: 'Successfully rolled back.', rollbackFeedback: { from: 'build 3305', to: 'build 3301' } });
+    expect(nightlyView(status({ latest: release(3301) }), folder, '0.1.2.3301', NOW).rollbackFeedback).toBeNull();
   });
 
   it('says a rolled-back build waits for the reader', () => {

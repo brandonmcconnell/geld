@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import type { HeaderStatGroup } from './header-stats';
 import { syncCountsStandIn } from './header-stats';
+import { setTabCounts } from './tab-counts';
 import { rememberStatusHint, resetStatusHints } from './status-pill';
 import { snapshot as perfSnapshot } from '../lib/perf';
 import { applyQuickReview, applyReviewGroupHint, canSubmit, isInstantClick, pullPathOf, quickReviewStandBusy, reassertStatusPills, rememberReviewGroup, removeQuickReview, withdrawReviewGroupHint, reviewErrorText, segmentHint, submitReviewRequest, timelineCommentRequest } from './quick-review';
@@ -155,6 +156,115 @@ describe("the tab bar button while GitHub's counts load", () => {
     applyQuickReview(true, { page, groups: [groupAt(counts)], headSha: () => SHA });
     expect(document.querySelector('.PageHeader-TitleArea > .geld-quick-review')).not.toBeNull();
     expect(quickReviewStandBusy()).toBe(false);
+  });
+});
+
+describe('the review group on the new pull request page', () => {
+  const page = { kind: 'pull-conversation' as const, diffUrl: null, stateKey: '/acme/widgets/pull/7' };
+  const group = (): Element | null => document.querySelector('.geld-quick-review');
+  const counts = (): HTMLElement => {
+    const element = document.querySelector<HTMLElement>('[data-geld-counts-stand-in]');
+    if (element === null) throw new Error('fixture');
+    return element;
+  };
+  const stick = (on: boolean): void => {
+    const inner = document.querySelector('[class*="miniHeaderInner"]');
+    if (on) inner?.insertAdjacentHTML('afterbegin', '<button data-testid="mini-header-tab-switcher-trigger" type="button"></button>');
+    else inner?.querySelector('[data-testid="mini-header-tab-switcher-trigger"]')?.remove();
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":"Not Found"}', { status: 404 })));
+    document.head.innerHTML = '<meta name="user-login" content="alice">';
+    // GitHub's bar over the page, its counts beside the branch names, and the tab row's wrapper left empty.
+    document.body.innerHTML = `
+      <div data-testid="diff-comparison-viewer-sticky-header-slot" class="StickyHeaderSlotPersistent__x">
+        <div data-testid="diff-comparison-viewer-sticky-header-bar"><div class="miniHeaderInner__x">
+          <div class="metadata__x">#7</div>
+          <div class="actions__x"><button type="button">Merge status</button><button class="ReviewMenuButton__x">Submit review</button></div>
+        </div></div>
+      </div>
+      <div data-component="PageHeader">
+        <a class="text-bold" href="/bob">bob</a>
+        <div data-component="PageHeader.Description"><div class="branchGroup__x"><div class="branches__x">main ← topic</div><div class="diffStat__x">+3 −1</div></div></div>
+        <div class="prc-PageHeader-Navigation--uLav">
+          <div class="rightContentWrapper__DE7XPN reducedTopPadding__x"></div>
+          <div class="flex-auto"><nav class="prc-UnderlineNav-UnderlineWrapper-x"><a id="prs-files-anchor-tab" href="/acme/widgets/pull/7/changes">Files changed</a></nav></div>
+        </div>
+      </div>`;
+    window.history.replaceState(null, '', '/acme/widgets/pull/7');
+    setTabCounts(true);
+    syncCountsStandIn({ additions: 3, deletions: 1 });
+  });
+
+  afterEach(() => {
+    removeQuickReview();
+    setTabCounts(false);
+    vi.unstubAllGlobals();
+  });
+
+  it('stands before the counts at the end of the tab row, as on the conversation, not in GitHub’s bar', () => {
+    applyQuickReview(true, { page, groups: [groupAt(counts())], headSha: () => SHA });
+    expect(counts().previousElementSibling).toBe(group());
+    expect(group()?.parentElement?.className).toContain('rightContentWrapper');
+    expect(group()?.hasAttribute('data-geld-place')).toBe(false);
+  });
+
+  it('follows the counts into GitHub’s bar before paint once its tabs are there, and back to the tab row', () => {
+    applyQuickReview(true, { page, groups: [groupAt(counts())], headSha: () => SHA });
+    const bar = document.querySelector('[class*="actions"]');
+    const wrapper = document.querySelector('[class*="rightContentWrapper"]');
+    stick(true);
+    // What the controller's mutation callback runs, in this order, before the frame is painted.
+    syncCountsStandIn({ additions: 3, deletions: 1 });
+    reassertStatusPills();
+    expect(bar?.firstElementChild).toBe(group());
+    expect(group()?.nextElementSibling).toBe(counts());
+    expect(group()?.getAttribute('data-geld-place')).toBe('bar');
+    // The tab row's box keeps its marks, so the header under the bar keeps its height.
+    expect(wrapper?.hasAttribute('data-geld-quick-review-host')).toBe(true);
+    applyQuickReview(true, { page, groups: [groupAt(counts())], headSha: () => SHA });
+    expect(bar?.firstElementChild).toBe(group());
+    expect(wrapper?.hasAttribute('data-geld-quick-review-host')).toBe(true);
+    stick(false);
+    syncCountsStandIn({ additions: 3, deletions: 1 });
+    reassertStatusPills();
+    expect(counts().parentElement).toBe(wrapper);
+    expect(counts().previousElementSibling).toBe(group());
+    expect(group()?.hasAttribute('data-geld-place')).toBe(false);
+  });
+
+  it('stays in GitHub’s bar on a narrow header loaded past the tabs when the counts go back to the hidden tab row', () => {
+    const wrapper = document.querySelector<HTMLElement>('[class*="rightContentWrapper"]');
+    if (wrapper === null) throw new Error('fixture');
+    // A narrow header hides the tab row's counts; in the bar they show.
+    wrapper.checkVisibility = () => false;
+    counts().checkVisibility = function (this: HTMLElement) {
+      return this.parentElement !== wrapper;
+    };
+    stick(true);
+    syncCountsStandIn({ additions: 3, deletions: 1 });
+    applyQuickReview(true, { page, groups: [groupAt(counts())], headSha: () => SHA });
+    const bar = document.querySelector('[class*="actions"]');
+    expect(bar?.firstElementChild).toBe(group());
+    stick(false);
+    syncCountsStandIn({ additions: 3, deletions: 1 });
+    reassertStatusPills();
+    expect(counts().parentElement).toBe(wrapper);
+    expect(bar?.firstElementChild).toBe(group());
+    applyQuickReview(true, { page, groups: [groupAt(counts())], headSha: () => SHA });
+    expect(bar?.firstElementChild).toBe(group());
+    expect(group()?.getAttribute('data-geld-place')).toBe('bar');
+  });
+
+  it('stays in GitHub’s bar when the tab row has no counts to stand beside (a narrow header)', () => {
+    const wrapper = document.querySelector<HTMLElement>('[class*="rightContentWrapper"]');
+    if (wrapper === null) throw new Error('fixture');
+    wrapper.checkVisibility = () => false;
+    counts().checkVisibility = () => false;
+    applyQuickReview(true, { page, groups: [groupAt(counts())], headSha: () => SHA });
+    expect(document.querySelector('[class*="actions"]')?.firstElementChild).toBe(group());
+    expect(group()?.getAttribute('data-geld-place')).toBe('bar');
   });
 });
 

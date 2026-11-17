@@ -2,9 +2,8 @@ import { mountProviderAccess } from '../../src/ui/provider-access';
 import { browser } from 'wxt/browser';
 import { allCategories } from '@geld/core';
 import { formatCount, pluralize } from '@geld/core';
-import type { EnsureContentMessage, GetTabStateMessage, RevealFileMessage, TabState } from '../../src/lib/messages';
-import { isEnsureContentResponse, isTabState, REVEAL_HASH_PREFIX } from '../../src/lib/messages';
-import { fitMiddleTruncated } from '../../src/ui/middle-truncate';
+import type { EnsureContentMessage, GetTabStateMessage, TabState } from '../../src/lib/messages';
+import { isEnsureContentResponse, isTabState } from '../../src/lib/messages';
 import { compileRepoRules, decideRepo, ownerProbe, withRepoRule } from '@geld/core';
 import { allHosts, CLOUD_PROVIDER_HOSTS, describeRepository, isAutoViewedForAll, isCategoryEnabled, isCategoryInPicker, plainText, providerForHost, providerRepositoryScope, sectionsFor, withAutoViewedForAll } from '@geld/core';
 import type { AnyCategoryId, CategoriesField, GeldSettings, ToggleField } from '@geld/core';
@@ -18,12 +17,11 @@ import { polyfillCornerShape } from '../../src/ui/corner-shape';
 import { popupMaxHeight, popupNeedsScroll } from '../../src/ui/popup-size';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
 import { svgFromString } from '../../src/github/dom';
-import { describePage } from '../../src/github/page';
-import type { PageKind } from '../../src/github/page';
 import { ICON_BEAKER, ICON_EYE_CLOSED, ICON_INFO } from '../../src/github/ui/icons';
 import { wireFeedbackLink } from '../../src/ui/feedback-link';
 import { installErrorCapture } from '../../src/lib/error-capture';
 import { mountNightlyPopup } from '../../src/nightly/popup';
+import { mountConsentBanner } from '../../src/ui/consent-banner';
 
 installErrorCapture('popup');
 
@@ -82,6 +80,7 @@ async function main(): Promise<void> {
   // Titles and descriptions come from the active catalog; the popup is short-lived, so one read is enough.
   const catalog = await loadCatalog();
   const status = requireElement('status', HTMLSpanElement);
+  mountConsentBanner(requireElement('consent', HTMLDivElement), settings);
   mountAccountWidget(requireElement('account', HTMLDivElement), {
     variant: 'compact',
     promptHost: requireElement('account-prompt', HTMLDivElement),
@@ -348,79 +347,12 @@ async function main(): Promise<void> {
   /* Tab context */
   const contextRepo = requireElement('context-repo', HTMLSpanElement);
   const summary = requireElement('context-summary', HTMLParagraphElement);
-  const stats = requireElement('context-stats', HTMLElement);
+  const noRepo = requireElement('context-no-repo', HTMLParagraphElement);
+  const ruleState = requireElement('context-state', HTMLSpanElement);
+  const stats = requireElement('context-stats', HTMLParagraphElement);
   const statHidden = requireElement('context-hidden', HTMLSpanElement);
   const statAdd = requireElement('context-add', HTMLSpanElement);
   const statDel = requireElement('context-del', HTMLSpanElement);
-  const files = requireElement('context-files', HTMLDetailsElement);
-  const fileList = requireElement('context-file-list', HTMLUListElement);
-  // With nothing hidden the row is informational only; do not let it toggle.
-  stats.addEventListener('click', (event) => {
-    if (stats.hasAttribute('data-empty')) event.preventDefault();
-  });
-  // Rows only have a width once the list is open.
-  files.addEventListener('toggle', () => {
-    if (files.open) requestAnimationFrame(fitFileRows);
-  });
-  function fitFileRows(): void {
-    for (const element of fileList.querySelectorAll<HTMLElement>('.popup__file-path')) fitMiddleTruncated(element);
-  }
-
-  function iconButton(icon: 'copy' | 'goto', label: string, onClick: () => void): HTMLButtonElement {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'geld-button geld-button--icon';
-    button.title = label;
-    button.setAttribute('aria-label', label);
-    const glyph = document.createElement('span');
-    glyph.className = `geld-button__icon geld-button__icon--${icon}`;
-    glyph.setAttribute('aria-hidden', 'true');
-    button.append(glyph);
-    button.addEventListener('click', (event) => {
-      event.preventDefault();
-      onClick();
-    });
-    return button;
-  }
-
-  /** Open the file in the tab: in place when the diffs are on this page, else via the PR's files tab. */
-  async function goToFile(path: string, state: TabState): Promise<void> {
-    if (tab === null) return;
-    if (state.onDiffPage) {
-      const message: RevealFileMessage = { type: 'geld:reveal', path };
-      await browser.tabs.sendMessage(tab.id, message).catch(() => undefined);
-    } else if (state.diffPageUrl !== null) {
-      await browser.tabs.update(tab.id, { url: `${state.diffPageUrl}${REVEAL_HASH_PREFIX}${encodeURIComponent(path)}` });
-    } else {
-      return;
-    }
-    window.close();
-  }
-
-  function fileRow(path: string, category: string, state: TabState): HTMLLIElement {
-    const item = document.createElement('li');
-    item.className = 'popup__file';
-    const text = document.createElement('span');
-    text.className = 'popup__file-path';
-    text.dataset.full = path;
-    text.textContent = path;
-    text.setAttribute('aria-label', `${path} (${category})`);
-    const actions = document.createElement('span');
-    actions.className = 'popup__file-actions';
-    const copy = iconButton('copy', 'Copy path', () => {
-      void navigator.clipboard?.writeText(path).then(() => {
-        copy.dataset.done = '';
-        copy.title = 'Copied';
-        setTimeout(() => {
-          delete copy.dataset.done;
-          copy.title = 'Copy path';
-        }, 1200);
-      });
-    });
-    actions.append(copy, iconButton('goto', 'Go to file', () => void goToFile(path, state)));
-    item.append(text, actions);
-    return item;
-  }
   const actions = requireElement('context-actions', HTMLDivElement);
   const toggleRepo = requireElement('toggle-repo', HTMLButtonElement);
   const toggleOrg = requireElement('toggle-org', HTMLButtonElement);
@@ -591,30 +523,26 @@ async function main(): Promise<void> {
   const repository = tab === null || provider === null ? null : describeRepository(tab.url, provider);
   let activeRepository = repository;
   let repo: string | null = repository?.path ?? null;
-  // The feedback form's "Where" field: the kind of page, never its URL.
-  const PAGE_WORDS: Readonly<Record<PageKind, string>> = {
-    'pull-files': 'pull request files',
-    'pull-conversation': 'pull request conversation',
-    'pull-other': 'pull request',
-    commit: 'commit',
-    compare: 'compare',
-    other: tab === null ? '' : /\/pulls\b|\/issues\b/.test(tab.url.pathname) ? 'pull request list' : 'other GitHub page',
-  };
-  const feedbackContext = tab === null ? null : provider === 'github'
-    ? PAGE_WORDS[describePage(tab.url).kind]
-    : provider === 'gitlab'
-      ? /\/-\/merge_requests\/\d+/.test(tab.url.pathname) ? 'merge request' : 'other GitLab page'
-      : /\/pull-requests\/\d+/.test(tab.url.pathname) ? 'pull request' : 'other Bitbucket page';
-  wireFeedbackLink(requireElement('feedback-link', HTMLAnchorElement), feedbackContext);
+  const feedbackOpening = tab === null ? {} : { tabId: tab.id };
+  wireFeedbackLink(requireElement('feedback-link', HTMLAnchorElement), feedbackOpening);
+  wireFeedbackLink(requireElement('context-feedback', HTMLAnchorElement), feedbackOpening);
+
+  /** The repo stands in for the tagline in the header; off a repo the tagline and "No repo detected" show instead. */
+  function renderRepo(): void {
+    noRepo.hidden = repo !== null;
+    if (repo === null || tab === null) return;
+    contextRepo.textContent = tab.url.hostname === 'github.com' ? repo : `${tab.url.hostname}/${repo}`;
+    // Marks the subtitle as live context (kept when signed in) rather than the generic tagline (hidden once signed in).
+    contextRepo.dataset.context = 'repo';
+  }
+  renderRepo();
 
   async function refreshContext(): Promise<void> {
     if (tab === null) return;
     const state = await requestTabState(tab.id);
     activeRepository = state?.repository ?? activeRepository;
     repo = state?.repo ?? repo;
-    contextRepo.textContent = repo === null ? tab.url.hostname : tab.url.hostname === 'github.com' ? repo : `${tab.url.hostname}/${repo}`;
-    // Marks the subtitle as live context (kept when signed in) rather than the generic tagline (hidden once signed in).
-    contextRepo.dataset.context = 'repo';
+    renderRepo();
 
     const rules = compileRepoRules(settings.repoRules);
     const scope = activeRepository === null ? repo : providerRepositoryScope(activeRepository);
@@ -622,20 +550,18 @@ async function main(): Promise<void> {
 
     const showStats = settings.enabled && decision.allowed && state !== null && state.hasDiff && state.visible !== null && state.all !== null;
 
-    // One line says it all when there are numbers; prose only when there are none.
-    if (!settings.enabled) {
-      summary.textContent = 'Geld is turned off.';
-    } else if (!decision.allowed) {
-      summary.textContent = `Off in ${repo ?? 'this repository'} because of the rule "${decision.rule?.raw ?? ''}".`;
-    } else if (state === null || !state.hasDiff) {
-      summary.textContent = repo === null ? 'Open a supported repository to see what Geld is doing.' : 'No diff on this page.';
-    } else if (!showStats) {
-      summary.textContent = state.hiddenCount === 0 ? 'Nothing hidden on this page.' : `${pluralize(state.hiddenCount, 'file', 'files')} hidden on this page.`;
+    // One line says it all when there are numbers; prose only when there are none. Off a repo, or off by a rule, the
+    // "No repo detected" line or the org and repo toggles say it instead.
+    let line: string | null = null;
+    if (!settings.enabled) line = 'Geld is turned off.';
+    else if (repo !== null && decision.allowed && !showStats) {
+      if (state === null || !state.hasDiff) line = 'No diff on this page.';
+      else line = state.hiddenCount === 0 ? 'Nothing hidden on this page.' : `${pluralize(state.hiddenCount, 'file', 'files')} hidden on this page.`;
     }
-    summary.hidden = showStats;
+    summary.textContent = line ?? '';
+    summary.hidden = line === null;
 
-    files.hidden = !showStats;
-    const paths = state?.categories.flatMap((entry) => entry.paths.map((path) => ({ path, title: entry.title }))) ?? [];
+    stats.hidden = !showStats;
     if (showStats && state !== null && state.visible !== null && state.all !== null) {
       // One category describing every hidden file names it ("3 generated"); a mix says "N hidden" and the title lists the split.
       const only = state.categories.length === 1 ? state.categories[0] : undefined;
@@ -646,35 +572,30 @@ async function main(): Promise<void> {
       stats.title = `${state.categories.length > 1 ? `${parts.join(', ')}. ` : ''}Including hidden files: +${formatCount(state.all.additions)} \u2212${formatCount(
         state.all.deletions,
       )} in ${pluralize(state.all.files, 'file', 'files')}${state.expanded ? '. Currently shown on the page' : ''}`;
-      stats.toggleAttribute('data-empty', paths.length === 0);
-      if (paths.length === 0) files.open = false;
-      const current = state;
-      fileList.replaceChildren(...paths.map(({ path, title }) => fileRow(path, title, current)));
-      if (files.open) requestAnimationFrame(fitFileRows);
     }
 
     actions.hidden = repo === null || scope === null || !settings.enabled;
     renderRepoConfig(settings.enabled && decision.allowed ? (state?.repoConfig ?? null) : null);
     if (repo !== null && scope !== null) {
-      renderRuleButton(toggleRepo, scope, decision.allowed, scope);
+      ruleState.textContent = decision.allowed ? 'Enabled' : 'Disabled';
       if (provider === 'github') {
         const org = orgOf(repo);
-        const orgDecision = decideRepo(rules, ownerProbe(org));
-        renderRuleButton(toggleOrg, `${org}/*`, orgDecision.allowed, org);
+        renderRuleButton(toggleOrg, 'org', `${org}/*`, decideRepo(rules, ownerProbe(org)).allowed, org);
       } else {
         const namespace = scope.slice(0, scope.lastIndexOf('/'));
         const target = `${namespace}/${provider === 'gitlab' ? '**' : '*'}`;
-        renderRuleButton(toggleOrg, target, decideRepo(rules, ownerProbe(namespace)).allowed, target);
+        renderRuleButton(toggleOrg, 'org', target, decideRepo(rules, ownerProbe(namespace)).allowed, target);
       }
+      renderRuleButton(toggleRepo, 'repo', scope, decision.allowed, scope);
     }
   }
 
-  /** "✓ owner/repo" when Geld runs there, "✕ owner/repo" when a rule turns it off; click flips it. */
-  function renderRuleButton(button: HTMLButtonElement, label: string, on: boolean, target: string): void {
+  /** "✓ org" (green) while Geld runs there, "✕ org" (red) once a rule turns it off; a click flips it. */
+  function renderRuleButton(button: HTMLButtonElement, scope: 'repo' | 'org', label: string, on: boolean, target: string): void {
     const icon = document.createElement('span');
     icon.className = `geld-button__icon geld-button__icon--${on ? 'check' : 'x'}`;
     icon.setAttribute('aria-hidden', 'true');
-    button.replaceChildren(icon, document.createTextNode(label));
+    button.replaceChildren(icon, document.createTextNode(scope));
     button.setAttribute('aria-pressed', String(on));
     button.title = on ? `Geld is on for ${label}. Click to turn it off.` : `Geld is off for ${label}. Click to turn it on.`;
     button.dataset.target = target;

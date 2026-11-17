@@ -19031,7 +19031,8 @@ var botVerdictSchema = external_exports.object({
   sourceId: external_exports.string().min(1).optional(),
   reason: external_exports.string().min(1).optional(),
   runJudged: external_exports.literal(true).optional(),
-  needsHuman: external_exports.literal(true).optional()
+  needsHuman: external_exports.literal(true).optional(),
+  unthreaded: external_exports.object({ count: external_exports.number().int().positive(), sourceId: external_exports.string().min(1), digest: external_exports.string().min(1) }).optional()
 });
 var reviewerSchema = external_exports.object({
   login: external_exports.string().min(1),
@@ -19188,7 +19189,8 @@ function botVerdictFrom(value) {
   const sourced = value.sourceId === void 0 ? checked : { ...checked, sourceId: value.sourceId };
   const reasoned = value.reason === void 0 ? sourced : { ...sourced, reason: value.reason };
   const judged = value.runJudged === void 0 ? reasoned : { ...reasoned, runJudged: true };
-  return value.needsHuman === void 0 ? judged : { ...judged, needsHuman: true };
+  const human = value.needsHuman === void 0 ? judged : { ...judged, needsHuman: true };
+  return value.unthreaded === void 0 ? human : { ...human, unthreaded: { count: value.unthreaded.count, sourceId: value.unthreaded.sourceId, digest: value.unthreaded.digest } };
 }
 function metaFrom(value) {
   const meta3 = {
@@ -20266,9 +20268,9 @@ var consolidateOutputSchema = external_exports.object({
     external_exports.object({
       id: external_exports.string().min(1),
       title: external_exports.string().min(1).max(120),
-      severity: external_exports.enum(SEVERITIES).optional(),
-      context: external_exports.string().max(600).optional(),
-      fix: external_exports.string().max(2e3).optional()
+      severity: external_exports.enum(SEVERITIES).nullish(),
+      context: external_exports.string().max(600).nullish(),
+      fix: external_exports.string().max(2e3).nullish()
     })
   )
 });
@@ -20292,13 +20294,15 @@ var CONSOLIDATE_JSON_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["id", "title"],
+        // Strict structured outputs reject optional keys, so the optional fields are required and nullable.
+        required: ["id", "title", "severity", "context", "fix"],
         properties: {
           id: { type: "string" },
           title: { type: "string" },
-          severity: { type: "string", enum: [...SEVERITIES] },
-          context: { type: "string" },
-          fix: { type: "string" }
+          // Nullable as `anyOf`, never `type: [..., 'null']`: Anthropic checks an enum against a type list as a whole and refuses it.
+          severity: { anyOf: [{ type: "string", enum: [...SEVERITIES] }, { type: "null" }] },
+          context: { anyOf: [{ type: "string" }, { type: "null" }] },
+          fix: { anyOf: [{ type: "string" }, { type: "null" }] }
         }
       }
     }
@@ -20324,6 +20328,11 @@ var ADDRESSED_JSON_SCHEMA = {
     }
   }
 };
+
+// ../../packages/review/src/ai-client.ts
+var PROVIDER_WORDS = new Set(
+  "a about above access account additional additionalproperties after again all allof allowed an and any anyof api are array as assistant at auth authentication bad balance be been before billing boolean but by cannot characters completion config content context could credit credits day declared defs denied deployment deprecated description did does enum error exceed exceeded exceeds exist exists expected failed field fields for forbidden format found from function gateway got has have hour if in input insufficient integer internal invalid is it items json key keys later length limit limits max maximum maxitems match matches maxlength message messages min minimum minitems minlength minute missing mode model models more must near no not null number object of on oneof only or out output output_config overloaded parameter parameters pattern per permission please properties property provider quota rate received ref request requested requests required response response_format retry role schema second seconds server set should strict string structured support supported system temperature than that the this timed timeout to token tokens too tool tools try type unauthorized unavailable unknown unsupported user using value values was were when which with your json_schema".split(" ")
+);
 
 // ../../packages/review/src/reporters.ts
 function plural(count, noun) {
@@ -20811,6 +20820,116 @@ async function createNativePublication(input2, items) {
   }
   return nativePublicationSchema.parse({ v: 1, subject, items: entries });
 }
+
+// ../../packages/review/src/digest-document.ts
+var DIGEST_AREAS = ["comments", "threads", "reviews", "checks", "activity", "tasks", "bots", "previews"];
+var COVERAGE_STATES = ["complete", "partial", "unavailable"];
+var SUBJECT_STATES = ["open", "draft", "merged", "closed", "unknown"];
+var CHECK_STATES = ["success", "failure", "running", "queued", "manual", "skipped", "neutral", "cancelled", "unknown"];
+var REQUEST_STATES = ["pending", "not-pending", "unknown"];
+var RULE_STATES = ["passed", "failed", "pending", "unknown"];
+var EVENT_KINDS = ["push", "commit", "state", "task", "activity"];
+var instant = external_exports.string().refine((value) => !Number.isNaN(Date.parse(value)), "Expected a timestamp.");
+var nonEmpty = external_exports.string().refine((value) => value.trim() !== "", "Expected a value.");
+var digestSubjectSchema = external_exports.object({
+  provider: external_exports.enum(REVIEW_PROVIDERS),
+  origin: external_exports.string(),
+  repository: nonEmpty,
+  id: external_exports.string().regex(/^[1-9]\d*$/),
+  headSha: external_exports.string().regex(/^[0-9a-f]{7,64}$/i),
+  state: external_exports.enum(SUBJECT_STATES),
+  url: external_exports.string()
+});
+var digestAccountSchema = external_exports.object({
+  id: nonEmpty,
+  login: nonEmpty,
+  kind: external_exports.enum(["person", "bot"])
+});
+var digestReviewerSchema = external_exports.object({
+  account: digestAccountSchema,
+  standing: external_exports.enum(REVIEWER_STATES),
+  request: external_exports.enum(REQUEST_STATES),
+  anchor: external_exports.string().optional()
+});
+var digestRuleSchema = external_exports.object({ id: nonEmpty, label: nonEmpty, state: external_exports.enum(RULE_STATES) });
+var digestRequirementSchema = external_exports.object({
+  approvalsRequired: external_exports.number().int().min(0).nullable(),
+  approvalsLeft: external_exports.number().int().min(0).nullable(),
+  rules: external_exports.array(digestRuleSchema).nullable()
+}).refine((value) => value.approvalsRequired === null || value.approvalsLeft === null || value.approvalsLeft <= value.approvalsRequired, "Approvals left cannot exceed approvals required.");
+var digestCheckSchema = external_exports.object({
+  name: nonEmpty,
+  state: external_exports.enum(CHECK_STATES),
+  allowFailure: external_exports.boolean().optional(),
+  detailsUrl: external_exports.string().optional(),
+  sha: external_exports.string().optional()
+});
+var digestEventSchema = external_exports.object({
+  id: nonEmpty,
+  kind: external_exports.enum(EVENT_KINDS),
+  actorId: external_exports.string().optional(),
+  at: instant,
+  url: external_exports.string().optional(),
+  headSha: external_exports.string().optional()
+});
+var digestCoverageSchema = external_exports.object({ state: external_exports.enum(COVERAGE_STATES), reason: external_exports.string().optional() });
+var digestCapabilitiesSchema = external_exports.object({
+  dismissReviews: external_exports.boolean(),
+  requestReviewers: external_exports.boolean(),
+  editHistory: external_exports.boolean(),
+  botAccounts: external_exports.boolean(),
+  mergeQueue: external_exports.boolean(),
+  deployments: external_exports.boolean()
+});
+var digestDocumentSchema = external_exports.object({
+  v: external_exports.literal(1),
+  subject: digestSubjectSchema,
+  reviewers: external_exports.array(digestReviewerSchema),
+  requirement: digestRequirementSchema.nullable(),
+  bots: external_exports.array(botVerdictSchema),
+  checks: external_exports.array(digestCheckSchema),
+  items: external_exports.array(reviewItemSchema),
+  previews: external_exports.array(previewRecordSchema),
+  events: external_exports.array(digestEventSchema),
+  coverage: external_exports.partialRecord(external_exports.enum(DIGEST_AREAS), digestCoverageSchema),
+  capabilities: digestCapabilitiesSchema
+});
+
+// ../../packages/review/src/triage.ts
+var suggestOutputSchema = external_exports.object({
+  suggestions: external_exports.array(
+    external_exports.object({
+      ids: external_exports.array(external_exports.string().min(1)).min(1),
+      summary: external_exports.string().max(600),
+      replacement: external_exports.string().max(2e4).nullish()
+    })
+  )
+});
+var bodyOutputSchema = external_exports.object({
+  findings: external_exports.array(
+    external_exports.object({
+      title: external_exports.string().max(200),
+      task: external_exports.string().max(1e3),
+      path: external_exports.string().max(500).nullish(),
+      line: external_exports.number().int().nullish()
+    })
+  )
+});
+
+// ../../packages/review/src/fix-route.ts
+var routeOutputSchema = external_exports.object({
+  routes: external_exports.array(
+    external_exports.object({
+      id: external_exports.string().min(1),
+      scope: external_exports.enum(["lines", "wider"]),
+      needs: external_exports.string().max(600).nullish()
+    })
+  )
+});
+
+// ../../packages/review/src/cursor-agents.ts
+var UUID2 = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+var AGENT_ID = new RegExp(`^bc-${UUID2}$`, "i");
 
 // src/providers/http.ts
 var MAX_BYTES = 12 * 1024 * 1024;

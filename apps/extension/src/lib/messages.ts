@@ -1,6 +1,9 @@
-import type { AnyCategoryId, ChangeTotals, ErrorReport, FileStats, RepositoryIdentity, RepoConfigMode, SettingsIssue } from '@geld/core';
-import { parseErrorReports } from '@geld/core';
+import type { AnyCategoryId, ChangeTotals, ErrorReport, FileStats, RepositoryIdentity, RepoConfigMode, SettingsIssue, UsageCounter } from '@geld/core';
+import { isUsageCounter, parseErrorReports } from '@geld/core';
 import type { JevRequest, JevResult, ModelInfo } from '@geld/review';
+import type { CreatePullOutcome, PullAttempt } from './create-pull';
+import type { FeedbackDraft } from './feedback';
+import { parseDraft } from './feedback';
 
 /** Messages exchanged between the content script, popup and background. */
 
@@ -17,6 +20,8 @@ export interface FetchDiffRequest {
   readonly url: string;
   /** Absent in messages from older content scripts still running: treated as `background`. */
   readonly priority?: DiffPriority;
+  /** The head the answer is for: a pull request's `.diff` serves whatever its head is now, so the background caches per head. */
+  readonly sha?: string;
 }
 
 export type FetchDiffResponse =
@@ -64,10 +69,26 @@ export interface OpenSettingsMessage {
   readonly section?: string;
 }
 
+/** Content script → background: inject the chat sidebar's view (`chat-ui.js`) into the sender's frame. */
+export interface LoadChatUiMessage {
+  readonly type: 'geld:load-chat-ui';
+}
+
+export function isLoadChatUiMessage(value: unknown): value is LoadChatUiMessage {
+  return typeof value === 'object' && value !== null && Reflect.get(value, 'type') === 'geld:load-chat-ui';
+}
+
 /** Any context → background: Geld's own errors, already scrubbed (`error-capture.ts`). */
 export interface ErrorReportMessage {
   readonly type: 'geld:error-report';
   readonly errors: readonly ErrorReport[];
+}
+
+/** Any page → background: a feature was used, for the next usage ping's counts. */
+export interface UsageCountMessage {
+  readonly type: 'geld:usage-count';
+  readonly counter: UsageCounter;
+  readonly by: number;
 }
 
 /** Background → content script: the keyboard shortcut was pressed. */
@@ -187,6 +208,54 @@ export type AccountAction =
 
 export type AccountActionResponse = { readonly ok: true } | { readonly ok: false; readonly message: string };
 
+/** Feedback page → background: open this issue on Geld's repository as the signed-in reader. */
+export interface FeedbackSubmitMessage {
+  readonly type: 'geld:feedback-submit';
+  readonly title: string;
+  readonly body: string;
+}
+
+/** A Feedback link → an open feedback page: come to the front with this context. Answered `true` by the page. */
+export interface FeedbackOpenMessage {
+  readonly type: 'geld:feedback-open';
+  readonly tabId?: number;
+  readonly diagnostics?: boolean;
+  /** A Geld Nightly rollback the reader is saying why about, its builds in words ("build 4179"). */
+  readonly rollback?: FeedbackRollback;
+  /** Words to start an empty draft with (a "Request a bot" or "Request an agent" link). */
+  readonly draft?: FeedbackDraft;
+}
+
+/** Content script → background: open the feedback page about the sender's tab, an empty draft started with `draft`. */
+export interface OpenFeedbackMessage {
+  readonly type: 'geld:open-feedback';
+  readonly draft: FeedbackDraft;
+}
+
+export interface FeedbackRollback {
+  readonly from: string;
+  readonly to: string;
+}
+
+function isFeedbackRollback(value: unknown): value is FeedbackRollback {
+  return isRecord(value) && typeof value.from === 'string' && typeof value.to === 'string';
+}
+
+export type FeedbackSubmitResponse =
+  | { readonly ok: true; readonly number: number; readonly url: string }
+  | { readonly ok: false; readonly message: string };
+
+/**
+ * Content script → background: open the pull request GitHub's compare form failed to, through the API with the
+ * reader's Geld App token, as `gh pr create` does. Taken only from a tab on that repository's own pages.
+ */
+export interface CreatePullMessage {
+  readonly type: 'geld:create-pull';
+  readonly attempt: PullAttempt;
+  /** The login GitHub's page says is signed in (`meta[name="user-login"]`): the request goes only as that same account. */
+  readonly viewer: string;
+}
+
 /**
  * Options → background: look for a newer pattern catalog right now. The
  * outcome is also published through `local:catalogStatus`, which the options
@@ -212,7 +281,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function isFetchDiffRequest(value: unknown): value is FetchDiffRequest {
-  return isRecord(value) && value.type === 'geld:fetch-diff' && typeof value.url === 'string' && (value.priority === undefined || value.priority === 'page' || value.priority === 'background');
+  return (
+    isRecord(value) &&
+    value.type === 'geld:fetch-diff' &&
+    typeof value.url === 'string' &&
+    (value.priority === undefined || value.priority === 'page' || value.priority === 'background') &&
+    (value.sha === undefined || typeof value.sha === 'string')
+  );
 }
 
 export function isFetchDiffResponse(value: unknown): value is FetchDiffResponse {
@@ -251,6 +326,10 @@ export function isOpenSettingsMessage(value: unknown): value is OpenSettingsMess
 
 export function isErrorReportMessage(value: unknown): value is ErrorReportMessage {
   return isRecord(value) && value.type === 'geld:error-report' && parseErrorReports(value.errors) !== null;
+}
+
+export function isUsageCountMessage(value: unknown): value is UsageCountMessage {
+  return isRecord(value) && value.type === 'geld:usage-count' && isUsageCounter(value.counter) && typeof value.by === 'number' && Number.isInteger(value.by) && value.by > 0;
 }
 
 export function isToggleHiddenMessage(value: unknown): value is ToggleHiddenMessage {
@@ -311,6 +390,60 @@ export function isAccountActionMessage(value: unknown): value is AccountActionMe
 
 export function isCatalogCheckMessage(value: unknown): value is CatalogCheckMessage {
   return isRecord(value) && value.type === 'geld:catalog-check';
+}
+
+export function isFeedbackSubmitMessage(value: unknown): value is FeedbackSubmitMessage {
+  return isRecord(value) && value.type === 'geld:feedback-submit' && typeof value.title === 'string' && typeof value.body === 'string';
+}
+
+function isPullAttempt(value: unknown): value is PullAttempt {
+  return (
+    isRecord(value) &&
+    ['owner', 'repo', 'base', 'head', 'title', 'body'].every((key) => typeof value[key] === 'string') &&
+    (value.headRepo === null || typeof value.headRepo === 'string') &&
+    typeof value.draft === 'boolean'
+  );
+}
+
+/** Content script → background: whether Geld is signed in with the GitHub App as the account the page is signed in as, which the API retry needs. Answered with a boolean, never the account. */
+export interface ApiSignedInMessage {
+  readonly type: 'geld:api-signed-in';
+  readonly viewer: string;
+}
+
+export function isApiSignedInMessage(value: unknown): value is ApiSignedInMessage {
+  return isRecord(value) && value.type === 'geld:api-signed-in' && typeof value.viewer === 'string';
+}
+
+export function isCreatePullMessage(value: unknown): value is CreatePullMessage {
+  return isRecord(value) && value.type === 'geld:create-pull' && isPullAttempt(value.attempt) && typeof value.viewer === 'string';
+}
+
+export function isCreatePullOutcome(value: unknown): value is CreatePullOutcome {
+  if (!isRecord(value)) return false;
+  if (value.ok === true) return typeof value.number === 'number' && typeof value.url === 'string';
+  return value.ok === false && (value.reason === 'unavailable' || value.reason === 'refused') && typeof value.message === 'string';
+}
+
+export function isFeedbackOpenMessage(value: unknown): value is FeedbackOpenMessage {
+  return (
+    isRecord(value) &&
+    value.type === 'geld:feedback-open' &&
+    (value.tabId === undefined || typeof value.tabId === 'number') &&
+    (value.diagnostics === undefined || typeof value.diagnostics === 'boolean') &&
+    (value.rollback === undefined || isFeedbackRollback(value.rollback)) &&
+    (value.draft === undefined || parseDraft(value.draft) !== null)
+  );
+}
+
+export function isOpenFeedbackMessage(value: unknown): value is OpenFeedbackMessage {
+  return isRecord(value) && value.type === 'geld:open-feedback' && parseDraft(value.draft) !== null;
+}
+
+export function isFeedbackSubmitResponse(value: unknown): value is FeedbackSubmitResponse {
+  if (!isRecord(value)) return false;
+  if (value.ok === true) return typeof value.number === 'number' && typeof value.url === 'string';
+  return value.ok === false && typeof value.message === 'string';
 }
 
 export function isAccountActionResponse(value: unknown): value is AccountActionResponse {

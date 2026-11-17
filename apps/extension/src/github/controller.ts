@@ -2,7 +2,7 @@ import { applyTrackerLinks,removeTrackerLinks } from './tracker-links';
 import { applyAttachmentLightbox, removeAttachmentLightbox } from './attachment-lightbox';
 import { applyRelatedLinks, removeRelatedLinks } from './related-links';
 import type { Catalog, HiddenCategory } from '@geld/core';
-import { BUNDLED_CATALOG, CATEGORY_IDS, isAutoViewed, testSyntaxesFrom } from '@geld/core';
+import { BUNDLED_CATALOG, CATEGORY_IDS, hidCounterFor, isAutoViewed, testSyntaxesFrom } from '@geld/core';
 import type { TestSyntax } from '@geld/core';
 import type { ChangeTotals } from '@geld/core';
 import { subtractTotals } from '@geld/core';
@@ -11,7 +11,7 @@ import { createMatcher } from '@geld/core';
 import type { RepoConfigDecision, TabRepoConfig, TabState } from '../lib/messages';
 import { REVEAL_HASH_PREFIX } from '../lib/messages';
 import type { RepoRule } from '@geld/core';
-import { applyRepoConfigs, compileAuthorRules, compileRepoRules, decideRepo, declaredReviewBots, describeRepoConfig, repoFromPathname } from '@geld/core';
+import { applyRepoConfigs, compileAuthorRules, compileRepoRules, decideRepo, declaredReviewBots, repoResolvesOnFix, describeRepoConfig, repoFromPathname } from '@geld/core';
 import { geldRunCommand } from '@geld/review';
 import type { AuthorRules } from '@geld/core';
 import { extensionAlive, persist } from '../lib/context';
@@ -27,10 +27,12 @@ import { DiffSource, retriesLater } from './diff-source';
 import type { ResolvedRepoConfig } from './repo-config-source';
 import { RepoConfigSource, validConfigs } from './repo-config-source';
 import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, queryAll, restoreManagedText, svgFromString, writeAttribute } from './dom';
-import { conversationHeadSha, detectHeadSha, fetchHeadSha, shaFromCommitUrl, watchFilesRefresh } from './head-sha';
+import { conversationHeadSha, detectHeadSha, documentNavigatedSinceLoad, fetchHeadSha, forgetAskedHead, rememberAskedHead, shaFromCommitUrl, watchFilesRefresh } from './head-sha';
 import { applyQuickReview, quickReviewStandBusy, reassertStatusPills, rememberReviewGroup, removeQuickReview } from './quick-review';
+import { animateBarGroup, ghostBarDepartures } from './ui/bar-motion';
 import type { HeaderStatGroup } from './header-stats';
-import { applyHeaderStats, findHeaderStatGroups, holdsHeaderStats, isCountsStandIn, isSrOnlyText, removeCountsStandIn, restoreHeaderStats, syncCountsStandIn } from './header-stats';
+import { applyHeaderStats, branchGroupTotals, findHeaderStatGroups, holdsHeaderStats, isCountsStandIn, isSrOnlyText, removeCountsStandIn, restoreHeaderStats, syncCountsStandIn } from './header-stats';
+import { rememberTabCounts, setTabCounts } from './tab-counts';
 import type { StandIn } from './header-stats';
 import { headerDiffstat } from './header-diffstat';
 import type { DiffEntry, DiffView, TreeFileNode } from './model';
@@ -44,7 +46,9 @@ import { applyDiffstatSurfaces } from './diffstat-surfaces';
 import type { ListSurface } from './list-surfaces';
 import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surfaces';
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
+import { reassertDescriptionMenu } from './description-menu';
 import { applyPeoplePresence, removePeoplePresence } from './people-presence';
+import { applyCreatePullRetry, removeCreatePullRetry } from './create-pull-retry';
 import { applyBlockedListHiding, removeBlockedListHiding } from './blocked-lists';
 import { blockedFor } from './blocked-users';
 import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
@@ -80,9 +84,12 @@ import {
 import { legacyAdapter } from './views/legacy';
 import { activateTreeItem, ATTR_WRAP, isSelectedTreeItem, liveEntryRoot, reactAdapter } from './views/react';
 import { activateControl, findViewedControls, rewriteFilesLinksForWhitespace, WhitespaceRedirector } from './whitespace-viewed';
+import { countUsage } from '../lib/usage-count';
 
 /** Away at least this long and the tab is brought up to date on return (checks read again, the timeline caught up). */
 const CATCH_UP_AFTER_MS = 15_000;
+/** The longest a pull request reached in-document keeps GitHub's header counts while GitHub is asked for its head. */
+const HEAD_HOLD_MS = 2000;
 const ATTR_CONTAINER = 'data-geld-container';
 const ATTR_EXPANDED = 'data-geld-expanded';
 const ATTR_ENTRY = 'data-geld';
@@ -125,6 +132,9 @@ const VIRTUAL_NAVIGATION_PASSES = 4;
 /** How long a revealed file is held aligned at the top while diffs above it load: a plain list, and a virtualised one. */
 const ALIGN_MS = 1500;
 const VIRTUAL_ALIGN_MS = 8000;
+/** A file picked in GitHub's tree: how long to wait for GitHub's scroll to begin, and the still frames that end it. */
+const TREE_SCROLL_START_MS = 600;
+const TREE_SCROLL_STILL_FRAMES = 6;
 
 interface ClassifiedEntry extends Classified {
   readonly entry: DiffEntry;
@@ -307,6 +317,12 @@ export class GeldController {
   private observer: MutationObserver | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private readonly diffExpanded = new Map<string, boolean>();
+  /**
+   * The page the usage statistics last saw and what they counted on this visit to it: a pass on another page ends
+   * the visit (the Files tab and the conversation share a state key, so the path tells them apart), and coming back
+   * counts again, while the many passes of one visit count once.
+   */
+  private usageVisit: { readonly path: string; readonly counted: Set<string>; diffCounted: boolean } | null = null;
   /** The sidebar accordion panel the reader chose per page ("changes" or a category id). */
   private readonly activePanel = new Map<string, string>();
   /** The panel actually shown per page: the chosen one, or the one a search in GitHub's file filter opened instead. */
@@ -404,8 +420,19 @@ export class GeldController {
   private readonly autoViewedFiles = new Map<string, { head: string; tries: number; at: number; took: boolean }>();
   /** Stops watching for the files view's in-place refresh (head-sha.ts `watchFilesRefresh`). */
   private unwatchFilesRefresh: (() => void) | null = null;
-  /** The refresh the files view is on, so an answer to an earlier ask is not taken for the latest. */
-  private filesRefreshes = 0;
+  /** The ask for the head (`askHead`) that is current, so an answer to an earlier one is not taken for the latest. */
+  private headAsks = 0;
+  /** The page state the head and the settled header were read for: another one starts them afresh. */
+  private enteredKey: string | null = null;
+  /**
+   * Whether this document has moved to another page without a load since it began. GitHub's router keeps the first
+   * page's embedded payload, head included, so a head read from the page after such a move may be from before a push.
+   */
+  private navigatedInDocument = documentNavigatedSinceLoad();
+  /** The page state whose head is still to be asked of GitHub (`askHeadOnArrival`). */
+  private headAskFor: string | null = null;
+  /** Header counts wait for GitHub to name the head of a pull request reached in-document, at most until `until`. */
+  private headHold: { readonly stateKey: string; readonly until: number } | null = null;
 
   constructor(
     settings: GeldSettings,
@@ -494,6 +521,8 @@ export class GeldController {
     }
     for (const region of regions) this.pendingScope.add(region);
     markCrawlDirty(records);
+    // Before the stand-in below, which stands in the tab row only while GitHub's own counts are hidden.
+    this.syncTabCounts();
     // Header first, synchronously: this callback runs before the browser
     // paints, so a (re-)rendered header never shows GitHub's number when the
     // filtered one is already known or cached.
@@ -514,13 +543,18 @@ export class GeldController {
     // Likewise before paint: chips whose row GitHub just re-rendered come
     // straight back from the in-memory diff states, so no frame lacks them.
     if (chipRemoved(records)) this.applyListChips();
+    // GitHub's parts its bar just dropped (the tabs back in view) stay as ghosts to be carried out rather than vanish.
+    if (this.mayDressPage()) ghostBarDepartures(records);
     // The status pill too: a header GitHub (re)rendered shows Geld's pill in its first frame.
     if (this.settings.quickReview && this.mayDressPage()) reassertStatusPills();
-    // The description GitHub just rendered (a switch back to the conversation tab) is folded in its first frame.
-    if (this.mayDressPage()) foldDescriptionNow(this.settings);
+    // With the parts and the pill in place, the bar's left side slides as one block to where it now stands.
+    if (this.mayDressPage()) animateBarGroup();
+    // The description GitHub just rendered (a switch back to the conversation tab, a saved edit) is folded in its first frame.
+    if (this.mayDressPage()) foldDescriptionNow(this.settings, records);
     // The Overview's top card, which GitHub draws and re-renders between passes, dressed in its first frame, and the
     // digest back after a re-render of the column took it.
     dressOverviewNow(this.settings, this.mayDressPage());
+    if (this.mayDressPage()) reassertDescriptionMenu();
     // GitHub's skeleton back in the counts wrapper the group stands in by its fallback: out before this frame paints.
     if (this.settings.quickReview && this.currentPage !== null && quickReviewStandBusy()) this.placeQuickReview(this.currentPage, new URL(window.location.href));
     this.schedule(false);
@@ -671,6 +705,7 @@ export class GeldController {
     const target = event.target instanceof Element ? event.target : null;
     if (target === null) return;
     if (this.searchPanel !== null) this.keepSearchPanel(target, this.currentPage.stateKey);
+    this.followTreePick(target);
     if (this.settings.groupHidden) return;
     // Read the page afresh: React re-renders tree rows, so a view captured on
     // the last pass may hold stale elements that no longer match the click.
@@ -709,6 +744,71 @@ export class GeldController {
     }
     this.activePanel.set(stateKey, opened.panel);
     this.searchPanel = null;
+  }
+
+  /**
+   * GitHub's React files view scrolls to a file picked in its tree by where the file stands at the click, but the
+   * files above it are `content-visibility: auto` boxes at estimated heights until they render, which they do during
+   * that smooth scroll: it ends hundreds or thousands of pixels short. Once it ends, the file is put back at the
+   * offset GitHub aimed for and held there while the files around it settle.
+   */
+  private followTreePick(target: Element): void {
+    if (!this.mayDressPage()) return;
+    const row = target.closest('li[role="treeitem"]');
+    if (row === null) return;
+    const view = legacyAdapter.read() ?? reactAdapter.read();
+    if (view === null || view.kind !== 'react' || view.virtualized) return;
+    const anchor = view.treeFiles.find((file) => file.element === row)?.anchor ?? null;
+    if (anchor === null) return;
+    const live = (): HTMLElement | null => document.getElementById(anchor);
+    const picked = live();
+    if (picked === null) return;
+    const from = picked.getBoundingClientRect().top + window.scrollY;
+    this.cancelAlign?.();
+    this.cancelAlign = null;
+    this.afterTreeScroll((landed) => this.keepAligned(live, ALIGN_MS, true, from - landed));
+  }
+
+  /** Calls `onLanded` with the scroll position once GitHub's scroll has run and stopped; never when it does not begin or the reader takes over. */
+  private afterTreeScroll(onLanded: (landed: number) => void): void {
+    const began = performance.now();
+    let last = window.scrollY;
+    let moved = false;
+    let still = 0;
+    let stopped = false;
+    const stop = (): void => {
+      stopped = true;
+      window.removeEventListener('wheel', stop);
+      window.removeEventListener('touchstart', stop);
+      window.removeEventListener('keydown', stop);
+      if (this.cancelAlign === stop) this.cancelAlign = null;
+    };
+    this.cancelAlign = stop;
+    const options: AddEventListenerOptions = { passive: true, once: true };
+    const frame = (): void => {
+      if (stopped) return;
+      const y = window.scrollY;
+      if (y !== last) {
+        moved = true;
+        still = 0;
+        last = y;
+      } else still += 1;
+      if (!moved && performance.now() - began > TREE_SCROLL_START_MS) return stop();
+      if (moved && still >= TREE_SCROLL_STILL_FRAMES) {
+        stop();
+        onLanded(y);
+        return;
+      }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(() => {
+      if (stopped) return;
+      // Listened for from the next frame: the keydown that picked the file is still being dispatched.
+      window.addEventListener('wheel', stop, options);
+      window.addEventListener('touchstart', stop, options);
+      window.addEventListener('keydown', stop, options);
+      frame();
+    });
   }
 
   private markTouched(stateKey: string, path: string): void {
@@ -972,7 +1072,9 @@ export class GeldController {
     if (page.kind !== 'pull-conversation' || repo === null || !this.settings.prOverview) return undefined;
     const resolved = this.resolvedConfig(repo);
     const declared = resolved !== null && !resolved.loading && this.repoDecision(repo) === 'use' ? declaredReviewBots(validConfigs(resolved)) : null;
-    return { declared, configured: this.repoConfigs.botConfigs(window.location.origin, repo).found, apiTriggers: this.apiTriggers(repo) };
+    const inUse = resolved !== null && this.repoDecision(repo) === 'use';
+    const resolveOnFix = !inUse ? null : resolved.loading ? 'loading' : repoResolvesOnFix(validConfigs(resolved));
+    return { declared, configured: this.repoConfigs.botConfigs(window.location.origin, repo).found, apiTriggers: this.apiTriggers(repo), resolveOnFix };
   }
 
   /**
@@ -1082,6 +1184,7 @@ export class GeldController {
   }
 
   private setDiffExpanded(key: string, expanded: boolean): void {
+    if (expanded && this.diffExpanded.get(key) !== true) countUsage('hidden_files_shown');
     this.diffExpanded.set(key, expanded);
     // A deliberate show/hide-all overrides files the user toggled one by one.
     this.inlineTouched.delete(key);
@@ -1108,6 +1211,7 @@ export class GeldController {
     }
     if (!this.settings.enabled) {
       rememberReviewGroup(repoFromPathname(window.location.pathname), false);
+      rememberTabCounts(repoFromPathname(window.location.pathname), false);
       this.teardown();
       this.publish({ ...IDLE_STATE, allowed: false });
       return;
@@ -1115,6 +1219,7 @@ export class GeldController {
 
     const url = new URL(window.location.href);
     const page = describePage(url);
+    this.enterPage(page);
     this.currentPage = page;
     const repo = repoFromPathname(url.pathname);
     // A sign-in page at a repository URL (an organisation's SSO prompt, a 2FA check): nothing here is the
@@ -1128,15 +1233,19 @@ export class GeldController {
     const decision = repo === null ? { allowed: true, rule: null } : decideRepo(this.repoRules, repo);
 
     if (!decision.allowed) {
-      // A repository left out: GitHub's review button shows there from the next load's first frame too.
+      // A repository left out: GitHub's review button and counts show there from the next load's first frame too.
       rememberReviewGroup(repo, false);
+      rememberTabCounts(repo, false);
       this.teardown();
       this.publish({ ...IDLE_STATE, repo, allowed: false, rule: decision.rule?.raw ?? null });
       return;
     }
+    this.askHeadOnArrival(page);
 
     if (!document.documentElement.hasAttribute(ATTR_DRESSED)) document.documentElement.setAttribute(ATTR_DRESSED, '');
+    this.syncTabCounts();
     applyAttachmentLightbox(this.settings.attachmentLightbox);
+    guard('content:create-pull-retry', () => applyCreatePullRetry());
 
     // Another page state (a navigation) is always the whole page, whatever the batches said.
     const full = scope === null || this.lastPassKey !== page.stateKey;
@@ -1215,6 +1324,7 @@ export class GeldController {
     }
 
     const effectiveHidden = headerHidden ?? hidden;
+    this.countDiffPage(view !== null, (effectiveHidden?.categories ?? []).filter((entry) => entry.totals.files > 0).map((entry) => entry.category.id));
     this.publish({
       repo,
       repoConfig: this.tabRepoConfig(repo),
@@ -1238,6 +1348,25 @@ export class GeldController {
     });
 
     this.observer?.takeRecords();
+  }
+
+  /** Once per visit to a diff page: that it was read, and once per category that hid files on it (the diff streams in, so a category can join later). */
+  private countDiffPage(onDiff: boolean, hiding: readonly string[]): void {
+    const path = location.pathname;
+    if (this.usageVisit?.path !== path) this.usageVisit = { path, counted: new Set(), diffCounted: false };
+    if (!onDiff) return;
+    const visit = this.usageVisit;
+    if (!visit.diffCounted) {
+      visit.diffCounted = true;
+      countUsage('diff_pages');
+    }
+    for (const id of hiding) {
+      const counter = hidCounterFor(id);
+      if (visit.counted.has(counter)) continue;
+      if (visit.counted.size === 0) countUsage('diff_pages_hiding');
+      visit.counted.add(counter);
+      countUsage(counter);
+    }
   }
 
   /** `+N −M` chips on every PR row of the page (lists, stack popover, merge-box stack list). */
@@ -1584,6 +1713,7 @@ export class GeldController {
   private reveal(path: string, stateKey: string): void {
     const view = this.currentView;
     if (view === null) return;
+    countUsage('hidden_file_revealed');
     this.cancelAlign?.();
     this.cancelAlign = null;
     if (this.settings.groupHidden && !this.isDiffExpanded(stateKey, false)) this.setDiffExpanded(stateKey, true);
@@ -1695,16 +1825,21 @@ export class GeldController {
    * the target down after we aligned it. Re-align a few times while that
    * settles, but stop as soon as the user scrolls on their own. `live` names
    * the target's current element (a virtualised row can be remounted meanwhile).
+   * `offset` is where its top belongs below the viewport's, its scroll margin by default.
    */
-  private keepAligned(live: () => HTMLElement | null, holdMs: number, settleWhenStable: boolean): void {
+  private keepAligned(live: () => HTMLElement | null, holdMs: number, settleWhenStable: boolean, offset?: number): void {
     const first = live();
     if (first === null) return;
-    const scrollMargin = Number.parseFloat(getComputedStyle(first).scrollMarginTop) || 0;
+    const scrollMargin = offset ?? (Number.parseFloat(getComputedStyle(first).scrollMarginTop) || 0);
     const deadline = performance.now() + holdMs;
     let stableChecks = 0;
-    let userScrolled = false;
+    let stopped = false;
     const stop = (): void => {
-      userScrolled = true;
+      stopped = true;
+      window.removeEventListener('wheel', stop);
+      window.removeEventListener('touchstart', stop);
+      window.removeEventListener('keydown', stop);
+      if (this.cancelAlign === stop) this.cancelAlign = null;
     };
     this.cancelAlign = stop;
     const options: AddEventListenerOptions = { passive: true, once: true };
@@ -1713,13 +1848,9 @@ export class GeldController {
     window.addEventListener('keydown', stop, options);
 
     const check = (): void => {
+      if (stopped) return;
       const target = live();
-      if (userScrolled || performance.now() > deadline || target === null) {
-        window.removeEventListener('wheel', stop);
-        window.removeEventListener('touchstart', stop);
-        window.removeEventListener('keydown', stop);
-        return;
-      }
+      if (performance.now() > deadline || target === null) return stop();
       const drift = target.getBoundingClientRect().top - scrollMargin;
       if (Math.abs(drift) > 4) {
         stableChecks = 0;
@@ -1729,7 +1860,7 @@ export class GeldController {
       } else if (settleWhenStable && (stableChecks += 1) >= 3) {
         // A plain list is settled once it has stayed put; a virtualised one mounts more rows above at any moment
         // until the hold ends, so a quiet half-second there proves nothing.
-        return;
+        return stop();
       }
       setTimeout(check, 150);
     };
@@ -1783,8 +1914,8 @@ export class GeldController {
 
     let headerHidden: HiddenBreakdown | null = null;
     let allTotals: ChangeTotals | null = groups.find((group) => group.original !== null)?.original ?? null;
-    if (this.configPending(repoFromPathname(url.pathname))) {
-      // Settle once, with the repository's config included, rather than twice.
+    if (this.configPending(repoFromPathname(url.pathname)) || this.headHeld(page)) {
+      // Settle once, with the repository's config included and for the head GitHub names, rather than twice.
       this.headerGroups = [];
     } else if (page.diffUrl !== null && groups.length > 0 && (sha !== null || !domIsComplete)) {
       // The page's own diff: first in line whether or not its head SHA has been read yet.
@@ -1825,9 +1956,14 @@ export class GeldController {
   private syncCountsStandIn(page: PageInfo, sha: string | null, groups: readonly HeaderStatGroup[], url: URL): boolean {
     let want: StandIn | null = null;
     const pullPath = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(url.pathname)?.[0] ?? null;
-    if (page.kind.startsWith('pull') && page.diffUrl !== null && pullPath !== null && groups.every((group) => isCountsStandIn(group.host))) {
+    const standsIn = page.kind.startsWith('pull') && page.diffUrl !== null && pullPath !== null && groups.every((group) => isCountsStandIn(group.host));
+    if (standsIn && this.headHeld(page)) {
+      // The head GitHub names is still to come: the payload's may be from before a push, so its counts wait with it.
+      want = 'skeleton';
+    } else if (standsIn && page.diffUrl !== null && pullPath !== null) {
       // GitHub's totals are the whole pull request's, so a Files tab narrowed to a commit or range counts its own diff.
-      const github = page.commits === undefined ? headerDiffstat(pullPath, sha, () => this.onCountsStandInChanged()) : null;
+      // The new page's header shows GitHub's totals beside the branch names, hidden while Geld's stand in the tab row.
+      const github = page.commits === undefined ? (branchGroupTotals() ?? headerDiffstat(pullPath, sha, () => this.onCountsStandInChanged())) : null;
       const state = this.diffSource.request(page.diffUrl, sha, 'page');
       if (state.status === 'failed') want = github ?? null;
       else if (state.status === 'ready' && github !== undefined && !this.configPending(repoFromPathname(url.pathname))) {
@@ -1862,7 +1998,9 @@ export class GeldController {
     if (page.diffUrl === null || isSignInInterstitial()) return;
     const repo = repoFromPathname(url.pathname);
     if (repo !== null && !decideRepo(this.repoRules, repo).allowed) return;
+    this.enterPage(page);
     this.currentPage = page;
+    this.askHeadOnArrival(page);
     phase('header-now', () => this.applyHeaderTotals(page, url, this.matcherFor(repo), null, 0, null));
     this.observer?.takeRecords();
   }
@@ -1925,14 +2063,66 @@ export class GeldController {
    */
   private onFilesRefresh(): void {
     const page = this.currentPage;
-    if (page === null || !page.kind.startsWith('pull')) return;
-    const match = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(window.location.pathname);
-    if (match === null) return;
-    const generation = (this.filesRefreshes += 1);
+    if (page === null || !page.kind.startsWith('pull') || !this.mayDressPage()) return;
+    this.askHead(page, false);
+  }
+
+  /**
+   * A new page state: the head, the header settled for it and the head GitHub named belong to the page left, even
+   * when this is the same pull request again (`/pulls` and back, after a push). Reached in-document, the page's own
+   * payload may be the document's first page's, so GitHub is asked for the head and the header waits for it.
+   */
+  private enterPage(page: PageInfo): void {
+    if (page.stateKey === this.enteredKey) return;
+    const first = this.enteredKey === null;
+    this.enteredKey = page.stateKey;
+    if (!first) this.navigatedInDocument = true;
+    this.headShaCache = null;
+    this.settledHeader = null;
+    this.headerDirty = true;
+    this.headHold = null;
+    this.headAsks += 1;
+    forgetAskedHead();
+    this.headAskFor = this.navigatedInDocument && page.kind.startsWith('pull') && page.commits === undefined ? page.stateKey : null;
+  }
+
+  /** The ask `enterPage` wanted, once the page is one Geld dresses: a sign-in page or a repository left out asks nothing. */
+  private askHeadOnArrival(page: PageInfo): void {
+    if (this.headAskFor !== page.stateKey || !this.mayDressPage()) return;
+    this.headAskFor = null;
+    this.askHead(page, true);
+  }
+
+  private headHeld(page: PageInfo): boolean {
+    const hold = this.headHold;
+    return hold !== null && hold.stateKey === page.stateKey && page.commits === undefined && Date.now() < hold.until;
+  }
+
+  /** Ask GitHub's Commits data for the head; a different one than the page read re-keys the diff, and the header follows. */
+  private askHead(page: PageInfo, hold: boolean): void {
+    const pullPath = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(window.location.pathname)?.[0];
+    if (pullPath === undefined) return;
+    const generation = (this.headAsks += 1);
     const stateKey = page.stateKey;
-    void fetchHeadSha(match[0]).then((sha) => {
-      if (sha === null || generation !== this.filesRefreshes || this.currentPage?.stateKey !== stateKey) return;
-      if (this.headShaCache?.stateKey === stateKey && this.headShaCache.sha === sha) return;
+    if (hold) {
+      const held = { stateKey, until: Date.now() + HEAD_HOLD_MS };
+      this.headHold = held;
+      setTimeout(() => {
+        if (this.headHold !== held) return;
+        this.headHold = null;
+        this.schedule();
+      }, HEAD_HOLD_MS);
+    }
+    void fetchHeadSha(pullPath).then((sha) => {
+      if (generation !== this.headAsks || this.currentPage?.stateKey !== stateKey) return;
+      const held = this.headHold !== null;
+      this.headHold = null;
+      if (sha === null || (this.headShaCache?.stateKey === stateKey && this.headShaCache.sha === sha)) {
+        if (sha !== null) rememberAskedHead(pullPath, sha);
+        if (held) this.schedule();
+        return;
+      }
+      rememberAskedHead(pullPath, sha);
       this.headShaCache = { stateKey, sha };
       // Header counts come from the diff of that head and nothing else; the settled value belongs to the old one.
       this.settledHeader = null;
@@ -2016,6 +2206,25 @@ export class GeldController {
     onReviewBeforeMatch(event, this.settings);
   };
 
+  /**
+   * GitHub's counts beside the new page's branch names give way to Geld's in the tab row (`tab-counts.ts`) on every
+   * pull request page Geld dresses, and the decision is kept for the next load's first frame.
+   */
+  private syncTabCounts(): void {
+    const path = window.location.pathname;
+    if (!/^\/[^/]+\/[^/]+\/pull\/\d+(?:\/|$)/.test(path)) {
+      setTabCounts(false);
+      return;
+    }
+    const on = this.mayDressPage();
+    if (setTabCounts(on)) {
+      this.headerScan = null;
+      this.headerDirty = true;
+    }
+    // A sign-in page says nothing about the repository, and a dead context about the settings.
+    if (!isSignInInterstitial() && extensionAlive()) rememberTabCounts(repoFromPathname(path), on);
+  }
+
   /** What a pass checks before touching the page, for the work done before paint between passes. */
   private mayDressPage(): boolean {
     if (!this.settings.enabled || !extensionAlive() || isSignInInterstitial()) return false;
@@ -2025,7 +2234,11 @@ export class GeldController {
 
   /** `rebuild`: the page is dressed again right after, so the digest keeps what the reader opened and unfolded. */
   private teardown(rebuild = false): void {
+    this.cancelAlign?.();
+    this.cancelAlign = null;
     document.documentElement.removeAttribute(ATTR_DRESSED);
+    // A rebuild stands the counts in the tab row again at once: GitHub's beside the branch names would show for a frame.
+    if (!rebuild) setTabCounts(false);
     removeAttachmentLightbox();
     this.settledHeader = null;
     this.headerGroups = [];
@@ -2040,6 +2253,7 @@ export class GeldController {
     removeCommitHover();
     removeAuthorHiding();
     removePeoplePresence();
+    removeCreatePullRetry();
     removeBlockedListHiding();
     removeSurfaceStyles();
     for (const group of findHeaderStatGroups()) restoreHeaderStats(group);

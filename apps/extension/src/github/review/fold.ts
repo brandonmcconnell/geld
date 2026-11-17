@@ -60,6 +60,8 @@ export interface FoldGroup {
   readonly closure?: Closure;
   /** The timeline events group: the state change among them, for the row to read at a glance (see `eventHeadline`). */
   readonly headline?: EventHeadline;
+  /** When the row's content began, for a row read from data rather than from nodes of the page (the Overview's events). */
+  readonly at?: string;
   /** The Mentions group: what the description mentions, which has no timeline node to tell an edit by. */
   readonly refs?: readonly string[];
 }
@@ -273,12 +275,12 @@ export function groupLeftovers(leftovers: ReadonlyArray<{ readonly kind: Leftove
   const by = (kind: LeftoverKind): HTMLElement[] => leftovers.filter((entry) => entry.kind === kind).map((entry) => entry.root);
   const groups: FoldGroup[] = [];
   // Force-push events sit with the commits: both are pushes, and the row reads "from a to b" like a commit line.
-  const commits = by('commit');
   const commitCount = leftovers.reduce((sum, entry) => sum + (entry.kind === 'commit' ? (entry.count ?? 1) : 0), 0);
   const pushes = by('push');
-  if (commits.length + pushes.length > 0) {
+  const pushesAndCommits = leftovers.filter((entry) => entry.kind === 'commit' || entry.kind === 'push').map((entry) => entry.root);
+  if (pushesAndCommits.length > 0) {
     const parts = [commitCount > 0 ? `${commitCount} commit${commitCount === 1 ? '' : 's'}` : '', pushes.length > 0 ? `${pushes.length} force-push${pushes.length === 1 ? '' : 'es'}` : ''].filter((part) => part !== '');
-    groups.push({ key: 'commits', label: parts.join(' · '), author: null, nodes: [...commits, ...pushes], section: 'activity' });
+    groups.push({ key: 'commits', label: parts.join(' · '), author: null, nodes: pushesAndCommits, section: 'activity' });
   }
   const mentions = by('mention');
   const mentionCount = mentions.length + outgoing.length;

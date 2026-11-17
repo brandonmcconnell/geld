@@ -1,0 +1,25 @@
+Code review is broken. Geld fixes it.
+
+Geld fixes code review on GitHub. Every pull request gets one digest of its threads, bot verdicts and reviews, a diff with the noise set aside, and review controls on every tab. Less noise. More shipping.
+
+THE DIGEST
+• One panel under the description shows where a pull request stands: reviews, review bots, CI checks, previews, deployments and reports, one line each.
+• Review threads are grouped by push, open ones first. Open a thread and it reads as a chat, with replies, reactions and Resolve right there.
+• Each review bot (CodeRabbit, Greptile, Cursor Bugbot, Copilot, Devin and more) gets one pill with its verdict, and one menu asks any of them for a review.
+• The timeline folds away and long descriptions are shortened, so the digest is always in reach.
+
+THE DIFF
+• Tests, generated files, lockfiles, docs and other noise are set aside behind one row, never deleted. Every category has its own switch.
+• Header and list counts leave out what is set aside, with a breakdown on hover.
+• The file tree becomes an accordion: what is left to review, then one panel per category.
+• Test files read as their titles, and Flow draws the changed files as a diagram of what imports what.
+
+REVIEW FROM ANY TAB
+• Approve, request changes or comment from every tab of a pull request, in GitHub's own comment box.
+• The status label becomes a menu: mark ready for review, merge, add to the merge queue, convert to draft or close, stacks included.
+
+YOUR RULES
+• Gitignore-style patterns and per-repository rules, plus an optional .github/geld.yml so a team shares one setup.
+• GitHub's classic and new views, light and dark themes, and GitHub Enterprise Server hosts you add.
+
+Free and open source under the AGPL. Nothing about your browsing is sent anywhere.

@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it } from 'vitest';
-import { detectHeadSha } from './head-sha';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { detectHeadSha, fetchHeadSha, forgetAskedHead, rememberAskedHead } from './head-sha';
 import { restoreAll, teleportInto } from './review/teleport';
 
 const A = 'a'.repeat(40);
@@ -10,6 +10,26 @@ const C = 'c'.repeat(40);
 afterEach(() => {
   document.body.innerHTML = '';
   window.history.replaceState(null, '', '/');
+  forgetAskedHead();
+  vi.unstubAllGlobals();
+});
+
+describe('fetchHeadSha', () => {
+  it('takes the last commit the Commits tab lists, whatever its date', async () => {
+    // A head committed with an older date than the commit before it (a cherry-pick keeping its dates).
+    const body = {
+      payload: {
+        pullRequestsCommitsRoute: {
+          commitGroups: [
+            { commits: [{ oid: A, committedDate: '2026-11-02T10:00:00Z' }] },
+            { commits: [{ oid: C, committedDate: '2026-11-09T10:00:00Z' }, { oid: B, committedDate: '2026-11-01T10:00:00Z' }] },
+          ],
+        },
+      },
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })));
+    expect(await fetchHeadSha('/acme/widgets/pull/71')).toBe(B);
+  });
 });
 
 describe('detectHeadSha', () => {
@@ -90,6 +110,20 @@ describe('detectHeadSha', () => {
     teleportInto(slot, [newest]);
     expect(detectHeadSha()).toBe(B);
     restoreAll();
+  });
+
+  it('takes the head GitHub named over a payload kept from before a soft navigation, for that pull request only', () => {
+    window.history.replaceState(null, '', '/acme/widgets/pull/71/changes');
+    // GitHub's router keeps the document's first payload: it still names the head the tab loaded with.
+    document.body.innerHTML = `<script type="application/json">{"payload":{"pullRequest":{"headSha":"${A}"}}}</script>`;
+    expect(detectHeadSha()).toBe(A);
+    rememberAskedHead('/acme/widgets/pull/71', B);
+    expect(detectHeadSha()).toBe(B);
+    window.history.replaceState(null, '', '/acme/widgets/pull/72/changes');
+    expect(detectHeadSha()).toBe(A);
+    forgetAskedHead();
+    window.history.replaceState(null, '', '/acme/widgets/pull/71/changes');
+    expect(detectHeadSha()).toBe(A);
   });
 
   it('leaves the other pages to their own hooks', () => {

@@ -1,6 +1,7 @@
 import { withoutRequiredProviderOrigins } from './src/lib/provider-access-spec';
 import { readdirSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'wxt';
 import type { ThemeIcon } from 'wxt';
 import { ACTION_ICON_SIZES, actionIconPath } from './src/lib/action-icon';
@@ -62,7 +63,8 @@ export default defineConfig({
   // yourself, create the git-ignored `web-ext.config.ts` with `disabled: false`.
   webExt: { disabled: true },
   ...(nightly ? { outDirTemplate: '{{browser}}-mv{{manifestVersion}}-nightly' } : {}),
-  vite: ({ browser }) => ({ define: { __GELD_NIGHTLY__: JSON.stringify(selfUpdating(browser)) } }),
+  // Tailwind compiles only the chat sidebar's stylesheet (`src/chat/chat.css`, imported `?inline` into its shadow root); no other stylesheet uses it.
+  vite: ({ browser }) => ({ plugins: [tailwindcss()], define: { __GELD_NIGHTLY__: JSON.stringify(selfUpdating(browser)), __GELD_CHANNEL__: JSON.stringify(nightly ? 'nightly' : 'stable') } }),
   manifest: ({ browser, manifestVersion: mv }) => {
     const updater = selfUpdating(browser);
     const channel = nightly ? 'nightly' : 'build';
@@ -72,8 +74,8 @@ export default defineConfig({
       version: manifestVersion,
       // Chrome shows this instead of the raw number; other browsers ignore it.
       ...(browser === 'chrome' || browser === 'edge' ? { version_name: buildNumber === '' ? (nightly ? `${baseVersion} (nightly)` : baseVersion) : `${baseVersion} (${channel} ${buildNumber})` } : {}),
-      description:
-        'Hide review noise on GitHub, GitLab and Bitbucket. Review what matters with shared categories and settings.',
+      // Chrome shows it as the listing's summary and caps it at 132 characters.
+      description: 'Code review is broken. Geld fixes it. One digest of each pull or merge request on GitHub, GitLab and Bitbucket, the noise set aside.',
       homepage_url: 'https://github.com/brandonmcconnell/geld',
       // Black mark on a white tile. Deliberately no 48/96: chrome://extensions
       // requests the smallest icon >= 48 and shows it in a 48 CSS px box, so an
@@ -94,7 +96,8 @@ export default defineConfig({
       // redirects to; it is fetched from the background script only.
       // api.github.com serves the optional GitHub sign-in (gist sync) and the
       // signed pattern catalog (catalog/patterns.json via the contents API).
-      web_accessible_resources:[{resources:['tracker-icons/*.svg'],matches:['https://*/*']}],
+      // Firefox's MV2 list cannot limit a page to github.com, and its frame never loaded there, so it has no PDF viewer.
+      web_accessible_resources:[{resources:['tracker-icons/*.svg','agent-icons/*.png'],matches:['https://*/*']},...(browser === 'firefox' ? [] : [{resources:['pdf-viewer.html'],matches:['https://github.com/*']}])],
       host_permissions: [
         'https://github.com/*',
         'https://patch-diff.githubusercontent.com/*',
@@ -120,8 +123,12 @@ export default defineConfig({
                 // Its own id, so a nightly build installs beside Geld Stable rather than over it.
                 id: nightly ? 'geld-nightly@brandonmcconnell.com' : 'geld@brandonmcconnell.com',
                 strict_min_version: '128.0',
-                // Dashboard sign-in and tracker status are optional and need separate host permission.
-                data_collection_permissions: { required: ['none'], optional: ['authenticationInfo','personallyIdentifyingInfo','websiteContent'] },
+                // Dashboard sign-in and tracker status are optional and need separate host permission. The feedback form sends the
+                // diagnostics report and the page address only when the reader ticks them and sends the issue.
+                data_collection_permissions: {
+                  required: ['none'],
+                  optional: ['authenticationInfo', 'personallyIdentifyingInfo', 'websiteContent', 'technicalAndInteraction', 'browsingActivity'],
+                },
               },
             },
           }

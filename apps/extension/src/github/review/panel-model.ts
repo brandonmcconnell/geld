@@ -39,9 +39,14 @@ export interface RepoBotsHint {
    * Geld workflow names a secret for.
    */
   readonly apiTriggers: ReadonlyMap<string, string>;
+  /**
+   * The repository's `review.resolveOnFix` (its word over its organisation's), `null` when it says nothing or its config
+   * is not in use, `'loading'` while a config in use is still being read: Apply waits then, so it never resolves against it.
+   */
+  readonly resolveOnFix: boolean | null | 'loading';
 }
 
-export const NO_REPO_BOTS: RepoBotsHint = { declared: null, configured: new Map(), apiTriggers: new Map() };
+export const NO_REPO_BOTS: RepoBotsHint = { declared: null, configured: new Map(), apiTriggers: new Map(), resolveOnFix: null };
 
 /** The comment that asks bot `id` to run here: the Geld workflow's command where it applies, else the bot's own trigger. */
 export function triggerFor(id: string, hint: RepoBotsHint): string | null {

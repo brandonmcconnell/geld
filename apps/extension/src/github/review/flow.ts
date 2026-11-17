@@ -6,6 +6,7 @@ import { cancelIdle, whenIdle } from '../../lib/idle';
 import { looksLikeHtml } from '../../lib/http';
 import { pageFetch } from '../page-fetch';
 import { ICON_CHEVRON_DOWN, ICON_FILE_ADDED, ICON_FILE_MODIFIED, ICON_FILE_MOVED, ICON_FILE_REMOVED, ICON_WORKFLOW, ICON_X } from '../ui/icons';
+import { countUsage } from '../../lib/usage-count';
 
 /**
  * The Flow dialog: the pull request's changed files as a diagram of which
@@ -83,6 +84,11 @@ let source: FlowSource | null = null;
 let failure: FlowFailure | null = null;
 /** The pull request and head the cached reads belong to. */
 let sourceKey = '';
+
+/** The pull request's changed files as the controller last handed them over, for the chat assistant; empty off a pull request. */
+export function flowFiles(pullPath: string): readonly FlowFile[] {
+  return source !== null && source.pullPath === pullPath ? source.files : [];
+}
 
 /** What the diagram is drawn from, set by the controller on every conversation pass (null elsewhere), with the diff's failure while it has none. */
 export function setFlowSource(next: FlowSource | null, failed: FlowFailure | null = null): void {
@@ -474,6 +480,7 @@ let dialogIds = 0;
 export function openFlowDialog(): void {
   const pullPath = /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(location.pathname)?.[0];
   if (pullPath === undefined) return;
+  countUsage('flow_opened');
   const ofThisPull = (candidate: FlowSource | null): FlowSource | null => (candidate !== null && candidate.origin === location.origin && candidate.pullPath === pullPath ? candidate : null);
   // Flow is offered before the diff has loaded: opened then, it waits, and the source arriving redraws it.
   const opened = ofThisPull(source);

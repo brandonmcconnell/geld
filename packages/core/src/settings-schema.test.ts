@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, normalizeAiBaseUrl } from './settings';
 import {
   SETTINGS_SCHEMA,
+  aiGatewayLabel,
   fieldsFor,
   listFields,
   plainText,
@@ -42,6 +43,7 @@ describe('SETTINGS_SCHEMA', () => {
     expect(siteKeys.has('showBadge')).toBe(false);
     expect(siteKeys.has('shortcutEnabled')).toBe(false);
     expect(siteKeys.has('errorReports')).toBe(false);
+    expect(siteKeys.has('usageStats')).toBe(false);
     expect(siteKeys.has('enterpriseHosts')).toBe(false);
     expect(siteKeys.has('attachmentLightbox')).toBe(false);
     expect(siteKeys.has('enabled')).toBe(true);
@@ -51,7 +53,7 @@ describe('SETTINGS_SCHEMA', () => {
   });
 
   it('covers choice and text keys too', () => {
-    expect(choiceFields(allFields).map((field) => field.key).sort()).toEqual(['compactTimeline', 'repoConfigs', 'reviewGrouping', 'suggestedFixes']);
+    expect(choiceFields(allFields).map((field) => field.key).sort()).toEqual(['codingAgent', 'compactTimeline', 'repoConfigs', 'reviewGrouping', 'suggestedFixes']);
     expect(textFields(allFields).map((field) => field.key).sort()).toEqual(['aiBaseUrl', 'aiDecisionModel', 'aiModel']);
     expect(sectionsFor('site').some((section) => section.id === 'experiments')).toBe(true);
     expect(textFields(fieldsFor('site'))).toEqual([]);
@@ -115,6 +117,12 @@ describe('text presets', () => {
     expect(presetMatches(bedrock, 'https://bedrock-mantle.{region}.api.aws')).toBe(false);
     expect(presetMatches(openai, 'https://api.openai.com')).toBe(true);
     expect(presetMatches(openai, '')).toBe(false);
+  });
+
+  it('names a gateway by its preset, never by an account or resource in its URL', () => {
+    expect(aiGatewayLabel('https://ai-gateway.vercel.sh')).toBe('Vercel AI Gateway');
+    expect(aiGatewayLabel('https://api.cloudflare.com/client/v4/accounts/abc123/ai')).toBe('Cloudflare AI Gateway');
+    expect(aiGatewayLabel('https://llm.internal.acme.dev')).toBe('another gateway');
   });
 
   it('keeps groups in schema order', () => {
