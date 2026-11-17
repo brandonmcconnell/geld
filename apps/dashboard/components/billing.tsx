@@ -1,10 +1,13 @@
 'use client';
 import { measure } from '@/lib/measurement';
 import { useEffect, useState, useRef } from 'react';
+import { Dialog } from '@base-ui/react/dialog';
+import { X } from './icons';
+import type { Tier } from '@geld/domain';
 import { z } from 'zod';
-import { ArrowUpRight, Check, CreditCard } from 'lucide-react';
+import { ArrowUpRight, Check, CreditCard } from '@/components/icons';
 import { PLANS, planFor } from '@geld/domain';
-import { Button } from '@geld/ui';
+import { Button } from '@/components/button';
 const teamSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -23,6 +26,7 @@ const billingSchema = z.object({
   converted: z.boolean().optional(),
 });
 export function Billing() {
+  const [selectedTier, setSelectedTier] = useState<Tier>('team');
   const reportedConversion = useRef(false);
   const [teams, setTeams] = useState<z.infer<typeof teamSchema>[]>([]);
   const [teamId, setTeamId] = useState('');
@@ -102,14 +106,13 @@ export function Billing() {
     <div className="page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">PLANS AND BILLING</p>
-          <h1>Room for better reviews.</h1>
-          <p>Per-seat plans. Pooled credits. Spending limits you control.</p>
+          <h1>Billing</h1>
         </div>
         {team && (
           <label className="toolbar-select">
             Team
             <select
+              name="team.id"
               aria-label="Billing team"
               value={team.id}
               onChange={(event) => {
@@ -136,7 +139,9 @@ export function Billing() {
           <div>
             <small>CURRENT PLAN</small>
             <strong>{team.tier}</strong>
-            <p>{team.seats} billable seats</p>
+            <p>
+              {team.seats} billable {team.seats === 1 ? 'seat' : 'seats'}
+            </p>
           </div>
           <div>
             <small>POOLED CREDITS</small>
@@ -156,61 +161,100 @@ export function Billing() {
           </div>
         </div>
       )}
-      <div className="pricing-grid">
-        {PLANS.filter((plan) => plan.tier !== 'enterprise').map((plan) => (
-          <section className="pricing-card" key={plan.tier}>
-            <span className="eyebrow">{plan.tier}</span>
-            <h2>
-              ${(plan.centsPerSeat ?? 0) / 100}
-              <small> / seat / month</small>
-            </h2>
-            <p>
-              {plan.creditsPerSeat ? `${plan.creditsPerSeat} credits per seat, pooled` : 'Review without AI guides'}
+      <Dialog.Root>
+        <Dialog.Trigger render={<Button variant="outline" size="sm" />}>Compare plans</Dialog.Trigger>
+        <Dialog.Portal>
+          <Dialog.Backdrop className="dialog-backdrop" />
+          <Dialog.Popup className="dialog-popup plan-dialog">
+            <div className="dialog-heading">
+              <Dialog.Title>Choose a plan</Dialog.Title>
+              <Dialog.Close className="icon-button" aria-label="Close plans">
+                <X size={17} />
+                <span className="touch-target" aria-hidden="true" />
+              </Dialog.Close>
+            </div>
+            <Dialog.Description>Per-seat billing with credits pooled across your team.</Dialog.Description>
+            <div className="pricing-grid">
+              {PLANS.filter((plan) => plan.tier !== 'enterprise' && plan.tier !== 'free').map((plan) => (
+                <section className="pricing-card" data-selected={selectedTier === plan.tier} key={plan.tier}>
+                  <h3 className="plan-name">{plan.tier}</h3>
+                  <h2>
+                    ${(plan.centsPerSeat ?? 0) / 100}
+                    <small> / seat / month</small>
+                  </h2>
+                  <p>
+                    {plan.creditsPerSeat
+                      ? `${plan.creditsPerSeat} credits per seat, pooled`
+                      : 'Review without AI guides'}
+                  </p>
+                  <ul>
+                    <li>
+                      <Check size={12} />
+                      {plan.maxTeams === null
+                        ? 'Unlimited teams'
+                        : `${plan.maxTeams} team${plan.maxTeams === 1 ? '' : 's'}`}
+                    </li>
+                    <li>
+                      <Check size={12} />
+                      {plan.tier === 'free'
+                        ? 'Public repositories and your own'
+                        : plan.maxRepositories === null
+                          ? 'Unlimited repositories'
+                          : `Up to ${plan.maxRepositories} repositories`}
+                    </li>
+                    <li>
+                      <Check size={12} />
+                      {plan.overageCents === null
+                        ? 'AI guides require an upgrade'
+                        : `$${(plan.overageCents / 100).toFixed(2)} per additional credit`}
+                    </li>
+                    {plan.tier === 'team' && (
+                      <li>
+                        <Check size={12} />
+                        Self-serve access and outside collaborator audit
+                      </li>
+                    )}
+                    {plan.tier === 'business' && (
+                      <li>
+                        <Check size={12} />
+                        Audit export and OIDC single sign-on
+                      </li>
+                    )}
+                  </ul>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-pressed={selectedTier === plan.tier}
+                    data-measure="billing-plan"
+                    onClick={() => setSelectedTier(plan.tier)}
+                    disabled={busy || team?.tier === plan.tier}
+                  >
+                    {team?.tier === plan.tier
+                      ? 'Current plan'
+                      : selectedTier === plan.tier
+                        ? 'Selected'
+                        : 'Select plan'}
+                    <ArrowUpRight size={13} />
+                  </Button>
+                </section>
+              ))}
+            </div>
+            <p className="plan-credit-note">
+              Guides use 1 credit, or 3 above 1,500 changed lines. Replanning after a push uses 1 credit.
             </p>
-            <ul>
-              <li>
-                <Check size={12} />
-                {plan.maxTeams === null ? 'Unlimited teams' : `${plan.maxTeams} team${plan.maxTeams === 1 ? '' : 's'}`}
-              </li>
-              <li>
-                <Check size={12} />
-                {plan.tier === 'free'
-                  ? 'Public repositories and your own'
-                  : plan.maxRepositories === null
-                    ? 'Unlimited repositories'
-                    : `Up to ${plan.maxRepositories} repositories`}
-              </li>
-              <li>
-                <Check size={12} />
-                {plan.overageCents === null
-                  ? 'AI guides require an upgrade'
-                  : `$${(plan.overageCents / 100).toFixed(2)} per additional credit`}
-              </li>
-              {plan.tier === 'team' && (
-                <li>
-                  <Check size={12} />
-                  Self-serve access and outside collaborator audit
-                </li>
-              )}
-              {plan.tier === 'business' && (
-                <li>
-                  <Check size={12} />
-                  Audit export and OIDC single sign-on
-                </li>
-              )}
-            </ul>
-            <Button
-              variant={plan.tier === 'team' ? 'default' : 'outline'}
-              data-measure="billing-plan"
-              onClick={() => action('checkout', plan.tier)}
-              disabled={busy || plan.tier === 'free' || team?.tier === plan.tier || team?.role !== 'admin'}
-            >
-              {team?.tier === plan.tier ? 'Current plan' : plan.tier === 'free' ? 'Included' : 'Choose plan'}
-              <ArrowUpRight size={13} />
-            </Button>
-          </section>
-        ))}
-      </div>
+            <div className="dialog-actions">
+              <Dialog.Close render={<Button size="sm" variant="outline" />}>Cancel</Dialog.Close>
+              <Button
+                onClick={() => action('checkout', selectedTier)}
+                disabled={busy || !configured || team?.role !== 'admin' || selectedTier === team?.tier}
+              >
+                Continue to checkout
+                <ArrowUpRight size={14} />
+              </Button>
+            </div>
+          </Dialog.Popup>
+        </Dialog.Portal>
+      </Dialog.Root>
       <section className="settings-card">
         <h2>Monthly spending cap</h2>
         <p>Overage stops at this cap. Included credits remain available. Every team member counts as a seat.</p>
@@ -225,6 +269,7 @@ export function Billing() {
             Monthly cap in USD
           </label>
           <input
+            name="spend-cap"
             id="spend-cap"
             type="number"
             className="field"
@@ -241,10 +286,7 @@ export function Billing() {
       </section>
       <section className="settings-card">
         <h2>Manage your subscription</h2>
-        <p>
-          Use the test billing portal to update payment details, change plans or cancel a subscription. Enterprise plans
-          use a negotiated annual pool.
-        </p>
+        <p>Update payment details, invoices or your subscription in the billing portal.</p>
         <div className="flex gap-4 items-center">
           <Button
             variant="outline"
@@ -254,7 +296,7 @@ export function Billing() {
             Open billing portal
           </Button>
           <a href="mailto:hello@geld.sh" className="text-xs underline">
-            Need self-hosted or enterprise options? Contact us
+            Enterprise plans
           </a>
         </div>
       </section>

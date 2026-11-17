@@ -13,22 +13,24 @@ import {
   Flag,
   GitPullRequest,
   ListTree,
-  MessageSquare,
+  Search,
   RefreshCw,
   Sparkles,
   X,
-} from 'lucide-react';
+} from '@/components/icons';
 import { cn } from 'cn';
 import { z } from 'zod';
 import type { PullRef } from '@geld/domain';
-import { organisationPath, pullPath, repositoryPath } from '@geld/domain';
+import { pullPath, repositoryPath, guideCredits } from '@geld/domain';
 import { reconcileProgress, reviewPlanSchema } from '@geld/review/plan';
 import type { ReviewPlan, StepProgress } from '@geld/review/plan';
-import { Button, buttonVariants } from '@geld/ui';
+import { Button, buttonVariants } from '@/components/button';
 import { readEnterpriseInBrowser } from '@/lib/enterprise-reader';
 import { reviewContextSchema, progressSchema } from '@/lib/review-contracts';
 import type { ReviewData } from '@/lib/review-contracts';
 import { useDashboard, EmptyState } from './app-shell';
+import { FileNavigation, fileGroups } from './file-navigation';
+import { ReviewDigest } from './review-digest';
 import { DiffView } from './diff-view';
 import type { LineSelection } from './diff-view';
 import { ConsolidatedFindings } from './consolidated-findings';
@@ -66,7 +68,7 @@ export function ReviewScreen({ reference }: { readonly reference: PullRef }) {
   );
 }
 function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; readonly owner: string | null }) {
-  const { session, teams, activeTeam, setActiveTeam } = useDashboard();
+  const { session, teams, activeTeam, setActiveTeam, assistantOpen, setAssistantOpen } = useDashboard();
   const teamId = activeTeam;
   const [data, setData] = useState<ReviewData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -75,7 +77,11 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
   const [plan, setPlan] = useState<ReviewPlan | null>(null);
   const [progress, setProgress] = useState<Readonly<Record<string, StepProgress>>>({});
   const [stepIndex, setStepIndex] = useState(0);
-  const [mode, setMode] = useState('guide');
+  const [mode, setMode] = useState('conversation');
+  const [stepNavigationOpen, setStepNavigationOpen] = useState(false);
+  const [stepQuery, setStepQuery] = useState('');
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [wrap, setWrap] = useState(false);
   const [consolidated, setConsolidated] = useState<ConsolidatedResult | null>(null);
   const [planning, setPlanning] = useState(false);
   const [notice, setNotice] = useState('');
@@ -87,9 +93,8 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
   const [draftHead, setDraftHead] = useState<string | null>(null);
   const [posting, setPosting] = useState(false);
   const [line, setLine] = useState<LineSelection | null>(null);
-  const [assistantOpen, setAssistantOpen] = useState<boolean | null>(null);
   const wide = useSyncExternalStore(subscribeWide, wideSnapshot, () => false);
-  const showAssistant = assistantOpen ?? wide;
+  const showAssistant = assistantOpen;
   const mutationKey = useRef({ content: '', key: '' });
   const key = owner
     ? `geld.review.v2:${encodeURIComponent(owner)}:${pullPath(reference)}${teamId ? `:team:${encodeURIComponent(teamId)}` : ''}`
@@ -149,7 +154,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
       })
       .catch(() => {
         if (!abort.signal.aborted) {
-          setError('The provider could not be reached. Try again.');
+          setError('The Git host could not be reached. Try again.');
           setLoading(false);
         }
       });
@@ -199,16 +204,25 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
     setFlagOpen(false);
     setFlagNote('');
     if (plan) setStepIndex((value) => Math.min(value + 1, plan.steps.length - 1));
+    setShowCompleted(false);
+    requestAnimationFrame(() => document.querySelector('.step-story')?.scrollIntoView({ block: 'start' }));
   }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLElement && e.target.closest('input,textarea,select,[contenteditable=true]')) return;
+      if (
+        mode !== 'guide' ||
+        (e.target instanceof HTMLElement && e.target.closest('input,textarea,select,[contenteditable=true]'))
+      )
+        return;
       if (e.key === '[') setStepIndex((value) => Math.max(0, value - 1));
       if (e.key === ']' && plan) setStepIndex((value) => Math.min(value + 1, plan.steps.length - 1));
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [plan]);
+  }, [plan, mode]);
+  useEffect(() => {
+    document.querySelector('.step-link[aria-current="step"]')?.scrollIntoView({ block: 'nearest' });
+  }, [stepIndex, mode]);
   async function generate() {
     if (!data || error) return;
     measure('feature_usage', { feature: 'guide', stage: 'started' });
@@ -284,16 +298,16 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
       const value: unknown = await response.json();
       if (response.ok) {
         mutationKey.current = { content: '', key: '' };
-        setNotice(line ? 'Comment posted on the provider.' : 'Review submitted on the provider.');
+        setNotice(line ? 'Comment posted.' : 'Review submitted.');
         setSubmitOpen(false);
         setBody('');
         setRevision((value) => value + 1);
       } else {
         const error = failureSchema.safeParse(value);
-        setNotice(error.success ? error.data.error : 'The provider could not confirm this review.');
+        setNotice(error.success ? error.data.error : 'The Git host could not confirm this review.');
       }
     } catch {
-      setNotice('The review could not connect. Check the provider before trying again.');
+      setNotice('The review could not connect. Check the Git host before trying again.');
     }
     setPosting(false);
   }
@@ -315,22 +329,19 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
             </Link>
           }
         >
-          {error || 'Check the repository installation and your provider access.'}
+          {error || 'Check the repository installation and your repository access.'}
         </EmptyState>
       </div>
     );
   return (
     <div className="review-page">
       <header className="review-header">
-        <nav className="breadcrumbs" aria-label="Breadcrumb">
-          <Link href="/">Review queue</Link>
-          <span>/</span>
-          <Link href={organisationPath(reference)}>{reference.owner}</Link>
-          <span>/</span>
-          <Link href={repositoryPath(reference)}>{reference.repo}</Link>
-          <span>/</span>
+        <div className="review-context">
+          <Link href={repositoryPath(reference)}>
+            {reference.owner}/{reference.repo}
+          </Link>
           <span>#{reference.number}</span>
-        </nav>
+        </div>
         <div className="review-title-row">
           <div>
             <h1>{data.pull.title}</h1>
@@ -338,44 +349,44 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
               <span className={data.pull.draft ? 'draft-badge' : 'open-badge'}>
                 {data.pull.draft ? 'Draft' : data.pull.state}
               </span>{' '}
-              {data.pull.author} <span className="muted-slash">·</span> {data.files.length} files changed{' '}
-              <span className="muted-slash">·</span>{' '}
+              {data.pull.author} <span className="muted-slash">·</span>{' '}
+              {data.files.filter((file) => !file.hidden).length} essential ·{' '}
+              {data.files.filter((file) => file.hidden).length} hidden <span className="muted-slash">·</span>{' '}
               <span className="font-mono">
                 +{data.files.filter((file) => !file.hidden).reduce((sum, file) => sum + file.additions, 0)} −
                 {data.files.filter((file) => !file.hidden).reduce((sum, file) => sum + file.deletions, 0)}
               </span>{' '}
-              excluding hidden files
             </p>
           </div>
           <a
             href={data.pull.url.startsWith('https://') ? data.pull.url : '#'}
             className="icon-button"
-            aria-label="Open on provider"
+            aria-label="Open on Git host"
             target="_blank"
             rel="noreferrer"
           >
             <ArrowUpRight size={18} />
+            <span className="touch-target" aria-hidden="true" />
           </a>
         </div>
         <div className="review-tabs">
-          <div>
-            <button className={mode === 'guide' ? 'selected' : ''} onClick={() => setMode('guide')}>
-              <Sparkles size={14} />
-              Guided review
-              {plan && (
-                <span>
-                  {completed}/{plan.steps.length}
-                </span>
-              )}
-            </button>
-            <button className={mode === 'files' ? 'selected' : ''} onClick={() => setMode('files')}>
-              <ListTree size={14} />
-              All changes
-            </button>
-            <button className={mode === 'conversation' ? 'selected' : ''} onClick={() => setMode('conversation')}>
-              <MessageSquare size={14} />
-              Conversation
-            </button>
+          <div role="tablist" aria-label="Review views">
+            {[
+              { id: 'conversation', label: 'Digest' },
+              { id: 'files', label: 'Diff' },
+              { id: 'guide', label: 'Guide' },
+            ].map((tab) => (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === tab.id}
+                className={mode === tab.id ? 'selected' : ''}
+                onClick={() => setMode(tab.id)}
+                key={tab.id}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
           <div>
             <Button
@@ -386,12 +397,12 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
             >
               <RefreshCw size={14} />
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setAssistantOpen((value) => !(value ?? wide))}>
-              <Sparkles size={13} />
-              Assistant
-            </Button>
+            {session.user && !session.demo && (
+              <ProviderActions reference={reference} data={data} onChange={() => setRevision((value) => value + 1)} />
+            )}
             <Button
               size="sm"
+              variant={mode === 'guide' && plan ? 'outline' : 'default'}
               onClick={openReview}
               disabled={!session.user || session.demo || !!error || (mode === 'guide' && stale)}
             >
@@ -414,7 +425,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
       {stale && (
         <div className="review-banner">
           This pull request has new changes. Replan before continuing this guide.{' '}
-          <button onClick={generate} disabled={planning}>
+          <button type="button" onClick={generate} disabled={planning}>
             Replan
           </button>
         </div>
@@ -431,16 +442,22 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
       )}
       <TrackerLinks reference={reference} />
       <Assignments reference={reference} />
-      {session.user && !session.demo && (
-        <div className="review-banner">
-          <ProviderActions reference={reference} data={data} onChange={() => setRevision((v) => v + 1)} />
-        </div>
-      )}
-      <div className={cn('review-layout', showAssistant && 'with-assistant')}>
+      <div className={cn('review-layout', showAssistant && 'with-assistant', mode === 'files' && 'all-changes-layout')}>
+        {mode === 'files' && <FileNavigation files={data.files} />}
         {mode === 'guide' && plan && (
-          <aside className="step-sidebar">
+          <aside className="step-sidebar" data-open={stepNavigationOpen}>
+            <button
+              type="button"
+              className="step-navigation-toggle"
+              aria-expanded={stepNavigationOpen}
+              aria-controls="guide-steps"
+              onClick={() => setStepNavigationOpen(!stepNavigationOpen)}
+            >
+              Step {stepIndex + 1} of {plan.steps.length}
+              <ChevronDown size={14} />
+            </button>
             <div className="step-sidebar-heading">
-              <span>REVIEW PLAN</span>
+              <span>Steps</span>
               <small>
                 {completed} of {plan.steps.length} complete
               </small>
@@ -448,12 +465,27 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
             <div className="step-progress-track">
               <span style={{ width: `${plan.steps.length ? (completed / plan.steps.length) * 100 : 0}%` }} />
             </div>
-            <ol>
+            <label className="step-search">
+              <Search size={13} />
+              <input
+                name="stepSearch"
+                aria-label="Find a step"
+                placeholder="Find a step…"
+                value={stepQuery}
+                onChange={(event) => setStepQuery(event.target.value)}
+              />
+            </label>
+            <ol role="list" id="guide-steps">
               {plan.steps.map((step, index) => (
-                <li key={step.id}>
+                <li key={step.id} hidden={!step.title.toLowerCase().includes(stepQuery.toLowerCase())}>
                   <button
+                    type="button"
                     className={cn('step-link', stepIndex === index && 'active')}
-                    onClick={() => setStepIndex(index)}
+                    onClick={() => {
+                      setStepIndex(index);
+                      setStepNavigationOpen(false);
+                      setShowCompleted(true);
+                    }}
                     aria-current={stepIndex === index ? 'step' : undefined}
                   >
                     <span className={cn('step-number', progress[step.id]?.state)}>
@@ -468,7 +500,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
                     <span>
                       <strong>{step.title}</strong>
                       <small>
-                        {step.touches.length} review items
+                        {step.touches.length} review {step.touches.length === 1 ? 'item' : 'items'}
                         {step.supporting.length ? ` · ${step.supporting.length} supporting` : ''}
                         {progress[step.id]?.state === 'changed' ? ' · Changed' : ''}
                       </small>
@@ -507,29 +539,21 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
                 }}
                 onChange={() => setRevision((value) => value + 1)}
               />
-              <div className="review-description">
-                <h2>About this change</h2>
-                <p>{data.pull.body || 'No description provided.'}</p>
-              </div>
-              {data.commentsUnavailable && (
-                <p className="inline-note">
-                  Some conversation content could not be loaded. Open the provider for the complete discussion.
-                </p>
-              )}
-              {data.comments.map((comment) => (
-                <article className="review-comment" key={comment.id}>
-                  <strong>{comment.author}</strong>
-                  <p>{comment.body}</p>
-                </article>
-              ))}
+              <ReviewDigest data={data} />
             </>
           ) : mode === 'files' ? (
             <>
               <div className="review-section-heading">
-                <h2>Essential changes</h2>
-                <span>{data.files.filter((file) => !file.hidden).length} files</span>
+                <div>
+                  <h2>Essential</h2>
+                  <span>{data.files.filter((file) => !file.hidden).length} files to review</span>
+                </div>
+                <button type="button" className="wrap-toggle" aria-pressed={wrap} onClick={() => setWrap(!wrap)}>
+                  Wrap lines
+                </button>
               </div>
               <DiffView
+                wrap={wrap}
                 files={data.files.filter((file) => !file.hidden)}
                 onComment={(selection) => {
                   setDraftHead(data.pull.headSha);
@@ -544,24 +568,25 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
                 headSha={data.pull.headSha}
                 onChange={() => setRevision((value) => value + 1)}
               />
-              <details className="supporting-section">
-                <summary>
-                  Supporting and hidden changes <span>{data.files.filter((file) => file.hidden).length} files</span>
-                </summary>
-                <DiffView files={data.files.filter((file) => file.hidden)} supporting />
-              </details>
+              {fileGroups(data.files.filter((file) => file.hidden)).map(([label, files]) => (
+                <details className="supporting-section" key={label}>
+                  <summary>
+                    {label}
+                    <span>
+                      {files.length} hidden {files.length === 1 ? 'file' : 'files'}
+                    </span>
+                  </summary>
+                  <DiffView files={files} supporting wrap={wrap} />
+                </details>
+              ))}
             </>
           ) : !plan ? (
             <div className="guide-intro">
               <span className="guide-intro-icon">
                 <Sparkles size={28} />
               </span>
-              <p className="eyebrow">FOLLOW THE CHANGE</p>
-              <h2>Start with the story.</h2>
-              <p>
-                Turn the diff into a walkthrough. Each step connects related changes across files, explains their
-                purpose and keeps supporting changes close.
-              </p>
+              <h2>Guided review</h2>
+              <p>Review related changes together, one step at a time. Your decisions stay saved as you go.</p>
               <div className="guide-intro-facts">
                 <span>
                   <ListTree size={14} />
@@ -575,7 +600,12 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
               {!session.demo && (
                 <label className="guide-team-field">
                   Team
-                  <select className="field" value={teamId} onChange={(event) => setActiveTeam(event.target.value)}>
+                  <select
+                    name="teamId"
+                    className="field"
+                    value={teamId}
+                    onChange={(event) => setActiveTeam(event.target.value)}
+                  >
                     <option value="">Choose a team</option>
                     {teams.map((team) => (
                       <option value={team.id} key={team.id}>
@@ -587,21 +617,44 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
               )}
               <Button data-measure="guide" onClick={generate} disabled={planning || !session.user}>
                 <Sparkles size={15} />
-                {planning
-                  ? 'Planning the review...'
-                  : session.demo
-                    ? 'Preview a sample AI guide'
-                    : 'Plan this review with AI'}
+                {planning ? 'Planning the review...' : session.demo ? 'Preview a sample AI guide' : 'Create guide'}
               </Button>
               <p className="guide-cost-note">
                 {session.demo
                   ? 'Sample output only. No AI request or charge.'
-                  : 'Uses 1 credit, or 3 for more than 1,500 changed lines. Requires a paid plan and an AI provider.'}
+                  : `${guideCredits(
+                      data.files.reduce((sum, file) => sum + file.additions + file.deletions, 0),
+                      false,
+                    )} ${
+                      guideCredits(
+                        data.files.reduce((sum, file) => sum + file.additions + file.deletions, 0),
+                        false,
+                      ) === 1
+                        ? 'credit'
+                        : 'credits'
+                    } from your team pool. Requires a paid plan and an AI provider.`}
               </p>
               <Link href="/settings/providers" className="guide-settings-link">
                 Configure AI providers <ArrowUpRight size={12} />
               </Link>
             </div>
+          ) : finished && !showCompleted && !stale ? (
+            <section className="guide-complete">
+              <CheckCheck size={28} />
+              <h2>Guide complete</h2>
+              <p>
+                {completed} steps reviewed ·{' '}
+                {plan.steps.filter((step) => progress[step.id]?.state === 'flagged').length} flagged
+              </p>
+              <div>
+                <Button variant="outline" size="sm" onClick={() => setShowCompleted(true)}>
+                  Revisit steps
+                </Button>
+                <Button onClick={openReview} disabled={!session.user || session.demo || !!error || stale}>
+                  Submit review
+                </Button>
+              </div>
+            </section>
           ) : stale ? (
             <div className="guide-intro">
               <h2>Update this guide before reviewing its changes.</h2>
@@ -628,7 +681,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
                   {current.watch.length > 0 && (
                     <div className="step-watch">
                       <Flag size={13} />
-                      <ul>
+                      <ul role="list">
                         {current.watch.map((watch) => (
                           <li key={watch}>{watch}</li>
                         ))}
@@ -637,6 +690,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
                   )}
                 </div>
                 <DiffView
+                  wrap={wrap}
                   files={data.files}
                   refs={current.touches}
                   onComment={(selection) => {
@@ -646,16 +700,14 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
                     setSubmitOpen(true);
                   }}
                 />
-                <ReviewThreads
-                  threads={data.threads.filter((thread) => current.touches.some((ref) => ref.path === thread.path))}
-                  reference={reference}
-                  headSha={data.pull.headSha}
-                  onChange={() => setRevision((value) => value + 1)}
-                />
+
                 {current.supporting.length > 0 && (
                   <details className="supporting-section">
                     <summary>
-                      Supporting changes <span>{current.supporting.length} review items</span>
+                      Supporting changes{' '}
+                      <span>
+                        {current.supporting.length} review {current.supporting.length === 1 ? 'item' : 'items'}
+                      </span>
                     </summary>
                     <DiffView files={data.files} refs={current.supporting} supporting />
                   </details>
@@ -689,26 +741,17 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
                     </Button>
                   </div>
                 </div>
-                {finished && (
-                  <div className="review-finish">
-                    <CheckCheck size={25} />
-                    <div>
-                      <h3>You have reached the end.</h3>
-                      <p>
-                        {plan.steps.filter((step) => progress[step.id]?.state === 'accepted').length} accepted ·{' '}
-                        {plan.steps.filter((step) => progress[step.id]?.state === 'flagged').length} flagged
-                      </p>
-                    </div>
-                    <Button onClick={openReview} disabled={!session.user || session.demo || !!error || stale}>
-                      Finish your review
-                    </Button>
-                  </div>
-                )}
+                <ReviewThreads
+                  threads={data.threads.filter((thread) => current.touches.some((ref) => ref.path === thread.path))}
+                  reference={reference}
+                  headSha={data.pull.headSha}
+                  onChange={() => setRevision((value) => value + 1)}
+                />
               </>
             )
           )}
         </div>
-        {showAssistant && (
+        {showAssistant && wide && (
           <AssistantPanel
             reference={reference}
             data={data}
@@ -718,12 +761,34 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
             onClose={() => setAssistantOpen(false)}
           />
         )}
+        <Dialog.Root open={showAssistant && !wide} onOpenChange={(open) => setAssistantOpen(open)}>
+          <Dialog.Portal>
+            <Dialog.Backdrop className="dialog-backdrop" />
+            <Dialog.Popup className="assistant-sheet">
+              <Dialog.Title className="sr-only">Review assistant</Dialog.Title>
+              <AssistantPanel
+                reference={reference}
+                data={data}
+                plan={plan}
+                currentStep={current ?? null}
+                teamId={teamId}
+                onClose={() => setAssistantOpen(false)}
+              />
+            </Dialog.Popup>
+          </Dialog.Portal>
+        </Dialog.Root>
       </div>
       <Dialog.Root open={flagOpen} onOpenChange={setFlagOpen}>
         <Dialog.Portal>
           <Dialog.Backdrop className="dialog-backdrop" />
           <Dialog.Popup className="privacy-dialog">
-            <Dialog.Title className="text-lg font-medium">Flag this step</Dialog.Title>
+            <div className="flex items-center justify-between gap-4">
+              <Dialog.Title className="text-lg font-medium">Flag this step</Dialog.Title>
+              <Dialog.Close className="icon-button" aria-label="Close step note">
+                <X size={17} />
+                <span className="touch-target" aria-hidden="true" />
+              </Dialog.Close>
+            </div>
             <Dialog.Description className="muted mt-2">
               Keep a note for your final review. Nothing is posted yet.
             </Dialog.Description>
@@ -736,7 +801,13 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
             >
               <label>
                 What needs another look?
-                <textarea className="field" value={flagNote} onChange={(e) => setFlagNote(e.target.value)} required />
+                <textarea
+                  name="flagNote"
+                  className="field"
+                  value={flagNote}
+                  onChange={(e) => setFlagNote(e.target.value)}
+                  required
+                />
               </label>
               <Button data-measure="review-submit" type="submit">
                 Flag and continue
@@ -755,12 +826,11 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
               </Dialog.Title>
               <Dialog.Close className="icon-button" aria-label="Close review composer">
                 <X size={17} />
+                <span className="touch-target" aria-hidden="true" />
               </Dialog.Close>
             </div>
             <Dialog.Description className="muted mt-2">
-              {line
-                ? `${line.path} · line ${line.line}`
-                : 'This posts to the provider as you. Review your words before sending.'}
+              {line ? `${line.path} · line ${line.line}` : 'This posts to the Git host using your account.'}
             </Dialog.Description>
             <form
               className="form-stack mt-5"
@@ -772,7 +842,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
               {!line && (
                 <label>
                   Review decision
-                  <select className="field" value={event} onChange={(e) => setEvent(e.target.value)}>
+                  <select name="event" className="field" value={event} onChange={(e) => setEvent(e.target.value)}>
                     <option value="comment">Comment</option>
                     <option value="approve">Approve</option>
                     <option value="request_changes">Request changes</option>
@@ -782,6 +852,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
               <label>
                 {line ? 'Comment' : 'Review summary'}
                 <textarea
+                  name="body"
                   className="field"
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
@@ -808,7 +879,7 @@ function ReviewWorkspace({ reference, owner }: { readonly reference: PullRef; re
                   This draft belongs to an older version. Review the current changes and open a new draft.
                 </p>
               )}
-              {session.demo && <p className="muted">Provider writes are disabled in the local demonstration.</p>}
+              {session.demo && <p className="muted">Git host writes are disabled in the local demonstration.</p>}
               {notice && (
                 <p className="muted" role="status">
                   {notice}

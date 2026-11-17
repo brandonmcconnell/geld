@@ -1,5 +1,5 @@
 'use client';
-import { Button } from '@geld/ui';
+import { Button } from '@/components/button';
 export default function ErrorPage({ reset }: { readonly reset: () => void }) {
   return (
     <div className="page">

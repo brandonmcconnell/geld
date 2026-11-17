@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
-import { Button } from '@geld/ui';
+import { Button } from '@/components/button';
 import { queueSchema } from '@/lib/contracts';
 import type { QueueData } from '@/lib/contracts';
 import { useDashboard } from './app-shell';
@@ -112,6 +112,7 @@ function SelectionWorkspace() {
         <label className="settings-row">
           <span>Select all loaded repositories</span>
           <input
+            name="value"
             type="checkbox"
             disabled={busy}
             checked={rows.every((repo) => !hidden.includes(repoKey(repo)))}
@@ -132,6 +133,7 @@ function SelectionWorkspace() {
             <small> {repo.ref.host}</small>
           </span>
           <input
+            name="value"
             type="checkbox"
             disabled={busy}
             checked={!hidden.includes(repoKey(repo))}
