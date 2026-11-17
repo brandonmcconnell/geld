@@ -385,3 +385,22 @@ svg.geld-provider-digest-icon[data-geld-outline] > [fill="currentColor"] { fill:
 .geld-provider-review [data-geld-status-row] > .geld-provider-review__request-menu > .geld-provider-review__menu-list { inset-inline: auto 0; min-inline-size: 220px; }
 .geld-provider-review .geld-provider-review__request-menu > .geld-provider-review__menu-list > p { margin: 0; padding: var(--geld-provider-space-3); }
 .geld-provider-review .geld-provider-review__request-menu > summary[data-geld-running] { color: var(--geld-provider-text-subtle); }
+
+/* A bot's own badges in its comment, as GitHub's chat wears them: View on the byline, the re-trigger badge hidden. */
+.geld-provider-review .geld-provider-review__body [data-geld-agent-view],
+.geld-provider-review .geld-provider-review__body [data-geld-agent-rerun] { display: none !important; }
+.geld-provider-review .geld-provider-review__byline-controls { display: inline-flex; gap: 6px; margin-inline-start: auto; }
+.geld-provider-review .geld-provider-review__byline-control { display: inline-flex; align-items: center; gap: 4px; min-block-size: 24px; padding-block: 0; font: var(--geld-provider-font-small); text-decoration: none; }
+.geld-provider-review .geld-provider-review__byline-control > svg { inline-size: 12px; block-size: 12px; }
+.geld-provider-review .geld-provider-review__byline-control[data-kind='latest'] > svg { transform: scaleX(-1); }
+/* The chevron keeps the row's far end, as on GitHub, with Request a review just before it. */
+.geld-provider-review [data-geld-status-row]:has(> .geld-provider-review__request-menu) > .geld-provider-review__section-toggle::after {
+  position: absolute; inset-block-start: calc(50% - .3em); inset-inline-end: calc(var(--geld-provider-space-5) + 2px); margin: 0;
+}
+.geld-provider-review [data-geld-status-row]:has(> .geld-provider-review__request-menu) > .geld-provider-review__request-menu { inset-block-start: 50%; translate: 0 -50%; inset-inline-end: calc(var(--geld-provider-space-5) + 1em); }
+.geld-provider-review [data-geld-status-row]:has(> .geld-provider-review__request-menu) > .geld-provider-review__section-toggle { padding-inline-end: calc(var(--geld-provider-space-5) + 1em + 36px); }
+
+/* A thread chat's Fix stands on the chat's head at its right, as GitHub's head actions do. */
+.geld-provider-review .geld-provider-review__chat-head { display: flex; justify-content: flex-end; align-items: center; gap: 6px; padding: var(--geld-provider-space-2) var(--geld-provider-space-4); border-block-end: var(--geld-provider-border-width) solid var(--geld-provider-border); }
+.geld-provider-review .geld-review__chat-fix { display: inline-flex; align-items: center; gap: 4px; min-block-size: 24px; padding-block: 0; font: var(--geld-provider-font-small); }
+.geld-provider-review .geld-review__chat-fix > svg { inline-size: 14px; block-size: 14px; }

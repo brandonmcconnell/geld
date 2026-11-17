@@ -852,6 +852,24 @@ describe('provider conversation digest', () => {
     panel.destroy();
   });
 
+  it('wears a bot\'s own View badge on its byline and offers See latest on an earlier summary', () => {
+    const author = { id: 'trusted-bot', login: 'greptile', automated: true };
+    const older = { ...comment('10', 'Greptile Summary. Confidence Score: 3/5'), author, createdAt: '2026-11-01T10:00:00Z' };
+    const newer = { ...comment('11', 'Greptile Summary. Confidence Score: 5/5'), author, createdAt: '2026-11-02T10:00:00Z' };
+    const native: ProviderReviewInput = { ...input([thread('a')]), bots: [{ id: 'greptile', authorId: author.id }] };
+    const panel = renderProviderReviewPanel(host(), native, {
+      comments: [older, newer], reviewGrouping: 'type',
+      renderComment: (_source, body) => { body.innerHTML = '<p>Summary</p><p><a href="https://app.greptile.com/o/r/pull/7"><img alt="View in Greptile"></a></p>';return true; },
+    });
+    const bylines = [...panel.element.querySelectorAll<HTMLElement>('.geld-provider-review__source')].filter((source) => source.dataset.geldSource === older.anchor);
+    const view = bylines[0]?.querySelector<HTMLAnchorElement>('[data-kind="view"]');
+    expect(view?.href).toBe('https://app.greptile.com/o/r/pull/7');
+    expect(view?.title).toBe('View in Greptile');
+    expect(bylines[0]?.querySelector('[data-geld-agent-view]')).not.toBeNull();
+    expect(bylines[0]?.querySelector('[data-kind="latest"]')?.textContent).toBe('See latest');
+    panel.destroy();
+  });
+
   it('uses the native avatar of a bound bot account for its compact summary', () => {
     const author = { id: 'trusted-bot', login: 'project-reviewer', automated: true };
     const source = { ...comment('1'), author };

@@ -123,8 +123,8 @@ Decision needed: keep Merge checks as a provider row, or fold it into CI and the
 | Line opens to latest summary as a one-bubble chat | match: the latest summary is seated on its line (`seatedSummaries`), not in its round, and still previews on hover | match: same | sanitised copy | should be a slot (the note node) |
 | Run's threads as chips (`threadHeadOf`) | partial: the bot's threads nested by status | partial: same | discussions / comments | — |
 | Rerun on the summary | partial: CodeRabbit and Greptile only, "Copy command" and "Open native comment", never posts (`gitlab/bot-request.ts`) | missing | — | — |
-| View (bot site badge) | missing | missing | comment body | — |
-| See latest | missing | missing | — | — |
+| View (bot site badge) | match: GitHub's badge reading (`review/agent-badges.ts`): the badge leaves the bubble for View on the byline | match | comment body | — |
+| See latest | match: a summary from an earlier run offers See latest, opening the bot's line | match | — | — |
 | Request a review menu (send glyph, spinner while a bot runs, "Request it" help) | partial: GitHub's control and help (`requestMenu`, shared `missingToolHelp`); its lines open each bot's request, which copies the command, since Geld posts nothing here | partial: same, with no commands yet | — | — |
 | Running bot's spinner | match: GitHub's spinner (`digestSpinner`, the shared `ICON_SPINNER`) | match | — | — |
 | Bot approval distinct from clean | missing (see §2.2) | missing | GL `/approval_state` · BB participants | — |
