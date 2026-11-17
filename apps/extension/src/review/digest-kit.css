@@ -325,3 +325,22 @@
 .geld-review__menu-item:hover {
   background: var(--geld-review-hover);
 }
+
+/* GitHub's own loading spinner (Primer's Spinner, `ICON_SPINNER`), turned as its `anim-rotate` turns it: whatever Geld
+   waits on, on every host. */
+.geld-spinner,
+.geld-spinner circle,
+.geld-spinner path {
+  fill: none !important;
+}
+
+.geld-spinner {
+  transform-origin: center;
+  animation: geld-spin 1s linear infinite;
+}
+
+@keyframes geld-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

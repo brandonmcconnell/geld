@@ -343,6 +343,7 @@ export class ProviderConversation {
           button: () => this.ai.button(),
           card: () => this.ai.card(),
         },
+        ...(this.services.triage?.reportMissingTool === undefined ? {} : { onMissingTool: this.services.triage.reportMissingTool }),
         suggestedFixes: settings.suggestedFixes,
         reviewGrouping: settings.reviewGrouping,
         ...(viewerId === null || viewerId === undefined ? {} : { viewerId }),

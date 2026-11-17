@@ -1,4 +1,5 @@
 import emblem from '../../../../assets/brand/geld-logomark-grid.svg?raw';
+import { ICON_SPINNER } from '../github/ui/icons';
 
 const paths = {
   flow: '<rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/>',
@@ -24,6 +25,7 @@ const paths = {
   link: '<path d="m10 13 4-4m-6 7-1 1a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m0 12a4 4 0 0 0 6 0l5-5a4 4 0 0 0-6-6l-1 1"/>',
   more: '<circle cx="5" cy="12" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/><circle cx="19" cy="12" r="1.2" fill="currentColor"/>',
   rocket: '<path d="M5 15c-1.5 1.3-2 5-2 5s3.7-.5 5-2c.7-.8.7-2.1-.1-2.9-.8-.8-2.1-.8-2.9-.1Z"/><path d="m12 15-3-3a22 22 0 0 1 2-4A13 13 0 0 1 22 2c0 2.7-.8 7.5-6 11a22 22 0 0 1-4 2Z"/><path d="M9 12H4s.6-3 2-4c1.6-1.1 5 0 5 0m1 7v5s3-.6 4-2c1.1-1.6 0-5 0-5"/>',
+  send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
   history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l4 2"/>',
 } as const;
 
@@ -39,5 +41,16 @@ export function digestIcon(name: DigestIcon | 'geld', doc: Document = document):
   if (name !== 'geld') svg.setAttribute('data-geld-outline', '');
   svg.setAttribute('width', '16');svg.setAttribute('height', '16');
   svg.setAttribute('aria-hidden', 'true');svg.setAttribute('focusable', 'false');
+  return svg;
+}
+
+/** GitHub's own loading spinner (`ICON_SPINNER`), for what Geld waits on in the digest: a bot running, a request going out. */
+export function digestSpinner(doc: Document = document): SVGSVGElement {
+  const template = doc.createElement('template');
+  template.innerHTML = ICON_SPINNER;
+  const svg = template.content.querySelector('svg');
+  if (svg === null) throw new Error('Missing spinner');
+  svg.classList.add('geld-provider-digest-icon');
+  svg.setAttribute('focusable', 'false');
   return svg;
 }

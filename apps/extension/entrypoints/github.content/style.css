@@ -1089,17 +1089,6 @@ html[data-geld-tab-counts] [data-component='PageHeader']:has([class*='branchGrou
   display: flex !important;
 }
 
-.geld-spinner,
-.geld-spinner circle,
-.geld-spinner path {
-  fill: none !important;
-}
-
-.geld-spinner {
-  transform-origin: center;
-  animation: geld-spin 1s linear infinite;
-}
-
 /*
  * "3 ✓ 1 ✗ 3 💬": how the reviews stand, muted counts with each glyph in its verdict's colour, a surface only under the
  * pointer. A link to the reviews on the conversation; resting on it shows who reviewed (the snapshot card).
@@ -4206,11 +4195,6 @@ html [data-geld-person-fold-part][data-geld-person-fold-part] {
   gap: 6px;
 }
 
-@keyframes geld-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 /* One level down: reviews, threads and people's comments inside the Reviews row. */
 .geld-review__slot[data-kind='list'] > .geld-review__slot-body {
   padding: 0;

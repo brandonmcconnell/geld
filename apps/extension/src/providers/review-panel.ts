@@ -1,4 +1,5 @@
 import { providerPreviews, providerPreviewDestination } from './previews';
+import { missingToolHelp } from '../review/triage-card';
 import { absoluteTimeText, relativeTimeText } from '../review/time';
 import { settleToggledRow, stickyBarsBottom } from '../review/row-scroll';
 import { watchRenderHold } from '../review/render-hold';
@@ -14,7 +15,7 @@ import type { ProviderSourceActionContext, ProviderSourceSelection } from './sou
 
 export type { ProviderSourceActionContext } from './source-selection';
 import './review-dashboard.css';
-import { digestIcon } from './digest-icons';
+import { digestIcon, digestSpinner } from './digest-icons';
 import type { DigestIcon } from './digest-icons';
 import { shapeMark } from '../github/review/mark-shape';
 import './bot-mark.css';
@@ -82,6 +83,8 @@ export interface ProviderReviewRequirement {
 }
 
 export interface ProviderReviewPanelOptions {
+  /** "Request it" under the bots' and agents' menus: opens the feedback page with a draft asking for the tool. */
+  readonly onMissingTool?: (tool: 'review bot' | 'coding agent') => void;
   readonly sourceInput?: ProviderReviewInput;
   readonly agentNotes?: readonly ProviderAgentNote[];
   readonly onRevealAgentNote?: (note: ProviderAgentNote) => void;
@@ -1101,6 +1104,46 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     return ids;
   }
 
+  /**
+   * GitHub's "Request a review" on the Review bots row: the send glyph, GitHub's spinner while a bot runs, a line per
+   * bot whose command is ready (it opens that bot's request, which copies the command for the host's own writer), and
+   * the "Don't see your preferred bot?" help at its foot.
+   */
+  function requestMenu(bound: readonly string[], section: ReviewDisclosure): HTMLDetailsElement {
+    const menu = rowMenu('Request a review');
+    menu.classList.add('geld-provider-review__request-menu');
+    menu.dataset.geldRowMenu = '';
+    const toggle = menu.querySelector<HTMLElement>('summary')!;
+    const running = bots.some((bot) => bot.verdict === 'running' || bot.verdict === 'loading');
+    toggle.replaceChildren(running ? digestSpinner(doc) : digestIcon('send', doc));
+    if (running) toggle.dataset.geldRunning = '';
+    const list = menu.querySelector<HTMLElement>('.geld-provider-review__menu-list')!;
+    list.setAttribute('aria-label', 'Request a review');
+    list.classList.add('geld-review-tokens', 'geld-primer-bridge');
+    const ready = (options.botRequests ?? []).filter((request) => bound.includes(request.botId) && request.current());
+    for (const request of ready) {
+      const button = node('button', `Request ${botById(request.botId)?.title ?? request.label}`);
+      button.type = 'button';
+      button.dataset.geldRequestBot = request.botId;
+      button.addEventListener('click', () => {
+        menu.open = false;
+        const row = section.querySelector<ReviewDisclosure>(`[data-geld-review-bot="${CSS.escape(request.botId)}"]`);
+        if (row === null) return;
+        section.open = true;row.open = true;
+        const prepare = row.querySelector<HTMLDetailsElement>('details[data-geld-bot-request]');
+        if (prepare === null) return;
+        prepare.open = true;
+        prepare.querySelector<HTMLElement>('summary')?.focus({ preventScroll: true });
+      });
+      list.append(button);
+    }
+    if (ready.length === 0) list.append(node('p', 'Identify a bot\u2019s account from one of its comments to request its review here.', 'geld-provider-review__muted'));
+    const separator = node('div', '', 'geld-review__menu-sep');
+    separator.setAttribute('role', 'separator');
+    list.append(separator, missingToolHelp('review bot', { onMissingTool: (tool) => options.onMissingTool?.(tool) }, () => { menu.open = false; }));
+    return menu;
+  }
+
   function botsSection(): HTMLElement | null {
     const bound = [...new Set((input.bots ?? []).map((bot) => bot.id))];
     const automated = new Map(conversationComments().filter(comment => automatedAuthor(comment.author)).map(comment => [comment.author.id, comment.author]));
@@ -1108,6 +1151,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     if (bound.length === 0 && automated.size === 0) return null;
     const section = disclosure('bots', 'Review bots', false);
     section.classList.add('geld-provider-review__section--bot-previews');
+    section.append(requestMenu(bound, section));
     const preview = node('span', '', 'geld-provider-review__row-preview');
     preview.dataset.geldReviewPreview = '';section.append(preview);
     const comments = [...input.threads.flatMap((thread) => thread.comments), ...(options.comments ?? [])];
@@ -1156,10 +1200,13 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       // the warning triangle for a run the bot refused and a red cross only for a run that broke.
       const light = health === 'good' ? 'check' : health === 'severe' ? 'severe' : health === 'bad' ? 'changes'
         : health === 'warn' ? (verdict?.verdict === 'failed' ? 'skipped' : 'dot') : null;
-      if (light !== null) compact.append(digestIcon(light, doc));
+      // A bot that is running wears GitHub's spinner in its light's place, as its pill does there.
+      const running = verdict?.verdict === 'running' || verdict?.verdict === 'loading';
+      if (running) compact.append(digestSpinner(doc));
+      else if (light !== null) compact.append(digestIcon(light, doc));
       preview.append(compact);
       // A bot line leads with its verdict's light in the glyph column, as GitHub's does.
-      const lineLight = light === null ? node('span') : digestIcon(light, doc);
+      const lineLight = running ? digestSpinner(doc) : light === null ? node('span') : digestIcon(light, doc);
       row.querySelector('[data-geld-review-toggle]')?.replaceChildren(lineLight, compact.querySelector('img')?.cloneNode(true) ?? node('span'), node('strong', registered?.title ?? id), node('span', verdict === undefined ? 'No result' : verdictLabel(verdict), 'geld-provider-review__entry-preview'));
       row.dataset.geldBotHealth = health;
       const status = node('span', { good: 'Clear', warn: 'Needs attention', severe: 'Severe findings', bad: 'Review failed', pending: 'Pending' }[health], 'geld-provider-review__bot-health');
