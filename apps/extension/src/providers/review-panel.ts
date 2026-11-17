@@ -1,4 +1,7 @@
 import { providerPreviews, providerPreviewDestination } from './previews';
+import { absoluteTimeText, relativeTimeText } from '../review/time';
+import { settleToggledRow, stickyBarsBottom } from '../review/row-scroll';
+import { watchRenderHold } from '../review/render-hold';
 import { renderProviderAgentNote } from './agent-notes';
 import type { ProviderAgentNote } from './agent-notes';
 import type { ProviderCommentRenderContext } from './comment-render';
@@ -220,6 +223,11 @@ type ReviewDisclosure = HTMLElement & { open: boolean };
 
 let nextPanelId = 0;
 
+/** The digest's own menus a rebuild would close under the reader: row ⋯, toolbar menus and the triage's split menus. */
+// A menu the digest reopened itself, to keep focus on the action the reader just used, does not hold: that action's
+// own update is what it waits for.
+const HELD_MENUS = 'details.geld-provider-review__menu:not([data-geld-restored-open]), details.geld-review__menu:not(.geld-review__hidden)';
+
 export function renderProviderReviewPanel(host: HTMLElement, initialInput: ProviderReviewInput, initialOptions: ProviderReviewPanelOptions = {}): ProviderReviewPanel {
   const doc = host.ownerDocument;
   const panelId = `geld-provider-review-${++nextPanelId}`;
@@ -418,6 +426,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     }
   };
   doc.addEventListener('pointerdown', dismissMenus);
+  // A background update (a check ticking, a bot rewriting its comment) waits while the reader has a menu open,
+  // is pressing or typing in the digest, as on GitHub, and draws once they are done.
+  const renderHold = watchRenderHold(panel, { menus: HELD_MENUS, onRelease: () => { if (!destroyed && !panel.hidden) render(); } });
 
   function disclosure(key: string, label: string, initiallyOpen: boolean): ReviewDisclosure {
     const section = Object.assign(node('section', '', 'geld-provider-review__section'), { open: false });
@@ -449,11 +460,15 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     toggle.addEventListener('click', () => {
       section.open = !section.open;
       // GitHub's rows are an accordion: opening one closes the row open before it, whatever its group.
-      if (!section.open || !ACCORDION_ROW.test(key)) return;
-      for (const other of panel.querySelectorAll<ReviewDisclosure>('[data-geld-review-key]')) {
-        const otherKey = other.dataset.geldReviewKey ?? '';
-        if (other !== section && other.open && ACCORDION_ROW.test(otherKey) && !other.contains(section) && !section.contains(other)) other.open = false;
+      if (section.open && ACCORDION_ROW.test(key)) {
+        for (const other of panel.querySelectorAll<ReviewDisclosure>('[data-geld-review-key]')) {
+          const otherKey = other.dataset.geldReviewKey ?? '';
+          if (other !== section && other.open && ACCORDION_ROW.test(otherKey) && !other.contains(section) && !section.contains(other)) other.open = false;
+        }
       }
+      // A tall row closing above this one can carry it off the top: only then is it brought back under the bars.
+      const bars = stickyBarsBottom(doc, panel);
+      settleToggledRow(toggle, () => bars);
     });
     section.append(toggle);
     setOpen(expanded.get(key) ?? initiallyOpen);
@@ -494,14 +509,11 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
   function timestamp(value: string): HTMLTimeElement | null {
     const date = new Date(value);
     if (!Number.isFinite(date.getTime())) return null;
-    const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-    const units: readonly [Intl.RelativeTimeFormatUnit, number][] = [['year', 365 * 86400], ['month', 30 * 86400], ['week', 7 * 86400], ['day', 86400], ['hour', 3600], ['minute', 60], ['second', 1]];
-    const [, size] = units.find(([, candidate]) => Math.abs(seconds) >= candidate) ?? ['second', 1];
-    const unit = units.find(([, candidate]) => candidate === size)?.[0] ?? 'second';
-    const fallback = new Intl.RelativeTimeFormat(undefined, { numeric: 'always' }).format(-Math.trunc(seconds / size), unit);
-    const time = node('time', nativeTimes.get(date.getTime()) ?? fallback);
+    // The host's own words for this moment when it shows them, else GitHub's (`relative-time`'s rounding: 21 hours is
+    // "yesterday", 6 days "last week"), with the exact moment on hover as GitHub gives it.
+    const time = node('time', nativeTimes.get(date.getTime()) ?? relativeTimeText(date.toISOString()));
     time.dateTime = date.toISOString();
-    time.title = date.toISOString();
+    time.title = absoluteTimeText(date.toISOString());
     return time;
   }
 
@@ -2076,9 +2088,18 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
           : /session/i.test(event.body) ? 'Agent sessions' : 'Other updates';
         const group = types.get(type) ?? [];group.push(event);types.set(type, group);
       }
-      for (const [type, entries] of types) {
+      // GitHub reads Other activity oldest first by the moment each row shows (its first event), and gives the row
+      // that moment as its time; the events inside stand in the timeline's order.
+      const moment = (event: ProviderReviewPanelEvent): number => { const time = Date.parse(event.createdAt);return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time; };
+      const kinds = [...types].map(([type, entries]) => [type, [...entries].sort((a, b) => moment(a) - moment(b))] as const)
+        .sort(([, a], [, b]) => moment(a[0]!) - moment(b[0]!));
+      for (const [type, entries] of kinds) {
         const group = disclosure(`activity:${type}`, type === 'Commits' ? `${entries.length} push${entries.length === 1 ? '' : 'es'}` : `${type} · ${entries.length}`, false);
-        group.querySelector('[data-geld-review-toggle]')?.prepend(digestIcon(type === 'Commits' ? 'commit' : 'activity', doc));
+        const toggle = group.querySelector('[data-geld-review-toggle]');
+        toggle?.prepend(digestIcon(type === 'Commits' ? 'commit' : 'activity', doc));
+        const first = entries[0];
+        const when = first === undefined ? null : timestamp(first.createdAt);
+        if (when !== null) { when.classList.add('geld-provider-review__row-time');toggle?.append(when); }
         for (const event of entries) group.append(eventRow(event));
         other.push(group);
       }
@@ -2163,7 +2184,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
             parent.dataset.geldReviewOpen = 'true';
             parent.querySelector(':scope > [data-geld-review-toggle]')?.setAttribute('aria-expanded', 'true');
             expanded.set(key, true);
-          } else if (parent instanceof HTMLDetailsElement) parent.open = true;
+          } else if (parent instanceof HTMLDetailsElement) { parent.open = true;parent.dataset.geldRestoredOpen = ''; }
         }
         if (!button.disabled) button.focus({ preventScroll: true });
         else {
@@ -2185,6 +2206,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       panel.hidden = false;
       input = nextInput;
       options = nextOptions;
+      if (renderHold.held()) return;
       render();
     },
     suspend() {
@@ -2193,6 +2215,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     },
     destroy() {
       destroyed = true;
+      renderHold.dispose();
       summaryPreviews.destroy();
       doc.removeEventListener('pointerdown', dismissMenus);
       disposeComments();clearRenderStates();sourceSlots.clear();

@@ -1,3 +1,4 @@
+import { rowDestinationUnder } from '../../review/row-scroll';
 import { holdRow } from './hold';
 import { stickyHeaderBottomAt } from './sticky';
 
@@ -61,11 +62,5 @@ export function scrollRowTo(rowTop: number): number {
 
 /** The scroll position that puts a row whose document top is `rowTop` just under the sticky header (see `scrollRowTo`). */
 export function rowDestination(rowTop: number): number {
-  const gap = 8;
-  const withHeader = rowTop - stickyHeaderBottomAt(rowTop) - gap;
-  if (stickyHeaderBottomAt(withHeader) > 0) return withHeader;
-  const bare = rowTop - gap;
-  // No header at either destination: the row goes to the top edge. The header would appear only at the bare
-  // destination: stop short of it, where the row sits a header's height down and nothing covers it.
-  return stickyHeaderBottomAt(bare) > 0 ? withHeader : bare;
+  return rowDestinationUnder(rowTop, stickyHeaderBottomAt);
 }

@@ -5,6 +5,7 @@
  * remounts are handled by applying again. Never scrolls the page.
  */
 
+import { requestSeat, silentCommentAnchors } from './silent-comments';
 import { browser } from 'wxt/browser';
 import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
 import type { GeldSettings } from '@geld/core';
@@ -892,7 +893,10 @@ function seatFor(anchor: string, meta: GeldPrMeta, groups: readonly FoldGroup[],
   const batch = batches.find((entry) => [...entry.comments, ...entry.reviews].some((line) => line.anchor === anchor));
   if (batch !== undefined) return { key: batch.key, sub: anchor };
   const group = groupContaining(groups, anchor);
-  return group === null || group.silent === true ? null : { key: foldKey(group.key), sub: null };
+  if (group !== null && group.silent !== true) return { key: foldKey(group.key), sub: null };
+  // A chip whose word is a request for the bot (it is running on it) opens the bot's own line: the request has no row.
+  const request = requestSeat(anchor, meta.bots, botLineAnchorByBot);
+  return request === null ? null : { key: BOTS_KEY, sub: request.sub };
 }
 
 function rowKeyFor(anchor: string, meta: GeldPrMeta, groups: readonly FoldGroup[], batches: readonly Batch[]): string | null {
@@ -969,10 +973,11 @@ function isStatusLine(entry: CrawledComment): boolean {
   return entry.author.bot && jevNow.lanes.get(entry.comment.anchor) === 'status' && refusalReason(entry.comment.body) === null;
 }
 
-/** Triggers and run-status lines, which fold without a row. A comment a bot's chip opens is never one: it would have no seat. */
+/** A person's requests and bots' run-status lines, which fold without a row (`silentCommentAnchors`). */
 function silentAnchors(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings): ReadonlySet<string> {
   const opened = new Set(meta.bots.flatMap((bot) => (bot.sourceId === undefined ? [] : [bot.sourceId])));
-  return new Set(crawled.comments.filter((entry) => !opened.has(entry.comment.anchor) && ((!entry.author.bot && isTrigger(entry, settings)) || isStatusLine(entry))).map((entry) => entry.comment.anchor));
+  const candidates = crawled.comments.map((entry) => ({ anchor: entry.comment.anchor, bot: entry.author.bot, trigger: !entry.author.bot && isTrigger(entry, settings), statusLine: isStatusLine(entry) }));
+  return silentCommentAnchors(candidates, opened);
 }
 
 /**
@@ -2325,6 +2330,7 @@ interface SourceFacts {
 let sourceFacts = new Map<string, SourceFacts>();
 /** The anchors of the Review bots row's lines (each bot's latest summary), for seating: set each pass before the rounds are built. */
 let botLineAnchors = new Set<string>();
+let botLineAnchorByBot = new Map<string, string | null>();
 /** The anchors of the Reports row's lines (each reporter's latest report comment), seated there the same way. */
 let reportLineAnchors = new Set<string>();
 /** The deployment events the Deployments row lists, every one of each environment it shows, seated there. */
@@ -3686,6 +3692,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // Each bot's latest run summary, as the Review bots row's lines; their anchors seat there, not in a round.
   const botLines = phase('bot-lines', () => buildBotLines(meta));
   botLineAnchors = new Set(botLines.flatMap((line) => (line.anchor === null ? [] : [line.anchor])));
+  botLineAnchorByBot = new Map(botLines.map((line) => [line.bot.id, line.anchor]));
   // The sidebar's Reviewers block: every reviewer's latest verdict from the first paint, while the timeline's
   // reviews are still being fetched from its end (see `timelineIngesting`).
   const sidebarAll = phase('sidebar', crawlSidebarReviewers);

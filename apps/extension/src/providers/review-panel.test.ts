@@ -41,6 +41,20 @@ describe('provider conversation digest', () => {
     panel.destroy();
   });
 
+  it('keeps an open menu open through a background update and draws once it closes', async () => {
+    const panel = renderProviderReviewPanel(host(), input(), { hasViewChoice: true });
+    const menu = panel.element.querySelector<HTMLElement>('[data-geld-toolbar-control="eye"]')!.closest('details')!;
+    menu.open = true;
+    panel.update(input([thread('a')]), { hasViewChoice: true, version: 2 });
+    expect(menu.isConnected && menu.open).toBe(true);
+    expect(panel.element.querySelector('[data-geld-item]')).toBeNull();
+    menu.open = false;
+    menu.dispatchEvent(new Event('toggle'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(panel.element.querySelector('[data-geld-item]')).not.toBeNull();
+    panel.destroy();
+  });
+
   it('releases focus inside a closed menu without treating its summary as hidden', () => {
     const native = input();
     const panel = renderProviderReviewPanel(host(), native, { hasViewChoice: true });
