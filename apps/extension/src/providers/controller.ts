@@ -132,7 +132,14 @@ export class ProviderController {
     });
     this.attachments = new ProviderAttachmentLightbox(adapter);
     this.fileFlow = new ProviderFileFlow(adapter);
-    this.conversation = new ProviderConversation(adapter, () => this.requestRefresh(), services);
+    this.conversation = new ProviderConversation(adapter, () => this.requestRefresh(), {
+      ...services,
+      triage: {
+        headLines: (path) => this.fileFlow.headLines(path).catch(() => null),
+        pullIntent: () => ({ title: document.title, description: adapter.descriptionHost?.(document)?.innerText ?? '' }),
+        ...services.triage,
+      },
+    });
     this.reveal = new ProviderReveal(() => this.adapter.readDiff(document), () => this.pageKey);
     this.hover = new ProviderHover(adapter, this.source, () => this.settings, () => this.catalog, {
       settingsForPage: (page) => {

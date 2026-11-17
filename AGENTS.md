@@ -3985,9 +3985,11 @@ The selector remains available when both the overview and quick actions are off,
 Turning the digest off hides its existing panel for the same visit, so returning preserves open review threads.
 The public author-style acceptance visits all three real view controls before comparing visible native colors and restores the exact saved shared settings afterward.
 
-Provider AI triage uses the shared open-item status predicate before reading a gateway key, checking gateway permission or sending a request.
-Empty and fully resolved conversations expose a disabled Nothing to triage control.
-Outdated unresolved threads remain open work, matching the shared digest counts, even when semantic reply classification skips them.
+GitLab and Bitbucket run GitHub's own AI triage: the engine (`src/review/ai.ts`), the AI control and the card under the Geld row (`src/review/triage-card.ts`) and the view that feeds it (`src/review/triage-view.ts`) are shared, and `providers/triage.ts` is only the provider's adapter.
+It hands the engine the review as `GeldPrMeta` and its comments, and a `SuggestionSource` whose lines come from the verified head through the provider's own source reader (`ProviderFileFlow.headLines`), so fixes are proposed and previewed as on GitHub.
+Runs are kept on the device under `provider:` plus the review key, through the same background queue as GitHub's.
+Applying a fix stays GitHub's for now (it commits through GitHub's suggestion API): the card's Apply is greyed out with why (`TriageView.applyBlocked`), and a finding is handed on by copying its task, since the agents' comment commands and open links are written for GitHub's pull requests.
+The card's stylesheet (`src/review/triage.css`), the digest primitives it uses (`digest-kit.css`) and the `--geld-review-*` colour names (`digest-tokens.css`) moved out of GitHub's stylesheet so another host renders the same card, through `geld-primer-bridge`.
 
 GitHub, GitLab and Bitbucket choose the gateway decision model through the same `gatewayDecisionModel` helper.
 A saved model choice applies only when the current gateway advertises or inherently supports decision models, so another gateway's cached model list cannot authorize a stale choice.

@@ -11,7 +11,7 @@ import type { ProviderAdapter, ProviderReviewPage, ProviderReviewSnapshot } from
 import { gitLabReferenceAnchor, readGitLabReferences } from '../gitlab/references';
 
 vi.mock('wxt/browser', () => ({ browser: { runtime: { sendMessage: vi.fn(() => { throw new Error('Unexpected real transport.'); }) } } }));
-vi.mock('wxt/utils/storage', () => ({ storage: { defineItem: () => ({ getValue: async () => ({}), setValue: async () => undefined }) } }));
+vi.mock('wxt/utils/storage', () => ({ storage: { defineItem: () => ({ getValue: async () => ({}), setValue: async () => undefined, watch: () => () => undefined }) } }));
 
 const url = 'https://gitlab.com/whitebox-aero/whitebox/-/merge_requests/272';
 const sha = 'a'.repeat(40);

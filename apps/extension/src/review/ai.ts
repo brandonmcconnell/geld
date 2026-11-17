@@ -1,4 +1,4 @@
-import { writeLocalReview } from '../../lib/local-review-write';
+import { writeLocalReview } from '../lib/local-review-write';
 /**
  * In-browser AI for a pull request whose digest the Action did not write with
  * AI: run when the reader asks (the AI control on the digest), never on its
@@ -11,8 +11,8 @@ import { writeLocalReview } from '../../lib/local-review-write';
  */
 
 import type { GeldSettings } from '@geld/core';
-import { persist } from '../../lib/context';
-import { whenIdle } from '../../lib/idle';
+import { persist } from '../lib/context';
+import { whenIdle } from '../lib/idle';
 import type { AddressedEvidence, BodyInput, CommentLane, ConsolidateInputItem, ConsolidateOutputItem, GeldPrMeta, JevAnswer, JevRequest, LaneInput, Preview, PreviewStatusInput, RawComment, ReviewItem, ReviewSummary, SuggestInputItem, SuggestPullRequest, ThreadInput } from '@geld/review';
 import {
   applyAddressed,
@@ -69,13 +69,13 @@ import {
 } from '@geld/review';
 import type { Carried, FixRoute, RouteInput } from '@geld/review';
 import { browser } from 'wxt/browser';
-import { gatewayDecisionModel } from '../../lib/decision-model';
-import type { AiRunRecord, AiStep, JevDecision, StoredSuggestion } from '../../lib/local-state';
-import { aiGatewayItem, aiKeyItem, aiRunsItem, jevDecisionsItem, jevKeyItem, jevSourceItem } from '../../lib/local-state';
-import type { AiCompleteRequest, AiEvaluateRequest } from '../../lib/messages';
-import { isAiCompleteResponse, isAiEvaluateResponse } from '../../lib/messages';
-import { countUsage } from '../../lib/usage-count';
-import { NO_KEY_REASON } from '../../lib/ai-key';
+import { gatewayDecisionModel } from '../lib/decision-model';
+import type { AiRunRecord, AiStep, JevDecision, StoredSuggestion } from '../lib/local-state';
+import { aiGatewayItem, aiKeyItem, aiRunsItem, jevDecisionsItem, jevKeyItem, jevSourceItem } from '../lib/local-state';
+import type { AiCompleteRequest, AiEvaluateRequest } from '../lib/messages';
+import { isAiCompleteResponse, isAiEvaluateResponse } from '../lib/messages';
+import { countUsage } from '../lib/usage-count';
+import { NO_KEY_REASON } from '../lib/ai-key';
 
 /* ------------------------------------------------------------------------- */
 /* On-demand runs, kept on this device per pull request                        */
@@ -132,6 +132,20 @@ aiKeyItem.watch(() => {
  * then, so the pass can re-apply with the words); synchronous callers see the
  * previous page's words cleared at once.
  */
+/** Leave the review the module points at: an answer still on its way is dropped, and the next review loads afresh. */
+export function leaveAiPage(): void {
+  if (runKey === null) return;
+  runKey = null;
+  visitId += 1;
+  rewrites.clear();
+  summary = undefined;
+  seen.clear();
+  suggestions.clear();
+  askedThreads.clear();
+  lastRun = null;
+  inFlight.clear();
+}
+
 export function loadAiForPage(key: string, onLoaded: () => void): void {
   if (runKey === key) return;
   runKey = key;

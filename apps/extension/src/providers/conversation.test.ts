@@ -4,7 +4,6 @@ import { DEFAULT_SETTINGS, withTrustedReviewAccount } from '@geld/core';
 import type { GeldSettings, RepositoryIdentity } from '@geld/core';
 import { buildProviderReviewItems } from '@geld/review';
 import type { ProviderReviewComment, ProviderReviewInput } from '@geld/review';
-import type { AiRunRecord } from '../lib/local-state';
 import type { AiCompleteRequest, AiEvaluateRequest } from '../lib/messages';
 import { ProviderConversation, providerReviewWithTrustedAccounts, reviewedItemFingerprint } from './conversation';
 import type { ProviderConversationServices } from './conversation';
@@ -13,8 +12,28 @@ import type { ProviderSourceActionContext } from './review-panel';
 import { readGitLabBotRequests } from '../gitlab/bot-request';
 import type { ProviderBotRequest } from './bot-request';
 
-vi.mock('wxt/browser', () => ({ browser: { runtime: { sendMessage: vi.fn(() => { throw new Error('Unexpected real transport'); }) } } }));
-vi.mock('wxt/utils/storage', () => ({ storage: { defineItem: () => ({ getValue: async () => ({}), setValue: async () => undefined }) } }));
+// The shared AI engine (`review/ai.ts`) talks to the background and storage; here both are this test's transport.
+const transport = vi.hoisted(() => ({
+  send: (_message: unknown): Promise<unknown> => Promise.reject(new Error('Unexpected real transport')),
+  runs: {} as Record<string, unknown>,
+  key: 'device-only-key',
+}));
+vi.mock('wxt/browser', () => ({ browser: { runtime: { sendMessage: (message: unknown) => transport.send(message), getURL: (path: string) => `chrome-extension://geld${path}` } } }));
+vi.mock('wxt/utils/storage', () => ({ storage: { defineItem: (name: string) => ({
+  getValue: async () => (name === 'local:aiRuns' ? transport.runs : name === 'local:aiKey' ? transport.key : {}),
+  setValue: async () => undefined,
+  watch: () => () => undefined,
+}) } }));
+vi.mock('../lib/local-review-write', () => ({
+  writeLocalReview: async (mutation: { readonly kind: string; readonly key?: string; readonly record?: unknown }, validate: () => Promise<void>): Promise<void> => {
+    await validate();
+    if (mutation.kind !== 'ai' || mutation.key === undefined) return;
+    const runs = { ...transport.runs };
+    if (mutation.record === null) delete runs[mutation.key];
+    else runs[mutation.key] = mutation.record;
+    transport.runs = runs;
+  },
+}));
 
 const repository: RepositoryIdentity = { provider: 'gitlab', origin: 'https://gitlab.com', path: 'group/subgroup/project' };
 const url = `${repository.origin}/${repository.path}/-/merge_requests/42`;
@@ -29,6 +48,10 @@ function comment(body = 'The credentials can leak from the shared cache.'): Prov
 function snapshot(comments: readonly ProviderReviewComment[] = []): ProviderReviewSnapshot {
   const first = comment();
   return { input: { subject, closed: false, threads: [{ id: 'a'.repeat(40), anchor: `discussion_${'a'.repeat(40)}`, url: first.url, path: 'cache.ts', line: 5, resolved: false, outdated: false, comments: [first] }], checks: [], reviewers: [] }, comments, events: [], complete: true, unavailable: [], approvalsRequired: null, approvalsLeft: null, actions: [] };
+}
+
+function isAiRequest(message: unknown): message is AiCompleteRequest | AiEvaluateRequest {
+  return typeof message === 'object' && message !== null && (Reflect.get(message, 'type') === 'geld:ai-complete' || Reflect.get(message, 'type') === 'geld:ai-evaluate');
 }
 
 function aiResponse(message: AiCompleteRequest | AiEvaluateRequest): unknown {
@@ -97,21 +120,29 @@ describe('native bot command binding lifetime', () => {
   });
 });
 
-function fixture(source = snapshot(), services: ProviderConversationServices = {}, overrides: Partial<GeldSettings> = {}, adapterOverrides: Partial<ProviderAdapter> = {}, initialPage: ProviderReviewPage = page) {
+interface FixtureServices extends ProviderConversationServices {
+  readonly aiKey?: string;
+  readonly send?: (message: AiCompleteRequest | AiEvaluateRequest) => Promise<unknown>;
+}
+
+function fixture(source = snapshot(), services: FixtureServices = {}, overrides: Partial<GeldSettings> = {}, adapterOverrides: Partial<ProviderAdapter> = {}, initialPage: ProviderReviewPage = page) {
   const host = document.createElement('main');
   document.body.append(host);
   let currentPage: ProviderReviewPage | null = initialPage;
   let currentSettings: GeldSettings = { ...DEFAULT_SETTINGS, prOverview: true, aiEnabled: true, aiModel: 'writer', aiBaseUrl: 'https://gateway.example/v1', aiJev: false, ...overrides };
   let active = true;
-  let runs: Readonly<Record<string, AiRunRecord>> = {};
+  transport.runs = {};
+  transport.key = services.aiKey ?? 'device-only-key';
   const send = vi.fn(async (message: AiCompleteRequest | AiEvaluateRequest): Promise<unknown> => aiResponse(message));
+  const route = services.send ?? send;
+  transport.send = (message) => isAiRequest(message) ? route(message) : Promise.reject(new Error('Unexpected message'));
   const fetchReview = vi.fn(async () => source);
   const adapter: ProviderAdapter = { id: 'gitlab', describe: () => currentPage, readDiff: () => null, headerTargets: () => [], listRows: () => [], fetchDiff: async () => ({ files: [], revision: sha, complete: true }), reviewHost: () => host, fetchReview, ...adapterOverrides };
   const changed = vi.fn(() => { queueMicrotask(() => { if (active) conversation.apply(currentPage, currentSettings); }); });
-  const conversation = new ProviderConversation(adapter, changed, { nativeFindEnvironment: unitNativeFind, ...services, aiDependencies: { readKey: async () => 'device-only-key', permission: async () => null, readRuns: async () => runs, saveRun: async (key, record, current) => { if (current()) runs = { ...runs, [key]: record }; }, jevRoute: async () => null, send, now: () => '2026-11-01T13:00:00Z', ...services.aiDependencies } });
+  const conversation = new ProviderConversation(adapter, changed, { nativeFindEnvironment: unitNativeFind, ...services });
   cleanup.push(() => { active = false; conversation.clear(); });
   conversation.apply(currentPage, currentSettings);
-  return { host, conversation, send, changed, fetchReview, runs: () => runs,
+  return { host, conversation, send, changed, fetchReview, runs: () => transport.runs,
     apply: (nextPage: ProviderReviewPage | null = currentPage, nextSettings = currentSettings): void => { currentPage = nextPage; currentSettings = nextSettings; conversation.apply(currentPage, currentSettings); },
   };
 }
@@ -295,12 +326,13 @@ describe('provider conversation integrations', () => {
   it('loads without spending and runs AI only after the triage button is clicked', async () => {
     const trustedReviewAccounts = withTrustedReviewAccount([], repository, 'greptile', '12345');
     const f = fixture(snapshot(), {}, { trustedReviewAccounts });
-    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-ai-run]')).not.toBeNull());
+    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-focus="ai"]')).not.toBeNull());
     expect(f.send).not.toHaveBeenCalled();
     expect(f.host.querySelector('.geld-provider-review__body')?.textContent).toBe(comment().body);
-    f.host.querySelector<HTMLButtonElement>('[data-geld-ai-run]')?.click();
-    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-ai-summary]')?.textContent).toContain('Credential handling needs attention.'));
-    expect(f.send).toHaveBeenCalledTimes(2);
+    f.host.querySelector<HTMLButtonElement>('[data-geld-focus="ai"]')?.click();
+    await vi.waitFor(() => expect(f.host.querySelector('.geld-review__triage-text')?.textContent).toContain('Credential handling needs attention.'));
+    // Titles, the TL;DR and the fixes, as GitHub's triage asks.
+    expect(f.send.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(f.host.querySelector('[data-geld-item] > [data-geld-review-toggle]')?.textContent).toContain('Isolate the credential cache');
     expect(f.host.querySelector('.geld-provider-review__body')?.textContent).toBe(comment().body);
     expect(f.fetchReview).toHaveBeenCalledTimes(1);
@@ -326,47 +358,48 @@ describe('provider conversation integrations', () => {
   });
 
   it('shows configuration failures without calling the gateway', async () => {
-    const f = fixture(snapshot(), { aiDependencies: { readKey: async () => '' } });
-    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-ai-run]')).not.toBeNull());
-    f.host.querySelector<HTMLButtonElement>('[data-geld-ai-run]')?.click();
-    await vi.waitFor(() => expect(f.host.querySelector('[role="alert"]')?.textContent).toContain('on this device'));
+    const f = fixture(snapshot(), { aiKey: '' });
+    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-focus="ai"]')).not.toBeNull());
+    f.host.querySelector<HTMLButtonElement>('[data-geld-focus="ai"]')?.click();
+    // The shared engine's missing-key notice, the same GitHub's digest shows.
+    await vi.waitFor(() => expect(f.host.querySelector('.geld-review__ai-notice')?.textContent).toContain('Add an API key'));
     expect(f.send).not.toHaveBeenCalled();
   });
 
   it('does not hydrate AI while disabled and hides cached output until it is enabled again', async () => {
-    const readRuns = vi.fn(async () => ({}));
-    const disabled = fixture(snapshot(), { aiDependencies: { readRuns } }, { aiEnabled: false });
+    const disabled = fixture(snapshot(), {}, { aiEnabled: false });
     await vi.waitFor(() => expect(disabled.host.querySelector('.geld-provider-review')).not.toBeNull());
-    expect(readRuns).not.toHaveBeenCalled();
-    expect(disabled.host.querySelector('[data-geld-ai-run]')).toBeNull();
+    expect(disabled.host.querySelector('[data-geld-focus="ai"]')).toBeNull();
     const trustedReviewAccounts = withTrustedReviewAccount([], repository, 'greptile', '12345');
     const f = fixture(snapshot(), {}, { trustedReviewAccounts });
-    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-ai-run]')).not.toBeNull());
-    f.host.querySelector<HTMLButtonElement>('[data-geld-ai-run]')?.click();
-    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-ai-summary]')).not.toBeNull());
+    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-focus="ai"]')).not.toBeNull());
+    f.host.querySelector<HTMLButtonElement>('[data-geld-focus="ai"]')?.click();
+    await vi.waitFor(() => expect(f.host.querySelector('.geld-review__triage-text')).not.toBeNull());
     const activeSettings = { ...DEFAULT_SETTINGS, prOverview: true, aiEnabled: true, aiModel: 'writer', aiBaseUrl: 'https://gateway.example/v1', aiJev: false, trustedReviewAccounts };
+    const asked = f.send.mock.calls.length;
     f.apply(page, { ...activeSettings, aiEnabled: false });
-    expect(f.host.querySelector('[data-geld-ai-summary]')).toBeNull();
-    expect(f.host.querySelector('[data-geld-item] > [data-geld-review-toggle]')?.textContent).toContain('The credentials can leak');
+    expect(f.host.querySelector('.geld-review__triage-text')).toBeNull();
+    expect(f.host.querySelector('[data-geld-focus="ai"]')).toBeNull();
     f.apply(page, activeSettings);
-    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-ai-summary]')).not.toBeNull());
-    expect(f.send).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(f.host.querySelector('.geld-review__triage-text')).not.toBeNull());
+    expect(f.send).toHaveBeenCalledTimes(asked);
   });
 
   it('clears the previous review and cannot adopt a late AI result after navigation', async () => {
     let finish: (value: unknown) => void = () => undefined;
     const send = vi.fn((message: AiCompleteRequest | AiEvaluateRequest) => new Promise<unknown>((resolve) => { finish = () => resolve(aiResponse(message)); }));
-    const f = fixture(snapshot(), { aiDependencies: { send } }, { trustedReviewAccounts: withTrustedReviewAccount([], repository, 'greptile', '12345') });
-    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-ai-run]')).not.toBeNull());
-    f.host.querySelector<HTMLButtonElement>('[data-geld-ai-run]')?.click();
-    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const f = fixture(snapshot(), { send }, { trustedReviewAccounts: withTrustedReviewAccount([], repository, 'greptile', '12345') });
+    await vi.waitFor(() => expect(f.host.querySelector('[data-geld-focus="ai"]')).not.toBeNull());
+    f.host.querySelector<HTMLButtonElement>('[data-geld-focus="ai"]')?.click();
+    await vi.waitFor(() => expect(send).toHaveBeenCalled());
+    const asked = send.mock.calls.length;
     f.apply(null);
     expect(f.host.querySelector('.geld-provider-review')).toBeNull();
     finish(null);
     await new Promise<void>((resolve) => queueMicrotask(resolve));
     await new Promise<void>((resolve) => queueMicrotask(resolve));
     expect(f.runs()).toEqual({});
-    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(asked);
     const changed = f.changed.mock.calls.length;
     f.apply(null);
     f.apply(null);

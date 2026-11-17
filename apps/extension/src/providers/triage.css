@@ -1,0 +1,24 @@
+@import '../ui/primer-bridge.css';
+
+/* The shared triage card stands under the Geld row as on GitHub, inset to the digest's own padding. */
+.geld-provider-review .geld-provider-triage { display: block; }
+/* The AI control is the Geld row's tool, in the provider's colours, its sparkle and words as on GitHub. */
+.geld-provider-review .geld-provider-review__tool.geld-review__ai-btn { display: inline-flex; align-items: center; gap: var(--geld-provider-space-2); }
+.geld-provider-review .geld-review__ai-btn svg { fill: currentColor; }
+.geld-provider-triage svg.octicon { fill: currentColor; flex: none; }
+/* A provider's primary action and counter, for Apply all and its count. */
+.geld-provider-toggle--primary {
+  border-color: var(--geld-provider-link);
+  background: var(--geld-provider-link);
+  color: var(--geld-provider-bg);
+}
+.geld-provider-counter {
+  display: inline-block;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 2em;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
