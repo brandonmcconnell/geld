@@ -3991,7 +3991,15 @@ The public author-style acceptance visits all three real view controls before co
 GitLab and Bitbucket run GitHub's own AI triage: the engine (`src/review/ai.ts`), the AI control and the card under the Geld row (`src/review/triage-card.ts`) and the view that feeds it (`src/review/triage-view.ts`) are shared, and `providers/triage.ts` is only the provider's adapter.
 It hands the engine the review as `GeldPrMeta` and its comments, and a `SuggestionSource` whose lines come from the verified head through the provider's own source reader (`ProviderFileFlow.headLines`), so fixes are proposed and previewed as on GitHub.
 Runs are kept on the device under `provider:` plus the review key, through the same background queue as GitHub's.
-Applying a fix stays GitHub's for now (it commits through GitHub's suggestion API): the card's Apply is greyed out with why (`TriageView.applyBlocked`), and a finding is handed on by copying its task, since the agents' comment commands and open links are written for GitHub's pull requests.
+Apply runs through one runner on every host (`src/review/apply-runner.ts`: the batch, overlaps, results and which threads resolve), and each host lends a `FixApplier` that posts and commits its own way.
+GitHub's is its suggestion requests (`github/review/apply-suggestion.ts`).
+GitLab's (`gitlab/apply-suggestion.ts`, `ProviderAdapter.fixApplier`) posts the fix as a note in the finding's discussion fenced `suggestion:-a+b` (the lines it replaces counted around the thread's line), commits every note that stands with `PUT /api/v4/suggestions/batch_apply`, and resolves the discussion with `PUT …/discussions/:id?resolved=true`, all from the page with the reader's session and the page's `csrf-token`.
+It reads a note's suggestion id from GitLab's answer, else from the merge request's `discussions.json`, and suggests nothing for a thread on the old side (`ProviderReviewThread.side`).
+These writes were exercised only against mocked answers: a signed-in GitLab session is needed to see them land.
+Bitbucket has no request that commits a suggestion, so its Apply says so (`TriageView.applyBlocked`).
+A finding is handed on by copying its task or opening it where the link carries the task alone (`OpenTarget.anyHost`: Cursor's web and app, Devin, Factory), through the shared `src/review/handoff.ts`;
+the agents' comment commands stay GitHub's, since Geld posts no comment for them on GitLab or Bitbucket.
+A thread's and a comment's Fix (`src/review/chat-fix.ts`, the ask in `chat-fix-controller.ts`) stand in the provider chats as on GitHub.
 The card's stylesheet (`src/review/triage.css`), the digest primitives it uses (`digest-kit.css`) and the `--geld-review-*` colour names (`digest-tokens.css`) moved out of GitHub's stylesheet so another host renders the same card, through `geld-primer-bridge`.
 
 GitHub, GitLab and Bitbucket choose the gateway decision model through the same `gatewayDecisionModel` helper.

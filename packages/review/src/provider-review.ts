@@ -36,6 +36,8 @@ export interface ProviderReviewThread {
   readonly url: string;
   readonly path?: string;
   readonly line?: number;
+  /** The side of the diff `line` counts on: a fix's lines are read at the head only for a thread on the new side. */
+  readonly side?: 'new' | 'old';
   readonly resolved: boolean;
   readonly outdated: boolean;
   /** True only when the adapter established both native resolution and outdated state. */

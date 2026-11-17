@@ -307,12 +307,15 @@ export function codeSpans(text: string, paths: readonly string[]): string {
     .join('');
 }
 
-/** A reply to the finding's thread proposing `replacement` for its lines, as GitHub renders and commits a suggestion. */
-export function suggestionReplyBody(replacement: readonly string[], summary: string): string {
+/**
+ * A reply to the finding's thread proposing `replacement` for its lines, as the host renders and commits a suggestion.
+ * `info` is the fence's info string: GitHub's `suggestion`, or GitLab's `suggestion:-a+b` naming the lines around the thread's.
+ */
+export function suggestionReplyBody(replacement: readonly string[], summary: string, info = 'suggestion'): string {
   const longest = Math.max(0, ...[...replacement.join('\n').matchAll(/`+/g)].map((match) => match[0].length));
   const fence = '`'.repeat(Math.max(3, longest + 1));
   const lead = summary.trim() === '' ? 'Suggested fix from Geld triage.' : `Suggested fix from Geld triage: ${summary.trim()}`;
-  return `${lead}\n\n${fence}suggestion\n${replacement.join('\n')}\n${fence}`;
+  return `${lead}\n\n${fence}${info}\n${replacement.join('\n')}\n${fence}`;
 }
 
 /** The lines `start`..`end` with their numbers, and `margin` lines either side, as the model is shown them. */

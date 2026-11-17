@@ -66,6 +66,8 @@ export interface BitbucketComment {
   readonly deleted: boolean;
   readonly path: string | null;
   readonly line: number | null;
+  /** `inline.to` (the new side) or `inline.from` (the old side) gave `line`. */
+  readonly side?: 'new' | 'old';
   readonly resolved: boolean | null;
   readonly outdated: boolean | null;
   readonly url: string | null;
@@ -223,6 +225,7 @@ function parseComment(value: unknown): BitbucketComment {
     body: content(comment.content, comment.deleted), createdAt: timestamp(comment.created_on), updatedAt: timestamp(comment.updated_on),
     deleted: comment.deleted, path: inline === null ? null : string(inline.path),
     line: line === undefined || line === null ? null : integer(line), resolved,
+    ...(inline?.to !== null && inline?.to !== undefined ? { side: 'new' as const } : inline?.from !== null && inline?.from !== undefined ? { side: 'old' as const } : {}),
     outdated: typeof inline?.outdated === 'boolean' ? inline.outdated : typeof comment.outdated === 'boolean' ? comment.outdated : null,
     url: link(comment.links, 'html'),
   };

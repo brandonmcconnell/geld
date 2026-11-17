@@ -9,6 +9,8 @@ import { buildTriageView } from '../review/triage-view';
 import { copyText } from '../github/review/actions';
 import { copyTask, openTask } from '../review/handoff';
 import { chatFixes } from '../review/chat-fix-controller';
+import { runFixes } from '../review/apply-runner';
+import type { FixApplier } from '../review/apply-fixes';
 import type { AskedChatFix, ChatFixThreadLink } from '../review/chat-fix-controller';
 import type { ChatFix, CommentFix } from '../review/chat-fix';
 import { createElement } from '../github/dom';
@@ -20,12 +22,16 @@ export interface ProviderTriageServices {
   readonly pullIntent?: () => { readonly title: string; readonly description: string };
   readonly headLines?: (path: string) => Promise<readonly string[] | null>;
   readonly reportMissingTool?: (tool: 'review bot' | 'coding agent') => void;
+  /** Commits fixes the host's own way (GitLab's suggestions API); absent where Geld cannot yet (Bitbucket). */
+  readonly fixApplier?: (subject: ProviderReviewInput['subject'], threads: () => readonly ProviderReviewInput['threads'][number][]) => FixApplier;
+  /** Read the review again after a fix was posted, so its note and the resolved thread show. */
+  readonly refresh?: () => void;
 }
 
 const SKIN: TriageSkin = { button: 'geld-provider-toggle', primary: 'geld-provider-toggle geld-provider-toggle--primary', counter: 'geld-provider-counter' };
 
-/** Applying a fix commits through GitHub's suggestion API, which GitLab and Bitbucket do not share yet. */
-const APPLY_BLOCKED = 'Applying a fix from Geld works on GitHub only for now. Copy the task, or hand it to an agent.';
+/** Bitbucket has no request that commits a suggestion, so a fix there is handed to an agent or copied. */
+const APPLY_BLOCKED = 'Geld cannot commit a fix on this host yet. Copy the task, or hand it to an agent.';
 
 function rawComments(input: ProviderReviewInput, comments: readonly ProviderReviewComment[]): readonly RawComment[] {
   const output = new Map<string, RawComment>();
@@ -139,10 +145,27 @@ export class ProviderTriage {
     const view = buildTriageView({
       meta: this.meta, ai: state, settings: this.settings, knownBots: new Set(),
       viewerIsAuthor: false, agentServices: [], visit: this.visit,
-      resolves: false, policyPending: false, host: 'other',
+      resolves: this.applier() !== null && this.settings.resolveOnFix, policyPending: false, host: 'other',
     });
     // The agents' comment commands are GitHub's: here a task is copied or opened in an agent whose link carries it alone.
-    return view === null ? null : { ...view, agents: [], recommended: null, applyBlocked: APPLY_BLOCKED };
+    return view === null ? null : { ...view, agents: [], recommended: null, ...(this.applier() === null ? { applyBlocked: APPLY_BLOCKED } : {}) };
+  }
+
+  private applier(): FixApplier | null {
+    const input = this.input;
+    return input === null || this.services.fixApplier === undefined ? null : this.services.fixApplier(input.subject, () => this.input?.threads ?? []);
+  }
+
+  /** Apply fixes as GitHub's Apply does (`review/apply-runner.ts`): posted, committed together, their threads resolved. */
+  private apply(keys: readonly string[]): void {
+    const applier = this.applier();
+    const meta = this.meta, settings = this.settings;
+    if (applier === null || meta === null || settings === null) return;
+    runFixes(keys, {
+      meta, comments: this.comments, settings, visit: this.visit, reapply: () => this.changed(),
+      applier: { ...applier, afterPost: async () => { this.services.refresh?.(); } },
+      resolves: () => this.settings?.resolveOnFix ?? settings.resolveOnFix,
+    });
   }
 
   private source(): SuggestionSource | null {
@@ -153,7 +176,7 @@ export class ProviderTriage {
       pull,
       target: async (item): Promise<SuggestionTarget | null> => {
         const thread = this.input?.threads.find((each) => each.comments[0]?.anchor === threadKeyOf(item));
-        if (thread === undefined || thread.outdated || thread.path === undefined || thread.line === undefined) return null;
+        if (thread === undefined || thread.outdated || thread.side === 'old' || thread.path === undefined || thread.line === undefined) return null;
         const file = await lines(thread.path);
         return file === null || thread.line > file.length ? null : { path: thread.path, start: thread.line, end: thread.line, lines: file };
       },
@@ -170,8 +193,8 @@ export class ProviderTriage {
       onOpenAiSettings: () => void this.services.openSettings?.(),
       onToggleTriage: () => { this.visit.collapsed = !this.visit.collapsed; this.changed(); },
       onToggleSuggestion: (key) => { this.visit.openKey = this.visit.openKey === key ? null : key; this.changed(); },
-      onApplySuggestion: () => undefined,
-      onApplyAll: () => undefined,
+      onApplySuggestion: (key) => this.apply([key]),
+      onApplyAll: (keys) => this.apply(keys),
       onDiscardSuggestion: (key) => void discardSuggestion(key).then(() => this.changed()),
       onDiscardAll: (keys) => void Promise.all(keys.map((key) => discardSuggestion(key))).then(() => this.changed()),
       onCopyPath: (path) => copyText(path),

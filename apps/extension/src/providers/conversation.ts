@@ -100,6 +100,17 @@ export class ProviderConversation {
   private nextRefresh = 0;
   private error = '';
   private signature = '';
+
+  /** A write went through (a native action, a fix applied): read the review again shortly, once the host has it. */
+  private refreshSoon(): void {
+    this.nextRefresh = Date.now() + 700;
+    if (this.refreshTimer !== null) clearTimeout(this.refreshTimer);
+    this.refreshTimer = setTimeout(() => {
+      this.refreshTimer = null;
+      if (!document.hidden) this.changed();
+    }, 700);
+    this.changed();
+  }
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private observedHead: string | null = null;
   private snapshotVersion = 0;
@@ -122,7 +133,7 @@ export class ProviderConversation {
   constructor(private readonly adapter: ProviderAdapter, private readonly changed: () => void, private readonly services: ProviderConversationServices = {}) {
     this.related = new ProviderRelatedContext(adapter);
     this.hiddenPeople = new ProviderHiddenPeopleView((id, shown) => { if (shown) this.shownPeople.add(id); else this.shownPeople.delete(id); this.changed(); }, services.unhidePerson);
-    this.ai = new ProviderTriage(() => this.changed(), { ...services.triage, ...(services.openSettings === undefined ? {} : { openSettings: services.openSettings }) });
+    this.ai = new ProviderTriage(() => this.changed(), { ...services.triage, refresh: () => this.refreshSoon(), ...(services.openSettings === undefined ? {} : { openSettings: services.openSettings }) });
     this.publication = new ProviderPublishedReview(() => this.changed());
   }
 
@@ -318,15 +329,7 @@ export class ProviderConversation {
         ...(snapshot.renderComment === undefined ? {} : { renderComment: snapshot.renderComment }),
         ...(snapshot.commentSignature === undefined ? {} : { commentSignature: snapshot.commentSignature }),
         ...(snapshot.authorPresentation === undefined ? {} : { authorPresentation: snapshot.authorPresentation }),
-        onActionComplete: (): void => {
-          this.nextRefresh = Date.now() + 700;
-          if (this.refreshTimer !== null) clearTimeout(this.refreshTimer);
-          this.refreshTimer = setTimeout(() => {
-            this.refreshTimer = null;
-            if (!document.hidden) this.changed();
-          }, 700);
-          this.changed();
-        },
+        onActionComplete: (): void => this.refreshSoon(),
         comments, events: people.events, complete: snapshot.complete,
         ...(publication === null || publication.candidate !== null && hiddenIds.has(publication.candidate.comment.author.id) ? {} : { publication: {
           result: publication,

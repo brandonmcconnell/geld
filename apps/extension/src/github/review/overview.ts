@@ -5,6 +5,7 @@
  * remounts are handled by applying again. Never scrolls the page.
  */
 
+import { runFixes as runFixesShared } from '../../review/apply-runner';
 import { chatFixes } from '../../review/chat-fix-controller';
 import type { AskedChatFix } from '../../review/chat-fix-controller';
 import { copyTask, openTask } from '../../review/handoff';
@@ -28,9 +29,9 @@ import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, comm
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from '../../review/ai';
 import { AI_KEY_SECTION } from '../../lib/ai-key';
-import { adoptOwnReplies, aiPending, onAiKeyChange, aiStateFor, clearAiForPage, discardSuggestion, jevDecisionsFor, loadAiForPage, markSuggestionApplied, markSuggestionPosted, pendingReplyFor, previewDecisionKey, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi, withJevDone } from '../../review/ai';
+import { adoptOwnReplies, aiPending, onAiKeyChange, aiStateFor, clearAiForPage, discardSuggestion, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi, withJevDone } from '../../review/ai';
 import type { AiState, SuggestionSource, SuggestionTarget } from '../../review/ai';
-import { applyFixes, splitOverlapping } from './apply-suggestion';
+import { applyFixes } from './apply-suggestion';
 import { agentComment, agentTask, CODING_AGENTS, codingAgentById, openTargetById } from '@geld/review';
 import { relatedLinksOnPage } from '../related-links';
 import { wholeFileLines } from '../whole-file';
@@ -2666,7 +2667,6 @@ function suggestionTarget(item: ReviewItem, comments: readonly RawComment[], hea
   return wholeFileLines(subject.origin, `${subject.owner}/${subject.repo}`, headSha, path).then((file) => (file === null || range.end > file.length || range.start < 1 ? null : { path, start: range.start, end: range.end, lines: file }));
 }
 
-const OVERLAP_WORDS = 'Its lines overlap another fix’s, so it was left out of that commit. Triage again to fit it to the new code.';
 
 /** The triage card's reading for this visit (`review/triage-view.ts`). */
 function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, prAuthor: string | null, knownBots: ReadonlySet<string>): TriageView | null {
@@ -3956,47 +3956,13 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // Asynchronous answers (the AI run's progress and end) re-apply through the mounted check, never past a teardown.
   const reapply = (): void => reapplyNow();
   /** Apply commits the triage's fixes, several in one commit, and resolves their threads unless the reader or the repository opts out. */
-  const runFixes = (keys: readonly string[]): void => {
-    const listed = triageSuggestions(meta, settings);
-    const candidates = keys.flatMap((key) => {
-      const found = listed.find((entry) => entry.entry.key === key);
-      const replacement = found?.entry.replacement ?? null;
-      return found === undefined || replacement === null || !found.current || found.entry.state === 'applied' || visit.triage.busy.has(key) ? [] : [{ key, found, replacement, path: found.entry.path, start: found.entry.start, end: found.entry.end }];
-    });
-    const { batch: picked, overlapping } = splitOverlapping(candidates);
-    if (picked.length === 0 || repoBots.resolveOnFix === 'loading') return;
-    const triage = visit.triage;
-    for (const { key } of overlapping) triage.errors.set(key, OVERLAP_WORDS);
-    for (const { key } of picked) {
-      triage.busy.set(key, 'fix');
-      triage.errors.delete(key);
-    }
-    reapply();
-    const fixes = picked.map(({ key, found, replacement }) => ({ threadAnchors: found.item.sources.map((source) => source.anchor), path: found.entry.path, replacement, summary: found.entry.summary, title: found.item.title, headSha: meta.headSha, pendingReply: pendingReplyFor(key, rawComments) }));
-    void applyFixes(fixes).then(async (results) => {
-      // Read when the commit lands: the reader's setting may have changed and the repository's config arrived meanwhile.
-      const resolves = (lastSettings ?? settings).resolveOnFix && repoBots.resolveOnFix !== false;
-      let changed = false;
-      for (const [index, { key, found }] of picked.entries()) {
-        triage.busy.delete(key);
-        const result = results[index];
-        if (result === undefined) continue;
-        if (!result.ok) {
-          triage.errors.set(key, result.reason);
-          if (result.reply !== undefined) await markSuggestionPosted(key, result.reply);
-          changed ||= result.posted;
-          continue;
-        }
-        changed = true;
-        countUsage('ai_fix_applied');
-        await markSuggestionApplied(key, result.replyAnchor);
-        // Only Resolve: a partner thread someone resolved meanwhile wears Unresolve, which must not be pressed.
-        if (resolves) for (const each of [found.item, ...found.partners]) if (isOpenStatus(each.status)) resolveIfOpen(threadKeyOf(each));
-      }
-      if (changed) await catchUpAfterPost();
-      reapplySoon();
-    });
-  };
+  const runFixes = (keys: readonly string[]): void => runFixesShared(keys, {
+    meta, comments: rawComments, settings, visit: visit.triage, reapply,
+    applier: { apply: applyFixes, resolve: resolveIfOpen, afterPost: async () => { await catchUpAfterPost(); } },
+    // Read when the commit lands: the reader's setting may have changed and the repository's config arrived meanwhile.
+    resolves: () => (lastSettings ?? settings).resolveOnFix && repoBots.resolveOnFix !== false,
+    waiting: () => repoBots.resolveOnFix === 'loading',
+  });
   /** The reader selected the item row `key`: its conversation's anchors, as the model that drew the row knew them. */
   const openAiSettings = (): void => {
     const message: OpenSettingsMessage = { type: 'geld:open-settings', section: AI_KEY_SECTION };

@@ -110,7 +110,7 @@ export function normalizeBitbucketComments(source: readonly BitbucketComment[], 
       id: String(rootId), anchor: first.anchor, url: first.url, comments: normalized,
       resolved: root?.resolved === true, outdated: root?.outdated === true, stateKnown,
       ...(location?.path === null || location?.path === undefined ? {} : { path: location.path }),
-      ...(location?.line === null || location?.line === undefined || location.line <= 0 ? {} : { line: location.line }),
+      ...(location?.line === null || location?.line === undefined || location.line <= 0 ? {} : { line: location.line, ...(location.side === undefined ? {} : { side: location.side }) }),
     });
   }
   return { threads, comments, unavailable };
