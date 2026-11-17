@@ -18,6 +18,8 @@ import { blockedUsersUrl } from './blocked-list';
  */
 
 const lists = new Map<string, readonly string[] | null>();
+/** The pages GitHub let the reader read: an organisation's only to its owners and moderators, who may block from it. */
+const readable = new Set<string>();
 
 function read(url: string, onLanded: () => void): readonly string[] {
   const known = lists.get(url);
@@ -27,9 +29,14 @@ function read(url: string, onLanded: () => void): readonly string[] {
   void browser.runtime
     .sendMessage(request)
     .then((response: unknown) => {
-      const logins = isBlockedUsersResponse(response) && response.ok ? response.logins : [];
+      const ok = isBlockedUsersResponse(response) && response.ok;
+      const logins = ok ? response.logins : [];
       lists.set(url, logins);
-      if (logins.length > 0) onLanded();
+      // A readable list lands a pass even when empty: it is what lets the description's menu offer an organisation block.
+      if (ok) {
+        readable.add(url);
+        onLanded();
+      }
     })
     .catch(() => lists.set(url, []));
   return [];
@@ -49,4 +56,14 @@ export function blockedFor(owner: string, viewer: string, onLanded: () => void):
   for (const login of org) blocked.set(login.toLowerCase(), { org: true, personal: false });
   for (const login of personal) blocked.set(login.toLowerCase(), { org: blocked.get(login.toLowerCase())?.org ?? false, personal: true });
   return blocked;
+}
+
+/** Whether the reader's own Blocked users list was read, so someone absent from it is truly not blocked. Asked after `blockedFor`. */
+export function personalBlocksRead(): boolean {
+  return readable.has(blockedUsersUrl('personal'));
+}
+
+/** Whether the reader may block people from `owner`'s organisation: GitHub showed them its Blocked users page. Asked after `blockedFor`. */
+export function mayBlockFromOrg(owner: string): boolean {
+  return owner !== '' && readable.has(blockedUsersUrl('org', owner));
 }

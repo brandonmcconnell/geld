@@ -1,4 +1,4 @@
-import type { BrowserId } from './browsers';
+import type { BrowserId, BrowserInfo } from './browsers';
 
 /** A browser profile as Chrome lists it in its `Local State` file (`profile.info_cache`). */
 export interface Profile {
@@ -39,6 +39,21 @@ export function parseLocalState(contents: string, browser: BrowserId): Profile[]
     return at === -1 ? order.length + (directory === 'Default' ? -0.5 : 0) : at;
   };
   return profiles.sort((a, b) => rank(a.directory) - rank(b.directory) || a.directory.localeCompare(b.directory, 'en', { numeric: true }));
+}
+
+/**
+ * The profiles to offer for a browser whose `Local State` reads `contents`. A browser that keeps its one profile
+ * in the user data folder itself (Opera) may list none, and then offers that one as `Default`.
+ */
+export function browserProfiles(browser: Pick<BrowserInfo, 'id' | 'rootProfile'>, contents: string): Profile[] {
+  const listed = parseLocalState(contents, browser.id);
+  if (listed.length > 0 || browser.rootProfile !== true) return listed;
+  return [{ browser: browser.id, directory: 'Default', name: 'Default', email: null }];
+}
+
+/** The profile's folder below the user data folder, the one holding its `Preferences`: none for a root profile. */
+export function profileFolder(browser: Pick<BrowserInfo, 'rootProfile'>, profile: Pick<Profile, 'directory'>): readonly string[] {
+  return browser.rootProfile === true ? [] : [profile.directory];
 }
 
 /** Where the profile saves downloads: its own setting (`download.default_directory`), else the system's Downloads folder. */

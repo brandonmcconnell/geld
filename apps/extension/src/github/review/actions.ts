@@ -67,6 +67,19 @@ export function clickResolve(anchor: string): boolean {
   return true;
 }
 
+/** Whether GitHub's control for the thread would unresolve it: the thread is resolved already. */
+function unresolves(button: HTMLElement): boolean {
+  return /^unresolve/i.test(textOf(button)) || /^unresolve/i.test(button.getAttribute('aria-label') ?? '') || button.closest('form[action*="/unresolve"]') !== null;
+}
+
+/** Resolve the thread holding `anchor`, never unresolve it: a thread resolved meanwhile is left as it is. */
+export function resolveIfOpen(anchor: string): boolean {
+  const button = resolveButton(anchor);
+  if (button === null || unresolves(button)) return false;
+  button.click();
+  return true;
+}
+
 export function tickSummaryCheckbox(commentRoot: HTMLElement, itemAnchors: readonly string[], checked: boolean): boolean {
   const items = commentRoot.querySelectorAll<HTMLInputElement>('input.task-list-item-checkbox, input[type="checkbox"]');
   for (const box of items) {
@@ -119,16 +132,24 @@ export function quoteReply(anchor: string): boolean {
   return true;
 }
 
-export async function copyText(text: string): Promise<void> {
+/** Put `text` on the clipboard: the Clipboard API, else the older copy command. Resolves whether either took it. */
+export async function copyText(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
+    return true;
   } catch {
     const area = document.createElement('textarea');
     area.value = text;
     document.body.append(area);
     area.select();
-    document.execCommand('copy');
+    let copied = false;
+    try {
+      copied = document.execCommand('copy');
+    } catch {
+      copied = false;
+    }
     area.remove();
+    return copied;
   }
 }
 

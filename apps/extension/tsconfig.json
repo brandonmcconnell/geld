@@ -11,7 +11,8 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "verbatimModuleSyntax": true,
-    "types": ["vitest/globals"]
+    "types": ["vitest/globals"],
+    "jsx": "react-jsx"
   },
   "include": ["entrypoints", "src", "wxt.config.ts", "vitest.config.ts", ".wxt/wxt.d.ts"],
   "exclude": ["node_modules", ".output"]

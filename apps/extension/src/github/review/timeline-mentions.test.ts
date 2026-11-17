@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { nextTimelinePage, parseTimelineMentions, resetTimelineMentions, timelineMentionsFor } from './timeline-mentions';
+import { nextTimelinePage, parseTimelineMentions, resetTimelineMentions, timelineEventsFor, timelineMentionsFor } from './timeline-mentions';
 
 // Trimmed from `page_data/timeline` on brandonmcconnell/geld#486 (Nov 2026).
 const page = {
@@ -84,5 +84,17 @@ describe('timelineMentionsFor', () => {
     await settle();
     expect(timelineMentionsFor('/o/r/pull/1', landed)?.length).toBe(2);
     expect(landed).toHaveBeenCalledTimes(1);
+  });
+
+  it('says the reading is not complete when the timeline runs past the pages it reads', async () => {
+    vi.stubGlobal('fetch', async (input: string | URL) => {
+      const at = Number(/after=(\d+)/.exec(String(input))?.[1] ?? '0');
+      return new Response(JSON.stringify({ items: page.items.slice(0, 1) }), { status: 200, headers: { Link: `</o/r/pull/2/page_data/timeline?after=${at + 1}>; rel="next"` } });
+    });
+    expect(timelineEventsFor('/o/r/pull/2', () => undefined)).toBeNull();
+    for (let i = 0; i < 50; i += 1) await settle();
+    const read = timelineEventsFor('/o/r/pull/2', () => undefined);
+    expect(read?.complete).toBe(false);
+    expect(read?.events.length).toBe(40);
   });
 });

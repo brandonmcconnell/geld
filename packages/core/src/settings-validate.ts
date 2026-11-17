@@ -4,7 +4,7 @@ import { BUNDLED_CATALOG, CATEGORY_IDS, catalogGroupKeys, isCategoryId, isCustom
 import { CATEGORY_ICON_NAMES, isCategoryIconName } from './category-icons';
 import { globToRegExp } from './glob';
 import type { GeldSettings } from './settings';
-import { COMPACT_TIMELINE_MODES, REPO_CONFIG_MODES, isCompactTimelineMode, isRepoConfigMode, normalizeHost, normalizeSettings, isReviewGrouping, isSuggestedFixMode, REVIEW_GROUPINGS, SUGGESTED_FIX_MODES } from './settings';
+import { COMPACT_TIMELINE_MODES, REPO_CONFIG_MODES, isCompactTimelineMode, isRepoConfigMode, normalizeHost, normalizeSettings, isReviewGrouping, isSuggestedFixMode, REVIEW_GROUPINGS, SUGGESTED_FIX_MODES, CODING_AGENT_IDS, isCodingAgentId } from './settings';
 import { authorRuleProblem } from './pr-authors';
 import { TEST_PATTERN_GROUP_IDS, isTestPatternGroupId } from './test-patterns';
 import { parseTestSyntax } from './test-outline';
@@ -69,6 +69,7 @@ const BOOLEAN_KEYS = [
   'showBadge',
   'autoUpdatePatterns',
   'errorReports',
+  'usageStats',
   'prOverview',
   'digestAboveDescription',
   'quickReview',
@@ -78,6 +79,7 @@ const BOOLEAN_KEYS = [
   'relatedLinks',
   'aiEnabled',
   'aiJev',
+  'resolveOnFix',
 ] as const;
 
 /** Why a custom test syntax line cannot be used, or null. */
@@ -267,6 +269,9 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   if (value.compactTimeline !== undefined && !isCompactTimelineMode(value.compactTimeline)) {
     issues.push({ path: `${path}.compactTimeline`, message: `Expected one of ${list(COMPACT_TIMELINE_MODES)}, got ${describeValue(value.compactTimeline)}.` });
   }
+  if (value.consentDecidedAt !== undefined && typeof value.consentDecidedAt !== 'string') {
+    issues.push({ path: `${path}.consentDecidedAt`, message: `Expected a string, got ${describeValue(value.consentDecidedAt)}.` });
+  }
   if (value.digestViewChosenAt !== undefined && typeof value.digestViewChosenAt !== 'string') {
     issues.push({ path: `${path}.digestViewChosenAt`, message: `Expected a string, got ${describeValue(value.digestViewChosenAt)}.` });
   }
@@ -275,6 +280,9 @@ export function collectSettingsIssues(value: unknown, path = 'settings', catalog
   }
   if (value.suggestedFixes !== undefined && !isSuggestedFixMode(value.suggestedFixes)) {
     issues.push({ path: `${path}.suggestedFixes`, message: `Expected one of ${list(SUGGESTED_FIX_MODES)}, got ${describeValue(value.suggestedFixes)}.` });
+  }
+  if (value.codingAgent !== undefined && !isCodingAgentId(value.codingAgent)) {
+    issues.push({ path: `${path}.codingAgent`, message: `Expected one of ${list(CODING_AGENT_IDS)}, got ${describeValue(value.codingAgent)}.` });
   }
   if (value.aiBaseUrl !== undefined && typeof value.aiBaseUrl !== 'string') {
     issues.push({ path: `${path}.aiBaseUrl`, message: `Expected a string, got ${describeValue(value.aiBaseUrl)}.` });

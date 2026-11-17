@@ -17,6 +17,13 @@
  * an entry is lent back only to the run it was taken from; a row with no
  * such link is trusted only briefly after its finish.
  *
+ * A check the page first saw already finished has no times, but it had
+ * finished by that first sighting (`RawCheckRun.doneBy`): a run asked for
+ * after it is not that check's, which was the run before (geld#671: an old
+ * green CodeRabbit check read as the answer to "Review triggered."). Kept only
+ * for a link naming a GitHub check run, since a status's link to the bot's
+ * site may stay the same across runs.
+ *
  * Entries go when their head is no longer the pull request's (a push starts
  * every check over) and after a day regardless.
  */
@@ -25,8 +32,10 @@ import { storage } from 'wxt/utils/storage';
 import type { RawCheckRun } from '@geld/review';
 
 interface RunTimes {
-  readonly startedAt: string;
+  /** Absent for a run first seen already finished, which has `doneBy` instead. */
+  readonly startedAt?: string;
   readonly completedAt?: string;
+  readonly doneBy?: string;
   /** The row's details link while it ran, which names the run. */
   readonly runId?: string;
   /** For pruning: when the entry was last written, ms. */
@@ -43,22 +52,50 @@ const runsItem = storage.defineItem<RunMap>('local:reviewRunStarts', { fallback:
 
 const memory = new Map<string, RunTimes>();
 let loaded: Promise<void> | null = null;
+/** Until the stored entries are in, a first sighting is not recorded: it would shadow a start a reload brings back. */
+let ready = false;
+let sightingDeferred = false;
 let writeQueued = false;
 
 function isRunTimes(value: unknown): value is RunTimes {
   if (typeof value !== 'object' || value === null) return false;
   const record: Record<string, unknown> = { ...value };
   return (
-    typeof record.startedAt === 'string' &&
+    (typeof record.startedAt === 'string' || (record.startedAt === undefined && typeof record.doneBy === 'string')) &&
     typeof record.at === 'number' &&
     (record.completedAt === undefined || typeof record.completedAt === 'string') &&
+    (record.doneBy === undefined || typeof record.doneBy === 'string') &&
     (record.runId === undefined || typeof record.runId === 'string')
   );
 }
 
+const GITHUB_RUN_PATH = /^\/[^/]+\/[^/]+\/(?:runs\/(\d+)|actions\/runs\/\d+\/job\/(\d+)|pull\/\d+\/checks)\/?$/;
+
+/**
+ * The GitHub check run a details link names, or null: the merge box links `/pull/N/checks?check_run_id=…`, the
+ * commit's status partial `/runs/N`, an Actions job `/actions/runs/…/job/N`, and the two sources take turns.
+ */
+function githubRunOf(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url, 'https://github.com');
+  } catch {
+    return null;
+  }
+  const match = GITHUB_RUN_PATH.exec(parsed.pathname);
+  if (match === null) return null;
+  return match[1] ?? match[2] ?? parsed.searchParams.get('check_run_id');
+}
+
+function sameName(a: string | undefined, b: string | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  const run = githubRunOf(a);
+  return run !== null ? run === githubRunOf(b) : a === b;
+}
+
 /** Whether a remembered run is the one a completed row shows: the same named run, or an unnamed one still fresh. */
 function sameRun(known: RunTimes, check: RawCheckRun, now: number): boolean {
-  if (known.runId !== undefined && check.detailsUrl !== undefined) return known.runId === check.detailsUrl;
+  if (known.runId !== undefined && check.detailsUrl !== undefined) return sameName(known.runId, check.detailsUrl);
   const finished = known.completedAt === undefined ? NaN : Date.parse(known.completedAt);
   return Number.isNaN(finished) || now - finished < UNNAMED_TRUST_MS;
 }
@@ -66,6 +103,10 @@ function sameRun(known: RunTimes, check: RawCheckRun, now: number): boolean {
 /** Bring the stored entries into memory once; `onChange` re-applies when they land so a finished check gets its start. */
 function load(onChange: () => void): void {
   if (loaded !== null) return;
+  const settle = (any: boolean): void => {
+    ready = true;
+    if (any || sightingDeferred) onChange();
+  };
   loaded = runsItem
     .getValue()
     .then((stored) => {
@@ -76,9 +117,9 @@ function load(onChange: () => void): void {
         memory.set(key, value);
         any = true;
       }
-      if (any) onChange();
+      settle(any);
     })
-    .catch(() => undefined);
+    .catch(() => settle(false));
 }
 
 function persist(): void {
@@ -110,25 +151,41 @@ export function withRunTimes(checks: readonly RawCheckRun[], pageKey: string, he
     const known = memory.get(key);
     if (check.status !== 'completed') {
       // A run under way: its start (and name) replace whatever run was remembered under this check.
-      if (check.startedAt !== undefined && (known === undefined || known.startedAt !== check.startedAt || known.runId !== check.detailsUrl)) {
+      if (check.startedAt !== undefined && (known === undefined || known.startedAt !== check.startedAt || !sameName(known.runId, check.detailsUrl))) {
         memory.set(key, { startedAt: check.startedAt, ...(check.detailsUrl === undefined ? {} : { runId: check.detailsUrl }), at: now });
         changed = true;
+      } else if (check.startedAt === undefined && known !== undefined && known.startedAt === undefined) {
+        // The run first seen finished is over, and says nothing of this one.
+        memory.delete(key);
+        changed = true;
       }
-      return check.startedAt === undefined && known !== undefined && known.completedAt === undefined ? { ...check, startedAt: known.startedAt } : check;
+      return check.startedAt === undefined && known?.startedAt !== undefined && known.completedAt === undefined ? { ...check, startedAt: known.startedAt } : check;
     }
-    if (known === undefined) return check;
-    if (!sameRun(known, check, now)) {
+    let current = known;
+    if (current !== undefined && !sameRun(current, check, now)) {
       // The check ran again while nobody watched: what was remembered is the run before and says nothing of this one.
       memory.delete(key);
       changed = true;
-      return check;
+      current = undefined;
     }
-    const completedAt = known.completedAt ?? new Date(now).toISOString();
-    if (known.completedAt === undefined) {
-      memory.set(key, { ...known, completedAt, at: now });
+    if (current === undefined) {
+      if (check.startedAt !== undefined || check.completedAt !== undefined || check.detailsUrl === undefined || githubRunOf(check.detailsUrl) === null) return check;
+      if (!ready) {
+        sightingDeferred = true;
+        return check;
+      }
+      const doneBy = new Date(now).toISOString();
+      memory.set(key, { doneBy, runId: check.detailsUrl, at: now });
+      changed = true;
+      return { ...check, doneBy };
+    }
+    if (current.startedAt === undefined) return current.doneBy === undefined ? check : { ...check, doneBy: current.doneBy };
+    const completedAt = current.completedAt ?? new Date(now).toISOString();
+    if (current.completedAt === undefined) {
+      memory.set(key, { ...current, completedAt, at: now });
       changed = true;
     }
-    return { ...check, startedAt: known.startedAt, completedAt };
+    return { ...check, startedAt: current.startedAt, completedAt };
   });
   if (changed) {
     // Another head's entries for this pull request are over: its checks start again on every push.

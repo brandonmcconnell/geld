@@ -79,6 +79,7 @@ describe('relatedLinkOf', () => {
       ['https://opencode.ai/s/fcnBJ5sx', 'opencode', 'session'],
       ['https://lovable.dev/projects/4769ebff-6bdf-4cec-a73b-e4b457ab1d5c', 'Lovable', 'project'],
       ['https://app.factory.ai/automations?editAutomationId=4769ebff-6bdf-4cec-a73b-e4b457ab1d5c', 'Factory', 'automation'],
+      ['https://app.t3.codes/threads/env_3k9Qx/thr_8Hn2pLm4', 'T3 Code', 'thread'],
     ];
     for (const [href, service, noun] of cases) expect(read(href), href).toMatchObject({ kind: 'agent', service, noun, ref: null });
     for (const href of [
@@ -92,6 +93,8 @@ describe('relatedLinkOf', () => {
       'https://codegen.com/agent/trace/123456/ban',
       'https://app.tembo.io/settings/models',
       'https://app.devin.ai/settings',
+      'https://app.t3.codes/new?prompt=Fix%20the%20tests&pr=o/r/1',
+      'https://app.t3.codes/threads/env_3k9Qx',
       'http://app.devin.ai/sessions/d71d660849c3422eadd668dd12739bac',
       'https://app.devin.ai.evil.example/sessions/d71d660849c3422eadd668dd12739bac',
     ]) expect(read(href), href).toBeNull();

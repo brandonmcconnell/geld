@@ -5,13 +5,13 @@ import { describeRepository, providerForHost } from '@geld/core';
  * A short log of what happened to diff fetches, for "Copy diagnostics" on the
  * options page. Kept in session storage (gone when the browser closes) and
  * written by the background worker only. Nothing sensitive: the subject is
- * `owner/repo#N` or `owner/repo@sha` — what the page itself shows — never a
+ * `host/owner/repo#N` or `host/owner/repo@sha` — what the page itself shows — never a
  * URL with a query, a cookie, or any of the diff's text.
  */
 export interface DiagnosticEvent {
   readonly at: number;
   /** `error`: one of Geld's own errors (`error-capture.ts`); `subject` is where it happened, `outcome` its scrubbed message. */
-  readonly kind: 'fetch' | 'worker-start' | 'rate-limit' | 'busy' | 'cache-clear' | 'inject' | 'error' | 'error-report';
+  readonly kind: 'fetch' | 'worker-start' | 'rate-limit' | 'busy' | 'cache-clear' | 'inject' | 'error' | 'error-report' | 'usage-report';
   readonly subject?: string | undefined;
   /**
    * `ok`, `memory-hit`, `queued`, `rate-limited`, `signed-out`, `not-a-diff`, `http-NNN`, `too-large`, or an error
@@ -56,50 +56,60 @@ export async function readDiagnostics(): Promise<readonly DiagnosticEvent[]> {
 }
 
 /**
- * What a tab is called in the log: `owner/repo#N` (with `/files` or
- * `/changes` when on that tab), `owner/repo@sha7`, `owner/repo (pulls)` for
+ * What a tab is called in the log: `host/owner/repo#N` (with `/files` or
+ * `/changes` when on that tab), `host/owner/repo@sha7`, `host/owner/repo (pulls)` for
  * a repository's list and compare pages, and `other page` for anything else.
  * Never a path as such: a profile, an organisation or a search URL names
  * people, and the log may name repositories and nothing more.
  */
 export function tabSubject(url: string): string {
   let parsed: URL;
-  let pathname: string;
   try {
     parsed = new URL(url);
-    pathname = parsed.pathname;
   } catch {
     return 'other page';
   }
+  const { pathname } = parsed;
+  const host = hostPrefix(parsed);
   const provider = providerForHost(parsed.hostname);
   if (provider === 'gitlab' || provider === 'bitbucket') {
     const repository = describeRepository(parsed);
     if (repository === null) return 'other page';
     if (provider === 'gitlab') {
       const review = /\/-\/merge_requests\/(\d+)(\/(?:diffs|commits|pipelines))?(?:\/|$)/.exec(pathname);
-      if (review !== null) return `gitlab:${repository.path}!${review[1]}${review[2] ?? ''}`;
+      if (review !== null) return `${host}${repository.path}!${review[1]}${review[2] ?? ''}`;
       const commit = /\/-\/commit\/([0-9a-f]+)(?:\/|$)/i.exec(pathname);
-      if (commit !== null) return `gitlab:${repository.path}@${(commit[1] ?? '').slice(0, 7)}`;
-      if (pathname.endsWith('/-/merge_requests')) return `gitlab:${repository.path} (merge requests)`;
+      if (commit !== null) return `${host}${repository.path}@${(commit[1] ?? '').slice(0, 7)}`;
+      if (pathname.endsWith('/-/merge_requests')) return `${host}${repository.path} (merge requests)`;
     } else {
       const review = /^\/[^/]+\/[^/]+\/pull-requests\/(\d+)(\/(?:diff|commits|activity))?(?:\/|$)/.exec(pathname);
-      if (review !== null) return `bitbucket:${repository.path}#${review[1]}${review[2] ?? ''}`;
+      if (review !== null) return `${host}${repository.path}#${review[1]}${review[2] ?? ''}`;
       const commit = /^\/[^/]+\/[^/]+\/commits\/([0-9a-f]+)(?:\/|$)/i.exec(pathname);
-      if (commit !== null) return `bitbucket:${repository.path}@${(commit[1] ?? '').slice(0, 7)}`;
-      if (/^\/[^/]+\/[^/]+\/pull-requests\/?$/.test(pathname)) return `bitbucket:${repository.path} (pull requests)`;
+      if (commit !== null) return `${host}${repository.path}@${(commit[1] ?? '').slice(0, 7)}`;
+      if (/^\/[^/]+\/[^/]+\/pull-requests\/?$/.test(pathname)) return `${host}${repository.path} (pull requests)`;
     }
     return 'other page';
   }
   const pull = /^\/([^/]+\/[^/]+)\/pull\/(\d+)(\/(?:files|changes|commits|checks))?/.exec(pathname);
-  if (pull !== null) return `${pull[1]}#${pull[2]}${pull[3] ?? ''}`;
+  if (pull !== null) return `${host}${pull[1]}#${pull[2]}${pull[3] ?? ''}`;
   const commit = /^\/([^/]+\/[^/]+)\/commit\/([0-9a-f]+)/i.exec(pathname);
-  if (commit !== null) return `${commit[1]}@${(commit[2] ?? '').slice(0, 7)}`;
+  if (commit !== null) return `${host}${commit[1]}@${(commit[2] ?? '').slice(0, 7)}`;
   const repoPage = /^\/([^/]+\/[^/]+)\/(pulls|compare|commits)(?:\/|$)/.exec(pathname);
-  if (repoPage !== null) return `${repoPage[1]} (${repoPage[2]})`;
+  if (repoPage !== null) return `${host}${repoPage[1]} (${repoPage[2]})`;
   return 'other page';
 }
 
-/** `owner/repo#N` for a pull request diff, `owner/repo@sha7` for a commit's; null for anything else. */
+/**
+ * The host before every repository (`github.com/owner/repo#N`): it says which
+ * Git provider, and the same `owner/repo` on two hosts is two repositories, of
+ * which the feedback form names only the one on the page's own host
+ * (`obfuscateRepos`).
+ */
+function hostPrefix(url: URL): string {
+  return `${url.hostname}/`;
+}
+
+/** `host/owner/repo#N` for a pull request diff, `host/owner/repo@sha7` for a commit's; null for anything else. */
 export function diagnosticSubject(diffUrl: string): string | null {
   let url: URL;
   try {
@@ -107,19 +117,20 @@ export function diagnosticSubject(diffUrl: string): string | null {
   } catch {
     return null;
   }
+  const host = hostPrefix(url);
   if (url.hostname === 'gitlab.com') {
     const repository = describeRepository(url);
     const review = /\/-\/merge_requests\/(\d+)\.diff$/.exec(url.pathname);
-    return repository === null || review === null ? null : `gitlab:${repository.path}!${review[1]}`;
+    return repository === null || review === null ? null : `${host}${repository.path}!${review[1]}`;
   }
   if (url.hostname === 'api.bitbucket.org') {
     const review = /^\/2\.0\/repositories\/([^/]+)\/([^/]+)\/pullrequests\/(\d+)\/diff$/.exec(url.pathname);
-    return review === null ? null : `bitbucket:${review[1]}/${review[2]}#${review[3]}`;
+    return review === null ? null : `bitbucket.org/${review[1]}/${review[2]}#${review[3]}`;
   }
   const pull = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\.diff$/.exec(url.pathname);
-  if (pull !== null) return `${pull[1]}/${pull[2]}#${pull[3]}`;
+  if (pull !== null) return `${host}${pull[1]}/${pull[2]}#${pull[3]}`;
   const commit = /^\/([^/]+)\/([^/]+)\/commit\/([0-9a-f]+)\.diff$/i.exec(url.pathname);
-  if (commit !== null) return `${commit[1]}/${commit[2]}@${(commit[3] ?? '').slice(0, 7)}`;
+  if (commit !== null) return `${host}${commit[1]}/${commit[2]}@${(commit[3] ?? '').slice(0, 7)}`;
   return null;
 }
 

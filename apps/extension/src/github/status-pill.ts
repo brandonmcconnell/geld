@@ -2,6 +2,7 @@ import type { MergeBox, MergeOffer, Stack, StackMember, StatusAction } from './m
 import { METHOD_LABEL } from './merge-actions';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import { reactSettled } from './react-hydration';
+import { leaveGhost } from './ui/bar-motion';
 import { ICON_GIT_MERGE, ICON_GIT_MERGE_QUEUE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_TRIANGLE_DOWN } from './ui/icons';
 
 /**
@@ -340,7 +341,12 @@ export function syncStatusPills(on: boolean, onOpen: (pill: HTMLButtonElement, c
   }
   // A pill no longer after any of GitHub's labels: GitHub replaced the label in place (a merge on the Overview swaps its
   // status button for a plain merged label, rendered after the pill), and the old pill stood on beside it, still open.
-  for (const stale of document.querySelectorAll<HTMLButtonElement>(`button[${ATTR_PILL}]`)) if (!pills.includes(stale)) stale.remove();
+  // In GitHub's bar that is its label going as the tabs come back into view: the pill slides out with GitHub's parts.
+  for (const stale of document.querySelectorAll<HTMLButtonElement>(`button[${ATTR_PILL}]`)) {
+    if (pills.includes(stale)) continue;
+    if (on && pillPlace(stale) === 'mini') leaveGhost(stale, 'left');
+    stale.remove();
+  }
   return pills;
 }
 

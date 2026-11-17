@@ -24,8 +24,11 @@ export const STORE_URLS: Readonly<Partial<Record<BrowserId, string>>> = {
   chrome: 'https://chromewebstore.google.com/detail/geld/nfbkhldmnfgeeldfafojajnfanikbhia',
   edge: 'https://microsoftedge.microsoft.com/addons/detail/geld/bdakebdlgaomkblemgabkoofoiellhmi',
   firefox: 'https://addons.mozilla.org/firefox/addon/geld/',
-  // safari: 'https://apps.apple.com/app/<id>',
+  safari: 'https://apps.apple.com/app/geld-for-safari/id6809295007',
 };
+
+/** Geld for Safari's public TestFlight link, the self-updating Safari build; null until the link exists (PUBLISHING.md). */
+export const TESTFLIGHT_URL: string | null = null;
 
 export type InstallSource = 'store' | 'release-asset' | 'release-page';
 

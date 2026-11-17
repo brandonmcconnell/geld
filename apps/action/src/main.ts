@@ -22,8 +22,10 @@ import {
   summaryIsCurrent,
   summaryRecord,
   summaryUserPrompt,
+  unthreadedFindings,
+  unthreadedInputs,
 } from '@geld/review';
-import type { AddressedOutputItem, ConsolidateInputItem, ConsolidateOutputItem, ProducerRecord, ReviewItem, ReviewSummary } from '@geld/review';
+import type { AddressedOutputItem, ConsolidateInputItem, ConsolidateOutputItem, GeldPrMeta, ProducerRecord, RawComment, ReviewItem, ReviewSummary } from '@geld/review';
 import { filesChangedBetween, repositoryTracker, trackerStates, findSummaryComment, loadPullRequest, parseActionEvent, shouldSkipSelfEdit, tokenLogin, upsertIssueComment } from './github';
 import type { GithubClient } from './github';
 
@@ -92,9 +94,11 @@ async function consolidate(ai: Ai, pending: readonly ConsolidateInputItem[]): Pr
   return parsed.value;
 }
 
-async function writeTldr(ai: Ai, items: readonly ReviewItem[], previous: ReviewSummary | undefined, now: string): Promise<ReviewSummary | undefined> {
-  if (previous !== undefined && summaryIsCurrent(previous, items)) return previous;
-  const open = summaryInput(items);
+async function writeTldr(ai: Ai, meta: GeldPrMeta, comments: readonly RawComment[], previous: ReviewSummary | undefined, now: string): Promise<ReviewSummary | undefined> {
+  const { items } = meta;
+  const unthreaded = unthreadedFindings(meta);
+  if (previous !== undefined && summaryIsCurrent(previous, items, unthreaded)) return previous;
+  const open = [...summaryInput(items), ...unthreadedInputs(unthreaded, comments)];
   if (open.length === 0) return undefined;
   const result = await completeChat({
     fetch: ai.fetch,
@@ -118,7 +122,7 @@ async function writeTldr(ai: Ai, items: readonly ReviewItem[], previous: ReviewS
     console.warn(`AI summary ignored: ${parsed.issues.join('; ')}`);
     return previous;
   }
-  return summaryRecord(parsed.value, items, now);
+  return summaryRecord(parsed.value, items, now, unthreaded);
 }
 
 async function judgeAddressed(ai: Ai, items: readonly ReviewItem[], changedPaths: readonly string[]): Promise<readonly AddressedOutputItem[]> {
@@ -221,7 +225,7 @@ export async function run(env: Record<string, string | undefined> = process.env,
   const consolidated = buildMeta(pr, { ...common, producer, generatedAt, rewritten, carried: plan.carried });
   const semantic = await judgeAddressed(ai, botOnlyForRewrite(consolidated.items), pr.changedPaths);
   const judged = buildMeta(pr, { ...common, producer, generatedAt, rewritten, carried: plan.carried, semantic });
-  const summary = await writeTldr(ai, judged.items, previous?.summary, generatedAt);
+  const summary = await writeTldr(ai, judged, rawCommentsOf(pr), previous?.summary, generatedAt);
   const meta = buildMeta(pr, { ...common, producer, generatedAt, rewritten, carried: plan.carried, semantic, ...(summary === undefined ? {} : { summary }) });
   const body = renderSummary(meta, { owner: event.owner, repo: event.repo, number: event.number,links:ticketLinks });
   const id = await upsertIssueComment(client, event.owner, event.repo, event.number, existing?.commentId ?? null, body);

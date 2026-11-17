@@ -8,11 +8,13 @@
 
 import { createElement, svgFromString } from '../dom';
 import type { RefDetails, RefState } from './refs';
-import { ICON_CHECK, ICON_COMMENT_DISCUSSION, ICON_GIT_COMPARE, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_ISSUE_CLOSED, ICON_ISSUE_OPENED, ICON_LINK, ICON_SKIP, ICON_X } from '../ui/icons';
+import { ICON_BOOKMARK, ICON_CHECK, ICON_COMMENT_DISCUSSION, ICON_EYE, ICON_GIT_BRANCH, ICON_GIT_COMPARE, ICON_GIT_MERGE, ICON_GIT_MERGE_QUEUE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_HISTORY, ICON_ISSUE_CLOSED, ICON_ISSUE_OPENED, ICON_KEY, ICON_LINK, ICON_LOCK, ICON_MILESTONE, ICON_PENCIL, ICON_PERSON, ICON_SKIP, ICON_TAG, ICON_TRASH, ICON_X } from '../ui/icons';
 import { openMinimized } from './chat';
 import { commitDate } from './commit-dates';
-import { compareHome, onRestore, teleportInto } from './teleport';
+import { overviewNewestFirst } from './overview-page';
+import { compareHome, homeOf, onRestore, teleportInto } from './teleport';
 import { referenceLinksIn } from './references';
+import { eventText, type EventPart } from './timeline-events';
 import { relativeTimeElement } from './time';
 
 /**
@@ -33,6 +35,7 @@ export function renderQuickView(slot: HTMLElement, nodes: readonly HTMLElement[]
   compactForcePushes(list);
   compactEvents(list, context.headSha ?? null);
   joinCommitSubjects(list);
+  orderCommitGroups(list);
   timeCommitRows(list, onChange);
 }
 
@@ -273,19 +276,50 @@ const TIME_CLASS = 'geld-review__commit-time';
  * goes home.
  */
 export function timeCommitRows(list: HTMLElement, onChange: () => void): void {
-  for (const row of list.querySelectorAll<HTMLElement>('.TimelineItem, .js-commits-list-item')) {
+  for (const row of list.querySelectorAll<HTMLElement>(`.TimelineItem, .js-commits-list-item, ${OVERVIEW_COMMIT_ROW}`)) {
     if (row.querySelector(`.${TIME_CLASS}`) !== null || row.querySelector('.geld-review__push') !== null) continue;
-    const link = row.querySelector<HTMLAnchorElement>('a[href*="/commits/"]');
-    const sha = /\/commits\/([0-9a-f]{7,40})(?:[/?#]|$)/i.exec(link?.getAttribute('href') ?? '')?.[1];
-    if (link === null || sha === undefined) continue;
+    const overview = row.matches(OVERVIEW_COMMIT_ROW);
+    const link = row.querySelector<HTMLAnchorElement>(overview ? 'a[href*="/changes/"]' : 'a[href*="/commits/"]');
+    const sha = link === null ? null : commitShaOf(link);
+    if (link === null || sha === null) continue;
     const date = commitDate(sha, onChange);
     if (date === null) continue;
-    // The row's one line: GitHub's flex row holding avatar, message, badge and SHA (its wrapper on the React page).
-    const line = link.closest<HTMLElement>('.d-flex.flex-md-row, .d-flex.flex-row, [class*="commit-row"], .TimelineItem-body') ?? row;
+    // The row's one line: GitHub's flex row holding avatar, message, badge and SHA (its wrapper on the React page). The
+    // Overview's row is a grid of fixed columns, so the time joins the SHA's own flex box at its end.
+    const line = overview ? (row.querySelector<HTMLElement>(':scope > [class*="Actions"]') ?? row) : (link.closest<HTMLElement>('.d-flex.flex-md-row, .d-flex.flex-row, [class*="commit-row"], .TimelineItem-body') ?? row);
     const time = relativeTimeElement(date, TIME_CLASS);
     line.append(time);
     onRestore(() => time.remove());
   }
+}
+
+const OVERVIEW_COMMIT_ROW = '[data-testid="timeline-commit-row"]';
+
+/** The commit a row's link names: the conversation's `/pull/N/commits/<sha>`, the Overview's `/pull/N/changes/<sha>`. */
+export function commitShaOf(link: Element): string | null {
+  return /\/pull\/\d+\/(?:commits|changes)\/([0-9a-f]{7,40})(?:[/?#]|$)/i.exec(link.getAttribute('href') ?? '')?.[1] ?? null;
+}
+
+const ATTR_OLDEST_FIRST = 'data-geld-oldest-first';
+
+/**
+ * The Overview lists its Comments section newest first by default, and a run of commits inside one entry with it,
+ * while the digest reads everything oldest first (entries are put in timeline order by `compareHome`). React's rows
+ * cannot be moved, so a newest-first group is turned over by the stylesheet (`column-reverse`), its "N additional
+ * commits" summary and the rows that replace it alike.
+ */
+function orderCommitGroups(list: HTMLElement): void {
+  for (const group of list.querySelectorAll<HTMLElement>('[data-testid="timeline-commit-group"]')) {
+    if (group.hasAttribute(ATTR_OLDEST_FIRST) || !listedNewestFirst(group)) continue;
+    group.setAttribute(ATTR_OLDEST_FIRST, '');
+    onRestore(() => group.removeAttribute(ATTR_OLDEST_FIRST));
+  }
+}
+
+function listedNewestFirst(node: Element): boolean {
+  const home = homeOf(node);
+  const section = (home instanceof Element ? home : home.parentElement)?.closest('section') ?? null;
+  return section !== null && overviewNewestFirst(section);
 }
 
 /**
@@ -459,6 +493,84 @@ export function renderMentionsView(slot: HTMLElement, nodes: readonly HTMLElemen
   section('What this PR mentions', outgoing);
   slot.replaceChildren(wrap);
   if (wrap.childElementCount === 0) slot.append(createElement('p', { class: 'geld-review__qv-empty' }, ['Not loaded on this page yet.']));
+}
+
+/** One of the pull request's own events, read from timeline data rather than a row of the page's. */
+export interface EventLine {
+  /** GitHub's `eventType`, which picks the glyph its timeline badge draws. */
+  readonly type: string;
+  readonly state: 'open' | 'closed' | 'merged' | null;
+  /** The actor's picture and name, each carrying their hovercard. */
+  readonly avatar: HTMLElement | null;
+  readonly actor: HTMLElement | null;
+  readonly words: readonly EventPart[];
+  readonly at: string;
+}
+
+/** Each event's glyph, as GitHub's timeline badge draws it. */
+const EVENT_GLYPH: Readonly<Record<string, string>> = {
+  closed: ICON_GIT_PULL_REQUEST_CLOSED,
+  merged: ICON_GIT_MERGE,
+  reopened: ICON_GIT_PULL_REQUEST,
+  renamed: ICON_PENCIL,
+  assigned: ICON_PERSON,
+  unassigned: ICON_PERSON,
+  review_requested: ICON_EYE,
+  review_request_removed: ICON_EYE,
+  ready_for_review: ICON_EYE,
+  review_dismissed: ICON_X,
+  labeled: ICON_TAG,
+  unlabeled: ICON_TAG,
+  milestoned: ICON_MILESTONE,
+  demilestoned: ICON_MILESTONE,
+  locked: ICON_LOCK,
+  unlocked: ICON_KEY,
+  head_ref_deleted: ICON_GIT_BRANCH,
+  head_ref_restored: ICON_GIT_BRANCH,
+  base_ref_changed: ICON_GIT_BRANCH,
+  convert_to_draft: ICON_GIT_PULL_REQUEST_DRAFT,
+  auto_merge_enabled: ICON_GIT_PULL_REQUEST,
+  auto_squash_enabled: ICON_GIT_PULL_REQUEST,
+  auto_rebase_enabled: ICON_GIT_PULL_REQUEST,
+  auto_merge_disabled: ICON_GIT_PULL_REQUEST,
+  added_to_merge_queue: ICON_GIT_MERGE_QUEUE,
+  removed_from_merge_queue: ICON_GIT_MERGE_QUEUE,
+  referenced: ICON_BOOKMARK,
+  comment_deleted: ICON_TRASH,
+};
+
+function eventPartNode(part: EventPart): Node {
+  if (typeof part === 'string') return document.createTextNode(part);
+  if ('code' in part) return createElement('code', { class: 'geld-review__event-ref' }, [part.code]);
+  if ('removed' in part) return createElement('del', { class: 'geld-review__activity-was' }, [part.removed]);
+  if ('added' in part) return createElement('ins', { class: 'geld-review__activity-now' }, [part.added]);
+  if ('team' in part) {
+    // A team's page is under its organisation; a team named without one has no address to link to.
+    const [org, slug] = part.team.split('/');
+    return org !== undefined && slug !== undefined && org !== '' && slug !== ''
+      ? createElement('a', { class: 'geld-review__activity-user', href: `/orgs/${encodeURIComponent(org)}/teams/${encodeURIComponent(slug)}` }, [part.team])
+      : createElement('span', { class: 'geld-review__activity-user' }, [part.team]);
+  }
+  return createElement('a', { class: 'geld-review__activity-user', href: `/${part.user}`, 'data-hovercard-type': 'user', 'data-hovercard-url': `/users/${encodeURIComponent(part.user)}/hovercard` }, [part.user]);
+}
+
+/**
+ * The pull request's own events as lines, set as the conversation's event rows are in the digest: the event's glyph in
+ * the rows' glyph column, the actor's picture, who did what (the only part that truncates), then when. For the
+ * Overview, whose page holds no event rows to lend.
+ */
+export function renderEventsView(slot: HTMLElement, lines: readonly EventLine[], complete = true): void {
+  const list = createElement('ul', { class: 'geld-review__activity-events', role: 'list' });
+  for (const line of lines) {
+    const words = createElement('span', { class: 'geld-review__activity-words', title: eventText(line.words) }, [...(line.actor === null ? [] : [line.actor, ' ']), ...line.words.map(eventPartNode)]);
+    const glyph = createElement('span', { class: 'geld-review__activity-glyph', 'aria-hidden': 'true' }, [svgFromString(EVENT_GLYPH[line.type] ?? ICON_HISTORY)]);
+    const row = createElement('li', { class: 'geld-review__activity-event', ...(line.state === null ? {} : { 'data-state': line.state }) }, [glyph, line.avatar ?? createElement('span', { class: 'geld-review__activity-who', 'aria-hidden': 'true' }), words]);
+    if (line.at !== '') row.append(relativeTimeElement(line.at, 'geld-review__time'));
+    list.append(row);
+  }
+  slot.replaceChildren(list);
+  if (lines.length === 0) slot.append(createElement('p', { class: 'geld-review__qv-empty' }, ['Not loaded on this page yet.']));
+  else if (!complete) slot.append(createElement('p', { class: 'geld-review__qv-empty' }, ['The earliest activity only: this timeline is longer than Geld reads. GitHub’s Activity panel has the rest.']));
 }
 
 /** Who wrote the description, for the lines of what it mentions. */

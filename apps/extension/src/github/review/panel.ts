@@ -10,7 +10,7 @@
  */
 
 import type { DigestView } from '@geld/core';
-import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, RawCheckRun, Report, ReportPart, ReviewItem } from '@geld/review';
+import type { BotVerdictRecord, CommentLane, DiffLine, DiffRow, GeldPrMeta, Preview, RawCheckRun, Report, ReportPart, ReviewItem } from '@geld/review';
 import { botAppAvatar, botById, previewHostById, reportsHealth } from '@geld/review';
 import type { AgentNote } from './agent-notes';
 import type { Deployment, DeploymentEntry, DeploymentState, PreviewLinks } from './deployments';
@@ -20,11 +20,15 @@ import { botTitle, isOpenStatus, itemThreads, resolveBotId, threadCounts } from 
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { reactSettled } from '../react-hydration';
 import type { RevisionMarker } from './crawler';
-import { ICON_ALERT, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_EXCLAMATION_CIRCLE_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SYNC, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER, ICON_EYE_CLOSED, ICON_BLOCKED } from '../ui/icons';
+import { ICON_ALERT, ICON_CHECK, ICON_CHECK_CIRCLE_FILL, ICON_EYE, ICON_FILE_DIFF, ICON_GEAR, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COMMENT, ICON_COMMENT_DISCUSSION, ICON_COPY, ICON_CROSS_REFERENCE, ICON_DOT_FILL, ICON_EXCLAMATION_CIRCLE_FILL, ICON_GIT_COMMIT, ICON_GIT_MERGE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_HISTORY, ICON_IN_PROGRESS, ICON_KEBAB_HORIZONTAL, ICON_LINK_EXTERNAL, ICON_LIST_FILTER, ICON_NOTE, ICON_PAPER_AIRPLANE, ICON_REPO_PUSH, ICON_REPORT, ICON_ROCKET, ICON_SKIP, ICON_SPARKLE_FILL, ICON_SPINNER, ICON_X, ICON_TRIANGLE_DOWN, ICON_WORKFLOW, ICON_X_CIRCLE_FILL, ICON_BROWSER, ICON_EYE_CLOSED, ICON_BLOCKED } from '../ui/icons';
 import { authorLabels, botDetail, botHealth, checkStateOfRun, checksHealth, checksRowTone, checksSummary, checksTotal, pushRowTone, EMPTY_CHECKS, isCurrent, reviewsHealth, reviewsLabel, splitItems, statusBadge, verdictLabel } from './panel-model';
 import type { CheckCounts, CheckState, Health, InstalledBot, RequiredReviews, Tone } from './panel-model';
 import type { SuggestedFix } from '@geld/review';
 import type { AiState } from './ai';
+import { NO_KEY_REASON } from '../../lib/ai-key';
+import type { SyntaxPiece } from './snippet-syntax';
+import { highlightLines, snippetLanguage } from './snippet-syntax';
+import type { AiStep } from '../../lib/local-state';
 import type { BotRequestState } from './bot-requests';
 import { requestDetail, requestSentence } from './bot-requests';
 import { formatSyncAge } from '../../ui/sync-age';
@@ -37,11 +41,15 @@ import type { ReviewerCandidate } from './reviewers';
 import type { HiddenPerson } from './hidden-people';
 import type { BlockedBy } from '../blocked-list';
 import { shapeMark } from './mark-shape';
-import { brandMark, syncNewBrandMarks, watchBrandSelection } from './brand';
+import { brandMark, syncNewBrandMarks, watchBrandScale, watchBrandSelection } from './brand';
 import { inlineText } from './inline-text';
+import { fitPathInto } from './path-fit';
+import { splitOverlapping } from './apply-suggestion';
 import { relativeTimeElement } from './time';
 import { DIGEST_VIEW_OPTIONS, digestViewLabel, viewChoice, viewLabel } from './digest-view';
 import { takeViewFocus } from './view-focus';
+import { helpTip } from './help-tip';
+import type { MissingTool } from '../../lib/feedback';
 
 export const PANEL_CLASS = 'geld-review';
 export const ATTR_PANEL = 'data-geld-review-panel';
@@ -112,6 +120,8 @@ export interface FoldRow {
   readonly time: string;
   /** The id whose clock `time` was read from (the headline event's, else the first node's), so the cell can follow the clock's ticks. */
   readonly timeAnchor: string | null;
+  /** The moment the row's time stands for (ISO), when known: shown as a live relative time, and the activity rows' order. */
+  readonly at?: string;
   /** The timeline events' state change (fold.ts `EventHeadline`): the row reads "merged into main" with who did it. */
   readonly headline?: EventHeadline;
   /** A state change paired with its comment (fold.ts `Closure`): the row reads "X closed this" with the comment's first line. */
@@ -415,6 +425,8 @@ export interface PanelModel {
   readonly openPreviews: ReadonlySet<string>;
   /** Where the in-browser AI stands for this pull request: the control in the Geld row and its notices. */
   readonly ai: AiState;
+  /** What the AI triage proposes and who it can hand the rest to, once it has run; null before. */
+  readonly triage: TriageView | null;
   /** The avatar GitHub shows beside the check named `name` in the merge box (the service's mark) and its shape, or null. */
   readonly checkAvatarFor: (reporterId: string, name: string) => CheckAvatar | null;
   /** The page's avatar for the bot that posted the comment at `anchor` (the host's mark). */
@@ -444,6 +456,8 @@ export interface PanelModel {
   readonly openSubKey: string | null;
   /** Threads (by first-comment anchor) whose frame shows the comment they came from. */
   readonly openSources: ReadonlySet<string>;
+  /** Fixes asked for from a chat, `key:state:scope`, so the open chat's Fix control is drawn again as one lands. */
+  readonly chatFixes: readonly string[];
   /** Bumps when a looked-up issue/PR title lands, so the mentions view is rebuilt with it. */
   readonly refsVersion: number;
   /** Bumps when a comment's edit history or an old revision lands, so an open chat's pinned source is rebuilt with it. */
@@ -530,6 +544,10 @@ export interface PanelHandlers {
   readonly onView: (view: DigestView) => void;
   /** Open the Flow diagram of the changed files. */
   readonly onFlow: () => void;
+  /** Open or close the chat sidebar; the button is where focus returns when it closes. */
+  readonly onChat: (from: HTMLElement) => void;
+  /** The pointer or focus reached the Chat button: its view can start loading. */
+  readonly onChatIntent: () => void;
   /** Open Geld's settings: the toolbar popup where the browser allows it, else the options page. */
   readonly onSettings: () => void;
   /** Resolve/unresolve the thread holding `anchor` (GitHub's own button). */
@@ -540,8 +558,105 @@ export interface PanelHandlers {
   readonly onApproveWorkflows: () => void;
   /** Run the model for this pull request now (the AI control). */
   readonly onRunAi: () => void;
+  /** Geld's settings at the AI gateway key, for a run that found none on this device. */
+  readonly onOpenAiSettings: () => void;
   /** Forget this device's run: the repository's Action writes the digest with AI now. */
   readonly onClearAi: () => void;
+  /** Show or hide the triage card (the AI control, once nothing new is left to triage). */
+  readonly onToggleTriage: () => void;
+  readonly onToggleSuggestion: (key: string) => void;
+  /** Commit the fix to the pull request's branch, and with `resolve` resolve every thread it answers. */
+  /** Commit the fix, resolving its threads unless the reader or the repository opts out (`TriageView.resolves`). */
+  readonly onApplySuggestion: (key: string) => void;
+  /** Several fixes in one commit, as GitHub's batched suggestions. */
+  readonly onApplyAll: (keys: readonly string[]) => void;
+  readonly onDiscardAll: (keys: readonly string[]) => void;
+  readonly onDiscardSuggestion: (key: string) => void;
+  /** Resolves whether the path reached the clipboard. */
+  readonly onCopyPath: (path: string) => Promise<boolean>;
+  /**
+   * Hand a finding (by its thread's key) on: `comment` posts what starts the agent `id`, `open` opens it in the open
+   * target `id` (`OPEN_TARGETS`), `copy` copies the task for any other.
+   */
+  readonly onHandOff: (id: string, how: HandOff, key: string) => void;
+  /** "Request a bot" / "Request an agent": the feedback page, its draft asking Geld to support another review bot or coding agent. */
+  readonly onMissingTool: (tool: MissingTool) => void;
+}
+
+export type HandOff = 'comment' | 'open' | 'copy';
+
+/** A fix the triage proposed, as its row shows it. */
+export interface TriageSuggestionView {
+  /** The first comment's anchor of the thread the fix is for. */
+  readonly key: string;
+  readonly title: string;
+  readonly path: string;
+  readonly start: number;
+  readonly end: number;
+  readonly summary: string;
+  /** `fix`: a change to its thread's lines that can be applied. `agent`: no fix fits there, so it is for an agent. */
+  readonly kind: 'fix' | 'agent';
+  readonly diff: readonly DiffRow[];
+  /** Who reported it, every thread the fix answers counted. */
+  readonly reporters: readonly string[];
+  readonly threads: number;
+  readonly state: 'open' | 'applied';
+  /** Written for the head commit: a fix for an earlier one may no longer fit its lines. */
+  readonly current: boolean;
+  /** Why it is not current: a commit since, or a comment in its threads it has not read. */
+  readonly behind: 'commit' | 'comments' | null;
+  /** `fix`: being applied. `writing`: being written afresh from a chat, so it cannot be applied until that lands. */
+  readonly busy: 'fix' | 'writing' | null;
+  readonly error: string | null;
+  /** Who wrote the comment a finding outside its threads came from, when it is one (`StoredSuggestion.origin`). */
+  readonly from: string | null;
+  /** Sent to an agent by the check before drafting, which judged the fix needs more than its thread's lines. */
+  readonly routed: boolean;
+}
+
+export interface TriageAgent {
+  readonly id: string;
+  readonly name: string;
+  /** What starts it in a comment on the pull request; null for an agent started from its own app only (T3 Code). */
+  readonly command: string | null;
+  readonly iconSrc: string | null;
+  readonly note: string | null;
+  /** For an agent no comment starts (T3 Code): the open target its one action follows. */
+  readonly opens: string | null;
+  /** The pull request's links show its author used it. */
+  readonly used: boolean;
+  /** Likely to answer here (`agentLikely`): the menus list it before the rest, which wait behind "Other agents". */
+  readonly likely: boolean;
+}
+
+/** One way to open a finding as a draft: a service's web app or its app, a line of its own in the menu. */
+export interface TriageOpenTarget {
+  readonly id: string;
+  readonly service: string;
+  readonly variant: 'web' | 'app';
+  readonly iconSrc: string | null;
+  readonly likely: boolean;
+  /** Its link cannot carry the task, so the task is copied to paste there (Cursor on the web). */
+  readonly copiesTask: boolean;
+}
+
+export interface TriageView {
+  readonly suggestions: readonly TriageSuggestionView[];
+  /** Every web app and app a finding opens in, in the registry's order. */
+  readonly openTargets: readonly TriageOpenTarget[];
+  /** Every agent, the recommended one first. */
+  readonly agents: readonly TriageAgent[];
+  readonly recommended: { readonly id: string; readonly reason: 'preferred' | 'used' } | null;
+  readonly openKey: string | null;
+  readonly collapsed: boolean;
+  /** The fixes are still being written. */
+  readonly writing: boolean;
+  /** What the last hand-off did, said once under the card ("Posted @cursor"), and the finding to offer copying again after a failed copy. */
+  readonly handedOff: { readonly text: string; readonly copyAgain: string | null } | null;
+  /** Apply resolves the threads it answers: the `resolveOnFix` setting, and no `review.resolveOnFix: false` from the repository. */
+  readonly resolves: boolean;
+  /** The repository's config is still being read, so whether Apply resolves is not known yet: Apply waits. */
+  readonly policyPending: boolean;
 }
 
 export function itemKey(id: string): string {
@@ -602,7 +717,7 @@ export function syncSpinners(root: Element): void {
   });
 }
 
-const SPINNERS = `.octicon-in-progress, .${PANEL_CLASS}__icon--spin .octicon, [class*="Spinner-SpinnerAnimation"]`;
+const SPINNERS = '.octicon-in-progress, .geld-spinner, [class*="Spinner-SpinnerAnimation"]';
 const spinnerRoots = new Set<Element>();
 let spinnerFrame = 0;
 
@@ -619,6 +734,8 @@ function iconButton(markup: string, label: string, extra: Readonly<Record<string
  * content that opened under it settles.
  */
 const ATTR_FOCUS = 'data-geld-focus';
+/** The chat sidebar is built and kept working but offered nowhere until it is ready to show. */
+const CHAT_BUTTON_SHOWN = false;
 /** Marks the span in an open row that receives the comment's header. */
 export const ATTR_HEAD_SLOT = 'data-geld-head-slot';
 /** Marks the span in the open CI row that receives GitHub's checks-settings gear. */
@@ -722,6 +839,56 @@ function pointerChevron(onGo: () => void): HTMLElement {
 
 let approveIds = 0;
 const APPROVE_RETRY_MS = 5000;
+
+/** Why a fix waits on another triage, in the words its controls and notes use. */
+function behindWords(fix: TriageSuggestionView): string {
+  return fix.behind === 'commit' ? 'Written for an earlier commit. Triage again to check it against the new code.' : 'New comments in its thread since it was written. Triage again to read them.';
+}
+
+let tipIds = 0;
+
+/**
+ * An icon button named by GitHub's own tooltip (the page's `tool-tip`, which upgrades one made here), else by its
+ * `title` on a page that has rendered no `tool-tip`: the content script's world cannot ask `customElements`.
+ */
+function withTip(button: HTMLElement, words: string): HTMLElement {
+  if (document.querySelector('tool-tip') === null) {
+    button.setAttribute('aria-label', words);
+    button.title = words;
+    return button;
+  }
+  tipIds += 1;
+  const id = `geld-tip-${tipIds}`;
+  button.id = id;
+  button.setAttribute('aria-labelledby', `${id}-tip`);
+  const tip = document.createElement('tool-tip');
+  for (const [name, value] of Object.entries({ id: `${id}-tip`, for: id, popover: 'manual', 'data-direction': 's', 'data-type': 'label', class: 'sr-only position-absolute', role: 'tooltip' })) tip.setAttribute(name, value);
+  tip.textContent = words;
+  return createElement('span', { class: `${PANEL_CLASS}__tipped` }, [button, tip]);
+}
+
+/** A flashed tooltip's own words and the timer putting them back, so a second flash neither keeps nor restores its own. */
+const flashes = new WeakMap<Element, { readonly words: string; readonly timer: number }>();
+
+/** Say something in place of a tooltip's words for a moment ("Copied"), then put them back. */
+function flashTip(tipped: HTMLElement, words: string): void {
+  const tip = tipped.querySelector('tool-tip');
+  const target = tip ?? tipped;
+  const read = (): string => (tip === null ? tipped.title : (tip.textContent ?? ''));
+  const write = (text: string): void => {
+    if (tip === null) tipped.title = text;
+    else tip.textContent = text;
+  };
+  const earlier = flashes.get(target);
+  if (earlier !== undefined) window.clearTimeout(earlier.timer);
+  const own = earlier?.words ?? read();
+  write(words);
+  const timer = window.setTimeout(() => {
+    flashes.delete(target);
+    if (target.isConnected) write(own);
+  }, 1500);
+  flashes.set(target, { words: own, timer });
+}
 
 /**
  * "Run" on the CI row: GitHub's "Approve workflows to run", whose section the
@@ -903,6 +1070,18 @@ function itemRow(item: ReviewItem, model: PanelModel, handlers: PanelHandlers, n
   return row;
 }
 
+/** Rows oldest first by the moment each shows, as the rounds read; a row with no known moment keeps its place after them. */
+export function inTimeOrder(folds: readonly FoldRow[]): readonly FoldRow[] {
+  const moment = (fold: FoldRow): number => {
+    const at = fold.at === undefined ? Number.NaN : Date.parse(fold.at);
+    return Number.isNaN(at) ? Number.POSITIVE_INFINITY : at;
+  };
+  return folds
+    .map((fold, index) => ({ fold, index, at: moment(fold) }))
+    .sort((a, b) => (a.at === b.at ? a.index - b.index : a.at - b.at))
+    .map((entry) => entry.fold);
+}
+
 function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): HTMLElement {
   const key = foldKey(fold.key);
   const open = model.openKey === key;
@@ -930,7 +1109,8 @@ function foldRowEl(fold: FoldRow, model: PanelModel, handlers: PanelHandlers): H
   const toggle = (): void => handlers.onToggle(key);
   mainClickToggles(main, toggle);
   const right = createElement('span', { class: `${PANEL_CLASS}__right` });
-  if (fold.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time`, ...(fold.timeAnchor === null ? {} : { [ATTR_TIME_FOR]: fold.timeAnchor }) }, [fold.time]));
+  if (fold.at !== undefined) right.append(createElement('span', { class: `${PANEL_CLASS}__time` }, [relativeTimeElement(fold.at, `${PANEL_CLASS}__time-text`)]));
+  else if (fold.time !== '') right.append(createElement('span', { class: `${PANEL_CLASS}__time`, ...(fold.timeAnchor === null ? {} : { [ATTR_TIME_FOR]: fold.timeAnchor }) }, [fold.time]));
   if (fold.firstAnchor !== null) {
     const anchor = fold.firstAnchor;
     // A single comment (a closure's is one: the event beside it has no menu) wears GitHub's own ⋯ (Copy link,
@@ -1245,25 +1425,32 @@ function ranAgo(iso: string): string {
  */
 function aiButton(state: AiState, handlers: PanelHandlers): HTMLElement | null {
   if (state.kind === 'off' || state.kind === 'app') return null;
-  const label = state.kind === 'ready' ? 'Triage with AI' : state.kind === 'nothing' ? 'Nothing to triage' : state.kind === 'running' ? 'AI is reading…' : `AI · ${ranAgo(state.ranAt)}`;
+  const label = state.kind === 'ready' || state.kind === 'needs-key' ? 'Triage with AI' : state.kind === 'nothing' ? 'Nothing to triage' : state.kind === 'running' ? 'AI is reading…' : `AI · ${ranAgo(state.ranAt)}`;
   const title =
     state.kind === 'ready'
-      ? 'Ask the model to title the open bot threads and write a summary. Kept on this device only.'
+      ? 'Ask the model what the open threads and the bots’ other findings need, with fixes to preview and apply. Kept on this device only.'
+      : state.kind === 'needs-key'
+        ? NO_KEY_REASON
       : state.kind === 'nothing'
-        ? 'AI titles open review threads and summarizes what is still open. No review thread here is open, so there is nothing to ask it.'
+        ? 'AI titles open review threads and summarizes what is still open. No review thread is open here and no bot reports findings outside one, so there is nothing to ask it.'
         : state.kind === 'running'
         ? 'The model is reading the open threads'
         : state.kind === 'stale'
-          ? 'Comments or threads arrived since the model last ran here. Run it again for the new ones.'
+          ? state.reason === 'commits'
+            ? 'Commits landed since the model proposed its fixes here. Run it again to check them against the new code.'
+            : state.reason === 'both'
+              ? 'Commits and comments landed since the model last ran here. Run it again to check its fixes against them.'
+              : 'Comments or threads arrived since the model last ran here. Run it again for the new ones.'
           : state.kind === 'failed'
-            ? `The last run could not get an answer: ${state.error}`
-            : 'Run the model again';
+            ? aiFailureText(state)
+            : 'Nothing new to triage since it ran. Show or hide the triage.';
   // `aria-disabled` rather than `disabled` for nothing-to-triage: a disabled button gets no hover, and the title is the explanation.
   const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__ai-btn`, 'data-state': state.kind, 'aria-label': `${label}. ${title}`, title, [ATTR_FOCUS]: 'ai', ...(state.kind === 'running' ? { 'aria-busy': 'true', disabled: '' } : state.kind === 'nothing' ? { 'aria-disabled': 'true' } : {}) }, [
     icon(ICON_SPARKLE_FILL),
     createElement('span', { class: `${PANEL_CLASS}__ai-label` }, [label]),
   ]);
-  if (state.kind !== 'nothing') button.addEventListener('click', () => handlers.onRunAi());
+  if (state.kind === 'current') button.addEventListener('click', () => handlers.onToggleTriage());
+  else if (state.kind !== 'nothing') button.addEventListener('click', () => handlers.onRunAi());
   return button;
 }
 
@@ -1274,21 +1461,447 @@ function aiButton(state: AiState, handlers: PanelHandlers): HTMLElement | null {
  * own run. Copy uses no dashes or semicolons.
  */
 function aiNotice(state: AiState, handlers: PanelHandlers): HTMLElement | null {
-  const notice = (text: string, action: string, onAction: () => void, tone: 'attention' | 'danger' | 'accent'): HTMLElement => {
-    const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__ai-notice-btn` }, [action]);
-    button.addEventListener('click', onAction);
-    return createElement('div', { class: `${PANEL_CLASS}__ai-notice`, 'data-tone': tone, role: 'status' }, [
-      createElement('span', { class: `${PANEL_CLASS}__ai-notice-glyph`, 'aria-hidden': 'true' }, [icon(ICON_SPARKLE_FILL)]),
-      createElement('span', { class: `${PANEL_CLASS}__ai-notice-text` }, [text]),
-      button,
-    ]);
-  };
-  if (state.kind === 'stale') return notice(`New comments or threads have arrived since Geld AI last ran here ${ranAgo(state.ranAt)}.`, 'Triage the new changes', () => handlers.onRunAi(), 'attention');
-  if (state.kind === 'failed') return notice(`Geld AI could not get an answer ${ranAgo(state.ranAt)}: ${state.error}`, 'Try again', () => handlers.onRunAi(), 'danger');
   if (state.kind === 'app' && state.hasLocal) {
-    return notice('This repository now writes its digest with Geld AI through its GitHub Action. The digest you see is that one. Clear the run kept on this device to keep it that way.', 'Clear my local run', () => handlers.onClearAi(), 'accent');
+    return aiNoticeRow('This repository now writes its digest with Geld AI through its GitHub Action. The digest you see is that one. Clear the run kept on this device to keep it that way.', 'Clear my local run', () => handlers.onClearAi(), 'accent');
   }
   return null;
+}
+
+/** A full-width row about AI with the one button that acts on it: the panel's notices and the triage's failed or stale run. */
+function aiNoticeRow(text: string, action: string, onAction: () => void, tone: 'attention' | 'danger' | 'accent', focusKey?: string): HTMLElement {
+  const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__ai-notice-btn`, ...(focusKey === undefined ? {} : { [ATTR_FOCUS]: focusKey }) }, [action]);
+  button.addEventListener('click', onAction);
+  return createElement('div', { class: `${PANEL_CLASS}__ai-notice`, 'data-tone': tone, role: 'status' }, [
+    createElement('span', { class: `${PANEL_CLASS}__ai-notice-glyph`, 'aria-hidden': 'true' }, [icon(tone === 'danger' ? ICON_ALERT : ICON_SPARKLE_FILL)]),
+    createElement('span', { class: `${PANEL_CLASS}__ai-notice-text` }, [text]),
+    button,
+  ]);
+}
+
+const FAILED_STEP: Readonly<Record<AiStep, string>> = {
+  findings: 'title the findings',
+  tldr: 'write the summary',
+  fixes: 'propose fixes',
+};
+
+/** "Geld AI could not propose fixes just now. Completion failed (400): …" */
+function aiFailureText(state: Extract<AiState, { readonly kind: 'failed' }>): string {
+  return `Geld AI could not ${state.step === undefined ? 'get an answer' : FAILED_STEP[state.step]} ${ranAgo(state.ranAt)}. ${state.error}`;
+}
+
+/**
+ * The AI triage, right under the Geld row it was asked for from: what the open threads need (the TL;DR), a line when
+ * something new arrived since, then one row per fix it proposes, each opening to its diff with Discard and Apply, then
+ * Discard all and Apply all under two or more, and the hand-off of what is left to a coding agent.
+ */
+function triageCard(model: PanelModel, handlers: PanelHandlers): HTMLElement | null {
+  const state = model.ai;
+  const triage = model.triage;
+  const tldrPending = model.aiPending.has('tldr');
+  const summary = model.meta.summary?.tldr ?? null;
+  if (state.kind === 'off' || state.kind === 'ready' || state.kind === 'nothing') return null;
+  if (state.kind === 'app') {
+    if (summary === null) return null;
+    return createElement('div', { class: `${PANEL_CLASS}__triage` }, [triageText(summary, false)]);
+  }
+  if (triage?.collapsed === true && state.kind === 'current') return null;
+  const card = createElement('div', { class: `${PANEL_CLASS}__triage`, 'aria-label': 'Geld AI triage', role: 'region' });
+  // Above whatever a run left: its fixes apply through GitHub with no key, so they stay.
+  if (state.kind === 'needs-key') card.append(aiNoticeRow(NO_KEY_REASON, 'Add an API key', () => handlers.onOpenAiSettings(), 'danger', 'triage-add-key'));
+  else if (state.kind === 'failed') card.append(aiNoticeRow(aiFailureText(state), 'Try again', () => handlers.onRunAi(), 'danger', 'triage-rerun'));
+  else if (state.kind === 'stale') {
+    const ago = ranAgo(state.ranAt);
+    const text = state.reason === 'commits' ? `New commits since the triage ${ago}. Its fixes may no longer fit.` : state.reason === 'both' ? `New commits and comments since the triage ${ago}. Its fixes may no longer fit.` : `New comments or threads since the triage ${ago}.`;
+    card.append(aiNoticeRow(text, 'Triage what is new', () => handlers.onRunAi(), 'attention', 'triage-rerun'));
+  }
+  if (summary !== null) card.append(triageText(summary, tldrPending));
+  else if (tldrPending || state.kind === 'running')
+    card.append(
+      createElement('div', { class: `${PANEL_CLASS}__triage-head` }, [
+        createElement('span', { class: `${PANEL_CLASS}__triage-glyph`, 'aria-hidden': 'true' }, [icon(ICON_SPARKLE_FILL)]),
+        createElement('p', { class: `${PANEL_CLASS}__triage-text`, 'data-pending': '', 'aria-label': 'Writing the triage' }, [
+          createElement('span', { class: `${PANEL_CLASS}__skeleton`, style: 'width: 78%' }),
+          createElement('span', { class: `${PANEL_CLASS}__skeleton`, style: 'width: 52%' }),
+        ]),
+      ]),
+    );
+  if (triage !== null) {
+    if (triage.suggestions.length > 0) {
+      const list = createElement('ul', { class: `${PANEL_CLASS}__triage-fixes`, role: 'list', 'aria-label': 'Suggested fixes' });
+      for (const fix of triage.suggestions) list.append(fixRow(fix, triage, handlers));
+      card.append(list);
+      const bulk = bulkActions(triage, handlers);
+      if (bulk !== null) card.append(bulk);
+    } else if (triage.writing) {
+      card.append(createElement('p', { class: `${PANEL_CLASS}__triage-writing`, 'data-pending': '' }, ['Writing fixes for the open threads…']));
+    }
+    if (triage.handedOff !== null) {
+      const status = createElement('p', { class: `${PANEL_CLASS}__triage-status`, role: 'status' }, [triage.handedOff.text]);
+      const again = triage.handedOff.copyAgain;
+      if (again !== null) {
+        const button = createElement('button', { type: 'button', class: `${PANEL_CLASS}__triage-fix-link`, [ATTR_FOCUS]: 'triage-copy-again' }, ['Copy the task']);
+        button.addEventListener('click', () => handlers.onHandOff('', 'copy', again));
+        status.append(' ', button);
+      }
+      card.append(status);
+    }
+  }
+  return card.children.length === 0 ? null : card;
+}
+
+/**
+ * Under two or more open findings: Discard all and Apply all at the right, as an opened fix's own buttons stand.
+ * Apply all takes every fix written for the head in one commit; Discard all takes every finding still listed.
+ */
+function bulkActions(triage: TriageView, handlers: PanelHandlers): HTMLElement | null {
+  const open = triage.suggestions.filter((fix) => fix.state === 'open');
+  if (open.length < 2) return null;
+  const busy = open.some((fix) => fix.busy !== null);
+  const applying = open.some((fix) => fix.busy === 'fix');
+  const eligible = open.filter((fix) => fix.kind === 'fix' && fix.current && fix.busy === null);
+  // Every eligible fix goes to the handler, which leaves the overlapping ones out and says why on their rows.
+  const { batch, overlapping } = splitOverlapping(eligible);
+  const ready = batch.map((fix) => fix.key);
+  const discard = createElement('button', { type: 'button', class: 'btn btn-sm', title: `Discard all ${open.length} findings from the triage`, [ATTR_FOCUS]: 'fix-discard-all', ...(busy ? { disabled: '' } : {}) }, [icon(ICON_X), 'Discard all']);
+  discard.addEventListener('click', () => handlers.onDiscardAll(open.map((fix) => fix.key)));
+  const what = triage.resolves ? 'Post each fix as a suggestion, commit them together, and resolve their threads' : 'Post each fix as a suggestion and commit them together';
+  const left = overlapping.length === 0 ? '' : `. ${overlapping.length === 1 ? 'One fix overlaps' : `${overlapping.length} fixes overlap`} another’s lines and waits for the next triage`;
+  const title = triage.policyPending ? 'Reading the repository’s Geld config first' : ready.length === 0 ? 'No fix here fits the head commit. Triage again first.' : `${what} (${ready.length} ${ready.length === 1 ? 'fix' : 'fixes'})${left}`;
+  const fixAll = createElement('button', { type: 'button', class: `btn btn-sm btn-primary ${PANEL_CLASS}__triage-apply-all`, title, [ATTR_FOCUS]: 'fix-all', ...(applying || ready.length === 0 || triage.policyPending ? { disabled: '' } : {}), ...(applying ? { 'aria-busy': 'true' } : {}) }, [
+    applying ? 'Applying…' : 'Apply all',
+    ...(ready.length > 0 && !applying ? [createElement('span', { class: `Counter ${PANEL_CLASS}__triage-count` }, [String(ready.length)])] : []),
+  ]);
+  fixAll.addEventListener('click', () => handlers.onApplyAll(eligible.map((fix) => fix.key)));
+  return createElement('div', { class: `${PANEL_CLASS}__triage-fix-actions ${PANEL_CLASS}__triage-bulk` }, [discard, fixAll]);
+}
+
+function triageText(text: string, pending: boolean): HTMLElement {
+  return createElement('div', { class: `${PANEL_CLASS}__triage-head` }, [
+    createElement('span', { class: `${PANEL_CLASS}__triage-glyph`, 'aria-hidden': 'true' }, [icon(ICON_SPARKLE_FILL)]),
+    createElement('p', { class: `${PANEL_CLASS}__triage-text`, ...(pending ? { 'data-pending': '' } : {}) }, [...inlineText(text)]),
+  ]);
+}
+
+/**
+ * One finding the triage read. A fix: its title, where it applies, how much it changes, then the X (Discard) and
+ * "Apply" with its menu (copy the task, or hand the finding to an agent instead). A finding no fix fits: "Fix with"
+ * the recommended agent and its menu. The row opens to the diff, or to what the triage says is needed.
+ */
+/** What an opened triage row says above and under its diff: the model's sentence, then why it is shaped as it is. */
+export function fixWords(fix: TriageSuggestionView, resolves: boolean): { readonly summary: string; readonly notes: readonly string[] } {
+  const isFix = fix.kind === 'fix';
+  // A row the check sent to an agent had its lines read: only an unread thread lacks a sentence for that reason.
+  const summary = fix.summary !== '' ? fix.summary : isFix || fix.routed ? '' : 'Geld could not read the lines this thread is on, so it proposed no fix here.';
+  const notes: string[] = [];
+  if (fix.threads > 1) notes.push(`One change for ${fix.threads} threads reporting the same problem (${fix.reporters.join(', ')}). ${resolves ? 'Apply resolves them all.' : 'It answers them all.'}`);
+  if (isFix && !fix.current && fix.state !== 'applied') notes.push(behindWords(fix));
+  if (!isFix) notes.push(fix.from !== null ? `${fix.from}’s comment asks for this outside its threads, so there is no thread to suggest a fix in. Hand it to an agent.` : fix.routed ? 'Geld’s check found that a proper fix likely changes more than the lines this thread is on, such as other code, other files or tests. So no suggestion was drafted. Hand it to an agent.' : 'A fix that fits the lines a thread is on can be applied as a suggestion. This one needs more than that, so hand it to an agent.');
+  return { summary, notes };
+}
+
+function fixRow(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHandlers): HTMLElement {
+  const open = triage.openKey === fix.key;
+  const applied = fix.state === 'applied';
+  const isFix = fix.kind === 'fix';
+  const added = fix.diff.filter((line) => line.kind === 'add').length;
+  const removed = fix.diff.filter((line) => line.kind === 'del').length;
+  const lines = fix.start === 0 ? '' : fix.start === fix.end ? `:${fix.start}` : `:${fix.start}–${fix.end}`;
+  const where = createElement('span', { class: `${PANEL_CLASS}__triage-fix-where` });
+  const lineText = createElement('span', { class: `${PANEL_CLASS}__triage-fix-lines` }, [lines]);
+  const toggle = createElement('button', { type: 'button', class: `${PANEL_CLASS}__triage-fix-toggle`, 'aria-expanded': String(open), [ATTR_FOCUS]: `fix:${fix.key}` }, [
+    createElement('span', { class: `${PANEL_CLASS}__triage-fix-glyph`, 'aria-hidden': 'true' }, [icon(applied ? ICON_CHECK_CIRCLE_FILL : isFix ? ICON_FILE_DIFF : ICON_ALERT)]),
+    createElement('span', { class: `${PANEL_CLASS}__triage-fix-title` }, [...inlineText(fix.title)]),
+  ]);
+  toggle.addEventListener('click', () => handlers.onToggleSuggestion(fix.key));
+  // The path and its copy button stand under the toggle, not in it: a button cannot hold another.
+  const path = createElement('span', { class: `${PANEL_CLASS}__triage-fix-path` }, [where, lineText]);
+  const place = createElement('div', { class: `${PANEL_CLASS}__triage-fix-place` }, [path]);
+  if (fix.path === '' && fix.from !== null) {
+    where.setAttribute('data-from', '');
+    where.append(`From ${fix.from}’s comment`);
+  }
+  if (fix.path !== '') {
+    const copy = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__triage-fix-copy`, [ATTR_FOCUS]: `fix-copy:${fix.key}` }, [icon(ICON_COPY)]);
+    const tipped = withTip(copy, 'Copy path');
+    copy.addEventListener('click', () => {
+      void handlers.onCopyPath(fix.path).then((copied) => flashTip(tipped, copied ? 'Copied' : 'Copy failed'));
+    });
+    path.append(tipped);
+    fitPathInto(where, fix.path, path);
+  }
+  const status = applied
+    ? createElement('span', { class: `${PANEL_CLASS}__triage-fix-state` }, ['Applied'])
+    : isFix
+      ? createElement('span', { class: `${PANEL_CLASS}__triage-fix-counts`, 'aria-label': `${added} added, ${removed} removed` }, [createElement('span', { 'data-kind': 'add' }, [`+${added}`]), createElement('span', { 'data-kind': 'del' }, [`−${removed}`])])
+      : createElement('span', { class: `${PANEL_CLASS}__triage-fix-state`, 'data-kind': 'agent' }, ['Needs an agent']);
+  // A fix that waits on another triage says so beside its counts, while its Apply is greyed out.
+  const behind = isFix && !applied && !fix.current ? createElement('span', { class: `${PANEL_CLASS}__triage-fix-state`, 'data-kind': 'behind', title: behindWords(fix) }, ['Out of date']) : null;
+  place.append(createElement('span', { class: `${PANEL_CLASS}__triage-fix-facts` }, behind === null ? [status] : [behind, status]));
+  const head = createElement('div', { class: `${PANEL_CLASS}__triage-fix-row` }, [toggle]);
+  for (const line of [head, place]) {
+    line.addEventListener('click', (event) => {
+      if (event.target instanceof Element && event.target.closest('button, a, details') !== null) return;
+      handlers.onToggleSuggestion(fix.key);
+    });
+  }
+  if (!applied) {
+    const busy = fix.busy !== null;
+    const dismiss = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__triage-fix-discard`, [ATTR_FOCUS]: `fix-trash:${fix.key}`, ...(busy ? { disabled: '' } : {}) }, [icon(ICON_X)]);
+    dismiss.addEventListener('click', () => handlers.onDiscardSuggestion(fix.key));
+    head.append(withTip(dismiss, isFix ? 'Discard this fix' : 'Dismiss from the triage'), isFix ? applyControl(fix, triage, handlers) : agentControl(fix.key, triage, handlers));
+  }
+  const chevron = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__chevron`, 'aria-label': open ? 'Close' : 'Open', 'aria-expanded': String(open), tabindex: '-1' }, [icon(ICON_CHEVRON_DOWN)]);
+  chevron.addEventListener('click', () => handlers.onToggleSuggestion(fix.key));
+  head.append(chevron);
+  const row = createElement('li', { class: `${PANEL_CLASS}__triage-fix`, 'data-state': fix.state, 'data-kind': fix.kind, ...(open ? { 'data-open': '' } : {}) }, [head, place]);
+  if (!open) return row;
+  const body = createElement('div', { class: `${PANEL_CLASS}__triage-fix-body` });
+  const words = fixWords(fix, triage.resolves);
+  if (words.summary !== '') body.append(createElement('p', { class: `${PANEL_CLASS}__triage-fix-summary` }, [...inlineText(words.summary)]));
+  if (isFix) body.append(diffTable(fix));
+  for (const note of words.notes) body.append(createElement('p', { class: `${PANEL_CLASS}__triage-fix-note` }, [note]));
+  if (isFix && !applied) {
+    const busy = fix.busy !== null;
+    const discard = createElement('button', { type: 'button', class: 'btn btn-sm', [ATTR_FOCUS]: `fix-discard:${fix.key}`, ...(busy ? { disabled: '' } : {}) }, [icon(ICON_X), 'Discard']);
+    discard.addEventListener('click', () => handlers.onDiscardSuggestion(fix.key));
+    const commit = createElement('button', { type: 'button', class: 'btn btn-sm btn-primary', title: fixWhy(fix, triage), [ATTR_FOCUS]: `fix-commit:${fix.key}`, ...(busy || !fix.current || triage.policyPending ? { disabled: '' } : {}), ...(fix.busy === 'fix' ? { 'aria-busy': 'true' } : {}) }, [fix.busy === 'fix' ? 'Applying…' : 'Apply']);
+    commit.addEventListener('click', () => handlers.onApplySuggestion(fix.key));
+    body.append(createElement('div', { class: `${PANEL_CLASS}__triage-fix-actions` }, [discard, commit]));
+  }
+  if (fix.error !== null) body.append(createElement('p', { class: `${PANEL_CLASS}__triage-fix-error`, role: 'alert' }, [fix.error]));
+  row.append(body);
+  return row;
+}
+
+/**
+ * Each shown line's syntax pieces. Each side is read with its unchanged lines, the new file (unchanged and added) and
+ * the old (unchanged and removed), so a comment or string an unchanged line opens colours both alike; unchanged lines
+ * take the new side's colours, removed ones the old's. A gap row starts afresh: the lines it hides are not there.
+ */
+function diffSyntax(fix: TriageSuggestionView): ReadonlyMap<DiffLine, readonly SyntaxPiece[]> {
+  const language = snippetLanguage(fix.path);
+  const pieces = new Map<DiffLine, readonly SyntaxPiece[]>();
+  if (language === null) return pieces;
+  const blocks: DiffLine[][] = [[]];
+  for (const row of fix.diff) {
+    if (row.kind === 'gap') blocks.push([]);
+    else blocks.at(-1)?.push(row);
+  }
+  const paint = (side: readonly DiffLine[], keep: (line: DiffLine) => boolean): void => {
+    const painted = highlightLines(side.map((line) => line.text), language);
+    side.forEach((line, index) => {
+      const found = painted?.[index];
+      if (found !== undefined && keep(line)) pieces.set(line, found);
+    });
+  };
+  for (const block of blocks) {
+    paint(block.filter((line) => line.kind !== 'del'), () => true);
+    paint(block.filter((line) => line.kind !== 'add'), (line) => line.kind === 'del');
+  }
+  return pieces;
+}
+
+function diffTable(fix: TriageSuggestionView): HTMLElement {
+  const table = createElement('table', { class: `${PANEL_CLASS}__diff`, 'aria-label': `Change to ${fix.path}` });
+  const rows = createElement('tbody');
+  const syntax = diffSyntax(fix);
+  for (const line of fix.diff) {
+    if (line.kind === 'gap') {
+      rows.append(createElement('tr', { 'data-kind': 'gap' }, [createElement('td', { colspan: '4', class: `${PANEL_CLASS}__diff-gap` }, [`⋯ ${plural(line.hidden, 'unchanged line')}`])]));
+      continue;
+    }
+    rows.append(
+      createElement('tr', { 'data-kind': line.kind }, [
+        createElement('td', { class: `${PANEL_CLASS}__diff-num` }, [line.before === undefined ? '' : String(line.before)]),
+        createElement('td', { class: `${PANEL_CLASS}__diff-num` }, [line.after === undefined ? '' : String(line.after)]),
+        createElement('td', { class: `${PANEL_CLASS}__diff-sign`, 'aria-hidden': 'true' }, [line.kind === 'add' ? '+' : line.kind === 'del' ? '−' : ' ']),
+        createElement('td', { class: `${PANEL_CLASS}__diff-code` }, codeCell(line, syntax.get(line))),
+      ]),
+    );
+  }
+  table.append(rows);
+  return createElement('div', { class: `${PANEL_CLASS}__diff-wrap` }, [table]);
+}
+
+function codeCell(line: DiffLine, pieces: readonly SyntaxPiece[] | undefined): readonly (Node | string)[] {
+  if (line.text === '') return [' '];
+  if (pieces === undefined || pieces.length === 0) return [line.text];
+  return pieces.map((piece) => (piece.scope === null ? piece.text : createElement('span', { 'data-syn': piece.scope }, [piece.text])));
+}
+
+function agentMark(agent: TriageAgent): HTMLElement {
+  return agent.iconSrc === null ? createElement('span', { class: `${PANEL_CLASS}__bot-icon`, 'aria-hidden': 'true' }) : markImg(agent.iconSrc, false);
+}
+
+/** A split button: its main half, and a caret opening `entries` (built when opened, so a closed menu costs nothing). */
+function splitButton(main: HTMLButtonElement, label: string, focusKey: string, fill: (list: HTMLElement, close: () => void) => void): HTMLElement {
+  installMenuDismissal();
+  const details = createElement('details', { class: `${PANEL_CLASS}__menu ${PANEL_CLASS}__split-menu` });
+  const caret = createElement('summary', { class: `btn btn-sm ${PANEL_CLASS}__split-caret`, role: 'button', 'aria-label': label, title: label, [ATTR_FOCUS]: focusKey }, [icon(ICON_TRIANGLE_DOWN)]);
+  caret.addEventListener('click', (event) => event.stopPropagation());
+  const list = createElement('div', { class: `${PANEL_CLASS}__menu-list ${PANEL_CLASS}__split-list`, role: 'menu' });
+  fill(list, () => details.removeAttribute('open'));
+  // "Other agents" folds again when the menu closes, so the menu always opens on the likely agents.
+  details.addEventListener('toggle', () => {
+    if (!details.open) for (const more of list.querySelectorAll('details[open]')) more.removeAttribute('open');
+  });
+  details.append(caret, list);
+  main.classList.add(`${PANEL_CLASS}__split-main`);
+  return createElement('div', { class: `${PANEL_CLASS}__split` }, [main, details]);
+}
+
+/** A button that only opens its menu: the label with the dropdown caret inside it, the menu placed as a split button's. */
+function menuButton(label: string, title: string, focusKey: string, fill: (list: HTMLElement, close: () => void) => void): HTMLElement {
+  installMenuDismissal();
+  const details = createElement('details', { class: `${PANEL_CLASS}__menu ${PANEL_CLASS}__split-menu` });
+  const summary = createElement('summary', { class: `btn btn-sm ${PANEL_CLASS}__menu-button`, role: 'button', 'aria-haspopup': 'menu', title, [ATTR_FOCUS]: focusKey }, [createElement('span', { class: `${PANEL_CLASS}__split-label` }, [label]), icon(ICON_TRIANGLE_DOWN)]);
+  summary.addEventListener('click', (event) => event.stopPropagation());
+  const list = createElement('div', { class: `${PANEL_CLASS}__menu-list ${PANEL_CLASS}__split-list`, role: 'menu' });
+  fill(list, () => details.removeAttribute('open'));
+  details.addEventListener('toggle', () => {
+    if (!details.open) for (const more of list.querySelectorAll('details[open]')) more.removeAttribute('open');
+  });
+  details.append(summary, list);
+  return createElement('div', { class: `${PANEL_CLASS}__split` }, [details]);
+}
+
+function menuItem(content: readonly (Node | string)[], close: () => void, onSelect: () => void): HTMLElement {
+  const node = createElement('button', { type: 'button', class: `${PANEL_CLASS}__menu-item ${PANEL_CLASS}__split-item`, role: 'menuitem' }, [...content]);
+  node.addEventListener('click', (event) => {
+    event.stopPropagation();
+    close();
+    onSelect();
+  });
+  return node;
+}
+
+const VARIANT_WORD: Readonly<Record<TriageOpenTarget['variant'], string>> = { web: 'Web', app: 'App' };
+
+/**
+ * For one finding, two sections under small sticky headings. "Fix in this pull request": "Fix with" each agent a comment on the pull
+ * request starts. "Open in agent": "Open in" each service's web app or app, one line per way in, a pill saying which,
+ * each with the service's mark. In both, what is likely here comes first (as the review bots' request menu puts the
+ * bots it has a sign of first) and the rest wait behind a disclosure; with nothing likely, everything is listed.
+ */
+function agentItems(list: HTMLElement, key: string, triage: TriageView, handlers: PanelHandlers, close: () => void, skip: string | null): void {
+  const section = (heading: string, items: readonly HTMLElement[], folded: readonly HTMLElement[], more: string): void => {
+    if (items.length + folded.length === 0) return;
+    list.append(createElement('div', { class: `${PANEL_CLASS}__split-heading`, role: 'presentation' }, [heading]));
+    list.append(...items);
+    if (folded.length === 0) return;
+    const disclosure = createElement('details', { class: `${PANEL_CLASS}__request-more ${PANEL_CLASS}__split-more` });
+    const summary = createElement('summary', { class: `${PANEL_CLASS}__request-more-summary` }, [icon(ICON_CHEVRON_RIGHT), more]);
+    summary.addEventListener('click', (event) => event.stopPropagation());
+    disclosure.append(summary, ...folded);
+    list.append(disclosure);
+  };
+  const fixItem = (agent: TriageAgent): HTMLElement => menuItem([agentMark(agent), `Fix with ${agent.name}`], close, () => handlers.onHandOff(agent.id, 'comment', key));
+  const openItem = (target: TriageOpenTarget): HTMLElement => {
+    const item = menuItem(
+      [
+        target.iconSrc === null ? createElement('span', { class: `${PANEL_CLASS}__bot-icon`, 'aria-hidden': 'true' }) : markImg(target.iconSrc, false),
+        createElement('span', { class: `${PANEL_CLASS}__split-name` }, [`Open in ${target.service}`]),
+        createElement('span', { class: `${PANEL_CLASS}__split-pill` }, [VARIANT_WORD[target.variant]]),
+      ],
+      close,
+      () => handlers.onHandOff(target.id, 'open', key),
+    );
+    if (target.copiesTask) item.title = `Copies the task, then opens ${target.service} to paste it`;
+    return item;
+  };
+  const fixers = likelyFirst(triage.agents.filter((agent) => agent.command !== null));
+  const lead = skip === null ? undefined : triage.agents.find((agent) => agent.id === skip);
+  const show = (agent: TriageAgent): boolean => agent.id !== skip;
+  const shown = fixers.first.filter(show);
+  const foldedFixers = fixers.folded.filter(show);
+  section('Fix in this pull request', shown.map(fixItem), foldedFixers.map(fixItem), `Other agents (${foldedFixers.length})`);
+  const targets = likelyFirst(triage.openTargets);
+  const keep = (target: TriageOpenTarget): boolean => target.id !== lead?.opens;
+  const shownTargets = targets.first.filter(keep);
+  const foldedTargets = targets.folded.filter(keep);
+  section('Open in agent', shownTargets.map(openItem), foldedTargets.map(openItem), `Other apps (${foldedTargets.length})`);
+  list.append(createElement('div', { class: `${PANEL_CLASS}__menu-sep`, role: 'separator' }), missingToolHelp('coding agent', handlers, close, 'menuitem'));
+}
+
+/**
+ * What a menu lists first and what waits behind its disclosure: the likely entries first, and everything only when none
+ * is likely. Decided by the entries, not by what the menu shows of them: the likely agent may be the row's own button
+ * and so absent from its menu, and the rest still stay folded then. Exported for its test.
+ */
+export function likelyFirst<T extends { readonly likely: boolean }>(entries: readonly T[]): { readonly first: readonly T[]; readonly folded: readonly T[] } {
+  const likely = entries.filter((entry) => entry.likely);
+  return likely.length === 0 ? { first: entries, folded: [] } : { first: likely, folded: entries.filter((entry) => !entry.likely) };
+}
+
+/** "Copy the task" for any other agent, at the top of the menu, then the divider over the agents. */
+function copyItem(list: HTMLElement, key: string, handlers: PanelHandlers, close: () => void): void {
+  list.append(menuItem([createElement('span', { class: `${PANEL_CLASS}__split-glyph`, 'aria-hidden': 'true' }, [icon(ICON_COPY)]), 'Copy the task'], close, () => handlers.onHandOff('', 'copy', key)));
+  list.append(createElement('div', { class: `${PANEL_CLASS}__menu-sep`, role: 'separator' }));
+}
+
+const MISSING_TOOL_NOUN: Readonly<Record<MissingTool, string>> = { 'review bot': 'bot', 'coding agent': 'agent' };
+
+/** A help icon whose tip reads "Don't see your preferred bot? Request it", the link opening the feedback page with its draft. */
+function missingToolHelp(tool: MissingTool, handlers: PanelHandlers, close: () => void, role: 'menuitem' | null = null): HTMLElement {
+  const noun = MISSING_TOOL_NOUN[tool];
+  const link = createElement('button', { type: 'button', class: `${PANEL_CLASS}__help-link` }, ['Request it']);
+  link.addEventListener('click', (event) => {
+    event.stopPropagation();
+    close();
+    handlers.onMissingTool(tool);
+  });
+  return helpTip({
+    prefix: PANEL_CLASS,
+    label: `Don\u2019t see your preferred ${noun}?`,
+    content: [`Don\u2019t see your preferred ${noun}? `, link],
+    ...(role === null ? {} : { role }),
+  });
+}
+
+/** What Apply does, for its tooltip: post the suggestion, commit it, and resolve the threads it answers when that is on. */
+function fixWhy(fix: TriageSuggestionView, triage: TriageView): string {
+  if (!fix.current) return `Triage again first. ${behindWords(fix)}`;
+  if (fix.busy === 'writing') return 'Being written afresh from its chat';
+  if (triage.policyPending) return 'Reading the repository’s Geld config first';
+  const threads = fix.threads === 1 ? 'its thread' : `all ${fix.threads} threads`;
+  return triage.resolves ? `Post this fix as a suggestion in the thread, commit it, and resolve ${threads}` : 'Post this fix as a suggestion in the thread and commit it';
+}
+
+function applyControl(fix: TriageSuggestionView, triage: TriageView, handlers: PanelHandlers): HTMLElement {
+  const blocked = fix.busy !== null || !fix.current || triage.policyPending;
+  const main = createElement('button', { type: 'button', class: 'btn btn-sm', title: fixWhy(fix, triage), [ATTR_FOCUS]: `fix-head-apply:${fix.key}`, ...(blocked ? { disabled: '' } : {}), ...(fix.busy === 'fix' ? { 'aria-busy': 'true' } : {}) }, [
+    icon(ICON_CHECK),
+    createElement('span', { class: `${PANEL_CLASS}__split-label` }, [fix.busy === 'fix' ? 'Applying…' : 'Apply']),
+  ]);
+  main.addEventListener('click', () => handlers.onApplySuggestion(fix.key));
+  return splitButton(main, 'More ways to fix this', `fix-head-more:${fix.key}`, (list, close) => {
+    copyItem(list, fix.key, handlers, close);
+    agentItems(list, fix.key, triage, handlers, close, null);
+  });
+}
+
+/** For a finding no fix fits: hand it to the recommended agent, the others in the menu. */
+function agentControl(key: string, triage: TriageView, handlers: PanelHandlers): HTMLElement {
+  const lead = triage.recommended === null ? undefined : triage.agents.find((agent) => agent.id === triage.recommended?.id);
+  if (lead === undefined) {
+    // With no agent to lead, a split would be two halves opening one menu: one button, its caret inside, opens it.
+    return menuButton('Fix with agent', 'Hand this finding to a coding agent', `fix-agent:${key}`, (list, close) => {
+      copyItem(list, key, handlers, close);
+      agentItems(list, key, triage, handlers, close, null);
+    });
+  }
+  const why = triage.recommended?.reason === 'used' ? `${lead.name} worked on this pull request` : 'Your coding agent in Geld settings';
+  const what = lead.command === null ? `Open this finding in ${lead.name} as a draft on this pull request` : `Post ${lead.command} on the pull request with this finding`;
+  const main = createElement('button', { type: 'button', class: `btn btn-sm ${PANEL_CLASS}__split-agent`, title: `${what}. ${why}.`, [ATTR_FOCUS]: `fix-agent:${key}` }, [
+    agentMark(lead),
+    // "Fix with" starts an agent from a comment; an agent that only opens a draft in its app says so, as its menu item does.
+    createElement('span', { class: `${PANEL_CLASS}__split-label` }, [lead.command === null ? `Open in ${lead.name}` : `Fix with ${lead.name}`]),
+  ]);
+  main.addEventListener('click', () => (lead.command === null ? lead.opens !== null && handlers.onHandOff(lead.opens, 'open', key) : handlers.onHandOff(lead.id, 'comment', key)));
+  return splitButton(main, 'Other coding agents', `fix-agent-more:${key}`, (list, close) => {
+    copyItem(list, key, handlers, close);
+    agentItems(list, key, triage, handlers, close, lead.id);
+  });
 }
 
 const GROUPING_LABEL: Readonly<Record<PanelModel['grouping'], string>> = { type: 'Type', batch: 'Push' };
@@ -1528,7 +2141,7 @@ function botLook(bot: BotVerdictRecord, model: Pick<PanelModel, 'botRequests'>):
   const title = botTitle(bot.id, bot.login);
   if (request !== undefined) {
     const label = `${title}: ${requestSentence(request)}`;
-    return request.kind === 'starting' ? { health: 'pending', glyph: ICON_IN_PROGRESS, detail: requestDetail(request), label } : { health: 'warn', glyph: ICON_ALERT, detail: requestDetail(request), label };
+    return request.kind === 'starting' ? { health: 'pending', glyph: ICON_SPINNER, detail: requestDetail(request), label } : { health: 'warn', glyph: ICON_ALERT, detail: requestDetail(request), label };
   }
   const health = botHealth(bot);
   // A run that did not happen (refused, or broken) wears the warning triangle, not a verdict's light: nothing was
@@ -1661,13 +2274,12 @@ function requestMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | 
   if (model.requestable.length === 0) return null;
   installMenuDismissal();
   const details = createElement('details', { class: `${PANEL_CLASS}__menu ${PANEL_CLASS}__request` });
-  // The ⋯ every row wears; while a bot runs it turns into the spinning sync glyph, which is the news.
   const summary = createElement(
     'summary',
-    { class: `${PANEL_CLASS}__icon${model.running ? ` ${PANEL_CLASS}__icon--spin` : ''}`, 'aria-label': model.running ? 'A review is running · Request a review' : 'Request a review', title: model.running ? 'A review is running' : 'Request a review', role: 'button', [ATTR_FOCUS]: 'rerun' },
+    { class: `${PANEL_CLASS}__icon`, 'aria-label': model.running ? 'A review is running · Request a review' : 'Request a review', title: model.running ? 'A review is running' : 'Request a review', role: 'button', [ATTR_FOCUS]: 'rerun' },
     // Idle, the control is an action — it posts the trigger comments — so it wears the send glyph, not the ⋯ of a
-    // menu that only offers choices; running, the spinning sync says a review is under way.
-    [icon(model.running ? ICON_SYNC : ICON_PAPER_AIRPLANE)],
+    // menu that only offers choices; running, GitHub's spinner says a review is under way.
+    [icon(model.running ? ICON_SPINNER : ICON_PAPER_AIRPLANE)],
   );
   summary.addEventListener('click', (event) => event.stopPropagation());
   // Closed by Run, Cancel, Escape or a click outside: whatever changed meanwhile renders now.
@@ -1731,7 +2343,8 @@ function requestMenu(model: PanelModel, handlers: PanelHandlers): HTMLElement | 
     event.stopPropagation();
     details.removeAttribute('open');
   });
-  list.append(createElement('div', { class: `${PANEL_CLASS}__request-footer` }, [run, cancel]));
+  const help = missingToolHelp('review bot', handlers, () => details.removeAttribute('open'));
+  list.append(createElement('div', { class: `${PANEL_CLASS}__request-footer` }, [help, run, cancel]));
   syncRun();
   details.append(summary, list);
   return details;
@@ -3153,10 +3766,11 @@ function signatureOf(model: PanelModel): string {
     pending: [...model.aiPending].sort(),
     ai: model.ai,
     tldr: model.meta.summary?.tldr ?? '',
+    triage: model.triage,
     bots: model.meta.bots.map((bot) => `${bot.id}:${bot.verdict}:${bot.count ?? ''}:${bot.score ?? ''}:${bot.severity ?? ''}:${bot.reviewedSha}:${bot.sourceId ?? ''}`),
     botRequests: [...model.botRequests].map(([id, state]) => `${id}:${state.kind === 'starting' ? 'starting' : state.reason}`),
     reviewers: model.meta.reviewers.map((reviewer) => `${reviewer.login}:${reviewer.state}`),
-    folds: model.folds.map((fold) => `${fold.key}:${fold.label}:${(fold.refs ?? []).join(' ')}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}:${fold.closure?.preview ?? ''}:${fold.headline === undefined ? '' : `${fold.headline.kind}${fold.headline.actor}${fold.headline.target ?? ''}${fold.headline.avatarSrc ?? ''}`}`),
+    folds: model.folds.map((fold) => `${fold.key}:${fold.label}:${(fold.refs ?? []).join(' ')}:${fold.section}:${fold.count}:${fold.avatarSrc ?? ''}:${fold.time}:${fold.at ?? ''}:${fold.closure?.preview ?? ''}:${fold.headline === undefined ? '' : `${fold.headline.kind}${fold.headline.actor}${fold.headline.target ?? ''}${fold.headline.avatarSrc ?? ''}`}`),
     batches: model.batches.map((batch) => `${batch.key}:${batch.items.map((item) => `${item.id}${item.status}`).join(',')}:${batch.comments.map((entry) => `${entry.anchor}${entry.preview}${entry.time}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.reviews.map((entry) => `${entry.anchor}${entry.state}${(entry.threads ?? []).map((thread) => `${thread.anchor}${thread.done ? 'd' : 'o'}`).join('')}`).join(',')}:${batch.commits.length}/${batch.commitCount}/${batch.forcePushes}:${batch.ciGlyph ?? ''}:${batch.previews.map((entry) => `${entry.anchor}${entry.status}${entry.url ?? ''}`).join(',')}:${batch.time}:${batch.avatars.map((a) => a.src).join(',')}`),
     grouping: model.grouping,
     view: model.view,
@@ -3191,6 +3805,7 @@ function signatureOf(model: PanelModel): string {
     ingesting: model.ingesting,
     openSubKey: model.openSubKey,
     openSources: [...model.openSources].sort(),
+    chatFixes: model.chatFixes,
     refs: model.refsVersion,
     edits: model.editsVersion,
     running: model.running,
@@ -3292,7 +3907,84 @@ export interface MountOptions {
   readonly parkChats?: (panel: Element) => HTMLElement | null;
 }
 
+/** A press that began inside the panel and has not been released yet. */
+let pressing = false;
+/** A rebuild held back by that press, asked for again once it is released. */
+let afterPress: (() => void) | null = null;
+/** The document listeners `watchPresses` adds, aborted with the panel so a retired copy leaves none behind. */
+let pressWatch: AbortController | null = null;
+
+/**
+ * A press inside the panel is not finished: whatever would move its nodes (a rebuild, a slot redraw sending loans
+ * home) waits, and `onRelease` is asked for once it is.
+ */
+export function pressHeld(onRelease: () => void): boolean {
+  if (!pressing) return false;
+  afterPress = onRelease;
+  return true;
+}
+
+function livePanel(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}]`);
+}
+
+/**
+ * GitHub's tooltips are top-layer popovers placed once, when they open: inside the panel (a check's "More actions",
+ * shown when Escape hands focus back to its ⋯) a scroll left one standing over another control.
+ */
+function closeTooltipsIn(panel: HTMLElement): void {
+  try {
+    for (const tip of panel.querySelectorAll<HTMLElement>('[data-component="Tooltip"][popover]:popover-open')) tip.hidePopover();
+  } catch {
+    // A browser without `:popover-open` has no top-layer tooltips to leave behind.
+  }
+}
+
+function stopWatchingPresses(): void {
+  pressWatch?.abort();
+  pressWatch = null;
+  pressing = false;
+  afterPress = null;
+}
+
+function watchPresses(): void {
+  if (pressWatch !== null) return;
+  pressWatch = new AbortController();
+  const { signal } = pressWatch;
+  document.addEventListener('pointerdown', (event) => {
+    pressing = event.target instanceof Node && livePanel()?.contains(event.target) === true;
+  }, { capture: true, signal });
+  const release = (): void => {
+    if (!pressing) return;
+    pressing = false;
+    const held = afterPress;
+    afterPress = null;
+    held?.();
+  };
+  document.addEventListener('pointerup', release, { capture: true, signal });
+  document.addEventListener('pointercancel', release, { capture: true, signal });
+  // A release outside the window or in a hidden tab never reaches the document: the press ends with the focus.
+  window.addEventListener('blur', release, { signal });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) release();
+  }, { signal });
+  // GitHub's checks list keeps focus on its rows: once focus is anywhere in the list (Escape hands it back to a ⋯),
+  // a press that focuses another ⋯ has the list move focus to that ⋯'s row and scroll to it, the button slides
+  // from under the pointer and no menu opens (GitHub's own page does the same). Pressed without taking focus, the
+  // button's click opens its menu, which takes focus itself.
+  document.addEventListener('mousedown', (event) => {
+    if (event.button !== 0 || !(event.target instanceof Element)) return;
+    const button = event.target.closest('button');
+    if (button !== null && button.closest(`[${ATTR_SLOT}="${CHECKS_KEY}"] li`) !== null) event.preventDefault();
+  }, { capture: true, signal });
+  document.addEventListener('scroll', () => {
+    const panel = livePanel();
+    if (panel !== null) closeTooltipsIn(panel);
+  }, { capture: true, passive: true, signal });
+}
+
 export function mountPanel(model: PanelModel, handlers: PanelHandlers, options: MountOptions = {}): MountedPanel | null {
+  watchPresses();
   blockedOf = model.blockedBy;
   // A rebuild (the reading ending changes the signature) must not drop the bar mid-way: the new panel takes it.
   const bar = document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}] > .${PANEL_CLASS}__reading`);
@@ -3339,6 +4031,17 @@ function syncProgress(root: HTMLElement, progress: number | null): void {
   shownProgress = progress;
 }
 
+/**
+ * The panel's own menus (row ⋯, the triage's Apply and agent menus, grouping, View, Request a review) and edit
+ * histories. Not the hidden-people menu: its Show and Hide redraw the digest with it open, and it reopens itself.
+ */
+const HELD_MENUS = `details.${PANEL_CLASS}__menu:not(.${PANEL_CLASS}__hidden), details.${PANEL_CLASS}__edited-wrap`;
+
+/** Whether one of the panel's own menus is open, which a rebuild would close under the reader: the panel waits for it. */
+export function menuHoldsRebuild(root: ParentNode): boolean {
+  return [...root.querySelectorAll<HTMLDetailsElement>(HELD_MENUS)].some((details) => details.open);
+}
+
 function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOptions): MountedPanel | null {
   const existing = document.querySelector<HTMLElement>(`.${PANEL_CLASS}[${ATTR_PANEL}]`);
   const signature = signatureOf(model);
@@ -3356,10 +4059,12 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     // Someone is typing in GitHub's reply box inside the slot: a rebuild would move it and drop focus. Wait.
     const active = document.activeElement;
     if (slot !== null && active instanceof Element && slot.contains(active) && active.matches('textarea, input, [contenteditable]')) return { root: existing, slot };
-    // The Request a review menu is open with boxes ticked: a rebuild would close it and lose the picks. Wait.
-    if (existing.querySelector(`.${PANEL_CLASS}__request[open]`) !== null) return { root: existing, slot };
-    // An edit history is open from a clock: a rebuild would close it and take the reader's focus. Wait.
-    if (existing.querySelector(`.${PANEL_CLASS}__edited-wrap[open]`) !== null) return { root: existing, slot };
+    // A menu of the panel's own or an edit history is open: a rebuild would close it under the reader (and lose the
+    // Request a review menu's picks). Wait, and draw once it closes.
+    if (menuHoldsRebuild(existing)) return { root: existing, slot };
+    // A press inside the panel not yet released: a rebuild between its pointerdown and its click moves or replaces
+    // what was pressed (the worn gear, a check's ⋯), and the click is lost. Wait for the release.
+    if (pressHeld(handlers.onRequestMenuClosed)) return { root: existing, slot };
   }
   const card = descriptionCard();
   // On the Overview the panel stands among React's nodes: not before React has hydrated them (`react-hydration.ts`).
@@ -3399,7 +4104,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   const waiting = model.meta.items.filter((item) => item.status === 'needs-reply').length;
 
   /* Summary strip, on the status rows' columns: the emblem as the glyph, "Geld" as the label, then the meter once there are threads to measure. */
-  const summary = createElement('div', { class: `${PANEL_CLASS}__summary` }, [brandMark(`${PANEL_CLASS}__brand`), createElement('span', { class: `${PANEL_CLASS}__label ${PANEL_CLASS}__brand-name` }, ['Geld'])]);
+  const summary = createElement('div', { class: `${PANEL_CLASS}__summary` }, [brandMark(`${PANEL_CLASS}__brand`, { fitted: true }), createElement('span', { class: `${PANEL_CLASS}__label ${PANEL_CLASS}__brand-name` }, ['Geld'])]);
   if (total > 0) summary.append(progressMeter(doneCount, total, 'thread'));
   if (waiting > 0) summary.append(createElement('span', { class: `${PANEL_CLASS}__chip`, 'data-tone': 'attention' }, [`${waiting} need${waiting === 1 ? 's' : ''} a reply`]));
   // GitHub's revision marker, said here instead of as a timeline row: a button to that diff (the marker's own
@@ -3412,6 +4117,14 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   const tools = createElement('div', { class: `${PANEL_CLASS}__tools` });
   const aiControl = aiButton(model.ai, handlers);
   if (aiControl !== null) tools.append(aiControl);
+  const chat = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__chat-btn`, 'aria-label': 'Chat about this pull request', 'aria-pressed': String(document.documentElement.hasAttribute('data-geld-chat-open')), title: 'Chat about this pull request, or with the agent that wrote it', [ATTR_FOCUS]: 'chat' }, [
+    icon(ICON_COMMENT_DISCUSSION),
+    createElement('span', { class: `${PANEL_CLASS}__chat-label` }, ['Chat']),
+  ]);
+  chat.addEventListener('click', () => handlers.onChat(chat));
+  chat.addEventListener('pointerenter', () => handlers.onChatIntent(), { once: true });
+  chat.addEventListener('focus', () => handlers.onChatIntent(), { once: true });
+  if (CHAT_BUTTON_SHOWN) tools.append(chat);
   const flow = createElement('button', { type: 'button', class: `${PANEL_CLASS}__icon ${PANEL_CLASS}__flow-btn`, 'aria-label': 'Flow: how the changed files connect', title: 'How the changed files connect', [ATTR_FOCUS]: 'flow' }, [
     icon(ICON_WORKFLOW),
     createElement('span', { class: `${PANEL_CLASS}__flow-label` }, ['Flow']),
@@ -3430,16 +4143,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   const aiNote = aiNotice(model.ai, handlers);
   const intro = introNotice(model, handlers);
   const status = statusRows(model, handlers);
-  const tldrPending = model.aiPending.has('tldr');
-  const tldr =
-    model.meta.summary !== undefined
-      ? createElement('p', { class: `${PANEL_CLASS}__tldr`, ...(tldrPending ? { 'data-pending': '' } : {}) }, [model.meta.summary.tldr])
-      : tldrPending
-        ? createElement('p', { class: `${PANEL_CLASS}__tldr`, 'data-pending': '', 'aria-label': 'Writing the summary' }, [
-            createElement('span', { class: `${PANEL_CLASS}__skeleton`, style: 'width: 78%' }),
-            createElement('span', { class: `${PANEL_CLASS}__skeleton`, style: 'width: 52%' }),
-          ])
-        : null;
+  const triage = triageCard(model, handlers);
 
   /* Groups */
   const rows = createElement('ul', { class: `${PANEL_CLASS}__rows`, role: 'list' });
@@ -3489,7 +4193,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   if (!model.fullTimeline && model.grouping !== 'batch') {
     // Comments that need nothing from the reader (bot run summaries, review requests), then the timeline's activity.
     const other = model.folds.filter((fold) => fold.section === 'comments');
-    const activity = model.folds.filter((fold) => fold.section === 'activity');
+    const activity = inTimeOrder(model.folds.filter((fold) => fold.section === 'activity'));
     const appendFolds = (folds: readonly FoldRow[], slots: boolean): void => {
       for (const fold of folds) {
         rows.append(foldRowEl(fold, model, handlers));
@@ -3511,8 +4215,8 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
     head,
     ...(intro === null ? [] : [intro]),
     ...(aiNote === null ? [] : [aiNote]),
+    ...(triage === null ? [] : [triage]),
     ...(status === null ? [] : [status]),
-    ...(tldr === null ? [] : [tldr]),
     rows,
   ]);
 
@@ -3533,7 +4237,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   panel.addEventListener(
     'toggle',
     (event) => {
-      if (event.target instanceof HTMLDetailsElement && !event.target.open && event.target.matches(`.${PANEL_CLASS}__edited-wrap`)) handlers.onRequestMenuClosed();
+      if (event.target instanceof HTMLDetailsElement && !event.target.open && event.target.matches(HELD_MENUS)) handlers.onRequestMenuClosed();
     },
     true,
   );
@@ -3556,6 +4260,7 @@ function buildPanel(model: PanelModel, handlers: PanelHandlers, options: MountOp
   seatOverviewPanel(panel);
   syncSpinners(panel);
   watchBrandSelection();
+  watchBrandScale();
   syncNewBrandMarks();
   // A card open over the old panel points at a host that just left the document.
   rehostHoverCard();
@@ -3637,6 +4342,7 @@ export function releasePanelPin(): void {
 }
 
 export function unmountPanel(): void {
+  stopWatchingPresses();
   releasePanelPin();
   shownProgress = 0;
   restoreAll();

@@ -1,0 +1,63 @@
+:root {
+  color-scheme: light dark;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+  color: light-dark(#59636e, #9198a1);
+  background: light-dark(#f6f8fa, #151b23);
+}
+
+html,
+body,
+.pdf {
+  height: 100%;
+  margin: 0;
+}
+
+.pdf {
+  display: grid;
+  place-items: center;
+}
+
+.pdf__frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.pdf__message {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  max-width: 360px;
+  padding: 16px;
+  text-align: center;
+}
+
+.pdf__message p {
+  margin: 0;
+}
+
+.pdf__status {
+  margin: 0;
+}
+
+.pdf__button {
+  padding: 3px 12px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+  color: light-dark(#ffffff, #ffffff);
+  background: light-dark(#1f883d, #238636);
+  border: 1px solid light-dark(#1f232826, #f0f6fc1a);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.pdf__button:hover {
+  background: light-dark(#1c8139, #29903b);
+}
+
+.pdf__link {
+  color: light-dark(#0969da, #4493f8);
+}
