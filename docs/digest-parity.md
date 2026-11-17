@@ -171,10 +171,14 @@ Decision needed: keep Merge checks as a provider row, or fold it into CI and the
 | Mentions | partial: Incoming and Outgoing references | partial: same | page and API | — |
 | Native timeline folded in compact mode | match: `ProviderConversation.syncCompact` | match | — | — |
 | Copy digest | match | match | — | — |
-| AI triage | match (#548) | match | — | — |
+| AI triage | partial: GitHub's engine, control and card (`src/review/ai.ts`, `triage-card.ts`); fixes proposed and previewed; Apply greyed out (GitHub's suggestion API), hand-off copies the task | partial: same | GL suggestions API, BB none | — |
+| Fix from a thread's or comment's chat | missing | missing | — | — |
 | Hidden people | partial: no block lists | partial: same | — | — |
 | Agent notes | match: from the description | match | — | — |
-| Flow | match (#557) | match | — | — |
+| Flow | match: GitHub's dialog (`src/review/flow.ts`) with a provider `FlowHost` | match | — | — |
+| Image gallery and video player | match: GitHub's Ramka gallery and video.js card (`src/ui/`) | match | — | — |
+| PDF viewer | missing: PDFs open as the host serves them | missing | — | — |
+| Chat sidebar (hidden on GitHub too) | missing | missing | — | — |
 | View menu and intro | partial: View option, placement above or below | partial: same | — | — |
 | Status pill menu (merge, queue, draft, close, bypass) | partial: opens GitLab's own actions menu | partial: opens Bitbucket's "More actions" | — | the host's menu, acceptable as a slot |
 | Review group (approve, request changes, comment) | match in shape (`renderProviderActionControls`) | match in shape, comment plus verdict hands off to the native writer | — | — |
