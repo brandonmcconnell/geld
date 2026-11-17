@@ -840,6 +840,18 @@ describe('provider conversation digest', () => {
     panel.destroy();
   });
 
+  it('puts GitHub\'s Fix on a thread chat\'s head and asks the triage when it is pressed', () => {
+    const onFix = vi.fn();
+    const threadFix = vi.fn(() => ({ state: 'idle' as const, applying: false, onFix, onAddKey: vi.fn() }));
+    const panel = renderProviderReviewPanel(host(), input([thread('a')]), { chatFix: { thread: threadFix, comment: () => null } });
+    const fix = panel.element.querySelector<HTMLButtonElement>('[data-geld-item] .geld-provider-review__chat-head .geld-review__chat-fix');
+    expect(fix?.textContent).toBe('Fix');
+    expect(threadFix).toHaveBeenCalledWith('note_1');
+    fix?.click();
+    expect(onFix).toHaveBeenCalled();
+    panel.destroy();
+  });
+
   it('uses the native avatar of a bound bot account for its compact summary', () => {
     const author = { id: 'trusted-bot', login: 'project-reviewer', automated: true };
     const source = { ...comment('1'), author };

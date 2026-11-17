@@ -5,6 +5,10 @@
  * remounts are handled by applying again. Never scrolls the page.
  */
 
+import { runFixes as runFixesShared } from '../../review/apply-runner';
+import { chatFixes } from '../../review/chat-fix-controller';
+import type { AskedChatFix } from '../../review/chat-fix-controller';
+import { copyTask, openTask } from '../../review/handoff';
 import { requestSeat, silentCommentAnchors } from './silent-comments';
 import { browser } from 'wxt/browser';
 import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
@@ -24,11 +28,10 @@ import { clickResolve, copyText, focusReply, resolveIfOpen, isResolvable, openRe
 import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, commitsInRow, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, revisionMarker, THREAD_SELECTOR, TIMELINE_ROW } from './crawler';
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from '../../review/ai';
-import type { FixRun } from '../../review/ai';
 import { AI_KEY_SECTION } from '../../lib/ai-key';
-import { adoptOwnReplies, aiPending, chatFixesOffered, commentReportsOutsideThreads, onAiKeyChange, aiStateFor, clearAiForPage, discardSuggestion, fixFromComments, jevDecisionsFor, loadAiForPage, markSuggestionApplied, markSuggestionPosted, pendingReplyFor, previewDecisionKey, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi, withJevDone } from '../../review/ai';
-import type { AiState, FixScope, SuggestionSource, SuggestionTarget } from '../../review/ai';
-import { applyFixes, splitOverlapping } from './apply-suggestion';
+import { adoptOwnReplies, aiPending, onAiKeyChange, aiStateFor, clearAiForPage, discardSuggestion, jevDecisionsFor, loadAiForPage, previewDecisionKey, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi, withJevDone } from '../../review/ai';
+import type { AiState, SuggestionSource, SuggestionTarget } from '../../review/ai';
+import { applyFixes } from './apply-suggestion';
 import { agentComment, agentTask, CODING_AGENTS, codingAgentById, openTargetById } from '@geld/review';
 import { relatedLinksOnPage } from '../related-links';
 import { wholeFileLines } from '../whole-file';
@@ -91,7 +94,7 @@ import { eventState, eventWords, type TimelineEvent } from './timeline-events';
 import { timelineEventsFor, timelineMentionsFor } from './timeline-mentions';
 import type { EventLine, MentionLine } from './quick-view';
 import { botCommentControls, chatNeedsRedress, dressArrivals, redressComposer, renderChatView, renderCommentChat, sourceFocusKey, threadAnchorOf, threadLinesOf, parkChats, releaseParkedChats } from './chat';
-import type { ChatByline, ChatFix, ChatFixState, ChatLink, ChatRerun, ChatThreadLink, CommentFix, CommentFixScope } from './chat';
+import type { ChatByline, ChatFix, ChatLink, ChatRerun, ChatThreadLink, CommentFix } from './chat';
 import { viaBotOf } from './via';
 import type { ChatHandlers, ChatSource } from './chat';
 import { quietClick } from './quiet-click';
@@ -216,14 +219,6 @@ interface VisitState {
   requests: Map<string, BotRequestClick>;
   /** The AI triage card: the fix open in it, whether it is hidden, fixes being applied or refused, and the last hand-off. */
   triage: TriageVisit;
-}
-
-/** How a chat's Fix ask last ended, kept for the visit so its control says so. */
-interface AskedChatFix {
-  readonly state: ChatFixState;
-  readonly scope: CommentFixScope | null;
-  readonly error?: string;
-  readonly needsKey?: boolean;
 }
 
 interface TriageVisit {
@@ -2672,7 +2667,6 @@ function suggestionTarget(item: ReviewItem, comments: readonly RawComment[], hea
   return wholeFileLines(subject.origin, `${subject.owner}/${subject.repo}`, headSha, path).then((file) => (file === null || range.end > file.length || range.start < 1 ? null : { path, start: range.start, end: range.end, lines: file }));
 }
 
-const OVERLAP_WORDS = 'Its lines overlap another fix’s, so it was left out of that commit. Triage again to fit it to the new code.';
 
 /** The triage card's reading for this visit (`review/triage-view.ts`). */
 function triageViewFor(meta: GeldPrMeta, ai: AiState, settings: GeldSettings, prAuthor: string | null, knownBots: ReadonlySet<string>): TriageView | null {
@@ -3962,123 +3956,26 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // Asynchronous answers (the AI run's progress and end) re-apply through the mounted check, never past a teardown.
   const reapply = (): void => reapplyNow();
   /** Apply commits the triage's fixes, several in one commit, and resolves their threads unless the reader or the repository opts out. */
-  const runFixes = (keys: readonly string[]): void => {
-    const listed = triageSuggestions(meta, settings);
-    const candidates = keys.flatMap((key) => {
-      const found = listed.find((entry) => entry.entry.key === key);
-      const replacement = found?.entry.replacement ?? null;
-      return found === undefined || replacement === null || !found.current || found.entry.state === 'applied' || visit.triage.busy.has(key) ? [] : [{ key, found, replacement, path: found.entry.path, start: found.entry.start, end: found.entry.end }];
-    });
-    const { batch: picked, overlapping } = splitOverlapping(candidates);
-    if (picked.length === 0 || repoBots.resolveOnFix === 'loading') return;
-    const triage = visit.triage;
-    for (const { key } of overlapping) triage.errors.set(key, OVERLAP_WORDS);
-    for (const { key } of picked) {
-      triage.busy.set(key, 'fix');
-      triage.errors.delete(key);
-    }
-    reapply();
-    const fixes = picked.map(({ key, found, replacement }) => ({ threadAnchors: found.item.sources.map((source) => source.anchor), path: found.entry.path, replacement, summary: found.entry.summary, title: found.item.title, headSha: meta.headSha, pendingReply: pendingReplyFor(key, rawComments) }));
-    void applyFixes(fixes).then(async (results) => {
-      // Read when the commit lands: the reader's setting may have changed and the repository's config arrived meanwhile.
-      const resolves = (lastSettings ?? settings).resolveOnFix && repoBots.resolveOnFix !== false;
-      let changed = false;
-      for (const [index, { key, found }] of picked.entries()) {
-        triage.busy.delete(key);
-        const result = results[index];
-        if (result === undefined) continue;
-        if (!result.ok) {
-          triage.errors.set(key, result.reason);
-          if (result.reply !== undefined) await markSuggestionPosted(key, result.reply);
-          changed ||= result.posted;
-          continue;
-        }
-        changed = true;
-        countUsage('ai_fix_applied');
-        await markSuggestionApplied(key, result.replyAnchor);
-        // Only Resolve: a partner thread someone resolved meanwhile wears Unresolve, which must not be pressed.
-        if (resolves) for (const each of [found.item, ...found.partners]) if (isOpenStatus(each.status)) resolveIfOpen(threadKeyOf(each));
-      }
-      if (changed) await catchUpAfterPost();
-      reapplySoon();
-    });
-  };
+  const runFixes = (keys: readonly string[]): void => runFixesShared(keys, {
+    meta, comments: rawComments, settings, visit: visit.triage, reapply,
+    applier: { apply: applyFixes, resolve: resolveIfOpen, afterPost: async () => { await catchUpAfterPost(); } },
+    // Read when the commit lands: the reader's setting may have changed and the repository's config arrived meanwhile.
+    resolves: () => (lastSettings ?? settings).resolveOnFix && repoBots.resolveOnFix !== false,
+    waiting: () => repoBots.resolveOnFix === 'loading',
+  });
   /** The reader selected the item row `key`: its conversation's anchors, as the model that drew the row knew them. */
-  /** Fixes asked for from a chat: the thread's, or a comment's own findings and its threads, written without a whole triage. */
-  const chatFixesOn = (): boolean => chatFixesOffered(aiStateFor(meta, rawComments, settings), settings);
-  /** The saved fixes an ask would write afresh: those holding any of its threads, a shared one's partners included. */
-  const fixesFor = (threads: readonly string[]): readonly string[] => {
-    const asked = new Set(threads);
-    return triageSuggestions(meta, settings).flatMap(({ entry }) => (entry.threads.some((thread) => asked.has(thread)) ? [entry.key] : []));
-  };
   const openAiSettings = (): void => {
     const message: OpenSettingsMessage = { type: 'geld:open-settings', section: AI_KEY_SECTION };
     void browser.runtime.sendMessage(message).catch(() => undefined);
   };
-  const askFix = (key: string, scope: CommentFixScope | null, ask: FixScope): void => {
-    const triage = visit.triage;
-    // A fix being applied, or written afresh by another ask, and this ask would each record over the other: one at a time.
-    const rewriting = fixesFor(ask.threads);
-    if (rewriting.some((entry) => triage.busy.has(entry))) return;
-    for (const entry of rewriting) triage.busy.set(entry, 'writing');
-    triage.collapsed = false;
-    triage.chatFixes.set(key, { state: 'running', scope });
-    reapply();
-    const headSha = meta.headSha;
-    const source: SuggestionSource = { pull: pullIntent(), target: (item) => suggestionTarget(item, rawComments, headSha) };
-    // However the request ends, its fixes are free to apply again: a mark left by a request that threw held Apply for good.
-    const settle = (run: FixRun): void => {
-      for (const entry of rewriting) if (triage.busy.get(entry) === 'writing') triage.busy.delete(entry);
-      triage.chatFixes.set(key, { state: !run.changed ? 'idle' : run.failed ? 'failed' : 'done', scope, ...(run.reason === undefined ? {} : { error: run.reason }), ...(run.needsKey === true ? { needsKey: true } : {}) });
-      reapply();
-    };
-    void fixFromComments(meta, rawComments, settings, reapply, source, ask).then(settle, () => settle({ changed: true, failed: true, reason: 'The request did not finish.' }));
-  };
-  /** The open finding a thread (or a thread a comment came with) is, by any of its comments' anchors. */
-  const fixableItemAt = (anchor: string): ReviewItem | null => {
-    const item = meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === anchor));
-    return item === undefined || !isOpenStatus(item.status) || item.path === undefined || threadKeyOf(item) === '' ? null : item;
-  };
-  // An ask that found no key is forgotten once one is saved: its control is Fix again, not Add API key.
-  const askedFix = (key: string): AskedChatFix | undefined => {
-    const asked = visit.triage.chatFixes.get(key);
-    return asked?.needsKey === true && aiStateFor(meta, rawComments, settings).kind !== 'needs-key' ? undefined : asked;
-  };
-  const threadFixOf = (thread: HTMLElement): ChatFix | null => {
-    if (!chatFixesOn()) return null;
-    const item = fixableItemAt(threadAnchorOf(thread));
-    if (item === null) return null;
-    const key = threadKeyOf(item);
-    const asked = askedFix(key);
-    const applying = fixesFor([key]).some((entry) => visit.triage.busy.get(entry) === 'fix');
-    return { state: asked?.state ?? 'idle', applying, ...(asked?.error === undefined ? {} : { error: asked.error }), ...(asked?.needsKey === true ? { needsKey: true } : {}), onFix: () => askFix(key, null, { threads: [key], comment: null }), onAddKey: openAiSettings };
-  };
-  const commentFixOf = (anchor: string, author: string, links: readonly ChatThreadLink[]): CommentFix | null => {
-    if (!chatFixesOn()) return null;
-    const text = rawComments.find((comment) => comment.anchor === anchor)?.body.trim() ?? '';
-    if (text === '') return null;
-    const items = links.flatMap((link) => {
-      const item = fixableItemAt(link.anchor);
-      return item === null ? [] : [item];
-    });
-    const keys = [...new Set(items.map(threadKeyOf))];
-    const titles = links.map((link) => meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === link.anchor))?.title ?? link.preview).filter((title) => title !== '');
-    const asked = askedFix(anchor);
-    // Offered only for what Geld knows is there: findings the comment reports outside its threads, or open threads.
-    const comment = commentReportsOutsideThreads(meta, anchor);
-    if (!comment && keys.length === 0 && asked?.state !== 'running') return null;
-    return {
-      threads: keys.length,
-      comment,
-      applying: fixesFor(keys).some((entry) => visit.triage.busy.get(entry) === 'fix'),
-      state: asked?.state ?? 'idle',
-      scope: asked?.scope ?? null,
-      ...(asked?.error === undefined ? {} : { error: asked.error }),
-      ...(asked?.needsKey === true ? { needsKey: true } : {}),
-      onAddKey: openAiSettings,
-      onFix: (scope) => askFix(anchor, scope, { threads: scope === 'comment' ? [] : keys, comment: scope === 'threads' ? null : { anchor, author, text, threads: titles } }),
-    };
-  };
+  /** Fixes asked for from a chat: the thread's, or a comment's own findings and its threads, written without a whole triage. */
+  const fixes = chatFixes({
+    meta, comments: rawComments, settings, reapply, openAiSettings,
+    visit: () => visit.triage,
+    source: () => ({ pull: pullIntent(), target: (item) => suggestionTarget(item, rawComments, meta.headSha) }),
+  });
+  const threadFixOf = (thread: HTMLElement): ChatFix | null => fixes.threadFix(threadAnchorOf(thread));
+  const commentFixOf = (anchor: string, author: string, links: readonly ChatThreadLink[]): CommentFix | null => fixes.commentFix(anchor, author, links);
   const seedOpenItem = (key: string): void => {
     const item = key.startsWith('item:') ? meta.items.find((entry) => itemKey(entry.id) === key) : undefined;
     visit.openItemAnchors = item === undefined ? null : { key, anchors: new Set(item.sources.map((source) => source.anchor)) };
@@ -4392,24 +4289,15 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         triage.handedOff = { text, copyAgain };
         reapply();
       };
-      const notCopied = (lead: string): void => said(`${lead} The browser did not take the task on the clipboard.`, key);
+      const handed = (text: string, copyAgain: boolean): void => said(text, copyAgain ? key : null);
       if (how === 'copy') {
-        void copyText(task).then((copied) => (copied ? said('Copied the task') : notCopied('Could not copy the task.')));
+        copyTask(task, handed);
         return;
       }
       if (how === 'open') {
         const target = openTargetById(agentId);
         if (target === undefined) return;
-        countUsage('agent_handoff');
-        const url = target.url(task, { owner: subject.owner, repo: subject.repo, number: subject.number });
-        // The copy starts while this page still has focus, and the tab opens in the click's own turn, which the
-        // browser's popup blocker requires; what is said waits for the copy to settle.
-        const copying = target.copiesTask === true ? copyText(task) : null;
-        // A web link opens in a tab; an app's own scheme is handed to the system from this page, leaving no blank tab.
-        if (/^https?:/i.test(url)) window.open(url, '_blank', 'noopener');
-        else createElement('a', { href: url }).click();
-        if (copying === null) said(`Opened in ${target.service}`);
-        else void copying.then((copied) => (copied ? said(`Copied the task and opened ${target.service}. Paste it there to start`) : notCopied(`Opened ${target.service}, but the task is not copied.`)));
+        openTask(target, target.url(task, { owner: subject.owner, repo: subject.repo, number: subject.number }), task, handed);
         return;
       }
       const agent = codingAgentById(agentId) ?? CODING_AGENTS[0];

@@ -173,8 +173,8 @@ Decision needed: keep Merge checks as a provider row, or fold it into CI and the
 | Mentions | partial: Incoming and Outgoing references | partial: same | page and API | — |
 | Native timeline folded in compact mode | match: `ProviderConversation.syncCompact` | match | — | — |
 | Copy digest | match | match | — | — |
-| AI triage | partial: GitHub's engine, control and card (`src/review/ai.ts`, `triage-card.ts`); fixes proposed and previewed; Apply greyed out (GitHub's suggestion API), hand-off copies the task | partial: same | GL suggestions API, BB none | — |
-| Fix from a thread's or comment's chat | missing | missing | — | — |
+| AI triage | match: GitHub's engine, control and card (`src/review/ai.ts`, `triage-card.ts`); Apply posts a `suggestion:-a+b` note, commits it with GitLab's `suggestions/batch_apply` and resolves the discussion (`gitlab/apply-suggestion.ts` through the shared `apply-runner.ts`); hand-off copies the task or opens it in Cursor, Devin or Factory (`anyHost` targets); the agents' comment commands stay GitHub's | partial: same, but no Apply or Apply all (no request commits a suggestion): a fix row leads with the agent hand-off, its diff still shown | GL suggestions API, BB none | — |
+| Fix from a thread's or comment's chat | match: GitHub's controls and ask (`review/chat-fix.ts`, `chat-fix-controller.ts`) on thread heads and comment chats | match | — | — |
 | Hidden people | partial: no block lists | partial: same | — | — |
 | Agent notes | match: from the description | match | — | — |
 | Flow | match: GitHub's dialog (`src/review/flow.ts`) with a provider `FlowHost` | match | — | — |

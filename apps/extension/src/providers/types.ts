@@ -1,6 +1,7 @@
 import type { ProviderCommentRenderContext } from './comment-render';
+import type { FixApplier } from '../review/apply-fixes';
 import type { GeldSettings, FileStats, RepositoryIdentity } from '@geld/core';
-import type { ProviderReviewComment, ProviderReviewInput, ProviderSourceCoverage } from '@geld/review';
+import type { ProviderReviewComment, ProviderReviewInput, ProviderReviewSubject, ProviderReviewThread, ProviderSourceCoverage } from '@geld/review';
 import type { ProviderDeployment, ProviderReviewAuthorPresentation, ProviderReviewPanelEvent, ProviderReviewRequirement, ProviderReviewSourceAction } from './review-panel';
 import type { ProviderConfigFetcher } from './repo-config';
 import type { ProviderReviewReference } from './references';
@@ -235,6 +236,8 @@ export interface ProviderNativeView {
 }
 
 export interface ProviderAdapter {
+  /** Commits the AI triage's fixes the host's own way (GitLab's suggestions API); absent where Geld cannot yet. */
+  fixApplier?(subject: ProviderReviewSubject, threads: () => readonly ProviderReviewThread[]): FixApplier;
   /** The signed-in reader's native account id, as review authors carry it; null when signed out or unknown. */
   viewerAuthorId?(doc: Document): string | null;
   createPageMode?(doc: Document, changed: () => void): ProviderPageMode;

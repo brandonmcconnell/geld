@@ -1,4 +1,5 @@
 import { readGitLabMergeChecks } from './merge-checks';
+import { gitLabFixApplier } from './apply-suggestion';
 import { gitLabSidebarPeople } from './sidebar-people';
 import { gitLabAttachmentLink } from './attachment';
 import type { ProviderCommentRenderContext } from '../providers/comment-render';
@@ -46,6 +47,7 @@ export const gitlabAdapter: ProviderAdapter = {
   personRoots: gitLabPersonRoots,
   sidebarPeople: gitLabSidebarPeople,
   descriptionHost: gitLabDescriptionHost,
+  fixApplier: (subject, threads) => gitLabFixApplier(subject, threads),
   fetchDiff: (page, signal) => isProviderReviewPage(page) ? fetchGitLabDiff(page, signal) : fetchGitLabStandaloneDiff(page, signal),
   fetchConfig: fetchGitLabConfig,
   reviewHost: (doc) => doc.querySelector<HTMLElement>('.issuable-discussion .detail-page-description'),

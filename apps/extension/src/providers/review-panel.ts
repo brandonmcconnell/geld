@@ -1,4 +1,7 @@
 import { providerPreviews, providerPreviewDestination } from './previews';
+import { commentFixRow, threadFixControl } from '../review/chat-fix';
+import type { ChatFix, ChatFixSkin, CommentFix } from '../review/chat-fix';
+import type { ChatFixThreadLink } from '../review/chat-fix-controller';
 import { missingToolHelp } from '../review/triage-card';
 import { absoluteTimeText, relativeTimeText } from '../review/time';
 import { settleToggledRow, stickyBarsBottom } from '../review/row-scroll';
@@ -83,6 +86,11 @@ export interface ProviderReviewRequirement {
 }
 
 export interface ProviderReviewPanelOptions {
+  /** A thread's and a comment's Fix, asking the AI triage for a fix (`review/chat-fix-controller.ts`); null where none is offered. */
+  readonly chatFix?: {
+    readonly thread: (anchor: string) => ChatFix | null;
+    readonly comment: (anchor: string, author: string, links: readonly ChatFixThreadLink[]) => CommentFix | null;
+  };
   /** "Request it" under the bots' and agents' menus: opens the feedback page with a draft asking for the tool. */
   readonly onMissingTool?: (tool: 'review bot' | 'coding agent') => void;
   readonly sourceInput?: ProviderReviewInput;
@@ -230,6 +238,9 @@ let nextPanelId = 0;
 // A menu the digest reopened itself, to keep focus on the action the reader just used, does not hold: that action's
 // own update is what it waits for.
 const HELD_MENUS = 'details.geld-provider-review__menu:not([data-geld-restored-open]), details.geld-review__menu:not(.geld-review__hidden)';
+
+/** The chats' Fix in the provider's own buttons. */
+const CHAT_FIX_SKIN: ChatFixSkin = { thread: 'geld-provider-toggle', choice: 'geld-provider-toggle', primary: 'geld-provider-toggle--primary' };
 
 export function renderProviderReviewPanel(host: HTMLElement, initialInput: ProviderReviewInput, initialOptions: ProviderReviewPanelOptions = {}): ProviderReviewPanel {
   const doc = host.ownerDocument;
@@ -868,7 +879,24 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const preview = (body?.querySelector('p, h1, h2, h3')?.textContent ?? body?.textContent ?? comment.body).replace(/\s+/g, ' ').trim();
     summary?.replaceChildren(digestIcon('comment', doc), authorAvatar(comment.author), node('strong', comment.author.login), node('span', preview.slice(0, 160), 'geld-provider-review__entry-preview'));
     const time = timestamp(comment.createdAt);if (time !== null) summary?.append(time);
-    row.append(source);return row;
+    row.append(source);
+    appendCommentFix(row, comment);
+    return row;
+  }
+
+  /** The threads a comment came with: those whose pinned source it is (`threadHead`), by their first comment. */
+  function threadsUnder(comment: ProviderReviewComment): readonly ChatFixThreadLink[] {
+    const byAnchor = new Map(input.threads.flatMap((thread) => thread.comments.map((each) => [each.anchor, each] as const)));
+    return items.flatMap((item) => {
+      const anchor = item.sources[0]?.anchor;
+      return anchor !== undefined && threadHead(item, byAnchor)?.anchor === comment.anchor ? [{ anchor, preview: item.title }] : [];
+    });
+  }
+
+  /** A comment chat's Fix at its foot: what it reports outside its threads, its threads, or both, as on GitHub. */
+  function appendCommentFix(container: HTMLElement, comment: ProviderReviewComment): void {
+    const fix = options.chatFix?.comment(comment.anchor, comment.author.login, threadsUnder(comment)) ?? null;
+    if (fix !== null) container.append(commentFixRow(fix, CHAT_FIX_SKIN));
   }
 
   function reviewStandings(): HTMLElement {
@@ -1228,6 +1256,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       if (providerBotSupport(input.subject.provider, id)?.formatVerified !== true) row.append(node('p', 'Summary parsing for this service has not been verified on this provider.', 'geld-provider-review__muted'));
       if (summary !== null) {
         const chat = sourceComment(summary);chat.dataset.geldBotSummary = id;row.append(chat);
+        appendCommentFix(row, summary);
       }
       for (const request of options.botRequests ?? []) {
         if (request.botId !== id || !request.current()) continue;
@@ -1340,6 +1369,13 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     }
     // GitHub's thread chat: one box, the pinned source first, then every message, the reader's own on the right.
     const chat = node('div', '', 'geld-provider-review__chat');
+    const firstAnchor = item.sources[0]?.anchor;
+    const threadFix = firstAnchor === undefined ? null : options.chatFix?.thread(firstAnchor) ?? null;
+    if (threadFix !== null) {
+      const actions = node('div', '', 'geld-provider-review__chat-head');
+      actions.append(threadFixControl(threadFix, CHAT_FIX_SKIN));
+      chat.append(actions);
+    }
     const head = threadHead(item, comments);
     if (head !== null) chat.append(pinnedSource(item, head));
     const body = node('div', '', 'geld-provider-review__chat-body');

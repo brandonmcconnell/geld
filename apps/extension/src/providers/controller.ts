@@ -139,6 +139,7 @@ export class ProviderController {
         headLines: (path) => this.fileFlow.headLines(path).catch(() => null),
         pullIntent: () => ({ title: document.title, description: adapter.descriptionHost?.(document)?.innerText ?? '' }),
         reportMissingTool: askForMissingTool,
+        ...(adapter.fixApplier === undefined ? {} : { fixApplier: adapter.fixApplier.bind(adapter) }),
         ...services.triage,
       },
     });

@@ -259,6 +259,7 @@ export function parseGitLabDiscussions(value: unknown, subject: ProviderReviewSu
     const file = record(item.diff_file) ? item.diff_file : null;
     const path = position?.new_path ?? position?.old_path ?? file?.new_path ?? file?.old_path;
     const line = position?.new_line ?? position?.old_line;
+    const side = typeof position?.new_line === 'number' ? 'new' : typeof position?.old_line === 'number' ? 'old' : undefined;
     const base = `${subject.origin}/${subject.repository}/-/merge_requests/${subject.id}`;
     threads.push({
       id: item.id,
@@ -269,7 +270,7 @@ export function parseGitLabDiscussions(value: unknown, subject: ProviderReviewSu
       stateKnown: typeof item.resolved === 'boolean' && (item.diff_discussion === false || typeof item.active === 'boolean'),
       comments: notes,
       ...(typeof path === 'string' && path !== '' ? { path } : {}),
-      ...(typeof line === 'number' && Number.isSafeInteger(line) && line > 0 ? { line } : {}),
+      ...(typeof line === 'number' && Number.isSafeInteger(line) && line > 0 ? { line, ...(side === undefined ? {} : { side }) } : {}),
     });
   }
   return { threads, comments, events, threadCapabilities, renderedNotes };
