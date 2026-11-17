@@ -4003,7 +4003,10 @@ These writes were exercised only against mocked answers: a signed-in GitLab sess
 Bitbucket has no request that commits a suggestion, so it offers no Apply or Apply all (`TriageView.cannotApply`): a fix's row leads with the agent hand-off, as a finding no fix fits does, and its diff still shows.
 On GitHub and GitLab the agents stay in Apply's menu, so a reader who would rather not commit a simple fix can still hand it to an agent.
 A finding is handed on by copying its task or opening it where the link carries the task alone (`OpenTarget.anyHost`: Cursor's web and app, Devin, Factory), through the shared `src/review/handoff.ts`;
-the agents' comment commands stay GitHub's, since Geld posts no comment for them on GitLab or Bitbucket.
+an agent's comment command is offered only on a host where it answers one first-party (`CodingAgent.hosts`, `agentAnswersOn`), posted as the reader after the same confirm (`ProviderAdapter.postComment`: GitLab's notes route with its `csrf-token`, Bitbucket's `/!api/2.0/…/comments` with its `csrftoken` cookie as `X-CSRFToken`, signed in only).
+Surveyed in Nov 2026: Cursor answers `@cursor` on a Bitbucket Cloud pull request once a workspace admin installs its Bitbucket app, and no agent answers a GitLab comment on its own (Claude Code and Factory need a note-to-pipeline bridge the owner builds, Devin answers only on merge requests a session already tracks, Codex only reviews), so GitLab offers no "Fix with" yet.
+Geld needs no App of its own on either host for this: the comment is the reader's, and the agent's own App is what listens.
+Neither write was exercised signed in: both were checked only against mocked answers.
 A thread's and a comment's Fix (`src/review/chat-fix.ts`, the ask in `chat-fix-controller.ts`) stand in the provider chats as on GitHub.
 The card's stylesheet (`src/review/triage.css`), the digest primitives it uses (`digest-kit.css`) and the `--geld-review-*` colour names (`digest-tokens.css`) moved out of GitHub's stylesheet so another host renders the same card, through `geld-primer-bridge`.
 

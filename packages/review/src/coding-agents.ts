@@ -18,6 +18,9 @@ export interface PullRef {
   readonly number: number;
 }
 
+/** Where a comment mentioning an agent starts it. */
+export type AgentHost = 'github' | 'gitlab' | 'bitbucket';
+
 export interface CodingAgent {
   readonly id: AgentId;
   readonly name: string;
@@ -39,10 +42,19 @@ export interface CodingAgent {
   readonly opens?: string;
   /** What to know before asking it. */
   readonly note?: string;
+  /**
+   * Hosts where its comment command starts it, first-party (GitHub alone when absent). Cursor answers `@cursor` on a
+   * Bitbucket Cloud pull request once a workspace admin installs its Bitbucket app (its docs, Nov 2026); on GitLab no
+   * agent here answers a comment on its own: Claude and Factory need a pipeline bridge the owner builds, Devin answers
+   * only on merge requests a session already tracks, and Codex only reviews.
+   */
+  readonly hosts?: readonly AgentHost[];
+  /** What to know before asking it on a host other than GitHub. */
+  readonly hostNotes?: Partial<Record<AgentHost, string>>;
 }
 
 export const CODING_AGENTS: readonly CodingAgent[] = [
-  { id: 'cursor', name: 'Cursor', command: '@cursor', bot: 'bugbot', relatedIds: ['cursor', 'cursor-automation'], installedWith: ['bugbot'] },
+  { id: 'cursor', name: 'Cursor', command: '@cursor', bot: 'bugbot', relatedIds: ['cursor', 'cursor-automation'], installedWith: ['bugbot'], hosts: ['github', 'bitbucket'], hostNotes: { bitbucket: 'Needs the Cursor Bitbucket app' } },
   { id: 'copilot', name: 'Copilot', command: '@copilot', appId: 1143301, relatedIds: ['copilot'], installedWith: ['copilot'], note: 'Not on pull requests from forks' },
   { id: 'claude', name: 'Claude', command: '@claude', bot: 'claude', relatedIds: ['claude-code'], installedWith: ['claude'], note: 'Needs the Claude Code GitHub Action' },
   { id: 'codex', name: 'Codex', command: '@codex', bot: 'codex', relatedIds: ['codex'], installedWith: ['codex'] },
@@ -125,6 +137,11 @@ export function openTargetById(id: string): OpenTarget | undefined {
 export function openTargetLikely(target: OpenTarget, agentIsLikely: (id: AgentId) => boolean, services: readonly string[]): boolean {
   if (target.agent !== undefined) return agentIsLikely(target.agent);
   return (target.relatedIds ?? []).some((id) => services.includes(id));
+}
+
+/** Whether a comment on `host` starts the agent (its command alone is not enough: the agent must listen there). */
+export function agentAnswersOn(agent: CodingAgent, host: AgentHost): boolean {
+  return agent.command !== undefined && (agent.hosts ?? ['github']).includes(host);
 }
 
 export function codingAgentById(id: string): CodingAgent | undefined {

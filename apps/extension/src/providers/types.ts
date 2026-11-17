@@ -238,6 +238,8 @@ export interface ProviderNativeView {
 export interface ProviderAdapter {
   /** Commits the AI triage's fixes the host's own way (GitLab's suggestions API); absent where Geld cannot yet. */
   fixApplier?(subject: ProviderReviewSubject, threads: () => readonly ProviderReviewThread[]): FixApplier;
+  /** Post a top-level comment on the review as the reader (an agent's command): whether the host took it. */
+  postComment?(subject: ProviderReviewSubject, text: string): Promise<boolean>;
   /** The signed-in reader's native account id, as review authors carry it; null when signed out or unknown. */
   viewerAuthorId?(doc: Document): string | null;
   createPageMode?(doc: Document, changed: () => void): ProviderPageMode;
