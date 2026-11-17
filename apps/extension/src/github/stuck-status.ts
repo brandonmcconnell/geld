@@ -103,7 +103,7 @@ function buildRow(conflicts: MergeConflicts, loadingRow: Element, signal: AbortS
     subtext.append('Resolve the merge conflicts in ', link, ' before this can merge.');
   }
   const resolve = createElement('button', { type: 'button', class: 'btn btn-sm' }, ['Resolve conflicts']);
-  resolve.addEventListener('click', () => void pressGitHubResolve(), { signal });
+  resolve.addEventListener('click', () => void pressGitHubResolve(signal), { signal });
   // GitHub's own row classes, read from the loading row, keep the card's borders and spacing exactly; the grid is Geld's.
   const item = createElement('li', { class: `${loadingRow.className} ${ROW_CLASS}`.trim(), 'data-testid': 'geld-stuck-status', [OWN_UI_ATTRIBUTE]: '' }, [
     createElement('div', { class: `${ROW_CLASS}__row` }, [
@@ -119,13 +119,16 @@ function buildRow(conflicts: MergeConflicts, loadingRow: Element, signal: AbortS
 /**
  * GitHub's own Resolve conflicts, in its merge status panel: it opens the web editor, or for a stack its dialog of
  * `gh stack` commands, and says what the reader may do. The panel is opened if it is not, and its button pressed once
- * it shows; a panel that never shows its button is left open, the conflict in it.
+ * it shows; a panel that never shows its button is left open, the conflict in it. The wait ends with the row (`signal`)
+ * or the pull request it was pressed on: on another pull request's panel the button would be that one's.
  */
-async function pressGitHubResolve(): Promise<void> {
+async function pressGitHubResolve(signal: AbortSignal): Promise<void> {
+  const page = pullPathOf(window.location.pathname);
+  const here = (): boolean => !signal.aborted && pullPathOf(window.location.pathname) === page;
   const toggle = [...document.querySelectorAll<HTMLButtonElement>(VIEW_STATUS)].find((button) => button.getClientRects().length > 0) ?? null;
   if (panelResolveButton() === null && toggle !== null && toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
   const started = Date.now();
-  while (Date.now() - started < PANEL_WAIT_MS) {
+  while (here() && Date.now() - started < PANEL_WAIT_MS) {
     const button = panelResolveButton();
     if (button !== null) {
       button.click();
@@ -133,6 +136,10 @@ async function pressGitHubResolve(): Promise<void> {
     }
     await new Promise((resolve) => window.setTimeout(resolve, 100));
   }
+}
+
+function pullPathOf(path: string): string | null {
+  return /^\/[^/]+\/[^/]+\/pull\/\d+/.exec(path)?.[0] ?? null;
 }
 
 /** The merge status panel's Resolve conflicts, under its "This branch (or stack) has conflicts that must be resolved". */

@@ -66,6 +66,35 @@ describe('syncStuckStatus', () => {
     expect(document.querySelector('.geld-stuck-status')).toBeNull();
   });
 
+  it('presses GitHub’s own Resolve conflicts once its panel shows it, and not after the row is gone', async () => {
+    loadingCard();
+    syncStuckStatus(own);
+    vi.advanceTimersByTime(5100);
+    const panel = (): HTMLButtonElement => {
+      const box = document.createElement('div');
+      box.innerHTML = '<p>This branch has conflicts that must be resolved</p><button type="button">Resolve conflicts</button>';
+      document.body.append(box);
+      const button = box.querySelector('button');
+      if (button === null) throw new Error('no button');
+      return button;
+    };
+    document.querySelector<HTMLButtonElement>('.geld-stuck-status .btn')?.click();
+    const github = panel();
+    const pressed = vi.fn();
+    github.addEventListener('click', pressed);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(pressed).toHaveBeenCalledTimes(1);
+
+    github.parentElement?.remove();
+    document.querySelector<HTMLButtonElement>('.geld-stuck-status .btn')?.click();
+    removeStuckStatus();
+    const late = panel();
+    const pressedLate = vi.fn();
+    late.addEventListener('click', pressedLate);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(pressedLate).not.toHaveBeenCalled();
+  });
+
   it('draws nothing while the merge box states no conflict', () => {
     const loading = loadingCard();
     syncStuckStatus(null);
