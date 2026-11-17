@@ -410,6 +410,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   `postTopLevelComments` posts each trigger straight to `page_data/create_timeline_comment` (what GitHub's composer sends, `timeline-comment.ts`), never through the comment box at the foot of the conversation, which scrolled the reader to it and focused it, then catches the timeline up (`catchUpAfterPost`) so the triggers show, and their bots read as running, without a reload.
   `mountPanel` does not rebuild while the menu is open (the picks would be lost);
   closing it calls `onRequestMenuClosed` → `reapplySoon`, so whatever changed meanwhile renders then.
+  The same holds for every menu of the panel's own (`menuHoldsRebuild`, `details.geld-review__menu`): a row's ⋯, the triage's Apply and Fix with menus, grouping and View, as for edit histories, since a background update (a check ticking, a bot rewriting its comment) rebuilt the panel and closed the menu under the reader.
+  Its closing asks for the pass that waited (the panel's capturing `toggle` listener).
+  The hidden-people menu is left out: its Show and Hide redraw the digest with it open, and it reopens itself.
   The Review bots row therefore shows on every PR conversation, with "No reviews yet" until a verdict exists.
   An open item's notes link to each source bot's run summary (`bots[].sourceId`).
   Quick view takes the **outermost** node per comment id — GitHub puts `issuecomment-N` on the comment group and on the comment inside it, which used to yield two cards — and moved nodes drop `hidden="until-found"` while away (a folded event row otherwise rendered as nothing in the slot).
