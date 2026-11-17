@@ -261,6 +261,23 @@ export function triageFixesOn(settings: GeldSettings): boolean {
   return settings.suggestedFixes !== 'off';
 }
 
+/**
+ * Whether a comment's own Fix (This comment) has anything to ask for: findings it reports outside its threads, as the
+ * triage reads them (`unthreadedFindings`), or tasks written from it before, which asking again replaces. Discarded
+ * ones count too: they are not rows any more, and the reader may want them written afresh.
+ */
+export function commentReportsOutsideThreads(meta: GeldPrMeta, anchor: string): boolean {
+  return unthreadedFindings(meta).some((finding) => finding.sourceId === anchor) || [...suggestions.values()].some((entry) => entry.origin?.anchor === anchor);
+}
+
+/**
+ * Whether a chat offers Fix: AI on, fixes not turned off, and something to fix, as the AI button has something to
+ * triage. With no open thread and no finding outside one ("Nothing to triage"), a comment's Fix would ask for nothing.
+ */
+export function chatFixesOffered(state: AiState, settings: GeldSettings): boolean {
+  return state.kind !== 'off' && state.kind !== 'app' && state.kind !== 'nothing' && triageFixesOn(settings);
+}
+
 const anchorsOf = (items: readonly ReviewItem[]): readonly string[] => items.flatMap((item) => item.sources.map((source) => source.anchor));
 
 /** The fix was written from every comment its threads hold now: no reply arrived since that it has not read. */

@@ -20,7 +20,7 @@ const sendMessage = vi.fn(async (_message: unknown): Promise<unknown> => undefin
 vi.mock('wxt/browser', () => ({ browser: { runtime: { sendMessage: (message: unknown) => sendMessage(message) } } }));
 
 const { NO_KEY_REASON } = await import('../../lib/ai-key');
-const { adoptOwnReplies, aiStateFor, discardSuggestion, fixFromComments, loadAiForPage, markSuggestionPosted, pendingReplyFor, runAi, triageNoteFor, triageSuggestions, withAi } = await import('./ai');
+const { adoptOwnReplies, aiStateFor, chatFixesOffered, commentReportsOutsideThreads, discardSuggestion, fixFromComments, loadAiForPage, markSuggestionPosted, pendingReplyFor, runAi, triageNoteFor, triageSuggestions, withAi } = await import('./ai');
 
 const at = '2026-11-13T14:24:02Z';
 const finding: RawComment = { anchor: 'discussion_r100', kind: 'thread', author: 'greptile-apps[bot]', body: 'The caret switch is never tested.', createdAt: at, path: 'src/a.test.ts', line: 179 };
@@ -500,5 +500,41 @@ describe('a run asked for with no API key on this device', () => {
     await runAi(meta, [bug], settings, () => undefined, source);
     expect(aiStateFor(meta, [bug], settings).kind).toBe('needs-key');
     expect(triageSuggestions(meta, settings).map(({ entry }) => entry.replacement)).toEqual([['C']]);
+  });
+});
+
+describe('a chat’s Fix', () => {
+  const settings = { ...DEFAULT_SETTINGS, aiEnabled: true, aiBaseUrl: 'https://ai-gateway.vercel.sh', aiModel: 'anthropic/claude-sonnet-5' };
+
+  it('is offered while there is something to triage, and not when there is nothing', () => {
+    expect(chatFixesOffered({ kind: 'ready' }, settings)).toBe(true);
+    expect(chatFixesOffered({ kind: 'stale', ranAt: at, reason: 'comments' }, settings)).toBe(true);
+    expect(chatFixesOffered({ kind: 'nothing' }, settings)).toBe(false);
+    expect(chatFixesOffered({ kind: 'off' }, settings)).toBe(false);
+    expect(chatFixesOffered({ kind: 'app', hasLocal: false }, settings)).toBe(false);
+    expect(chatFixesOffered({ kind: 'ready' }, { ...settings, suggestedFixes: 'off' })).toBe(false);
+  });
+
+  it('offers a comment’s own Fix only when it reports findings outside its threads', () => {
+    const meta = { ...metaFor([]), bots: [{ id: 'coderabbit', login: 'coderabbitai[bot]', verdict: 'findings' as const, reviewedSha: 'head1', unthreaded: { count: 1, sourceId: 'pullrequestreview-9', digest: 'd' } }] };
+    expect(commentReportsOutsideThreads(meta, 'pullrequestreview-9')).toBe(true);
+    expect(commentReportsOutsideThreads(meta, 'issuecomment-5')).toBe(false);
+    expect(commentReportsOutsideThreads(metaFor([]), 'pullrequestreview-9')).toBe(false);
+  });
+
+  it('keeps This comment for a comment whose tasks were all discarded, so they can be written afresh', async () => {
+    const origin = { anchor: 'pullrequestreview-7', author: 'coderabbitai[bot]', title: 'Handle leaks' };
+    stored.set('local:aiRuns', {
+      'github:/o/r/pull/12': {
+        ranAt: at,
+        rewrites: [],
+        seen: [],
+        suggestions: [{ key: 'pullrequestreview-7~0', threads: [], headSha: 'head1', path: '', start: 0, end: 0, original: [], replacement: null, summary: 'Close it.', state: 'discarded', sources: ['pullrequestreview-7'], origin }],
+      },
+    });
+    await new Promise<void>((resolve) => loadAiForPage(`github:/o/r/pull/12-${Math.random()}`, resolve));
+    await new Promise<void>((resolve) => loadAiForPage('github:/o/r/pull/12', resolve));
+    expect(triageSuggestions(metaFor([]), settings)).toEqual([]);
+    expect(commentReportsOutsideThreads(metaFor([]), 'pullrequestreview-7')).toBe(true);
   });
 });

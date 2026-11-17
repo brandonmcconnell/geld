@@ -119,8 +119,10 @@ export interface ChatFix {
 export type CommentFixScope = 'comment' | 'threads' | 'both';
 
 export interface CommentFix {
-  /** Its open threads a fix can be written for; with none, only This comment is offered. */
+  /** Its open threads a fix can be written for: Threads is offered only with one or more. */
   readonly threads: number;
+  /** It reports findings outside its threads (or tasks were written from it): This comment is offered only then. */
+  readonly comment: boolean;
   readonly state: ChatFixState;
   /** One of its threads' fixes is being applied: Threads and Both wait until that lands. */
   readonly applying: boolean;
@@ -154,21 +156,25 @@ function threadFixControl(fix: ChatFix): HTMLElement {
   return button;
 }
 
+/** The choices a comment's Fix offers: This comment for what it reports outside its threads, Threads for its open threads, Both for both. */
+export function commentFixScopes(fix: Pick<CommentFix, 'comment' | 'threads'>): readonly CommentFixScope[] {
+  if (fix.comment && fix.threads > 0) return ['comment', 'threads', 'both'];
+  return fix.comment ? ['comment'] : fix.threads > 0 ? ['threads'] : [];
+}
+
 /** A comment chat's Fix row: "Fix:", then This comment, Threads and Both (the primary) as buttons of their own. */
 function commentFixRow(fix: CommentFix): HTMLElement {
   const running = fix.state === 'running';
   const threads = fix.threads === 1 ? 'its thread' : `its ${fix.threads} threads`;
-  const choices: ReadonlyArray<readonly [CommentFixScope, string, string]> =
-    fix.threads === 0
-      ? [['comment', 'This comment', 'What this comment asks for, as tasks for an agent']]
-      : [
-          ['comment', 'This comment', 'What this comment asks for outside its threads (findings outside the diff, failed checks), as tasks for an agent'],
-          ['threads', 'Threads', `A fix for ${threads}, to apply as a suggestion`],
-          ['both', 'Both', `What this comment asks for and a fix for ${threads}`],
-        ];
+  const words: Readonly<Record<CommentFixScope, readonly [string, string]>> = {
+    comment: ['This comment', 'What this comment reports outside its threads (findings outside the diff, failed checks), as tasks for an agent'],
+    threads: ['Threads', `A fix for ${threads}, to apply as a suggestion`],
+    both: ['Both', `What this comment reports outside its threads and a fix for ${threads}`],
+  };
+  const choices = commentFixScopes(fix).map((scope) => [scope, ...words[scope]] as const);
   const group = createElement('div', { class: 'geld-review__chat-fix-choices', role: 'group', 'aria-label': 'Fix' });
   for (const [scope, label, title] of choices) {
-    const primary = scope === 'both' || fix.threads === 0;
+    const primary = scope === 'both' || choices.length === 1;
     const pressed = running && fix.scope === scope;
     const waits = fix.applying && scope !== 'comment';
     const button = createElement('button', { type: 'button', class: `btn btn-sm${primary ? ' btn-primary' : ''}`, title: waits ? 'A fix for its threads is being applied' : title, ...(running || waits ? { disabled: '' } : {}), ...(pressed ? { 'aria-busy': 'true' } : {}) }, [pressed ? 'Fixing…' : label]);
