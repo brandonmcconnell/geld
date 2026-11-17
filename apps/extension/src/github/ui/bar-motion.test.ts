@@ -230,6 +230,28 @@ describe('bar motion', () => {
     expect(carry.animation.playState).toBe('idle');
   });
 
+  it('hands a label replaced inside the metadata mid-slide the rest of its carry, though the block is unchanged', () => {
+    const inner = bar(false);
+    fakeLayout(inner);
+    animateBarGroup();
+    const all = watchAnimations();
+    stick(inner);
+    rightEdge(inner.querySelector('[data-testid="mini-header-tab-switcher-trigger"]')!, 96);
+    rightEdge(inner.querySelector('[class*="navigationDivider"]')!, 110);
+    rightEdge(inner.querySelector('[data-component="StateLabel"]')!, 310);
+    animateBarGroup();
+    const old = inner.querySelector('[data-component="StateLabel"]')!;
+    const carry = all().find((animation) => animation.id === PAST_EDGE_ID && animation.element === old)!;
+    vi.spyOn(carry.animation.effect!, 'getComputedTiming').mockReturnValue({ progress: 0.5 });
+    const pill = document.createElement('button');
+    pill.setAttribute('data-geld-status-pill', '');
+    old.replaceWith(pill);
+    animateBarGroup();
+    const handed = all().filter((animation) => animation.id === PAST_EDGE_ID && animation.element === pill);
+    expect(handed.map((animation) => `${animation.from} → ${animation.to}`)).toEqual(['-5px 0 → 0px 0']);
+    expect(inner.querySelector('[class*="metadata"]')!.hasAttribute('data-geld-bar-reach')).toBe(true);
+  });
+
   it('moves nothing when GitHub re-renders its bar with the same parts', () => {
     const inner = bar();
     fakeLayout(inner);

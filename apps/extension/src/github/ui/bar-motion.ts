@@ -235,17 +235,19 @@ export function animateBarGroup(): void {
   for (const ghost of fresh) if (before === null || !removed.some((kind) => ghost.getAttribute(ATTR_KIND) === kind)) ghost.remove();
   if (before === null || !motionAllowed()) return;
   const moved = added.length > 0 || removed.length > 0;
-  if (!moved && (running.length === 0 || blockOf(inner).every((element) => carried.includes(element)))) return;
+  const replaced = new Map<Element, Element>();
+  for (const [kind, part] of now) {
+    const old = before.get(kind);
+    if (old !== undefined && old !== part) replaced.set(part, old);
+  }
+  // A label replaced inside the metadata leaves the block's own members as they were, but not its carry.
+  const carriedAway = [...replaced.values()].some((old) => carrying.has(old));
+  if (!moved && !carriedAway && (running.length === 0 || blockOf(inner).every((element) => carried.includes(element)))) return;
   const anchor = inner.querySelector<HTMLElement>(':scope > [class*="metadata"] > [class*="number"]') ?? inner.querySelector<HTMLElement>(':scope > [class*="metadata"] > [class*="title"]');
   if (anchor === null) {
     cancelRunning();
     for (const ghost of leftGhosts(inner)) ghost.remove();
     return;
-  }
-  const replaced = new Map<Element, Element>();
-  for (const [kind, part] of now) {
-    const old = before.get(kind);
-    if (old !== undefined && old !== part) replaced.set(part, old);
   }
   const newcomers = added.flatMap((kind) => now.get(kind) ?? []);
   hold(newcomers, true);
