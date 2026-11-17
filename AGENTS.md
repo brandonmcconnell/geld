@@ -1989,8 +1989,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   Escape inside the frame never reaches the dialog, so the page posts `geld:pdf-close` to the parent.
   The dialog's Download (the `download` octicon, no new tab) saves the copy the page already holds once it posts `geld:pdf-ready`, under the dialog's file name, and until then is a plain same-tab link, which downloads since GitHub serves both kinds as a download.
   Chrome's own toolbar names the PDF by its Title metadata, else by the `blob:` URL's random id (a `File` name does not help), and its own download button saves `<id>.pdf`, which is why the dialog keeps its own Download.
-  Enterprise hosts are not covered: the page is exposed to github.com alone.
-  Before it reads anything with the reader's session the page checks it is framed by github.com (`framedByGitHub`: every `location.ancestorOrigins`, else the referrer), the manifest's limit being only a second guard.
+  Enterprise hosts are not covered: the page is exposed to github.com, gitlab.com and bitbucket.org alone.
+  Before it reads anything with the reader's session the page checks which of those hosts frames it (`framingHost`: every `location.ancestorOrigins` the same one, else the referrer), reads only that host's PDF routes (`ui/pdf-links.ts` `pdfSourceOf`), and posts back to it alone;
+  the manifest's limit is only a second guard.
   Firefox has no PDF viewer yet (`manifest.exclude` on the page, `import.meta.env.FIREFOX` in the click): its MV2 web-accessible list cannot be limited to github.com, and the frame never left `about:blank` on github.com in Firefox 160 (Nov 2026), so PDF links download there as before.
 - **GitHub's own file filter is mirrored, not fought.**
   `DiffView.filteredPaths` (`filteredPathsOf` in `model.ts`) collects files whose tree item or diff root carries `hidden` — GitHub toggles that client-side for its extension / viewed / CODEOWNERS filters and leaves its header alone.
@@ -4036,7 +4037,8 @@ Resuming injects already open granted provider tabs, and conflict notices use ea
 
 GitLab and Bitbucket open GitHub's own gallery (`src/ui/attachment-gallery.tsx`, Ramka): every qualified image of one rendered body is one gallery, and the provider hands it a skin (its button class, and `geld-primer-bridge` on the host so the shared `src/ui/lightbox.css` reads in its tokens).
 Videos open in GitHub's video.js player (`src/ui/attachment-video.ts`) inside GitHub's card (`src/ui/lightbox-dialog.ts`), skinned the same way.
-PDFs still open as the host serves them on GitLab and Bitbucket: the PDF viewer reads only GitHub's attachment routes.
+PDFs open in the same viewer (`ui/attachment-pdf.ts` in the provider's buttons): a GitLab upload (`/-/uploads/<hash>/x.pdf`, or by project id) or raw file (`/-/raw/`), and a Bitbucket raw file (`/raw/`), read from the host itself, which Geld may read once that host is turned on.
+Neither was opened live: the routes come from the hosts' own link shapes.
 GitLab upload links can use the canonical project-qualified path while retaining the shorter uploads path in data-canonical-src, so the actual image and link URLs are compared rather than assuming that attribute is the loaded source.
 Only matching HTTPS image and attachment destinations inside known description or comment bodies are intercepted, preserving modified clicks, download links, avatars and unrelated links.
 The gallery brings the same arrows, swipe, counter, pinch and wheel zoom, failure fallback and focus restoration on every host, without imposing GitHub button classes on other providers.

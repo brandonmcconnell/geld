@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { framedByGitHub, pdfSourceOf, pdfViewerUrl, RAW_ORIGINS, UPLOAD_ORIGINS } from './pdf-links';
+import { framedByGitHub, framingHost, pdfSourceOf, pdfViewerUrl, RAW_ORIGINS, UPLOAD_ORIGINS } from './pdf-links';
 
 const GITHUB = 'https://github.com';
 
@@ -66,5 +66,34 @@ describe('framedByGitHub', () => {
     expect(framedByGitHub(true, undefined, 'https://example.com/')).toBe(false);
     expect(framedByGitHub(true, undefined, '')).toBe(false);
     expect(framedByGitHub(false, ['https://github.com'], 'https://github.com/')).toBe(false);
+  });
+});
+
+describe('PDFs on GitLab and Bitbucket', () => {
+  it.each([
+    ['https://gitlab.com/group/sub/project/-/uploads/0123456789abcdef0123456789abcdef/spec.pdf', 'https://gitlab.com'],
+    ['https://gitlab.com/-/project/42/uploads/0123456789abcdef0123456789abcdef/spec.pdf', 'https://gitlab.com'],
+    ['https://gitlab.com/group/project/-/raw/main/docs/spec.pdf', 'https://gitlab.com'],
+    ['https://bitbucket.org/workspace/repo/raw/main/docs/spec.pdf', 'https://bitbucket.org'],
+  ])('reads a PDF the host would download, asking for the host itself: %s', (href, host) => {
+    const source = pdfSourceOf(href, host);
+    expect(source?.name).toBe('spec.pdf');
+    expect(source?.origins).toEqual([`${host}/*`]);
+  });
+
+  it.each([
+    ['https://gitlab.com/group/project/-/blob/main/docs/spec.pdf', 'https://gitlab.com'],
+    ['https://github.com/user-attachments/files/1/spec.pdf', 'https://gitlab.com'],
+    ['https://bitbucket.org/workspace/repo/src/main/docs/spec.pdf', 'https://bitbucket.org'],
+  ])('leaves alone what the host shows itself and links to another host: %s', (href, host) => {
+    expect(pdfSourceOf(href, host)).toBeNull();
+  });
+
+  it('lets each host frame the viewer only as itself', () => {
+    expect(framingHost(true, ['https://gitlab.com'], '')).toBe('https://gitlab.com');
+    expect(framingHost(true, undefined, 'https://bitbucket.org/workspace/repo/pull-requests/1')).toBe('https://bitbucket.org');
+    expect(framingHost(true, ['https://gitlab.com', 'https://evil.example'], '')).toBeNull();
+    expect(framingHost(true, ['https://example.com'], '')).toBeNull();
+    expect(framingHost(false, ['https://gitlab.com'], '')).toBeNull();
   });
 });
