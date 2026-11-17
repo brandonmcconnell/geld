@@ -3996,7 +3996,8 @@ GitHub's is its suggestion requests (`github/review/apply-suggestion.ts`).
 GitLab's (`gitlab/apply-suggestion.ts`, `ProviderAdapter.fixApplier`) posts the fix as a note in the finding's discussion fenced `suggestion:-a+b` (the lines it replaces counted around the thread's line), commits every note that stands with `PUT /api/v4/suggestions/batch_apply`, and resolves the discussion with `PUT …/discussions/:id?resolved=true`, all from the page with the reader's session and the page's `csrf-token`.
 It reads a note's suggestion id from GitLab's answer, else from the merge request's `discussions.json`, and suggests nothing for a thread on the old side (`ProviderReviewThread.side`).
 These writes were exercised only against mocked answers: a signed-in GitLab session is needed to see them land.
-Bitbucket has no request that commits a suggestion, so its Apply says so (`TriageView.applyBlocked`).
+Bitbucket has no request that commits a suggestion, so it offers no Apply or Apply all (`TriageView.cannotApply`): a fix's row leads with the agent hand-off, as a finding no fix fits does, and its diff still shows.
+On GitHub and GitLab the agents stay in Apply's menu, so a reader who would rather not commit a simple fix can still hand it to an agent.
 A finding is handed on by copying its task or opening it where the link carries the task alone (`OpenTarget.anyHost`: Cursor's web and app, Devin, Factory), through the shared `src/review/handoff.ts`;
 the agents' comment commands stay GitHub's, since Geld posts no comment for them on GitLab or Bitbucket.
 A thread's and a comment's Fix (`src/review/chat-fix.ts`, the ask in `chat-fix-controller.ts`) stand in the provider chats as on GitHub.
