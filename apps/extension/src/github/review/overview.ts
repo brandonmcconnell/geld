@@ -4197,7 +4197,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     const titles = links.map((link) => meta.items.find((candidate) => candidate.sources.some((source) => source.anchor === link.anchor))?.title ?? link.preview).filter((title) => title !== '');
     const asked = askedFix(anchor);
     // Offered only for what Geld knows is there: findings the comment reports outside its threads, or open threads.
-    const comment = commentReportsOutsideThreads(meta, settings, anchor);
+    const comment = commentReportsOutsideThreads(meta, anchor);
     if (!comment && keys.length === 0 && asked?.state !== 'running') return null;
     return {
       threads: keys.length,

@@ -517,8 +517,24 @@ describe('a chat’s Fix', () => {
 
   it('offers a comment’s own Fix only when it reports findings outside its threads', () => {
     const meta = { ...metaFor([]), bots: [{ id: 'coderabbit', login: 'coderabbitai[bot]', verdict: 'findings' as const, reviewedSha: 'head1', unthreaded: { count: 1, sourceId: 'pullrequestreview-9', digest: 'd' } }] };
-    expect(commentReportsOutsideThreads(meta, settings, 'pullrequestreview-9')).toBe(true);
-    expect(commentReportsOutsideThreads(meta, settings, 'issuecomment-5')).toBe(false);
-    expect(commentReportsOutsideThreads(metaFor([]), settings, 'pullrequestreview-9')).toBe(false);
+    expect(commentReportsOutsideThreads(meta, 'pullrequestreview-9')).toBe(true);
+    expect(commentReportsOutsideThreads(meta, 'issuecomment-5')).toBe(false);
+    expect(commentReportsOutsideThreads(metaFor([]), 'pullrequestreview-9')).toBe(false);
+  });
+
+  it('keeps This comment for a comment whose tasks were all discarded, so they can be written afresh', async () => {
+    const origin = { anchor: 'pullrequestreview-7', author: 'coderabbitai[bot]', title: 'Handle leaks' };
+    stored.set('local:aiRuns', {
+      'github:/o/r/pull/12': {
+        ranAt: at,
+        rewrites: [],
+        seen: [],
+        suggestions: [{ key: 'pullrequestreview-7~0', threads: [], headSha: 'head1', path: '', start: 0, end: 0, original: [], replacement: null, summary: 'Close it.', state: 'discarded', sources: ['pullrequestreview-7'], origin }],
+      },
+    });
+    await new Promise<void>((resolve) => loadAiForPage(`github:/o/r/pull/12-${Math.random()}`, resolve));
+    await new Promise<void>((resolve) => loadAiForPage('github:/o/r/pull/12', resolve));
+    expect(triageSuggestions(metaFor([]), settings)).toEqual([]);
+    expect(commentReportsOutsideThreads(metaFor([]), 'pullrequestreview-7')).toBe(true);
   });
 });

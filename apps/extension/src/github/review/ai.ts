@@ -263,10 +263,11 @@ export function triageFixesOn(settings: GeldSettings): boolean {
 
 /**
  * Whether a comment's own Fix (This comment) has anything to ask for: findings it reports outside its threads, as the
- * triage reads them (`unthreadedFindings`), or tasks written from it before, which asking again replaces.
+ * triage reads them (`unthreadedFindings`), or tasks written from it before, which asking again replaces. Discarded
+ * ones count too: they are not rows any more, and the reader may want them written afresh.
  */
-export function commentReportsOutsideThreads(meta: GeldPrMeta, settings: GeldSettings, anchor: string): boolean {
-  return unthreadedFindings(meta).some((finding) => finding.sourceId === anchor) || triageSuggestions(meta, settings).some(({ entry }) => entry.origin?.anchor === anchor);
+export function commentReportsOutsideThreads(meta: GeldPrMeta, anchor: string): boolean {
+  return unthreadedFindings(meta).some((finding) => finding.sourceId === anchor) || [...suggestions.values()].some((entry) => entry.origin?.anchor === anchor);
 }
 
 /**
