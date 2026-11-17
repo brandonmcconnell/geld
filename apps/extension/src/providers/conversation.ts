@@ -221,6 +221,7 @@ export class ProviderConversation {
       const references = (this.adapter.readReferences?.(page, document, people.events, [...input.threads.flatMap((thread) => thread.comments), ...comments]) ?? []).filter((reference) => (reference.source.anchor === null || !people.hiddenAnchors.has(reference.source.anchor)) && (reference.source.eventId === undefined || !people.hiddenEvents.has(reference.source.eventId)) && (reference.source.author === undefined || !hiddenIds.has(reference.source.author.id)));
       const reviewerControls = snapshot.reviewerControls;
       const viewerId = this.adapter.viewerAuthorId?.(document);
+      const chatFix = this.ai.chatFix();
       const options = {
         agentNotes,
         onRevealAgentNote: (note: (typeof agentNotes)[number]): void => {
@@ -337,6 +338,7 @@ export class ProviderConversation {
         ...(snapshot.requirements === undefined ? {} : { requirements: snapshot.requirements }),
         ...(snapshot.deployments === undefined ? {} : { deployments: snapshot.deployments }),
         transformItems: (items: readonly ReviewItem[]) => this.ai.items(hidden ? items : publication?.items ?? items).map((item) => hidden ? { ...item, id: originalId(item.id) } : item),
+        ...(chatFix === null ? {} : { chatFix }),
         triage: {
           signature: this.ai.signature(),
           ...(aiSummary === undefined ? {} : { summary: aiSummary }),

@@ -77,6 +77,8 @@ export interface OpenTarget {
   readonly url: (task: string, pull: PullRef) => string;
   /** The link cannot carry the task: it is copied first, for the reader to paste where the link lands. */
   readonly copiesTask?: true;
+  /** The link carries the task alone, naming no GitHub repository or pull request: it serves a review on any host. */
+  readonly anyHost?: true;
 }
 
 /**
@@ -85,9 +87,9 @@ export interface OpenTarget {
  */
 export const OPEN_TARGETS: readonly OpenTarget[] = [
   // Cursor's web agents take no prompt in their link (its forum, Feb 2026), so the task is copied for the reader to paste there.
-  { id: 'cursor-web', service: 'Cursor', variant: 'web', agent: 'cursor', copiesTask: true, url: () => 'https://cursor.com/agents' },
+  { id: 'cursor-web', anyHost: true, service: 'Cursor', variant: 'web', agent: 'cursor', copiesTask: true, url: () => 'https://cursor.com/agents' },
   // The web form of Cursor's prompt deeplink: a cursor.com page that hands the prompt to the app.
-  { id: 'cursor-app', service: 'Cursor', variant: 'app', agent: 'cursor', url: (task) => link('https://cursor.com/link/prompt', { text: cut(task, LINK_TASK_CHARS) }) },
+  { id: 'cursor-app', anyHost: true, service: 'Cursor', variant: 'app', agent: 'cursor', url: (task) => link('https://cursor.com/link/prompt', { text: cut(task, LINK_TASK_CHARS) }) },
   { id: 'claude-web', service: 'Claude Code', variant: 'web', agent: 'claude', url: (task, pull) => link('https://claude.ai/code', { prompt: cut(task, LINK_TASK_CHARS), repositories: `${pull.owner}/${pull.repo}` }) },
   { id: 'claude-app', service: 'Claude Code', variant: 'app', agent: 'claude', url: (task, pull) => link('claude-cli://open', { repo: `${pull.owner}/${pull.repo}`, q: cut(task, CLAUDE_CLI_CHARS) }) },
   // GitHub's hosted launcher, which opens the Copilot app or shows a fallback page, around a `ghapp://` session link.
@@ -101,9 +103,9 @@ export const OPEN_TARGETS: readonly OpenTarget[] = [
   // The ChatGPT app's `codex://` link (codex-docs.com's reference, and the app's own code), matched to a local clone by its remote.
   { id: 'codex-app', service: 'Codex', variant: 'app', agent: 'codex', url: (task, pull) => link('codex://new', { prompt: cut(task, LINK_TASK_CHARS), originUrl: `https://github.com/${pull.owner}/${pull.repo}` }) },
   // Devin's web agent (ailinks.swerdlow.dev's catalogue of documented links).
-  { id: 'devin-web', service: 'Devin', variant: 'web', agent: 'devin', url: (task) => link('https://app.devin.ai/', { prompt: cut(task, LINK_TASK_CHARS) }) },
+  { id: 'devin-web', anyHost: true, service: 'Devin', variant: 'web', agent: 'devin', url: (task) => link('https://app.devin.ai/', { prompt: cut(task, LINK_TASK_CHARS) }) },
   // Factory's new-session link, the shape its users put in pull request descriptions.
-  { id: 'factory-web', service: 'Factory', variant: 'web', appId: 358017, relatedIds: ['factory', 'factory-automation'], url: (task) => link('https://app.factory.ai/sessions/new', { prompt: cut(task, LINK_TASK_CHARS) }) },
+  { id: 'factory-web', anyHost: true, service: 'Factory', variant: 'web', appId: 358017, relatedIds: ['factory', 'factory-automation'], url: (task) => link('https://app.factory.ai/sessions/new', { prompt: cut(task, LINK_TASK_CHARS) }) },
   // A prompt link: app.t3.codes asks once where to open it (desktop, mobile, or a connected browser), and `pr` puts the
   // draft in the pull request's thread, or on its branch in a new worktree after the reader confirms.
   {

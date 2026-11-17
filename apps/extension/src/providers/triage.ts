@@ -1,12 +1,16 @@
 import type { GeldSettings } from '@geld/core';
 import type { GeldPrMeta, ProviderReviewComment, ProviderReviewInput, RawComment, ReviewItem } from '@geld/review';
-import { agentTask, META_VERSION, providerReviewKey, providerReviewUrl } from '@geld/review';
+import { agentTask, META_VERSION, openTargetById, providerReviewKey, providerReviewUrl } from '@geld/review';
 import type { AiState, SuggestionSource, SuggestionTarget } from '../review/ai';
 import { aiPending, aiStateFor, discardSuggestion, leaveAiPage, loadAiForPage, onAiKeyChange, runAi, threadKeyOf, triageNoteFor, triageSuggestions, withAi } from '../review/ai';
 import type { HandOff, TriageHandlers, TriageSkin, TriageView } from '../review/triage-card';
 import { aiButton, triageCard } from '../review/triage-card';
 import { buildTriageView } from '../review/triage-view';
 import { copyText } from '../github/review/actions';
+import { copyTask, openTask } from '../review/handoff';
+import { chatFixes } from '../review/chat-fix-controller';
+import type { AskedChatFix, ChatFixThreadLink } from '../review/chat-fix-controller';
+import type { ChatFix, CommentFix } from '../review/chat-fix';
 import { createElement } from '../github/dom';
 import './triage.css';
 
@@ -46,7 +50,7 @@ export class ProviderTriage {
   private comments: readonly RawComment[] = [];
   private settings: GeldSettings | null = null;
   private input: ProviderReviewInput | null = null;
-  private readonly visit: { openKey: string | null; collapsed: boolean; busy: Map<string, 'fix' | 'writing'>; errors: Map<string, string>; handedOff: TriageView['handedOff'] } = { openKey: null, collapsed: false, busy: new Map(), errors: new Map(), handedOff: null };
+  private readonly visit: { openKey: string | null; collapsed: boolean; busy: Map<string, 'fix' | 'writing'>; errors: Map<string, string>; handedOff: TriageView['handedOff']; chatFixes: Map<string, AskedChatFix> } = { openKey: null, collapsed: false, busy: new Map(), errors: new Map(), handedOff: null, chatFixes: new Map() };
 
   constructor(private readonly changed: () => void, private readonly services: ProviderTriageServices = {}) {
     onAiKeyChange(() => this.changed());
@@ -62,6 +66,7 @@ export class ProviderTriage {
       this.visit.busy.clear();
       this.visit.errors.clear();
       this.visit.handedOff = null;
+      this.visit.chatFixes.clear();
       loadAiForPage(key, () => this.changed());
     }
     this.input = input;
@@ -100,7 +105,18 @@ export class ProviderTriage {
   signature(): unknown {
     const state = this.state();
     const meta = this.meta === null ? null : withAi(this.meta);
-    return [state, [...aiPending()], meta?.summary?.tldr, this.view(state), this.visit.openKey, this.visit.collapsed];
+    return [state, [...aiPending()], meta?.summary?.tldr, this.view(state), this.visit.openKey, this.visit.collapsed, [...this.visit.chatFixes]];
+  }
+
+  /** A thread's and a comment's Fix in the digest's chats, as GitHub's: written by the same engine, shown in the triage. */
+  chatFix(): { readonly thread: (anchor: string) => ChatFix | null; readonly comment: (anchor: string, author: string, links: readonly ChatFixThreadLink[]) => CommentFix | null } | null {
+    if (this.meta === null || this.settings === null) return null;
+    const fixes = chatFixes({
+      meta: this.meta, comments: this.comments, settings: this.settings,
+      visit: () => this.visit, reapply: () => this.changed(), source: () => this.source(),
+      openAiSettings: () => void this.services.openSettings?.(),
+    });
+    return { thread: fixes.threadFix, comment: fixes.commentFix };
   }
 
   button(): HTMLElement | null {
@@ -123,10 +139,10 @@ export class ProviderTriage {
     const view = buildTriageView({
       meta: this.meta, ai: state, settings: this.settings, knownBots: new Set(),
       viewerIsAuthor: false, agentServices: [], visit: this.visit,
-      resolves: false, policyPending: false,
+      resolves: false, policyPending: false, host: 'other',
     });
-    // The agents' comment commands and open links are written for GitHub's pull requests: here the task is copied.
-    return view === null ? null : { ...view, agents: [], openTargets: [], recommended: null, applyBlocked: APPLY_BLOCKED };
+    // The agents' comment commands are GitHub's: here a task is copied or opened in an agent whose link carries it alone.
+    return view === null ? null : { ...view, agents: [], recommended: null, applyBlocked: APPLY_BLOCKED };
   }
 
   private source(): SuggestionSource | null {
@@ -159,13 +175,13 @@ export class ProviderTriage {
       onDiscardSuggestion: (key) => void discardSuggestion(key).then(() => this.changed()),
       onDiscardAll: (keys) => void Promise.all(keys.map((key) => discardSuggestion(key))).then(() => this.changed()),
       onCopyPath: (path) => copyText(path),
-      onHandOff: (_id: string, _how: HandOff, key: string) => this.copyTask(key),
+      onHandOff: (id: string, how: HandOff, key: string) => this.handOff(id, how, key),
       onMissingTool: (tool) => this.services.reportMissingTool?.(tool),
     };
   }
 
-  /** The finding and the others its fix answers, as one task for any coding agent, on the clipboard. */
-  private copyTask(key: string): void {
+  /** The finding and the others its fix answers, as one task for any coding agent: copied, or opened where its link carries it. */
+  private handOff(id: string, how: HandOff, key: string): void {
     if (this.meta === null || this.settings === null || this.input === null) return;
     const url = providerReviewUrl(this.input.subject);
     const row = triageSuggestions(this.meta, this.settings).find((entry) => entry.entry.key === key);
@@ -182,9 +198,16 @@ export class ProviderTriage {
       };
     });
     if (findings.length === 0) return;
-    void copyText(agentTask(findings, url)).then((copied) => {
-      this.visit.handedOff = copied ? { text: 'Copied the task', copyAgain: null } : { text: 'Could not copy the task. The browser did not take the task on the clipboard.', copyAgain: key };
+    const task = agentTask(findings, url);
+    const visit = this.key;
+    const said = (text: string, copyAgain: boolean): void => {
+      if (this.key !== visit) return;
+      this.visit.handedOff = { text, copyAgain: copyAgain ? key : null };
       this.changed();
-    });
+    };
+    const target = how === 'open' ? openTargetById(id) : undefined;
+    // Only targets whose link carries the task alone are offered here (`anyHost`), so the pull reference is unused.
+    if (target !== undefined && target.anyHost === true) openTask(target, target.url(task, { owner: '', repo: '', number: 0 }), task, said);
+    else copyTask(task, said);
   }
 }

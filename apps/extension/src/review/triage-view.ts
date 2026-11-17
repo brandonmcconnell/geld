@@ -31,6 +31,8 @@ export interface TriageViewInput {
   readonly resolves: boolean;
   /** The repository's config is still being read, so whether Apply resolves is not known yet. */
   readonly policyPending: boolean;
+  /** Off GitHub, only the open targets whose link carries the task alone (`OpenTarget.anyHost`). */
+  readonly host?: 'github' | 'other';
 }
 
 export function agentIcon(agent: CodingAgent): string | null {
@@ -95,7 +97,7 @@ export function buildTriageView(input: TriageViewInput): TriageView | null {
       used: used.includes(agent.id),
       likely: likely(agent.id),
     })),
-    openTargets: OPEN_TARGETS.map((target) => ({ id: target.id, service: target.service, variant: target.variant, iconSrc: targetIcon(target), likely: openTargetLikely(target, likely, services), copiesTask: target.copiesTask === true })),
+    openTargets: OPEN_TARGETS.filter((target) => input.host !== 'other' || target.anyHost === true).map((target) => ({ id: target.id, service: target.service, variant: target.variant, iconSrc: targetIcon(target), likely: openTargetLikely(target, likely, services), copiesTask: target.copiesTask === true })),
     recommended: pick.recommended === null || pick.reason === null ? null : { id: pick.recommended.id, reason: pick.reason },
     openKey: input.visit.openKey,
     collapsed: input.visit.collapsed,
