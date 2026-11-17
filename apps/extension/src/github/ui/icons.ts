@@ -499,3 +499,7 @@ export const ICON_SPARKLE_FILL = octicon(
   '<path d="M7.53 1.282a.5.5 0 0 1 .94 0l.478 1.306a7.492 7.492 0 0 0 4.464 4.464l1.305.478a.5.5 0 0 1 0 .94l-1.305.478a7.492 7.492 0 0 0-4.464 4.464l-.478 1.305a.5.5 0 0 1-.94 0l-.478-1.305a7.492 7.492 0 0 0-4.464-4.464L1.282 8.47a.5.5 0 0 1 0-.94l1.306-.478a7.492 7.492 0 0 0 4.464-4.464Z"></path>',
   'octicon-sparkle-fill',
 );
+
+/** GitHub's 12px mergeability-failure glyph, the cross its top card draws in a failed status ("Merge conflicts"). */
+export const ICON_MERGEABILITY_FAILURE =
+  '<svg aria-hidden="true" focusable="false" class="octicon octicon-mergeability-failure" viewBox="0 0 12 12" width="12" height="12" fill="currentColor" style="display:inline-block;vertical-align:text-bottom;overflow:visible"><path d="M2.293 3.707a1 1 0 0 1 1.414-1.414L6 4.586l2.293-2.293a1 1 0 1 1 1.414 1.414L7.414 6l2.293 2.293a1 1 0 0 1-1.414 1.414L6 7.414 3.707 9.707a1 1 0 0 1-1.414-1.414L4.586 6Z"></path></svg>';

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MergeActions, MergeSubmission } from './merge-actions';
-import { actionErrorText, partialMayWait, autoMergeRequest, awaitMergedState, bypassBeside, isStackRequest, mergeRequestStatusUrl, settleStackMerge, stackMergeId, stackMergeState, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict, embeddedPullRequestBranches, embeddedPullRequestCreated, embeddedStack, methodHint, prefetchMergeBox, readMergeActions, rememberMethod } from './merge-actions';
+import { actionErrorText, conflictsOf, partialMayWait, autoMergeRequest, awaitMergedState, bypassBeside, isStackRequest, mergeRequestStatusUrl, settleStackMerge, stackMergeId, stackMergeState, parseStack, stackQueueRequest, closeRequest, mergeableNow, mergeOffer, mergeRequest, parseMergeBox, queueRequest, readyRequest, viewerVerdict, embeddedPullRequestBranches, embeddedPullRequestCreated, embeddedStack, methodHint, prefetchMergeBox, readMergeActions, rememberMethod } from './merge-actions';
 
 /** A `page_data/merge_box` answer as GitHub gave it on brandonmcconnell/geld#74 (Oct 2026), trimmed. */
 function payload(overrides: { readonly state?: string; readonly draft?: boolean; readonly canClose?: boolean; readonly canBypass?: boolean; readonly direct?: string; readonly stacked?: boolean; readonly queue?: string; readonly queued?: boolean; readonly auto?: boolean; readonly autoOn?: boolean; readonly email?: string; readonly emails?: readonly string[] | null; readonly conflict?: boolean; readonly methodStatus?: string } = {}): unknown {
@@ -73,6 +73,7 @@ describe('parseMergeBox', () => {
       canAutoMerge: false,
       queued: false,
       autoMerging: false,
+      conflicts: null,
     });
     expect(parseMergeBox({ nope: true })).toBeNull();
   });
@@ -96,6 +97,34 @@ describe('parseMergeBox', () => {
     if (box === null) throw new Error('fixture');
     expect(viewerVerdict(box, 'alice')).toBe('CHANGES_REQUESTED');
     expect(viewerVerdict(box, 'bob')).toBeNull();
+  });
+});
+
+describe('conflictsOf', () => {
+  // The conditions of brandonmcconnell/geld#705 (its own conflict) and #706 (stacked on it), Nov 2026, trimmed.
+  const own = { type: 'PULL_REQUEST_MERGE_CONFLICT_STATE', result: 'FAILED', conflicts: ['packages/review/src/ai-client.test.ts'], isConflictResolvableInWeb: true };
+  const clean = { type: 'PULL_REQUEST_MERGE_CONFLICT_STATE', result: 'PASSED', conflicts: null };
+  const stack = {
+    type: 'STACK',
+    result: 'FAILED',
+    message: '<div>Merge conflict: PR #705 has a merge conflict that must be resolved.</div>',
+    entries: [
+      { pull: { number: 706, url: '/brandonmcconnell/geld/pull/706' }, position: 'CURRENT', status: 'NEEDS_MERGE_STATE' },
+      { pull: { number: 705, url: '/brandonmcconnell/geld/pull/705' }, position: 'BEFORE', status: 'MERGE_CONFLICTS' },
+    ],
+  };
+
+  it('reads the pull request’s own conflict with its files, before the stack’s', () => {
+    expect(conflictsOf([{ type: 'PULL_REQUEST_STATE', result: 'PASSED' }, own, stack])).toEqual({ own: true, files: ['packages/review/src/ai-client.test.ts'], pull: null });
+  });
+
+  it('reads a conflict down the stack as the pull request that has it', () => {
+    expect(conflictsOf([clean, stack])).toEqual({ own: false, files: [], pull: { number: 705, path: '/brandonmcconnell/geld/pull/705' } });
+  });
+
+  it('finds none when nothing conflicts, or the stack fails for another reason', () => {
+    expect(conflictsOf([clean, { ...stack, entries: [{ ...stack.entries[1], status: 'NEEDS_MERGE_STATE' }] }])).toBeNull();
+    expect(conflictsOf([])).toBeNull();
   });
 });
 
