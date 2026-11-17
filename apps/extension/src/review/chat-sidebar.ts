@@ -15,21 +15,22 @@
  * shadow root and calls the actions back.
  */
 
+import './chat-sidebar.css';
 import type { CursorAgent, CursorModel, PullChatContext } from '@geld/review';
 import { assistantSystemPrompt, isEvaluationModel, isRunActive } from '@geld/review';
 import { browser } from 'wxt/browser';
 import type { Browser } from 'wxt/browser';
-import { persist } from '../../lib/context';
-import type { AssistantChatSave, ChatPortRequest, ChatTurnMessage, CursorRequest, CursorStatusReply } from '../../lib/chat-messages';
-import { CHAT_PING_MS, CHAT_PORT, isChatPortEvent, isCursorConversationReply, isCursorFindReply, isCursorModelsReply, isCursorSendReply, isCursorStatusReply } from '../../lib/chat-messages';
-import type { ChatModels } from '../../lib/local-state';
-import { aiGatewayItem, aiKeyItem, assistantChatsItem, chatModelsItem } from '../../lib/local-state';
-import type { OpenSettingsMessage } from '../../lib/messages';
-import { reportError } from '../../lib/error-capture';
-import { countUsage } from '../../lib/usage-count';
-import { loadChatUi } from '../../chat/loader';
-import type { ChatHost } from '../../chat/mount';
-import type { ChatActions, ChatBodyView, ChatComposerView, ChatModelOption, ChatTabView, ChatTurnView, ChatView } from '../../chat/view';
+import { persist } from '../lib/context';
+import type { AssistantChatSave, ChatPortRequest, ChatTurnMessage, CursorRequest, CursorStatusReply } from '../lib/chat-messages';
+import { CHAT_PING_MS, CHAT_PORT, isChatPortEvent, isCursorConversationReply, isCursorFindReply, isCursorModelsReply, isCursorSendReply, isCursorStatusReply } from '../lib/chat-messages';
+import type { ChatModels } from '../lib/local-state';
+import { aiGatewayItem, aiKeyItem, assistantChatsItem, chatModelsItem } from '../lib/local-state';
+import type { OpenSettingsMessage } from '../lib/messages';
+import { reportError } from '../lib/error-capture';
+import { countUsage } from '../lib/usage-count';
+import { loadChatUi } from '../chat/loader';
+import type { ChatHost } from '../chat/mount';
+import type { ChatActions, ChatBodyView, ChatComposerView, ChatModelOption, ChatTabView, ChatTurnView, ChatView } from '../chat/view';
 import type { AgentLive, ChatTurn } from './chat-threads';
 import { agentLiveStep, agentRunning, chatTurn, IDLE_LIVE, turnsFromHistory } from './chat-threads';
 
@@ -57,6 +58,8 @@ export interface ChatPageContext {
   readonly preferCursor: boolean;
   readonly ai: { readonly enabled: boolean; readonly baseUrl: string; readonly model: string };
   readonly pull: () => PullChatContext;
+  /** The host page's classes for the sidebar (`MountOptions.hostClass`), absent on GitHub. */
+  readonly hostClass?: string;
 }
 
 interface AgentThread {
@@ -186,7 +189,7 @@ async function openChat(from: HTMLElement | null): Promise<void> {
   if (!chose && context.preferCursor && context.linkedAgents[0] !== undefined) active = context.linkedAgents[0].id;
   draftEmpty = true;
   view = null;
-  host = ui.mountChat({ subscribe, getView, actions: ACTIONS, onError: (error) => reportError('content:chat', error) });
+  host = ui.mountChat({ subscribe, getView, actions: ACTIONS, onError: (error) => reportError('content:chat', error), ...(context.hostClass === undefined ? {} : { hostClass: context.hostClass }) });
   document.documentElement.setAttribute('data-geld-chat-open', '');
   markChatButtons();
   host.focusComposer();

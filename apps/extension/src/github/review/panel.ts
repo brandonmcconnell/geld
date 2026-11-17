@@ -9,6 +9,7 @@
  * itself is hidden — its content is this.
  */
 
+import { CHAT_BUTTON_SHOWN } from '../../review/chat-button';
 import { menusOpen } from '../../review/render-hold';
 import type { DigestView } from '@geld/core';
 import type { BotVerdictRecord, CommentLane, GeldPrMeta, Preview, RawCheckRun, Report, ReportPart, ReviewItem } from '@geld/review';
@@ -655,8 +656,6 @@ function iconButton(markup: string, label: string, extra: Readonly<Record<string
  * content that opened under it settles.
  */
 const ATTR_FOCUS = 'data-geld-focus';
-/** The chat sidebar is built and kept working but offered nowhere until it is ready to show. */
-const CHAT_BUTTON_SHOWN = false;
 /** Marks the span in an open row that receives the comment's header. */
 export const ATTR_HEAD_SLOT = 'data-geld-head-slot';
 /** Marks the span in the open CI row that receives GitHub's checks-settings gear. */
