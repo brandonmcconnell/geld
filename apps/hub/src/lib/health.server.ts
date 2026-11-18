@@ -1,3 +1,7 @@
+import type { Database } from "#/db";
+import type { Cache } from "#/platform";
+import { databaseSizeBytes } from "./github-change.server";
+
 export type DependencyCheck<T = Record<never, never>> =
 	| ({ status: "ok"; latencyMs: number } & T)
 	| { status: "failed"; latencyMs: number; error: string };
@@ -21,8 +25,8 @@ export type HealthReport = {
 	checkedAt: string;
 	version: WorkerVersion;
 	checks: {
-		d1: DependencyCheck<{ sizeBytes?: number }>;
-		kv: DependencyCheck;
+		database: DependencyCheck<{ sizeBytes?: number }>;
+		cache: DependencyCheck;
 	};
 	maintenance: MaintenanceRun;
 };
@@ -37,7 +41,7 @@ const MAINTENANCE_STALE_AFTER_MS = 12 * 60 * 1000;
 const CHECK_TIMEOUT_MS = 5_000;
 
 export async function recordMaintenanceRun(
-	kv: KVNamespace,
+	cache: Pick<Cache, "put">,
 	summary: Record<string, unknown>,
 	ranAt = Date.now(),
 ) {
@@ -47,8 +51,8 @@ export async function recordMaintenanceRun(
 			"sweepError" in summary || "healthError" in summary ? "errors" : "ok",
 	};
 	try {
-		await kv.put(MAINTENANCE_HEARTBEAT_KEY, JSON.stringify(heartbeat), {
-			expirationTtl: MAINTENANCE_HEARTBEAT_TTL_SECONDS,
+		await cache.put(MAINTENANCE_HEARTBEAT_KEY, JSON.stringify(heartbeat), {
+			ttlSeconds: MAINTENANCE_HEARTBEAT_TTL_SECONDS,
 		});
 	} catch (error) {
 		console.warn("[health] maintenance heartbeat write failed", error);
@@ -56,33 +60,33 @@ export async function recordMaintenanceRun(
 }
 
 export async function checkHealth(deps: {
-	db: D1Database;
-	kv: KVNamespace;
-	versionMetadata?: WorkerVersionMetadata;
+	db: Database;
+	cache: Pick<Cache, "get">;
+	version?: { id: string; tag: string; uploadedAt: string } | null;
 	now?: number;
 }): Promise<HealthReport> {
 	const now = deps.now ?? Date.now();
-	const [d1, kvRead] = await Promise.all([
+	const [database, cacheRead] = await Promise.all([
 		timedCheck(async () => {
-			const result = await deps.db.prepare("SELECT 1 AS ok").all();
-			const sizeBytes = result.meta.size_after;
-			return typeof sizeBytes === "number" ? { sizeBytes } : {};
+			const sizeBytes = await databaseSizeBytes(deps.db);
+			return sizeBytes === null ? {} : { sizeBytes };
 		}),
 		timedCheck(async () => ({
-			heartbeat: await deps.kv.get<MaintenanceHeartbeat>(
-				MAINTENANCE_HEARTBEAT_KEY,
-				"json",
+			heartbeat: parseHeartbeat(
+				await deps.cache.get(MAINTENANCE_HEARTBEAT_KEY),
 			),
 		})),
 	]);
 
-	const checks = { d1, kv: withoutValue(kvRead) };
+	const checks = { database, cache: withoutValue(cacheRead) };
 	return {
 		status: overallStatus(checks),
 		checkedAt: new Date(now).toISOString(),
-		version: workerVersion(deps.versionMetadata),
+		version: deps.version
+			? { status: "known", ...deps.version }
+			: { status: "unknown" },
 		checks,
-		maintenance: maintenanceRun(kvRead, now),
+		maintenance: maintenanceRun(cacheRead, now),
 	};
 }
 
@@ -99,25 +103,28 @@ function overallStatus(checks: HealthReport["checks"]): HealthReport["status"] {
 		: "degraded";
 }
 
-function workerVersion(
-	metadata: WorkerVersionMetadata | undefined,
-): WorkerVersion {
-	if (!metadata?.id) return { status: "unknown" };
-	return {
-		status: "known",
-		id: metadata.id,
-		tag: metadata.tag,
-		uploadedAt: metadata.timestamp,
-	};
+function parseHeartbeat(stored: string | null): MaintenanceHeartbeat | null {
+	if (stored === null) return null;
+	const value: unknown = JSON.parse(stored);
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		!("ranAt" in value) ||
+		typeof value.ranAt !== "number" ||
+		!("result" in value)
+	) {
+		return null;
+	}
+	return { ranAt: value.ranAt, result: value.result === "ok" ? "ok" : "errors" };
 }
 
 function maintenanceRun(
-	kvRead: DependencyCheck<{ heartbeat: MaintenanceHeartbeat | null }>,
+	cacheRead: DependencyCheck<{ heartbeat: MaintenanceHeartbeat | null }>,
 	now: number,
 ): MaintenanceRun {
-	if (kvRead.status === "failed") return { status: "unreadable" };
-	if (!kvRead.heartbeat) return { status: "never_recorded" };
-	const { ranAt, result } = kvRead.heartbeat;
+	if (cacheRead.status === "failed") return { status: "unreadable" };
+	if (!cacheRead.heartbeat) return { status: "never_recorded" };
+	const { ranAt, result } = cacheRead.heartbeat;
 	const ageMs = Math.max(0, now - ranAt);
 	return {
 		status: ageMs > MAINTENANCE_STALE_AFTER_MS ? "stale" : "recent",

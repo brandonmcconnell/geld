@@ -242,6 +242,17 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: geld_hub
+          POSTGRES_PASSWORD: geld_hub
+          POSTGRES_DB: geld_hub_demo
+        ports: ['5433:5432']
+        options: >-
+          --health-cmd "pg_isready -U geld_hub -d geld_hub_demo"
+          --health-interval 3s --health-timeout 3s --health-retries 20
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -253,6 +264,11 @@ jobs:
         env:
           FONTAWESOME_PACKAGE_TOKEN: ${{ secrets.FONTAWESOME_PACKAGE_TOKEN }}
       - run: pnpm --filter @geld/hub build
+      # The committed migrations are consistent and apply to an empty Postgres.
+      - run: pnpm --filter @geld/hub db:check
+      - run: pnpm --filter @geld/hub db:migrate
+        env:
+          DATABASE_URL: postgres://geld_hub:geld_hub@localhost:5433/geld_hub_demo
       - run: pnpm --filter @geld/hub-e2e exec playwright install --with-deps chromium
       # Advisory until the suite has a record of passing here.
       - name: Run end-to-end tests (advisory)

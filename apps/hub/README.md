@@ -9,12 +9,13 @@ From the repository root, with Node 24.22 or newer:
 
 ```bash
 pnpm install
+docker compose -f apps/hub/compose.yaml up -d
 pnpm dev:hub:demo
 ```
 
 Demo mode starts a local GitHub emulator (`apps/hub-emulator`, port 4200) with seeded
 data and the app on <http://localhost:3200>. Sign in with "Continue with GitHub" and pick
-`nova`. No GitHub app or secrets are needed. See [docs/local-demo-mode.md](docs/local-demo-mode.md).
+`nova`. No GitHub app or secrets are needed, only the Postgres the compose file starts. See [docs/local-demo-mode.md](docs/local-demo-mode.md).
 
 `pnpm dev:hub` runs against github.com instead and needs `apps/hub/.env`
 (copy `env.example`; `env.ts` lists every value the Worker reads). See
@@ -58,3 +59,18 @@ pnpm test:hub:e2e                    # Playwright against demo mode
 - `packages/hub-ui` components and tokens, `packages/hub-icons` icons from the Geld Font Awesome kit.
 - `apps/hub-emulator` the GitHub emulator for demo mode and tests, `apps/hub-e2e` the Playwright suite.
 - [docs/data-fetching.md](docs/data-fetching.md) explains caching and revalidation.
+
+## Platform
+
+The app runs as a Cloudflare Worker, and is written so that another host is a matter of swapping a
+few files:
+
+- **Postgres only**, through the ordinary `pg` driver (`src/db`). On Cloudflare the connection
+  string is Hyperdrive's. `pnpm --filter @geld/hub db:generate` writes a migration from
+  `src/db/schema.ts` and `db:migrate` applies them, the same way everywhere.
+- **Files through the S3 API** (`src/lib/file-store.server.ts`), so R2, AWS S3 and MinIO are one
+  code path.
+- **Everything else Cloudflare-specific sits behind `src/platform`**: configuration, a cache (KV), a
+  queue (Queues), live rooms and a rate limiter (Durable Objects), and work after the response
+  (`waitUntil`). Code imports `platform` from `#/platform` and nothing from `cloudflare:*`;
+  `src/platform/boundary.test.ts` fails when that slips.

@@ -6,7 +6,12 @@ import {
 	MAX_WEBHOOK_BODY_BYTES,
 } from "./github-webhook.server";
 
-vi.mock("cloudflare:workers", () => ({ env: {}, waitUntil: vi.fn() }));
+const testPlatform = await vi.hoisted(async () => {
+	const { createTestPlatform } = await import("#/platform/testing");
+	return createTestPlatform();
+});
+
+vi.mock("#/platform", () => ({ platform: testPlatform.platform }));
 vi.mock("../db", () => ({ getDb: vi.fn() }));
 vi.mock("./github-emulator.server", () => ({
 	getGitHubOAuthOrigin: () => "https://github.com",
@@ -219,7 +224,7 @@ describe("handleGitHubWebhook: change recording", () => {
 		[
 			"sync",
 			() => {
-				throw new Error("DB binding missing");
+				throw new Error("No database is configured");
 			},
 		],
 	])("answers 202 and logs when the insert fails (%s)", async (_name, fail) => {
@@ -276,7 +281,7 @@ describe("handleGitHubWebhook: installation events", () => {
 		vi.spyOn(console, "warn").mockImplementation(() => undefined);
 		const { deps } = setup({
 			invalidateInstallationToken: vi.fn(async () => {
-				throw new Error("KV unavailable");
+				throw new Error("cache unavailable");
 			}),
 		});
 		const response = await handleGitHubWebhook(

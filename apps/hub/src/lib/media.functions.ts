@@ -6,7 +6,7 @@ import {
 	clampDisplayDimensions,
 	classifyCommentMedia,
 	maxBytesForCommentMediaKind,
-	publicUrlForR2Key,
+	publicUrlForFileKey,
 	sanitizeCommentMediaFilename,
 	verifyCommentMediaKeyForUser,
 	verifyCommentMediaObject,
@@ -79,11 +79,10 @@ export const finalizeCommentMediaUpload = createServerFn({ method: "POST" })
 			return { ok: false, error: "Not authenticated" };
 		}
 
-		const { env } = await import("cloudflare:workers");
-		const bucket = env.COMMENT_MEDIA;
-		const publicBaseUrl = env.R2_PUBLIC_BASE_URL;
+		const { getFileStore } = await import("./file-store.server");
+		const store = getFileStore();
 
-		if (!bucket || !publicBaseUrl) {
+		if (!store) {
 			return { ok: false, error: "Media uploads are not configured" };
 		}
 
@@ -91,7 +90,7 @@ export const finalizeCommentMediaUpload = createServerFn({ method: "POST" })
 			return { ok: false, error: "Invalid object key" };
 		}
 
-		const verified = await verifyCommentMediaObject(bucket, data.key);
+		const verified = await verifyCommentMediaObject(store, data.key);
 		if (!verified.ok) {
 			return { ok: false, error: verified.reason };
 		}
@@ -111,7 +110,7 @@ export const finalizeCommentMediaUpload = createServerFn({ method: "POST" })
 		}
 
 		const dims = clampDisplayDimensions(data.width, data.height);
-		const src = publicUrlForR2Key(publicBaseUrl, data.key);
+		const src = publicUrlForFileKey(store.publicBaseUrl, data.key);
 		const safeName = sanitizeCommentMediaFilename(data.fileName);
 		const alt = safeName.replace(/\.[^.]+$/u, "") || "attachment";
 

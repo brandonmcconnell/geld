@@ -9,6 +9,7 @@ import {
   dashboardDir,
   emulatorDir,
   runDevScript,
+  runStep,
   waitForResponse,
   warmUpDashboard,
 } from "./dev-env.mjs";
@@ -20,6 +21,9 @@ const demoStatePath = path.join(dashboardDir, ".wrangler/demo-state");
 const demoEnv = parseEnv(
   readFileSync(path.join(emulatorDir, "dashboard.env"), "utf8")
 );
+// The committed URL is the compose file's; a Postgres elsewhere is named in the shell.
+demoEnv.DATABASE_URL =
+  process.env.GELD_HUB_DEMO_DATABASE_URL ?? demoEnv.DATABASE_URL;
 const reset = process.argv.includes("--reset");
 
 async function waitForSeededEmulator(emulator) {
@@ -45,9 +49,14 @@ runDevScript("dev:demo", async ({ log, supervisor }) => {
   ]);
 
   if (reset) {
-    log("--reset: wiping demo D1/KV/R2 state");
+    log("--reset: wiping the demo database and cache");
     rmSync(demoStatePath, { recursive: true, force: true });
   }
+  runStep(
+    "Preparing the demo database",
+    ["run", "db:migrate", ...(reset ? ["--reset"] : [])],
+    { cwd: dashboardDir, env: { DATABASE_URL: demoEnv.DATABASE_URL } }
+  );
 
   log(`starting GitHub emulator on ${EMULATOR_URL}`);
   const emulator = supervisor.start(

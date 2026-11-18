@@ -3,6 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const startFetch = vi.hoisted(() => vi.fn());
 const handleCommentMediaUpload = vi.hoisted(() => vi.fn());
 
+// The entry re-exports the Durable Object classes, which extend the runtime's.
+vi.mock("cloudflare:workers", () => ({
+	DurableObject: class {},
+	env: {},
+	waitUntil: vi.fn(),
+}));
 vi.mock("@tanstack/react-start/server-entry", () => ({
 	default: { fetch: startFetch },
 }));

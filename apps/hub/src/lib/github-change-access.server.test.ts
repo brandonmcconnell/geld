@@ -1,19 +1,13 @@
 import type { Octokit } from "octokit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const runtime = vi.hoisted(() => {
-	const kv = {
-		get: vi.fn(),
-		put: vi.fn(),
-	};
-	return { kv, env: { GITHUB_CACHE_KV: kv }, waitUntil: vi.fn() };
+const runtime = await vi.hoisted(async () => {
+	const { createTestPlatform } = await import("#/platform/testing");
+	return createTestPlatform();
 });
 const getClient = vi.hoisted(() => vi.fn());
 
-vi.mock("cloudflare:workers", () => ({
-	env: runtime.env,
-	waitUntil: runtime.waitUntil,
-}));
+vi.mock("#/platform", () => ({ platform: runtime.platform }));
 vi.mock("./auth-runtime", () => ({
 	getGitHubAppUserClientByUserId: getClient,
 }));
@@ -59,9 +53,7 @@ async function load() {
 }
 
 beforeEach(() => {
-	runtime.kv.get.mockReset().mockResolvedValue(null);
-	runtime.kv.put.mockReset().mockResolvedValue(undefined);
-	runtime.waitUntil.mockReset();
+	runtime.reset();
 	getClient.mockReset();
 	vi.spyOn(console, "warn").mockImplementation(() => undefined);
 });
@@ -105,7 +97,7 @@ describe("listReadableRepos", () => {
 });
 
 describe("getReadableRepoSet", () => {
-	it("fetches from GitHub on a miss and caches in memory and KV with a TTL", async () => {
+	it("fetches from GitHub on a miss and caches in memory and the cache with a TTL", async () => {
 		const { getReadableRepoSet } = await load();
 		getClient.mockResolvedValue(
 			fakeOctokit({ installations: [{ id: 1 }], repos: { 1: ["Acme/Api"] } }),
@@ -115,27 +107,29 @@ describe("getReadableRepoSet", () => {
 		expect([...(await getReadableRepoSet("u1"))]).toEqual(["acme/api"]);
 
 		expect(getClient).toHaveBeenCalledTimes(1);
-		expect(runtime.kv.put).toHaveBeenCalledTimes(1);
-		expect(runtime.kv.put).toHaveBeenCalledWith(
+		expect(runtime.cache.put).toHaveBeenCalledTimes(1);
+		expect(runtime.cache.put).toHaveBeenCalledWith(
 			"change-access:v1:u1",
 			JSON.stringify({ repos: ["acme/api"] }),
-			{ expirationTtl: 600 },
+			{ ttlSeconds: 600 },
 		);
-		expect(runtime.waitUntil).toHaveBeenCalledTimes(1);
+		expect(runtime.runAfterResponse).toHaveBeenCalledTimes(1);
 	});
 
-	it("serves a KV hit without calling GitHub", async () => {
+	it("serves a cache hit without calling GitHub", async () => {
 		const { getReadableRepoSet } = await load();
-		runtime.kv.get.mockResolvedValue({ repos: ["acme/web"] });
+		runtime.cache.get.mockResolvedValue(
+			JSON.stringify({ repos: ["acme/web"] }),
+		);
 		expect([...(await getReadableRepoSet("u1"))]).toEqual(["acme/web"]);
 		expect(getClient).not.toHaveBeenCalled();
-		expect(runtime.kv.put).not.toHaveBeenCalled();
+		expect(runtime.cache.put).not.toHaveBeenCalled();
 	});
 
-	it("treats KV read and write failures as cache misses", async () => {
+	it("treats cache read and write failures as cache misses", async () => {
 		const { getReadableRepoSet } = await load();
-		runtime.kv.get.mockRejectedValue(new Error("KV unavailable"));
-		runtime.kv.put.mockRejectedValue(new Error("KV unavailable"));
+		runtime.cache.get.mockRejectedValue(new Error("cache unavailable"));
+		runtime.cache.put.mockRejectedValue(new Error("cache unavailable"));
 		getClient.mockResolvedValue(
 			fakeOctokit({ installations: [{ id: 1 }], repos: { 1: ["acme/api"] } }),
 		);
@@ -154,7 +148,7 @@ describe("getReadableRepoSet", () => {
 		expect((await getReadableRepoSet("u1")).size).toBe(0);
 		expect((await getReadableRepoSet("u1")).size).toBe(0);
 		expect(getClient).toHaveBeenCalledTimes(1);
-		expect(runtime.kv.put).not.toHaveBeenCalled();
+		expect(runtime.cache.put).not.toHaveBeenCalled();
 
 		vi.setSystemTime(Date.now() + 31_000);
 		getClient.mockResolvedValue(

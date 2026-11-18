@@ -1,6 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { count } from "drizzle-orm";
+import { describe, expect, it } from "vitest";
+import type { Database } from "#/db";
+import { githubChange } from "#/db/schema";
 import {
-	checkD1Health,
+	checkDatabaseHealth,
 	decodeChangeCursor,
 	encodeChangeCursor,
 	GITHUB_CHANGE_RETENTION_MS,
@@ -11,16 +14,11 @@ import {
 	toGitHubChangeRows,
 } from "./github-change.server";
 import { getWebhookChangeEntities } from "./github-change-entities";
-import { createTestD1 } from "./testing/d1-sqlite";
+import { createTestDatabase } from "./testing/postgres";
 
 const NOW = 1_800_000_000_000;
 
-function setup() {
-	return createTestD1([
-		"0006_github_change.sql",
-		"0008_github_change_latest.sql",
-	]);
-}
+const setup = createTestDatabase;
 
 const everything: GitHubChangeAccess = {
 	canRead: () => true,
@@ -28,7 +26,7 @@ const everything: GitHubChangeAccess = {
 };
 
 async function insert(
-	db: D1Database,
+	db: Database,
 	rows: Array<
 		[repo: string, entityKey: string, isPrivate: boolean, at?: number]
 	>,
@@ -56,7 +54,7 @@ describe("change cursor", () => {
 
 describe("readGitHubChanges", () => {
 	it("issues a cursor on the first poll and returns later changes", async () => {
-		const { db } = setup();
+		const { db } = await setup();
 		await insert(db, [["acme/api", "pull:acme/api#1", true]]);
 
 		const first = await readGitHubChanges(db, {
@@ -86,7 +84,7 @@ describe("readGitHubChanges", () => {
 	});
 
 	it("keeps one row per entity and reports each new change to it once", async () => {
-		const { db, sqlite } = setup();
+		const { db } = await setup();
 		const start = await readGitHubChanges(db, {
 			since: null,
 			access: everything,
@@ -96,9 +94,9 @@ describe("readGitHubChanges", () => {
 		for (const at of [NOW, NOW + 100, NOW + 200]) {
 			await insert(db, [["acme/api", "checks:acme/api@abc1234", false, at]]);
 		}
-		expect(
-			sqlite.prepare("SELECT COUNT(*) AS n FROM github_change").get(),
-		).toEqual({ n: 1 });
+		expect(await db.select({ n: count() }).from(githubChange)).toEqual([
+			{ n: 1 },
+		]);
 
 		const first = await readGitHubChanges(db, {
 			since: decodeChangeCursor(start.cursor),
@@ -117,7 +115,7 @@ describe("readGitHubChanges", () => {
 	});
 
 	it("expires a cursor that is ahead of the table, such as one issued before a reset", async () => {
-		const { db } = setup();
+		const { db } = await setup();
 		await insert(db, [["acme/api", "pull:acme/api#1", true]]);
 		const result = await readGitHubChanges(db, {
 			since: { version: 1_400_000, at: NOW },
@@ -129,7 +127,7 @@ describe("readGitHubChanges", () => {
 	});
 
 	it("only returns private-repo changes the viewer can read", async () => {
-		const { db } = setup();
+		const { db } = await setup();
 		const readable = new Set(["acme/api"]);
 		const access: GitHubChangeAccess = {
 			canRead: (repo, isPrivate) => !isPrivate || readable.has(repo),
@@ -153,7 +151,7 @@ describe("readGitHubChanges", () => {
 	});
 
 	it("limits entities to watched repos and ignores legacy notifications rows", async () => {
-		const { db } = setup();
+		const { db } = await setup();
 		await insert(db, [
 			["acme/api", "pull:acme/api#1", true],
 			["acme/web", "pull:acme/web#2", true],
@@ -168,7 +166,7 @@ describe("readGitHubChanges", () => {
 	});
 
 	it("expires cursors older than the retention window", async () => {
-		const { db } = setup();
+		const { db } = await setup();
 		await insert(db, [["acme/api", "pull:acme/api#1", true]]);
 		const result = await readGitHubChanges(db, {
 			since: { version: 0, at: NOW - GITHUB_CHANGE_RETENTION_MS },
@@ -180,7 +178,7 @@ describe("readGitHubChanges", () => {
 	});
 
 	it("reports overflow as expired instead of returning a huge page", async () => {
-		const { db } = setup();
+		const { db } = await setup();
 		await insert(
 			db,
 			Array.from({ length: 5 }, (_, i) => [
@@ -232,8 +230,8 @@ describe("toGitHubChangeRows", () => {
 });
 
 describe("sweepGitHubChanges", () => {
-	it("deletes only rows past retention, in bounded batches with pauses", async () => {
-		const { db, sqlite } = setup();
+	it("deletes only rows past retention, in bounded batches", async () => {
+		const { db } = await setup();
 		const old = NOW - GITHUB_CHANGE_RETENTION_MS - 1;
 		await insert(
 			db,
@@ -246,26 +244,18 @@ describe("sweepGitHubChanges", () => {
 		);
 		await insert(db, [["acme/api", "pull:acme/api#999", true, NOW]]);
 
-		const sleep = vi.fn(async () => undefined);
-		const result = await sweepGitHubChanges(db, {
-			now: NOW,
-			batchSize: 10,
-			pauseMs: 4_000,
-			sleep,
-		});
+		const result = await sweepGitHubChanges(db, { now: NOW, batchSize: 10 });
 		expect(result).toEqual({ deleted: 25, batches: 3, complete: true });
-		expect(sleep).toHaveBeenCalledTimes(2);
-		expect(sleep).toHaveBeenCalledWith(4_000);
-		const remaining = sqlite
-			.prepare("SELECT entity_key FROM github_change")
-			.all() as { entity_key: string }[];
-		expect(remaining.map((row) => row.entity_key)).toEqual([
+		const remaining = await db
+			.select({ entityKey: githubChange.entityKey })
+			.from(githubChange);
+		expect(remaining.map((row) => row.entityKey)).toEqual([
 			"pull:acme/api#999",
 		]);
 	});
 
 	it("keeps the newest row so versions never go backwards", async () => {
-		const { db } = setup();
+		const { db } = await setup();
 		const old = NOW - GITHUB_CHANGE_RETENTION_MS - 1;
 		await insert(db, [
 			["acme/api", "pull:acme/api#1", true, old],
@@ -277,10 +267,7 @@ describe("sweepGitHubChanges", () => {
 			now: NOW,
 		});
 
-		const result = await sweepGitHubChanges(db, {
-			now: NOW,
-			sleep: async () => undefined,
-		});
+		const result = await sweepGitHubChanges(db, { now: NOW });
 		expect(result.deleted).toBe(1);
 
 		await insert(db, [["acme/api", "pull:acme/api#3", true]]);
@@ -293,7 +280,7 @@ describe("sweepGitHubChanges", () => {
 	});
 
 	it("stops after maxBatches and reports the sweep as incomplete", async () => {
-		const { db } = setup();
+		const { db } = await setup();
 		const old = NOW - GITHUB_CHANGE_RETENTION_MS - 1;
 		await insert(
 			db,
@@ -308,70 +295,36 @@ describe("sweepGitHubChanges", () => {
 			now: NOW,
 			batchSize: 10,
 			maxBatches: 2,
-			sleep: async () => undefined,
 		});
 		expect(result).toEqual({ deleted: 20, batches: 2, complete: false });
 	});
-
-	it("never deletes more than 20k rows per statement", async () => {
-		const { db } = setup();
-		const bound: unknown[][] = [];
-		const spied = {
-			...db,
-			prepare: (sql: string) => {
-				const statement = db.prepare(sql);
-				return {
-					...statement,
-					bind: (...params: unknown[]) => {
-						if (sql.startsWith("DELETE")) bound.push(params);
-						return statement.bind(...params);
-					},
-				};
-			},
-		} as unknown as D1Database;
-		await sweepGitHubChanges(spied, {
-			now: NOW,
-			batchSize: 1_000_000,
-			sleep: async () => undefined,
-		});
-		expect(bound).toEqual([[NOW - GITHUB_CHANGE_RETENTION_MS, 20_000]]);
-	});
 });
 
-describe("checkD1Health", () => {
-	it("warns at 80% of the size limit", async () => {
-		const { db } = setup();
-		const lines: string[] = [];
-		const report = await checkD1Health(db, {
-			limitBytes: 1,
-			log: (line) => lines.push(line),
-		});
-		expect(report.alert).toBe("d1_size_warning");
-		expect(JSON.parse(lines[0])).toMatchObject({ alert: "d1_size_warning" });
-	});
-
+describe("checkDatabaseHealth", () => {
 	it("flags a change table the sweeper has stopped keeping small", async () => {
-		const { db } = setup();
+		const { db } = await setup();
 		await insert(db, [
 			["acme/api", "pull:acme/api#1", true],
 			["acme/api", "pull:acme/api#2", true],
 		]);
 		const lines: string[] = [];
-		const report = await checkD1Health(db, {
+		const report = await checkDatabaseHealth(db, {
 			maxExpectedChangeRows: 1,
 			log: (line) => lines.push(line),
 		});
-		expect(report.alert).toBe("d1_change_table_growth");
+		expect(report.alert).toBe("change_table_growth");
 		expect(JSON.parse(lines[0])).toMatchObject({
-			alert: "d1_change_table_growth",
+			alert: "change_table_growth",
 			changeRows: 2,
 		});
 	});
 
 	it("stays quiet when healthy", async () => {
-		const { db } = setup();
+		const { db } = await setup();
 		const lines: string[] = [];
-		const report = await checkD1Health(db, { log: (line) => lines.push(line) });
+		const report = await checkDatabaseHealth(db, {
+			log: (line) => lines.push(line),
+		});
 		expect(report.alert).toBeNull();
 		expect(report.sizeBytes).toBeGreaterThan(0);
 		expect(report.changeRows).toBe(0);

@@ -1,24 +1,17 @@
-import { drizzle } from "drizzle-orm/d1";
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Database } from "../db";
 import * as schema from "../db/schema";
-import { createTestD1 } from "./testing/d1-sqlite";
+import { createTestDatabase } from "./testing/postgres";
 
-const runtime = vi.hoisted(() => ({
-	db: null as unknown as D1Database,
-	env: {} as Record<string, string | undefined>,
-}));
-
-vi.mock("cloudflare:workers", () => ({
-	env: runtime.env,
-	waitUntil: vi.fn(),
-}));
-vi.mock("../db", async () => {
-	const { drizzle: createDrizzle } = await import("drizzle-orm/d1");
-	const dbSchema = await import("../db/schema");
-	return {
-		getDb: () => createDrizzle(runtime.db, { schema: dbSchema }),
-	};
+const testPlatform = await vi.hoisted(async () => {
+	const { createTestPlatform } = await import("#/platform/testing");
+	return createTestPlatform();
 });
+const runtime = vi.hoisted((): { db: Database | null } => ({ db: null }));
+
+vi.mock("#/platform", () => ({ platform: testPlatform.platform }));
+vi.mock("../db", () => ({ getDb: () => orm() }));
 vi.mock("./github-emulator.server", () => ({
 	getGitHubOAuthOrigin: () => "https://github.com",
 }));
@@ -26,6 +19,11 @@ vi.mock("./github-emulator.server", () => ({
 const { getGitHubAppUserAccessTokenByUserId, verifyGitHubWebhookSignature } =
 	await import("./github-app.server");
 const { normalizeGitHubAppPrivateKey } = await import("./github-private-key");
+
+function orm(): Database {
+	if (!runtime.db) throw new Error("No test database yet");
+	return runtime.db;
+}
 
 describe("normalizeGitHubAppPrivateKey", () => {
 	it("converts PKCS#1 RSA private keys to PKCS#8", () => {
@@ -136,10 +134,6 @@ describe("GitHub App user tokens", () => {
 	const now = () => Math.floor(Date.now() / 1000) * 1000;
 	const fetchMock = vi.fn();
 
-	function orm() {
-		return drizzle(runtime.db, { schema });
-	}
-
 	async function seed(app?: Partial<typeof schema.account.$inferInsert>) {
 		const db = orm();
 		const at = new Date(now());
@@ -181,12 +175,7 @@ describe("GitHub App user tokens", () => {
 		const [row] = await orm()
 			.select()
 			.from(schema.account)
-			.where(
-				(await import("drizzle-orm")).eq(
-					schema.account.providerId,
-					"github-app",
-				),
-			);
+			.where(eq(schema.account.providerId, "github-app"));
 		return row;
 	}
 
@@ -197,10 +186,10 @@ describe("GitHub App user tokens", () => {
 		});
 	}
 
-	beforeEach(() => {
-		runtime.db = createTestD1(["0000_pretty_the_call.sql"]).db;
-		runtime.env.GITHUB_APP_CLIENT_ID = "app-client";
-		runtime.env.GITHUB_APP_CLIENT_SECRET = "app-secret";
+	beforeEach(async () => {
+		runtime.db = (await createTestDatabase()).db;
+		testPlatform.config.GITHUB_APP_CLIENT_ID = "app-client";
+		testPlatform.config.GITHUB_APP_CLIENT_SECRET = "app-secret";
 		fetchMock.mockReset();
 		vi.stubGlobal("fetch", fetchMock);
 		vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -304,17 +293,9 @@ describe("GitHub App user tokens", () => {
 
 	it("retries a failed token write once so the rotated refresh token is not lost", async () => {
 		await seed({});
-		const realPrepare = runtime.db.prepare.bind(runtime.db);
-		let updates = 0;
-		runtime.db = {
-			...runtime.db,
-			prepare: (sql: string) => {
-				if (sql.trim().toLowerCase().startsWith("update") && updates++ === 0) {
-					throw new Error("D1_ERROR: transient");
-				}
-				return realPrepare(sql);
-			},
-		} as unknown as D1Database;
+		vi.spyOn(orm(), "update").mockImplementationOnce(() => {
+			throw new Error("connection terminated unexpectedly");
+		});
 		fetchMock.mockResolvedValue(
 			tokenResponse({ access_token: "ghu_new", refresh_token: "ghr_new" }),
 		);
@@ -325,20 +306,13 @@ describe("GitHub App user tokens", () => {
 		expect(console.error).not.toHaveBeenCalled();
 	});
 
-	it("still returns the refreshed token when D1 rejects the write, without logging it", async () => {
+	it("still returns the refreshed token when the database rejects the write, without logging it", async () => {
 		await seed({});
-		const realPrepare = runtime.db.prepare.bind(runtime.db);
-		runtime.db = {
-			...runtime.db,
-			prepare: (sql: string) => {
-				if (sql.trim().toLowerCase().startsWith("update")) {
-					throw new Error(
-						`Failed query: ${sql}\nparams: ghu_leaky_token_value_1`,
-					);
-				}
-				return realPrepare(sql);
-			},
-		} as unknown as D1Database;
+		vi.spyOn(orm(), "update").mockImplementation(() => {
+			throw new Error(
+				'Failed query: update "account" set "access_token" = $1\nparams: ghu_leaky_token_value_1',
+			);
+		});
 		fetchMock.mockResolvedValue(
 			tokenResponse({ access_token: "ghu_new", refresh_token: "ghr_new" }),
 		);

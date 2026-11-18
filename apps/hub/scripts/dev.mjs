@@ -7,6 +7,7 @@ import {
   DevSetupError,
   dashboardDir,
   runDevScript,
+  runStep,
   warmUpDashboard,
 } from "./dev-env.mjs";
 import { linkWorktreeDevFiles } from "./link-worktree-dev-vars.mjs";
@@ -40,6 +41,9 @@ runDevScript("dev", async ({ log, supervisor }) => {
   await linkWorktreeDevFiles();
   assertLocalConfig();
   await assertPortsFree([{ port: DASHBOARD_PORT, name: "dashboard" }]);
+  runStep("Preparing the database", ["run", "db:migrate"], {
+    cwd: dashboardDir,
+  });
 
   const dashboard = supervisor.start(
     "dashboard",

@@ -44,7 +44,7 @@ function stableJson(value: unknown): unknown {
 /**
  * Identical reads (same user, resource and params) made while serving one
  * request share a single GitHub call. Nothing outlives the request: the
- * persistent server cache filled D1 and was removed.
+ * persistent server cache outgrew its store and was removed.
  */
 export async function dedupeGitHubRead<TData>({
 	userId,

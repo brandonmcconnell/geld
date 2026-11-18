@@ -19,8 +19,7 @@ export async function getForbiddenOrgsForUser(
 	const rows = await db
 		.select({ org: userForbiddenOrg.org })
 		.from(userForbiddenOrg)
-		.where(eq(userForbiddenOrg.userId, userId))
-		.all();
+		.where(eq(userForbiddenOrg.userId, userId));
 	return rows.map((row) => row.org);
 }
 

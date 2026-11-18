@@ -1,5 +1,5 @@
 import "@tanstack/react-start/server-only";
-import { env } from "cloudflare:workers";
+import { platform } from "#/platform";
 import { resolveGitHubEmulatorUrl } from "./github-emulator";
 
 /**
@@ -11,7 +11,7 @@ import { resolveGitHubEmulatorUrl } from "./github-emulator";
 const GITHUB_WEB_ORIGIN = "https://github.com";
 
 export function getGitHubEmulatorUrl(): string | null {
-	return resolveGitHubEmulatorUrl(env.GITHUB_EMULATOR_URL, {
+	return resolveGitHubEmulatorUrl(platform.config().GITHUB_EMULATOR_URL, {
 		isProduction: import.meta.env.PROD,
 	});
 }

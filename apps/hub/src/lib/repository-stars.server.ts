@@ -1,4 +1,5 @@
 import "@tanstack/react-start/server-only";
+import type { Cache } from "#/platform";
 import { siteConfig } from "./site-config";
 
 const STARS_KEY = "landing:repository-stars";
@@ -10,7 +11,7 @@ const GITHUB_TIMEOUT_MS = 5_000;
 type StarsEntry = { count: number | null; checkedAt: number };
 
 type StarsDeps = {
-	kv: Pick<KVNamespace, "get" | "put">;
+	cache: Pick<Cache, "get" | "put">;
 	fetchCount: () => Promise<number | null>;
 	defer: (work: Promise<unknown>) => void;
 	now?: number;
@@ -20,21 +21,40 @@ let refreshInFlight: Promise<void> | null = null;
 
 /**
  * The landing page's star count. It never waits on GitHub: the answer comes
- * from KV, and a refresh runs behind the response at most once an hour whether
+ * from the cache, and a refresh runs behind the response at most once an hour whether
  * it succeeds or not, so a rate-limited GitHub is not retried on every view.
  */
+function parseEntry(stored: string | null): StarsEntry | null {
+	if (stored === null) return null;
+	const value: unknown = JSON.parse(stored);
+	if (
+		typeof value !== "object" ||
+		value === null ||
+		!("checkedAt" in value) ||
+		typeof value.checkedAt !== "number"
+	) {
+		return null;
+	}
+	const count = "count" in value ? value.count : null;
+	return {
+		count: typeof count === "number" ? count : null,
+		checkedAt: value.checkedAt,
+	};
+}
+
 export async function readRepositoryStars({
-	kv,
+	cache,
 	fetchCount,
 	defer,
 	now = Date.now(),
 }: StarsDeps): Promise<number | null> {
-	const entry = await kv
-		.get<StarsEntry>(STARS_KEY, "json")
+	const entry = await cache
+		.get(STARS_KEY)
+		.then(parseEntry)
 		.catch((): null => null);
 
 	if (!entry || now - entry.checkedAt >= STARS_REFRESH_AFTER_MS) {
-		refreshInFlight ??= refresh({ kv, fetchCount, now }, entry).finally(() => {
+		refreshInFlight ??= refresh({ cache, fetchCount, now }, entry).finally(() => {
 			refreshInFlight = null;
 		});
 		defer(refreshInFlight);
@@ -44,10 +64,10 @@ export async function readRepositoryStars({
 
 async function refresh(
 	{
-		kv,
+		cache,
 		fetchCount,
 		now,
-	}: Pick<StarsDeps, "kv" | "fetchCount"> & { now: number },
+	}: Pick<StarsDeps, "cache" | "fetchCount"> & { now: number },
 	previous: StarsEntry | null,
 ) {
 	const fetched = await fetchCount().catch((): null => null);
@@ -55,8 +75,8 @@ async function refresh(
 		count: fetched ?? previous?.count ?? null,
 		checkedAt: now,
 	};
-	await kv
-		.put(STARS_KEY, JSON.stringify(next), { expirationTtl: STARS_TTL_SECONDS })
+	await cache
+		.put(STARS_KEY, JSON.stringify(next), { ttlSeconds: STARS_TTL_SECONDS })
 		.catch((error) => {
 			console.warn("[stars] cache write failed", error);
 		});

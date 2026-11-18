@@ -1,6 +1,6 @@
 import "@tanstack/react-start/server-only";
-import { env, waitUntil } from "cloudflare:workers";
 import type { Octokit } from "octokit";
+import { platform } from "#/platform";
 import { describeError } from "./route-safety.server";
 
 // Lists what the *user* can read in each installation, not the installation's
@@ -21,6 +21,16 @@ const MAX_REPO_PAGES = 10;
 type ReadableRepos = { repos: string[] };
 
 const NO_READABLE_REPOS: ReadableRepos = { repos: [] };
+
+function isReadableRepos(value: unknown): value is ReadableRepos {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"repos" in value &&
+		Array.isArray(value.repos) &&
+		value.repos.every((repo) => typeof repo === "string")
+	);
+}
 
 const memory = new Map<string, { value: ReadableRepos; expiresAt: number }>();
 
@@ -78,27 +88,29 @@ export async function listReadableRepos(
 
 async function readKv(userId: string): Promise<ReadableRepos | null> {
 	try {
-		return await env.GITHUB_CACHE_KV.get<ReadableRepos>(
-			`${KV_PREFIX}${userId}`,
-			"json",
-		);
+		const stored = await platform.cache().get(`${KV_PREFIX}${userId}`);
+		if (stored === null) return null;
+		const value: unknown = JSON.parse(stored);
+		return isReadableRepos(value) ? value : null;
 	} catch {
 		return null;
 	}
 }
 
 function writeKv(userId: string, value: ReadableRepos) {
-	try {
-		waitUntil(
-			env.GITHUB_CACHE_KV.put(`${KV_PREFIX}${userId}`, JSON.stringify(value), {
-				expirationTtl: KV_TTL_SECONDS,
-			}).catch((error) => {
-				console.warn("[change-access] KV write failed", describeError(error));
+	platform.runAfterResponse(
+		platform
+			.cache()
+			.put(`${KV_PREFIX}${userId}`, JSON.stringify(value), {
+				ttlSeconds: KV_TTL_SECONDS,
+			})
+			.catch((error) => {
+				console.warn(
+					"[change-access] cache write failed",
+					describeError(error),
+				);
 			}),
-		);
-	} catch {
-		// No request context: skip caching.
-	}
+	);
 }
 
 export async function getReadableRepoSet(userId: string): Promise<Set<string>> {

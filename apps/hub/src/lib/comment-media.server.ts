@@ -1,3 +1,4 @@
+import type { FileStore, StoredFile } from "./file-store.server";
 const COMMENT_MEDIA_MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 const COMMENT_MEDIA_MAX_VIDEO_BYTES = 120 * 1024 * 1024;
 const DISPLAY_MAX_SIDE = 1200;
@@ -169,7 +170,7 @@ export function clampDisplayDimensions(
 }
 
 /** Encode each path segment for URLs where the key may contain spaces etc. */
-export function publicUrlForR2Key(publicBaseUrl: string, key: string): string {
+export function publicUrlForFileKey(publicBaseUrl: string, key: string): string {
 	const base = publicBaseUrl.replace(/\/$/u, "");
 	const encodedKey = key
 		.split("/")
@@ -198,18 +199,18 @@ export function buildCommentMediaHtml(options: {
 }
 
 export async function verifyCommentMediaObject(
-	bucket: R2Bucket, // global from worker types
+	store: Pick<FileStore, "head">,
 	key: string,
 ): Promise<
 	| { ok: true; size: number; contentType?: string }
 	| { ok: false; reason: string }
 > {
-	// R2Bucket.head only returns null for NoSuchKey; transient service/network
+	// `head` only returns null for a missing object; transient service/network
 	// errors surface as exceptions, so catch them to keep the discriminated-union
 	// contract (no thrown errors).
-	let head: R2Object | null;
+	let head: StoredFile | null;
 	try {
-		head = await bucket.head(key);
+		head = await store.head(key);
 	} catch {
 		return { ok: false, reason: "Failed to verify object" };
 	}
@@ -222,6 +223,6 @@ export async function verifyCommentMediaObject(
 	return {
 		ok: true,
 		size: head.size,
-		contentType: head.httpMetadata?.contentType,
+		contentType: head.contentType,
 	};
 }

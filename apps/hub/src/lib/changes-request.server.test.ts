@@ -8,21 +8,18 @@ import {
 	readGitHubChanges,
 	recordGitHubChanges,
 } from "./github-change.server";
-import { createTestD1 } from "./testing/d1-sqlite";
+import { createTestDatabase } from "./testing/postgres";
 
 const NOW = Date.now();
 
-function setup(
+async function setup(
 	options: {
 		readable?: string[];
 		session?: ChangesRequestDeps["getSession"];
 		getReadableRepoSet?: ChangesRequestDeps["getReadableRepoSet"];
 	} = {},
 ) {
-	const { db } = createTestD1([
-		"0006_github_change.sql",
-		"0008_github_change_latest.sql",
-	]);
+	const { db } = await createTestDatabase();
 	const deps: ChangesRequestDeps = {
 		getSession: options.session ?? (async () => ({ user: { id: "viewer" } })),
 		getReadableRepoSet:
@@ -58,16 +55,16 @@ afterEach(() => {
 
 describe("handleChangesRequest", () => {
 	it("401s without a session", async () => {
-		const { deps } = setup({ session: async () => null });
+		const { deps } = await setup({ session: async () => null });
 		const response = await handleChangesRequest(get(""), deps);
 		expect(response.status).toBe(401);
 	});
 
 	it("503s, not 401, when the session store is down", async () => {
 		vi.spyOn(console, "error").mockImplementation(() => undefined);
-		const { deps } = setup({
+		const { deps } = await setup({
 			session: async () => {
-				throw new Error("D1_ERROR: database is full");
+				throw new Error("database is full");
 			},
 		});
 		const response = await handleChangesRequest(get(""), deps);
@@ -76,7 +73,7 @@ describe("handleChangesRequest", () => {
 	});
 
 	it("never returns private-repo changes the viewer cannot read", async () => {
-		const { deps, insert } = setup({ readable: ["acme/api"] });
+		const { deps, insert } = await setup({ readable: ["acme/api"] });
 		await insert([
 			["acme/api", "pull:acme/api#1", true],
 			["acme/secret", "pull:acme/secret#9", true],
@@ -95,7 +92,7 @@ describe("handleChangesRequest", () => {
 	});
 
 	it("serves only public repos when the readable-repo lookup came back empty", async () => {
-		const { deps, insert } = setup({ readable: [] });
+		const { deps, insert } = await setup({ readable: [] });
 		await insert([
 			["acme/api", "pull:acme/api#1", true],
 			["oss/lib", "repo:oss/lib", false],
@@ -107,7 +104,7 @@ describe("handleChangesRequest", () => {
 	});
 
 	it("limits results to watched repos", async () => {
-		const { deps, insert } = setup({ readable: ["acme/api", "acme/web"] });
+		const { deps, insert } = await setup({ readable: ["acme/api", "acme/web"] });
 		await insert([
 			["acme/api", "pull:acme/api#1", true],
 			["acme/web", "pull:acme/web#2", true],
@@ -119,11 +116,11 @@ describe("handleChangesRequest", () => {
 		expect(body.entities).toEqual(["pull:acme/api#1"]);
 	});
 
-	it("degrades to 'nothing changed' with the client's cursor when D1 fails", async () => {
+	it("degrades to 'nothing changed' with the client's cursor when the database fails", async () => {
 		vi.spyOn(console, "error").mockImplementation(() => undefined);
-		const { deps } = setup();
+		const { deps } = await setup();
 		deps.readChanges = async () => {
-			throw new Error("D1_ERROR: too many requests");
+			throw new Error("too many connections");
 		};
 		const response = await handleChangesRequest(
 			get(`since=${cursor0}&scope=all`),

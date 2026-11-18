@@ -12,13 +12,14 @@
 		"preview": "vite preview",
 		"test": "vitest run",
 		"format": "biome format",
-		"migrate": "void db migrate",
-		"migrate:remote": "void db migrate --remote",
-		"deploy": "void deploy --platform cloudflare",
+		"deploy": "void deploy --platform cloudflare --skip-migrations",
 		"biome:lint": "biome lint",
 		"biome:check": "biome check",
 		"typecheck": "tsc --noEmit",
-		"check": "pnpm run typecheck && pnpm run test"
+		"check": "pnpm run typecheck && pnpm run test",
+		"db:migrate": "node scripts/migrate.mjs",
+		"db:generate": "drizzle-kit generate",
+		"db:check": "drizzle-kit check"
 	},
 	"dependencies": {
 		"@awesome.me/kit-2e791c163e": "1.0.4",
@@ -41,6 +42,7 @@
 		"@tanstack/react-virtual": "3.13.24",
 		"@tanstack/router-plugin": "1.169.0",
 		"@xyflow/react": "12.10.2",
+		"aws4fetch": "1.0.20",
 		"better-auth": "1.6.0",
 		"drizzle-orm": "0.45.2",
 		"fflate": "0.8.2",
@@ -49,6 +51,7 @@
 		"next-themes": "0.4.6",
 		"nuqs": "2.8.9",
 		"octokit": "5.0.5",
+		"pg": "8.23.1",
 		"react": "^19.2.0",
 		"react-dom": "^19.2.0",
 		"react-dropzone": "15.0.0",
@@ -60,11 +63,13 @@
 	"devDependencies": {
 		"@biomejs/biome": "2.4.5",
 		"@cloudflare/workers-types": "5.20261109.1",
+		"@electric-sql/pglite": "0.4.6",
 		"@geld/hub-tsconfig": "workspace:*",
 		"@tanstack/devtools-vite": "0.8.6",
 		"@testing-library/dom": "10.4.1",
 		"@testing-library/react": "16.3.2",
 		"@types/node": "22.19.17",
+		"@types/pg": "8.23.1",
 		"@types/react": "^19.2.0",
 		"@types/react-dom": "^19.2.0",
 		"@vitejs/plugin-react": "6.2.1",
@@ -73,12 +78,12 @@
 		"jsdom": "28.1.0",
 		"react-scan": "0.5.3",
 		"typescript": "5.9.3",
+		"ultracite": "7.4.3",
 		"vite": "8.3.6",
 		"vite-tsconfig-paths": "6.1.1",
 		"vitest": "4.1.12",
 		"void": "1.7.0",
-		"wrangler": "4.158.0",
-		"ultracite": "7.4.3"
+		"wrangler": "4.158.0"
 	},
 	"license": "AGPL-3.0-only",
 	"engines": {

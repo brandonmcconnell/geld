@@ -3,27 +3,26 @@ import {
 	COMMENT_MEDIA_SIGNATURE_PROBE_BYTES,
 	detectCommentMediaFromBytes,
 	maxBytesForCommentMediaKind,
-	publicUrlForR2Key,
+	publicUrlForFileKey,
 	sanitizeCommentMediaFilename,
 } from "#/lib/comment-media.server";
+import type { FileStore } from "#/lib/file-store.server";
 import { logRouteError, serviceUnavailable } from "#/lib/route-safety.server";
 
 export type CommentMediaUploadRuntime = {
-	storage: { bucket: Pick<R2Bucket, "put">; publicBaseUrl: string } | null;
+	storage: Pick<FileStore, "put" | "publicBaseUrl"> | null;
 	getSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
 };
 
 const MULTIPART_OVERHEAD_BYTES = 1024 * 1024;
 
 async function getRuntime(): Promise<CommentMediaUploadRuntime> {
-	const [{ env }, { getAuth }] = await Promise.all([
-		import("cloudflare:workers"),
+	const [{ getFileStore }, { getAuth }] = await Promise.all([
+		import("#/lib/file-store.server"),
 		import("#/lib/auth.server"),
 	]);
-	const bucket = env.COMMENT_MEDIA;
-	const publicBaseUrl = env.R2_PUBLIC_BASE_URL;
 	return {
-		storage: bucket && publicBaseUrl ? { bucket, publicBaseUrl } : null,
+		storage: getFileStore(),
 		getSession: (headers) => getAuth().api.getSession({ headers }),
 	};
 }
@@ -101,18 +100,16 @@ export async function handleCommentMediaUpload(
 	const key = buildCommentMediaObjectKey(session.user.id, filename);
 
 	try {
-		await storage.bucket.put(key, file.stream(), {
-			httpMetadata: {
-				contentType: detected.contentType,
-				cacheControl: "public, max-age=31536000, immutable",
-			},
+		await storage.put(key, file, {
+			contentType: detected.contentType,
+			cacheControl: "public, max-age=31536000, immutable",
 		});
 	} catch (error) {
-		logRouteError("comment-media", "R2 put failed", error);
+		logRouteError("comment-media", "file store put failed", error);
 		return Response.json({ error: "Upload failed" }, { status: 502 });
 	}
 
-	const publicUrl = publicUrlForR2Key(storage.publicBaseUrl, key);
+	const publicUrl = publicUrlForFileKey(storage.publicBaseUrl, key);
 
 	return Response.json({
 		key,
