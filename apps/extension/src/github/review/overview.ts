@@ -86,7 +86,7 @@ import type { RawComment, SuggestedFix } from '@geld/review';
 import type { Avatar, CheckAvatar, FoldRow, GroupId, PanelHandlers, PanelModel, TriageView } from './panel';
 import type { RepoBotsHint } from './panel-model';
 import { NO_REPO_BOTS, requestableBots, triggerFor } from './panel-model';
-import { commitShaOf, outgoingMentions, renderEventsView, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
+import { commitRowShas, commitShaOf, outgoingMentions, renderEventsView, renderMentionsView, renderQuickView, timeCommitRows } from './quick-view';
 import { eventState, eventWords, type TimelineEvent } from './timeline-events';
 import { timelineEventsFor, timelineMentionsFor } from './timeline-mentions';
 import type { EventLine, MentionLine } from './quick-view';
@@ -1870,11 +1870,11 @@ function seatRewrittenCommits<T extends { readonly node: Element; readonly kind:
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
     if (entry === undefined || entry.kind !== 'commit' || (entry.node instanceof HTMLElement && pushRoots.has(entry.node))) continue;
-    const sha = /\/commits\/([0-9a-f]{7,40})(?:[/?#]|$)/i.exec(entry.node.querySelector('a[href*="/commits/"]')?.getAttribute('href') ?? '')?.[1];
-    if (sha === undefined) continue;
-    const times = commitTimes(sha, reapplySoon);
-    if (times === null || !isRewritten(times)) continue;
-    moved.push({ entry, at: Date.parse(times.authored) });
+    // An Overview entry holds a whole push: it moves only when every commit in it was rewritten, by the earliest.
+    const shas = commitRowShas(entry.node);
+    const times = shas.map((sha) => commitTimes(sha, reapplySoon));
+    if (shas.length === 0 || times.some((time) => time === null || !isRewritten(time))) continue;
+    moved.push({ entry, at: Math.min(...times.map((time) => (time === null ? Number.NaN : Date.parse(time.authored)))) });
     entries.splice(index, 1);
   }
   if (moved.length === 0) return;
@@ -2008,9 +2008,10 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
         take(Date.parse(createdAtOf(row)));
         continue;
       }
-      const sha = /\/commits\/([0-9a-f]{7,40})(?:[/?#]|$)/i.exec(row.querySelector('a[href*="/commits/"]')?.getAttribute('href') ?? '')?.[1];
-      const times = sha === undefined ? null : commitTimes(sha, reapplySoon);
-      if (times !== null) take(Date.parse(isRewritten(times) ? times.authored : times.committed));
+      for (const sha of commitRowShas(row)) {
+        const times = commitTimes(sha, reapplySoon);
+        if (times !== null) take(Date.parse(isRewritten(times) ? times.authored : times.committed));
+      }
     }
     if (best !== null) return best;
     const at = (anchor: string): number => {
@@ -2059,7 +2060,7 @@ function buildBatches(meta: GeldPrMeta, crawled: Crawled, settings: GeldSettings
     for (const row of round.commits) {
       const id = /^(commits-pushed-|event-)/.test(row.id) ? row.id : (row.querySelector('[id^="commits-pushed-"], [id^="event-"]')?.id ?? '');
       if (id !== '') return id;
-      const sha = /\/commits\/([0-9a-f]{7,40})/.exec(row.querySelector('a[href*="/commits/"]')?.getAttribute('href') ?? '')?.[1];
+      const sha = commitRowShas(row)[0];
       if (sha !== undefined) return `commit-${sha}`;
     }
     const first = round.comments[0]?.anchor ?? round.items[0]?.sources[0]?.anchor ?? round.reviews[0]?.anchor ?? round.previewComments[0]?.anchor ?? round.seatedElsewhere[0]?.anchor;
