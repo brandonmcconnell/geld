@@ -8,6 +8,8 @@ import type { FileStats } from '@geld/core';
 export interface CachedDiff {
   readonly files: readonly FileStats[];
   readonly at: number;
+  /** The `DIFF_PARSE_VERSION` that parsed it; absent in entries written before versions were kept. */
+  readonly parse?: number;
 }
 
 export type CacheMap = Record<string, CachedDiff>;

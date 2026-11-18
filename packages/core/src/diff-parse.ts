@@ -37,7 +37,19 @@ export interface FileStats {
    * with no line-level facts (comment lines, removed imports), so their absence here says nothing about the change.
    */
   readonly summaryOnly?: true;
+  /**
+   * The counts with whitespace ignored, as GitHub shows them while it hides whitespace changes (`?w=1`, or the
+   * reader's saved preference): what `git diff -w` would count. Absent when they are the raw counts (and in cache
+   * entries written before this existed).
+   */
+  readonly ignoringWhitespace?: { readonly additions: number; readonly deletions: number };
 }
+
+/**
+ * Raised whenever `parseUnifiedDiff` learns a new fact: a cached diff parsed by an earlier version is shown, and read
+ * again in the background (the extension's `DiffCache`).
+ */
+export const DIFF_PARSE_VERSION = 2;
 
 /** Above this many comment-only lines in one file the list is dropped (the `comments` kind still applies). */
 const MAX_COMMENT_LINES = 2000;
@@ -108,11 +120,26 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
      */
     oldSide: string[][] | null;
     newSide: string[][] | null;
+    /** The current hunk's old and new side with whitespace stripped, context included, and the counts read so far. */
+    hunkOld: string[];
+    hunkNew: string[];
+    wsAdditions: number;
+    wsDeletions: number;
   }
   let current: Current | null = null;
   let inHunk = false;
 
+  const closeHunk = (): void => {
+    if (current === null || (current.hunkOld.length === 0 && current.hunkNew.length === 0)) return;
+    const kept = commonLines(current.hunkOld, current.hunkNew);
+    current.wsAdditions += current.hunkNew.length - kept;
+    current.wsDeletions += current.hunkOld.length - kept;
+    current.hunkOld = [];
+    current.hunkNew = [];
+  };
+
   const flush = (): void => {
+    closeHunk();
     if (current !== null) {
       const kinds: ChangeKindId[] = [];
       if (current.renamed && current.hunks === 0) kinds.push('renames');
@@ -134,6 +161,9 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
         const kept = new Set(named(current.newSide));
         const removedImports = [...new Set(named(current.oldSide))].filter((specifier) => !kept.has(specifier));
         if (removedImports.length > 0) stats = { ...stats, removedImports };
+      }
+      if (!current.binary && (current.wsAdditions !== current.additions || current.wsDeletions !== current.deletions)) {
+        stats = { ...stats, ignoringWhitespace: { additions: current.wsAdditions, deletions: current.wsDeletions } };
       }
       files.push(stats);
     }
@@ -168,6 +198,10 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
               commentRemoved: [],
               oldSide: canReadImports(path) ? [] : null,
               newSide: canReadImports(path) ? [] : null,
+              hunkOld: [],
+              hunkNew: [],
+              wsAdditions: 0,
+              wsDeletions: 0,
             };
       inHunk = false;
       continue;
@@ -175,6 +209,7 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
     if (current === null) continue;
 
     if (line.startsWith('@@')) {
+      closeHunk();
       inHunk = true;
       current.hunks += 1;
       current.oldSide?.push([]);
@@ -207,6 +242,7 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
       current.additions += 1;
       const text = line.slice(1);
       current.added.push(text.replace(WHITESPACE, ''));
+      current.hunkNew.push(text.replace(WHITESPACE, ''));
       current.newSide?.at(-1)?.push(text);
       if (current.syntax !== null && isCommentOnlyLine(text, current.syntax, current.newState)) current.commentAdded.push(current.newLine);
       current.newLine += 1;
@@ -214,12 +250,16 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
       current.deletions += 1;
       const text = line.slice(1);
       current.removed.push(text.replace(WHITESPACE, ''));
+      current.hunkOld.push(text.replace(WHITESPACE, ''));
       current.oldSide?.at(-1)?.push(text);
       if (current.syntax !== null && isCommentOnlyLine(text, current.syntax, current.oldState)) current.commentRemoved.push(current.oldLine);
       current.oldLine += 1;
     } else if (line.startsWith(' ') || line === '') {
       // Context: advances both sides and carries block-comment state along.
       const text = line.slice(1);
+      const stripped = text.replace(WHITESPACE, '');
+      current.hunkOld.push(stripped);
+      current.hunkNew.push(stripped);
       current.oldSide?.at(-1)?.push(text);
       current.newSide?.at(-1)?.push(text);
       if (current.syntax !== null) {
@@ -235,3 +275,41 @@ export function parseUnifiedDiff(diffText: string): readonly FileStats[] {
 }
 
 const WHITESPACE = /\s+/g;
+
+/** Past this many cells the middle of a hunk is matched line for line, not by the longest common subsequence. */
+const MAX_LCS_CELLS = 4_000_000;
+
+/**
+ * How many lines a hunk's old and new side share, in order: the lines `git diff -w` would leave as context. Common
+ * ends are trimmed first; a middle too large to compare in full is matched as a multiset instead (a close count).
+ */
+function commonLines(old: readonly string[], next: readonly string[]): number {
+  let start = 0;
+  while (start < old.length && start < next.length && old[start] === next[start]) start += 1;
+  let end = 0;
+  while (end < old.length - start && end < next.length - start && old[old.length - 1 - end] === next[next.length - 1 - end]) end += 1;
+  const a = old.slice(start, old.length - end);
+  const b = next.slice(start, next.length - end);
+  if (a.length === 0 || b.length === 0) return start + end;
+  if (a.length * b.length > MAX_LCS_CELLS) {
+    const left = new Map<string, number>();
+    for (const line of a) left.set(line, (left.get(line) ?? 0) + 1);
+    let matched = 0;
+    for (const line of b) {
+      const count = left.get(line) ?? 0;
+      if (count === 0) continue;
+      left.set(line, count - 1);
+      matched += 1;
+    }
+    return start + end + matched;
+  }
+  let previous = new Uint32Array(b.length + 1);
+  let row = new Uint32Array(b.length + 1);
+  for (let i = 1; i <= a.length; i += 1) {
+    for (let j = 1; j <= b.length; j += 1) {
+      row[j] = a[i - 1] === b[j - 1] ? (previous[j - 1] ?? 0) + 1 : Math.max(previous[j] ?? 0, row[j - 1] ?? 0);
+    }
+    [previous, row] = [row, previous];
+  }
+  return start + end + (previous[b.length] ?? 0);
+}

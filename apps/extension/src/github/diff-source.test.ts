@@ -13,6 +13,7 @@ vi.mock('wxt/utils/storage', () => ({
 
 import { browser } from 'wxt/browser';
 import type { FileStats } from '@geld/core';
+import { DIFF_PARSE_VERSION } from '@geld/core';
 import { DiffSource } from './diff-source';
 
 const DIFF_URL = 'https://github.com/acme/widgets/pull/7.diff';
@@ -105,6 +106,34 @@ describe('DiffSource summaries follow the head', () => {
     expect(page.status === 'ready' && page.files[0]?.path).toBe('new.ts');
     const after = source.get(DIFF_URL, null);
     expect(after.status === 'ready' && after.files[0]?.path).toBe('new.ts');
+  });
+
+  it('reads a page\u2019s diff again when an earlier parser cached it, and keeps one parsed as now', async () => {
+    const files = (path: string): FileStats[] => [{ path, additions: 1, deletions: 0 }];
+    const asked: unknown[] = [];
+    vi.mocked(browser.runtime.sendMessage).mockImplementationOnce(async (message: unknown) => {
+      asked.push(message);
+      return { ok: true, files: files('reparsed.ts') };
+    });
+    // Cached before the parser counted whitespace-ignored lines: shown at once, and asked for again as the page's.
+    disk.value = { [`github:acme:widgets:7:${SHA_A}`]: { files: files('cached.ts'), at: Date.now() } };
+    const source = new DiffSource(() => undefined);
+    await flush();
+    const shown = source.request(DIFF_URL, SHA_A, 'page');
+    expect(shown.status === 'ready' && shown.files[0]?.path).toBe('cached.ts');
+    await flush();
+    expect(asked[0]).toMatchObject({ url: DIFF_URL, sha: SHA_A, priority: 'page' });
+    const after = source.get(DIFF_URL, SHA_A);
+    expect(after.status === 'ready' && after.files[0]?.path).toBe('reparsed.ts');
+
+    // Parsed as now: nothing to ask.
+    asked.length = 0;
+    disk.value = { [`github:acme:widgets:7:${SHA_B}`]: { files: files('current.ts'), at: Date.now(), parse: DIFF_PARSE_VERSION } };
+    const fresh = new DiffSource(() => undefined);
+    await flush();
+    fresh.request(DIFF_URL, SHA_B, 'page');
+    await flush();
+    expect(asked).toEqual([]);
   });
 
   it('asks once when the head is learned after the first request', async () => {

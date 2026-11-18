@@ -172,7 +172,12 @@ export class DiffSource {
         // devices until they are replaced.
         if ((!this.persistent.isFresh(persistKey) || cached.length === 0) && !this.revalidating.has(key)) {
           this.revalidating.add(key);
-          this.queue.push({ url: diffUrl, key, sha, persistKey, revalidate: true, priority: 'background' });
+          // A page's own diff parsed by an earlier version is read again as the page's: its counts are on screen now.
+          const urgent = sha !== null && priority === 'page' && !this.persistent.isCurrent(persistKey);
+          const itemPriority: DiffPriority = urgent ? priority : 'background';
+          const item = { url: diffUrl, key, sha, persistKey, revalidate: true, priority: itemPriority };
+          if (urgent) this.queue.unshift(item);
+          else this.queue.push(item);
           this.pump();
         }
         return ready;

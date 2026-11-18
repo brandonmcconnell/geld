@@ -1,5 +1,6 @@
 import { storage } from 'wxt/utils/storage';
 import type { FileStats } from '@geld/core';
+import { DIFF_PARSE_VERSION } from '@geld/core';
 import { persist } from '../lib/context';
 
 /**
@@ -91,17 +92,23 @@ export class DiffCache {
     return entry.files;
   }
 
-  /** Whether an entry can be shown without a background refresh (SHA-keyed entries always can). */
+  /** Whether an entry can be shown without a background refresh (SHA-keyed entries can, once parsed as now). */
   isFresh(key: string): boolean {
     this.settle();
     const entry = this.map[key];
-    return entry !== undefined && (!isLatest(key) || Date.now() - entry.at <= LATEST_FRESH_MS);
+    return entry !== undefined && this.isCurrent(key) && (!isLatest(key) || Date.now() - entry.at <= LATEST_FRESH_MS);
+  }
+
+  /** Whether an entry was parsed by the current `parseUnifiedDiff`: an older one lacks what it has learned since. */
+  isCurrent(key: string): boolean {
+    this.settle();
+    return this.map[key]?.parse === DIFF_PARSE_VERSION;
   }
 
   set(key: string, files: readonly FileStats[]): void {
     if (files.length > MAX_FILES_PER_ENTRY) return;
     this.settle();
-    const entry: CachedDiff = { files, at: Date.now() };
+    const entry: CachedDiff = { files, at: Date.now(), parse: DIFF_PARSE_VERSION };
     // Visible to this tab at once...
     this.map = writeEntry(this.map, key, entry);
     // ...and stored shortly, together with whatever else lands meanwhile.
