@@ -116,6 +116,26 @@ export function openCollapsedThreads(root: ParentNode = document): number {
   return opened;
 }
 
+/**
+ * Comments GitHub shows hidden as resolved ("· Hidden as resolved" in the header), their words in the page only once
+ * expanded, while the classic page keeps them inside a closed `<details>`: expanded once each so the digest reads them as
+ * the classic page's, only while the timeline is folded. The expand is the reader's view alone, never GitHub's Unhide.
+ * Any other reason stays as GitHub shows it.
+ */
+export function openResolvedComments(root: ParentNode = document): number {
+  let opened = 0;
+  for (const button of root.querySelectorAll<HTMLButtonElement>(`${OVERVIEW_ITEM} article button[data-dd-action-name="pull_requests.comments.expand"]`)) {
+    if (pressed.has(button)) continue;
+    const header = button.closest('article')?.querySelector('[data-testid="comment-header"]');
+    // The header's words run together ("Hidden as resolvedUnminimize comment"): its own span holds the reason alone.
+    if (header === null || header === undefined || ![...header.querySelectorAll('span')].some((span) => /^hidden as resolved$/i.test((span.textContent ?? '').trim()))) continue;
+    pressed.add(button);
+    button.click();
+    opened += 1;
+  }
+  return opened;
+}
+
 const pressed = new WeakSet<Element>();
 
 /**

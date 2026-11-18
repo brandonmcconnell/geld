@@ -845,6 +845,9 @@ a git-ignored `apps/extension/web-ext.config.ts` with `disabled: false` brings t
   So while the timeline is folded and the first segment ("All") is not pressed Geld presses it, at most every two seconds, and folds once All shows (`overviewCommentsFiltered`), since the narrower list holds none of the entries the digest reads.
   With the full timeline, Digest + Timeline or the digest off, the switch shows and the reader's view stands.
   **GitHub collapses a resolved thread to its heading** ("Open review comment in …"), its comments in the page only once opened: while the timeline is folded `openCollapsedThreads` presses each disclosure once, as the conversation's minimized reviews are fetched.
+  **A comment hidden as resolved is in the digest on both pages** (`openResolvedComments`): the classic page keeps its words inside a closed `<details>`, while the Overview renders its header alone ("· Hidden as resolved") until its expand is pressed, so the digest left it out there (geld#146's Greptile comment).
+  While the timeline is folded each is expanded once, which is the reader's view alone (no request but GitHub's analytics), never GitHub's Unhide.
+  Only resolved: what GitHub hid as spam or abuse leaves its author out of the digest (`markedOnGitHub`), and the other reasons stay as GitHub shows them.
   **The section lists newest first by default** (its sort button wears `octicon-sort-desc`;
   the reader can pick oldest first or code order, kept in their browser), so `compareHome` reverses the page's order between two entries while it does (`overviewNewestFirst`, read from the button's glyph): rounds, the crawl and the head's latest push all read in timeline order.
   Commit rows (`[data-testid="timeline-commit-row"]`) link to the commit in the Changes tab (`/pull/N/changes/<sha>`), which `conversationHeadSha` reads as it reads `/commits/<sha>`, and their pictures are `data-hovercard-type="user"` for people.
