@@ -300,6 +300,15 @@ export function commitShaOf(link: Element): string | null {
   return /\/pull\/\d+\/(?:commits|changes)\/([0-9a-f]{7,40})(?:[/?#]|$)/i.exec(link.getAttribute('href') ?? '')?.[1] ?? null;
 }
 
+/** The commit a timeline commit row names, whichever page drew it; null for a row that names none. */
+export function commitRowSha(row: Element): string | null {
+  for (const link of row.querySelectorAll('a[href*="/commits/"], a[href*="/changes/"]')) {
+    const sha = commitShaOf(link) ?? /\/commits\/([0-9a-f]{7,40})(?:[/?#]|$)/i.exec(link.getAttribute('href') ?? '')?.[1] ?? null;
+    if (sha !== null) return sha;
+  }
+  return null;
+}
+
 const ATTR_OLDEST_FIRST = 'data-geld-oldest-first';
 
 /**
