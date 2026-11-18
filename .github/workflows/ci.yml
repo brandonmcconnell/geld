@@ -233,6 +233,46 @@ jobs:
     steps:
       - run: echo 'Dashboard checks passed.'
 
+  # The hub's typecheck and unit tests run with every workspace above. Its
+  # build needs Node 24.22 (Void's minimum), so it has a job of its own, and
+  # the end-to-end suite runs the whole app against the local GitHub emulator.
+  hub:
+    name: Hub
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        env:
+          FONTAWESOME_PACKAGE_TOKEN: ${{ secrets.FONTAWESOME_PACKAGE_TOKEN }}
+      - run: pnpm --filter @geld/hub build
+      - run: pnpm --filter @geld/hub-e2e exec playwright install --with-deps chromium
+      # Advisory until the suite has a record of passing here.
+      - name: Run end-to-end tests (advisory)
+        run: |
+          if ! pnpm test:hub:e2e; then
+            echo '### Hub end-to-end tests: failed' >> "$GITHUB_STEP_SUMMARY"
+            echo 'They are advisory for now. See the step log and the uploaded report.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+        env:
+          CI: 'true'
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: hub-playwright-report
+          path: |
+            apps/hub-e2e/playwright-report
+            apps/hub-e2e/test-results
+          retention-days: 7
+          if-no-files-found: ignore
+
   # Every push to main that touches the extension publishes a GitHub Release
   # with one zip per browser (plus the Firefox review sources). The site's
   # install buttons read /releases/latest, so this is what people download

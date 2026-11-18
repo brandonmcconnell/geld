@@ -1,0 +1,30 @@
+{
+  "name": "@geld/hub-icons",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "format": "biome format",
+    "biome:lint": "biome lint",
+    "biome:check": "biome check",
+    "typecheck": "tsc --noEmit",
+    "check": "pnpm run typecheck"
+  },
+  "dependencies": {
+    "@awesome.me/kit-2e791c163e": "1.0.4"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.5",
+    "@geld/hub-tsconfig": "workspace:*",
+    "@types/react": "^19.2.0",
+    "typescript": "5.9.3",
+    "ultracite": "7.4.3"
+  },
+  "peerDependencies": {
+    "react": "^19.2.0"
+  },
+  "license": "AGPL-3.0-only"
+}

@@ -1,0 +1,136 @@
+import { CommentIcon, InboxIcon, IssuesIcon } from "@geld/hub-icons";
+import { useQuery } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
+import { type ComponentType, useMemo, useRef } from "react";
+import {
+	applyListView,
+	issueFilterDefs,
+	issueSortOptions,
+	useListFilters,
+} from "#/components/filters";
+import { IssueBulkSelection } from "#/components/issues/issue-bulk-selection";
+import { IssueRow } from "#/components/issues/issue-row";
+import { DashboardContentLoading } from "#/components/layouts/dashboard-content-loading";
+import { ListEmpty, ListGroup, ListPage } from "#/components/shared/list-page";
+import { githubMyIssuesQueryOptions } from "#/lib/github.query";
+import type { IssueSummary } from "#/lib/github.types";
+import { buildSeo, formatPageTitle } from "#/lib/seo";
+import { useHasMounted } from "#/lib/use-has-mounted";
+
+export const Route = createFileRoute("/_protected/issues")({
+	ssr: false,
+	loader: ({ context }) => {
+		const scope = { userId: context.user.id };
+		void context.queryClient.prefetchQuery(githubMyIssuesQueryOptions(scope));
+	},
+	pendingComponent: DashboardContentLoading,
+	head: ({ match }) =>
+		buildSeo({
+			path: match.pathname,
+			title: formatPageTitle("GitHub issues"),
+			description:
+				"Private issue dashboard for assigned, authored, and mentioned GitHub issues across your repositories.",
+			robots: "noindex",
+		}),
+	component: IssuesPage,
+});
+
+function IssuesPage() {
+	const { user } = Route.useRouteContext();
+	const scope = useMemo(() => ({ userId: user.id }), [user.id]);
+	const hasMounted = useHasMounted();
+	const scrollContainerRef = useRef<HTMLDivElement>(null);
+	const query = useQuery({
+		...githubMyIssuesQueryOptions(scope),
+		enabled: hasMounted,
+	});
+
+	const allIssues = useMemo(() => {
+		if (!query.data) return [];
+		const d = query.data;
+		return [...d.assigned, ...d.authored, ...d.mentioned];
+	}, [query.data]);
+
+	const filterState = useListFilters({
+		listId: "issues",
+		filterDefs: issueFilterDefs,
+		sortOptions: issueSortOptions,
+		defaultSortId: "updated",
+	});
+
+	if (query.error) throw query.error;
+	if (query.data) {
+		const data = query.data;
+		const groups: IssueGroupData[] = [
+			{
+				id: "assigned",
+				title: "Assigned",
+				icon: InboxIcon,
+				issues: applyListView(data.assigned, filterState),
+			},
+			{
+				id: "authored",
+				title: "Authored",
+				icon: IssuesIcon,
+				issues: applyListView(data.authored, filterState),
+			},
+			{
+				id: "mentioned",
+				title: "Mentioned",
+				icon: CommentIcon,
+				issues: applyListView(data.mentioned, filterState),
+			},
+		];
+		const totalIssues = groups.reduce(
+			(sum, group) => sum + group.issues.length,
+			0,
+		);
+
+		return (
+			<ListPage
+				title="Issues"
+				count={totalIssues}
+				scrollRef={scrollContainerRef}
+				filters={{
+					state: filterState,
+					items: allIssues,
+					searchPlaceholder: "Search issues…",
+				}}
+			>
+				{totalIssues === 0 ? (
+					<ListEmpty>
+						{filterState.activeFilters.length > 0 || filterState.searchQuery
+							? "No issues match your filters."
+							: "No issues right now."}
+					</ListEmpty>
+				) : null}
+				<IssueBulkSelection
+					issues={groups.flatMap((group) => group.issues)}
+					scope={scope}
+				>
+					{groups.map((group) => (
+						<ListGroup
+							key={group.id}
+							id={group.id}
+							icon={group.icon}
+							title={group.title}
+							count={group.issues.length}
+						>
+							{group.issues.map((issue) => (
+								<IssueRow key={issue.id} issue={issue} />
+							))}
+						</ListGroup>
+					))}
+				</IssueBulkSelection>
+			</ListPage>
+		);
+	}
+	return <DashboardContentLoading />;
+}
+
+type IssueGroupData = {
+	id: string;
+	title: string;
+	icon: ComponentType<{ size?: number; strokeWidth?: number }>;
+	issues: IssueSummary[];
+};
