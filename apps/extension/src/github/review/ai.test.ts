@@ -1,0 +1,540 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_SETTINGS } from '@geld/core';
+import { clusterComments } from '@geld/review';
+import type { GeldPrMeta, RawComment } from '@geld/review';
+
+const stored = new Map<string, unknown>();
+
+vi.mock('wxt/utils/storage', () => ({
+  storage: {
+    defineItem: <T>(key: string, options: { readonly fallback: T }) => ({
+      getValue: async (): Promise<unknown> => (stored.has(key) ? stored.get(key) : options.fallback),
+      setValue: async (value: unknown): Promise<void> => {
+        stored.set(key, value);
+      },
+      watch: () => () => undefined,
+    }),
+  },
+}));
+const sendMessage = vi.fn(async (_message: unknown): Promise<unknown> => undefined);
+vi.mock('wxt/browser', () => ({ browser: { runtime: { sendMessage: (message: unknown) => sendMessage(message) } } }));
+
+const { NO_KEY_REASON } = await import('../../lib/ai-key');
+const { adoptOwnReplies, aiStateFor, chatFixesOffered, commentReportsOutsideThreads, discardSuggestion, fixFromComments, loadAiForPage, markSuggestionPosted, pendingReplyFor, runAi, triageNoteFor, triageSuggestions, withAi } = await import('./ai');
+
+const at = '2026-11-13T14:24:02Z';
+const finding: RawComment = { anchor: 'discussion_r100', kind: 'thread', author: 'greptile-apps[bot]', body: 'The caret switch is never tested.', createdAt: at, path: 'src/a.test.ts', line: 179 };
+const replacement = ['render(group(false));', 'expect(variants()).toEqual(["primary", "primary"]);'];
+const geldReply = { anchor: 'discussion_r200', kind: 'thread' as const, author: 'brandonmcconnell', body: `Suggested fix from Geld triage: Toggle in place. Suggested change ${replacement.join(' ')}` };
+
+function metaFor(comments: readonly RawComment[]): GeldPrMeta {
+  return { v: 1, generatedAt: at, headSha: 'head1', producer: { kind: 'crawler', version: '1', ai: false }, items: clusterComments(comments), bots: [], reviewers: [], fold: { comments: [], events: [] } };
+}
+
+async function loadRun(): Promise<void> {
+  const before = metaFor([finding]);
+  const item = before.items[0];
+  stored.set('local:aiRuns', {
+    'github:/o/r/pull/7': {
+      ranAt: at,
+      rewrites: [],
+      seen: [finding.anchor],
+      summary: { tldr: 'One finding: test the caret switch.', updatedAt: at, forItems: [item?.id ?? ''] },
+      suggestions: [{ key: finding.anchor, threads: [finding.anchor], headSha: 'head1', path: 'src/a.test.ts', start: 174, end: 179, original: ['a'], replacement, summary: 'Toggle in place.', state: 'open', sources: [finding.anchor], itemIds: { [finding.anchor]: item?.id ?? '' } }],
+    },
+  });
+  // The module keeps one pull request's run: point it elsewhere first, so this one is read afresh.
+  await new Promise<void>((resolve) => loadAiForPage(`github:/o/r/pull/7-${Math.random()}`, resolve));
+  await new Promise<void>((resolve) => loadAiForPage('github:/o/r/pull/7', resolve));
+}
+
+describe('Geld’s own suggestion reply in a fix’s thread', () => {
+  beforeEach(() => stored.clear());
+
+  it('makes the fix read as behind until it is known as Geld’s, then not', async () => {
+    await loadRun();
+    const withReply: RawComment[] = [{ ...finding, threadAnchors: [{ anchor: finding.anchor, kind: 'thread', author: finding.author, body: finding.body }, geldReply] }];
+    const meta = metaFor(withReply);
+    expect(triageSuggestions(meta, DEFAULT_SETTINGS)[0]?.behind).toBe('comments');
+    await adoptOwnReplies(withReply, 'brandonmcconnell');
+    expect(triageSuggestions(meta, DEFAULT_SETTINGS)[0]?.behind).toBeNull();
+    // Adopted from the page it is Geld's, but not the one to commit: the page cannot say which fix it carries.
+    expect(pendingReplyFor(finding.anchor, withReply)).toBeNull();
+    expect(adoptOwnReplies(withReply, 'brandonmcconnell')).toBeNull();
+  });
+
+  it('keeps the TL;DR current over a thread only Geld has written in since', async () => {
+    await loadRun();
+    const settings = { ...DEFAULT_SETTINGS, aiEnabled: true, aiBaseUrl: 'https://ai-gateway.vercel.sh', aiModel: 'anthropic/claude-sonnet-5' };
+    const withReply: RawComment[] = [{ ...finding, threadAnchors: [{ anchor: finding.anchor, kind: 'thread', author: finding.author, body: finding.body }, geldReply] }];
+    const meta = metaFor(withReply);
+    expect(aiStateFor(meta, withReply, settings).kind).toBe('stale');
+    await adoptOwnReplies(withReply, 'brandonmcconnell');
+    expect(aiStateFor(meta, withReply, settings).kind).toBe('current');
+    const answered: RawComment[] = [{ ...withReply[0] ?? finding, threadAnchors: [...(withReply[0]?.threadAnchors ?? []), { anchor: 'discussion_r300', kind: 'thread', author: 'someone-else', body: 'Not this way.' }] }];
+    expect(aiStateFor(metaFor(answered), answered, settings).kind).toBe('stale');
+  });
+
+  it('names a new commit as well as new comments, since the commit is why the fix is greyed out', async () => {
+    await loadRun();
+    const settings = { ...DEFAULT_SETTINGS, aiEnabled: true, aiBaseUrl: 'https://ai-gateway.vercel.sh', aiModel: 'anthropic/claude-sonnet-5' };
+    const answered: RawComment[] = [{ ...finding, threadAnchors: [{ anchor: finding.anchor, kind: 'thread', author: finding.author, body: finding.body }, { anchor: 'discussion_r300', kind: 'thread', author: 'coderabbitai[bot]', body: 'Agreed, the switch is untested.' }] }];
+    const pushed = { ...metaFor(answered), headSha: 'head2' };
+    expect(aiStateFor(pushed, answered, settings)).toMatchObject({ kind: 'stale', reason: 'both' });
+    expect(aiStateFor({ ...metaFor([finding]), headSha: 'head2' }, [finding], settings)).toMatchObject({ kind: 'stale', reason: 'commits' });
+  });
+
+  it('leaves another person’s reply, or one in other words, as news', async () => {
+    await loadRun();
+    const others: RawComment[] = [
+      { ...finding, threadAnchors: [{ ...geldReply, author: 'someone-else' }, { anchor: 'discussion_r300', kind: 'thread', author: 'brandonmcconnell', body: 'I disagree, see the other test.' }] },
+    ];
+    expect(adoptOwnReplies(others, 'brandonmcconnell')).toBeNull();
+    expect(triageSuggestions(metaFor(others), DEFAULT_SETTINGS)[0]?.behind).toBe('comments');
+  });
+
+  it('commits the reply Geld recorded posting, and only while it stands in the thread', async () => {
+    await loadRun();
+    await markSuggestionPosted(finding.anchor, { anchor: geldReply.anchor, id: 200 });
+    const comments: RawComment[] = [{ ...finding, threadAnchors: [{ anchor: finding.anchor, kind: 'thread', author: finding.author, body: finding.body }, geldReply] }];
+    expect(triageSuggestions(metaFor(comments), DEFAULT_SETTINGS)[0]?.behind).toBeNull();
+    expect(pendingReplyFor(finding.anchor, comments)).toBe(200);
+    expect(pendingReplyFor(finding.anchor, [finding])).toBeNull();
+    // The page shows it, its words are taken; edited on GitHub since, it is no longer the fix in Geld's preview.
+    await adoptOwnReplies(comments, 'brandonmcconnell');
+    expect(pendingReplyFor(finding.anchor, comments)).toBe(200);
+    const edited: RawComment[] = [{ ...finding, threadAnchors: [{ anchor: finding.anchor, kind: 'thread', author: finding.author, body: finding.body }, { ...geldReply, body: `${geldReply.body} unwanted();` }] }];
+    expect(pendingReplyFor(finding.anchor, edited)).toBeNull();
+  });
+
+  it('still finds the fix behind a new commit once Geld has replied in its thread', async () => {
+    await loadRun();
+    const settings = { ...DEFAULT_SETTINGS, aiEnabled: true, aiBaseUrl: 'https://ai-gateway.vercel.sh', aiModel: 'anthropic/claude-sonnet-5' };
+    const withReply: RawComment[] = [{ ...finding, threadAnchors: [{ anchor: finding.anchor, kind: 'thread', author: finding.author, body: finding.body }, geldReply] }];
+    await adoptOwnReplies(withReply, 'brandonmcconnell');
+    // Geld's reply is posted as the reader: the thread is still a bot's finding, and its fix is behind the commit.
+    expect(aiStateFor({ ...metaFor(withReply), headSha: 'head2' }, withReply, settings)).toMatchObject({ kind: 'stale', reason: 'commits' });
+  });
+
+  it('keeps the TL;DR current over a thread only Geld has written in since', async () => {
+    await loadRun();
+    const settings = { ...DEFAULT_SETTINGS, aiEnabled: true, aiBaseUrl: 'https://ai-gateway.vercel.sh', aiModel: 'anthropic/claude-sonnet-5' };
+    const withReply: RawComment[] = [{ ...finding, threadAnchors: [{ anchor: finding.anchor, kind: 'thread', author: finding.author, body: finding.body }, geldReply] }];
+    const meta = metaFor(withReply);
+    expect(aiStateFor(meta, withReply, settings).kind).toBe('stale');
+    await adoptOwnReplies(withReply, 'brandonmcconnell');
+    expect(aiStateFor(meta, withReply, settings).kind).toBe('current');
+    const answered: RawComment[] = [{ ...withReply[0] ?? finding, threadAnchors: [...(withReply[0]?.threadAnchors ?? []), { anchor: 'discussion_r300', kind: 'thread', author: 'someone-else', body: 'Not this way.' }] }];
+    expect(aiStateFor(metaFor(answered), answered, settings).kind).toBe('stale');
+  });
+
+  it('names a new commit as well as new comments, since the commit is why the fix is greyed out', async () => {
+    await loadRun();
+    const settings = { ...DEFAULT_SETTINGS, aiEnabled: true, aiBaseUrl: 'https://ai-gateway.vercel.sh', aiModel: 'anthropic/claude-sonnet-5' };
+    const answered: RawComment[] = [{ ...finding, threadAnchors: [{ anchor: finding.anchor, kind: 'thread', author: finding.author, body: finding.body }, { anchor: 'discussion_r300', kind: 'thread', author: 'coderabbitai[bot]', body: 'Agreed, the switch is untested.' }] }];
+    const pushed = { ...metaFor(answered), headSha: 'head2' };
+    expect(aiStateFor(pushed, answered, settings)).toMatchObject({ kind: 'stale', reason: 'both' });
+    expect(aiStateFor({ ...metaFor([finding]), headSha: 'head2' }, [finding], settings)).toMatchObject({ kind: 'stale', reason: 'commits' });
+  });
+
+  it('leaves another person’s reply, or one in other words, as news', async () => {
+    await loadRun();
+    const others: RawComment[] = [
+      { ...finding, threadAnchors: [{ ...geldReply, author: 'someone-else' }, { anchor: 'discussion_r300', kind: 'thread', author: 'brandonmcconnell', body: 'I disagree, see the other test.' }] },
+    ];
+    expect(adoptOwnReplies(others, 'brandonmcconnell')).toBeNull();
+    expect(triageSuggestions(metaFor(others), DEFAULT_SETTINGS)[0]?.behind).toBe('comments');
+  });
+
+
+  it('keeps the TL;DR when a push makes Geld rewrite a fix in a thread it has replied in', async () => {
+    await loadRun();
+    stored.set('local:aiKey', 'sk-test');
+    const settings = { ...DEFAULT_SETTINGS, aiEnabled: true, aiBaseUrl: 'https://ai-gateway.vercel.sh', aiModel: 'anthropic/claude-sonnet-5' };
+    const comments: RawComment[] = [{ ...finding, threadAnchors: [{ anchor: finding.anchor, kind: 'thread', author: finding.author, body: finding.body }, geldReply] }];
+    await adoptOwnReplies(comments, 'brandonmcconnell');
+    const pushed = { ...metaFor(comments), headSha: 'head2' };
+    sendMessage.mockImplementation(async () => ({ ok: true, model: 'm', text: JSON.stringify({ suggestions: [{ ids: [finding.anchor], summary: 'Toggle in place, again.', replacement: 'render(group(true));' }] }) }));
+    const lines = Array.from({ length: 200 }, (_, index) => `line ${index + 1}`);
+    await runAi(pushed, comments, settings, () => undefined, { pull: { title: 't', description: '' }, target: async () => ({ path: 'src/a.test.ts', start: 174, end: 179, lines }) });
+    expect(triageSuggestions(pushed, settings)[0]).toMatchObject({ behind: null, entry: { summary: 'Toggle in place, again.' } });
+    expect(withAi(pushed).summary?.tldr).toBe('One finding: test the caret switch.');
+    expect(aiStateFor(pushed, comments, settings).kind).toBe('current');
+  });
+});
+
+describe('a fix asked for from a chat', () => {
+  beforeEach(() => {
+    stored.clear();
+    sendMessage.mockReset();
+  });
+  const settings = { ...DEFAULT_SETTINGS, aiEnabled: true, aiBaseUrl: 'https://ai-gateway.vercel.sh', aiModel: 'anthropic/claude-sonnet-5' };
+  const person: RawComment = { anchor: 'discussion_r500', kind: 'thread', author: 'brandonmcconnell', body: 'Rename `x` to something readable.', createdAt: at, path: 'src/b.ts', line: 3 };
+  const review: RawComment = { anchor: 'pullrequestreview-900', kind: 'review', author: 'coderabbitai[bot]', body: 'Outside diff range comments (1): src/c.ts line 12 leaks the handle.', createdAt: at };
+  const lines = ['const x = 1;', 'export { x };', 'use(x);', 'end();'];
+  const source = { pull: { title: 't', description: '' }, target: async () => ({ path: 'src/b.ts', start: 3, end: 3, lines }) };
+  const fresh = async (): Promise<void> => {
+    await new Promise<void>((resolve) => loadAiForPage(`github:/o/r/pull/8-${Math.random()}`, resolve));
+    await new Promise<void>((resolve) => loadAiForPage('github:/o/r/pull/8', resolve));
+    stored.set('local:aiKey', 'sk-test');
+  };
+
+  it('writes a fix for a person’s thread the reader asked about, which the triage leaves alone otherwise', async () => {
+    await fresh();
+    const meta = metaFor([person]);
+    sendMessage.mockImplementation(async () => ({ ok: true, model: 'm', text: JSON.stringify({ suggestions: [{ ids: [person.anchor], summary: 'Names it `count`.', replacement: 'use(count);' }] }) }));
+    expect(await fixFromComments(meta, [person], settings, () => undefined, source, { threads: [person.anchor], comment: null })).toEqual({ changed: true, failed: false });
+    expect(triageSuggestions(meta, settings).map(({ entry }) => [entry.key, entry.replacement])).toEqual([[person.anchor, ['use(count);']]]);
+  });
+
+  it('turns what a comment asks for outside its threads into tasks for an agent, replacing that comment’s tasks from before', async () => {
+    await fresh();
+    const meta = metaFor([review]);
+    const answer = (titles: readonly string[]) => async () => ({ ok: true, model: 'm', text: JSON.stringify({ findings: titles.map((title) => ({ title, task: `Fix ${title.toLowerCase()} in \`src/c.ts\`.`, path: 'src/c.ts', line: 12 })) }) });
+    sendMessage.mockImplementation(answer(['Handle leaks', 'Docstrings missing']));
+    const scope = { threads: [], comment: { anchor: review.anchor, author: review.author, text: review.body, threads: [] } };
+    await fixFromComments(meta, [review], settings, () => undefined, source, scope);
+    const rows = triageSuggestions(meta, settings);
+    expect(rows.map(({ item }) => item.title)).toEqual(['Handle leaks', 'Docstrings missing']);
+    expect(rows[0]?.item).toMatchObject({ path: 'src/c.ts', line: 12, sources: [{ anchor: review.anchor, kind: 'review' }] });
+    expect(rows[0]?.entry.replacement).toBeNull();
+    expect(rows[0] === undefined ? null : triageNoteFor(rows[0].item)).toBe('Fix handle leaks in `src/c.ts`.');
+    sendMessage.mockImplementation(answer(['Handle leaks']));
+    await fixFromComments(meta, [review], settings, () => undefined, source, scope);
+    expect(triageSuggestions(meta, settings).map(({ item }) => item.title)).toEqual(['Handle leaks']);
+  });
+
+  it('writes a thread’s fix afresh when asked again, over a current one and a discarded one', async () => {
+    await fresh();
+    const meta = metaFor([person]);
+    const answer = (code: string) => async () => ({ ok: true, model: 'm', text: JSON.stringify({ suggestions: [{ ids: [person.anchor], summary: 'Renames it.', replacement: code }] }) });
+    const ask = { threads: [person.anchor], comment: null };
+    sendMessage.mockImplementation(answer('use(count);'));
+    await fixFromComments(meta, [person], settings, () => undefined, source, ask);
+    sendMessage.mockImplementation(answer('use(total);'));
+    await fixFromComments(meta, [person], settings, () => undefined, source, ask);
+    expect(triageSuggestions(meta, settings)[0]?.entry.replacement).toEqual(['use(total);']);
+    await discardSuggestion(person.anchor);
+    expect(triageSuggestions(meta, settings)).toEqual([]);
+    sendMessage.mockImplementation(answer('use(sum);'));
+    await fixFromComments(meta, [person], settings, () => undefined, source, ask);
+    expect(triageSuggestions(meta, settings).map(({ entry }) => [entry.state, entry.replacement])).toEqual([['open', ['use(sum);']]]);
+  });
+
+  it('keeps the card up for a comment’s tasks on a pull request with no thread open', async () => {
+    await fresh();
+    const meta = metaFor([review]);
+    sendMessage.mockImplementation(async () => ({ ok: true, model: 'm', text: JSON.stringify({ findings: [{ title: 'Handle leaks', task: 'Close it.', path: null, line: null }] }) }));
+    expect(aiStateFor(meta, [review], settings).kind).toBe('nothing');
+    await fixFromComments(meta, [review], settings, () => undefined, source, { threads: [], comment: { anchor: review.anchor, author: review.author, text: review.body, threads: [] } });
+    expect(aiStateFor(meta, [review], settings).kind).not.toBe('nothing');
+  });
+
+  it('drops an answer that lands after the reader moved to another pull request', async () => {
+    await fresh();
+    const meta = metaFor([review]);
+    sendMessage.mockImplementation(async () => {
+      await new Promise<void>((resolve) => loadAiForPage('github:/o/r/pull/9', resolve));
+      return { ok: true, model: 'm', text: JSON.stringify({ findings: [{ title: 'Handle leaks', task: 'Close it.', path: null, line: null }] }) };
+    });
+    expect(await fixFromComments(meta, [review], settings, () => undefined, source, { threads: [], comment: { anchor: review.anchor, author: review.author, text: review.body, threads: [] } })).toEqual({ changed: false, failed: false });
+    expect(triageSuggestions(meta, settings)).toEqual([]);
+    expect(stored.get('local:aiRuns')).toBeUndefined();
+  });
+
+  it('asks again about every thread a saved fix covers, so a shared fix keeps all of them', async () => {
+    const other: RawComment = { anchor: 'discussion_r600', kind: 'thread', author: 'greptile-apps[bot]', body: 'Same rename here.', createdAt: at, path: 'src/b.ts', line: 3 };
+    const bot: RawComment = { ...person, author: 'coderabbitai[bot]' };
+    stored.set('local:aiRuns', {
+      'github:/o/r/pull/8': {
+        ranAt: at,
+        rewrites: [],
+        seen: [bot.anchor, other.anchor],
+        suggestions: [{ key: bot.anchor, threads: [bot.anchor, other.anchor], headSha: 'head1', path: 'src/b.ts', start: 3, end: 3, original: ['use(x);'], replacement: ['use(count);'], summary: 'Renames it.', state: 'open', sources: [bot.anchor, other.anchor] }],
+      },
+    });
+    await fresh();
+    const meta = metaFor([bot, other]);
+    const asked: string[][] = [];
+    sendMessage.mockImplementation(async (message: unknown) => {
+      const second: unknown = typeof message === 'object' && message !== null && 'messages' in message && Array.isArray(message.messages) ? message.messages[1] : null;
+      const user = typeof second === 'object' && second !== null && 'content' in second && typeof second.content === 'string' ? second.content : '';
+      const drafting = typeof message === 'object' && message !== null && 'schemaName' in message && message.schemaName === 'geld_suggest';
+      if (drafting && user !== '') asked.push([...user.matchAll(/"id": "([^"]+)"/g)].map((match) => match[1] ?? ''));
+      return { ok: true, model: 'm', text: JSON.stringify({ suggestions: [{ ids: [bot.anchor, other.anchor], summary: 'Renames it.', replacement: 'use(total);' }] }) };
+    });
+    await fixFromComments(meta, [bot, other], settings, () => undefined, source, { threads: [bot.anchor], comment: null });
+    expect(asked).toEqual([[bot.anchor, other.anchor]]);
+    expect(triageSuggestions(meta, settings).map(({ entry }) => entry.threads)).toEqual([[bot.anchor, other.anchor]]);
+  });
+
+  it('leaves a shared fix covering every thread when the refresh gets no answer, and says why on the chat alone', async () => {
+    const other: RawComment = { anchor: 'discussion_r600', kind: 'thread', author: 'greptile-apps[bot]', body: 'Same rename here.', createdAt: at, path: 'src/b.ts', line: 3 };
+    const bot: RawComment = { ...person, author: 'coderabbitai[bot]' };
+    stored.set('local:aiRuns', {
+      'github:/o/r/pull/8': {
+        ranAt: at,
+        rewrites: [],
+        seen: [bot.anchor, other.anchor],
+        suggestions: [{ key: bot.anchor, threads: [bot.anchor, other.anchor], headSha: 'head1', path: 'src/b.ts', start: 3, end: 3, original: ['use(x);'], replacement: ['use(count);'], summary: 'Renames it.', state: 'open', sources: [bot.anchor, other.anchor] }],
+      },
+    });
+    await fresh();
+    const meta = metaFor([bot, other]);
+    sendMessage.mockImplementation(async () => ({ ok: false, reason: 'The gateway refused the request.' }));
+    expect(await fixFromComments(meta, [bot, other], settings, () => undefined, source, { threads: [other.anchor], comment: null })).toEqual({ changed: true, failed: true, reason: 'The gateway refused the request.' });
+    expect(triageSuggestions(meta, settings).map(({ entry }) => entry.threads)).toEqual([[bot.anchor, other.anchor]]);
+    expect(aiStateFor(meta, [bot, other], settings).kind).not.toBe('failed');
+  });
+
+  it('drops a request whose visit ended during its setup, or that was left and come back to', async () => {
+    await fresh();
+    const meta = metaFor([review]);
+    sendMessage.mockImplementation(async () => ({ ok: true, model: 'm', text: JSON.stringify({ findings: [{ title: 'Handle leaks', task: 'Close it.', path: null, line: null }] }) }));
+    const scope = { threads: [], comment: { anchor: review.anchor, author: review.author, text: review.body, threads: [] } };
+    const during = fixFromComments(meta, [review], settings, () => undefined, source, scope);
+    loadAiForPage('github:/o/r/pull/9', () => undefined);
+    expect(await during).toEqual({ changed: false, failed: false });
+    expect(triageSuggestions(meta, settings)).toEqual([]);
+    await new Promise<void>((resolve) => loadAiForPage('github:/o/r/pull/8', resolve));
+    const away = fixFromComments(meta, [review], settings, () => undefined, source, scope);
+    loadAiForPage('github:/o/r/pull/9', () => undefined);
+    loadAiForPage('github:/o/r/pull/8', () => undefined);
+    expect(await away).toEqual({ changed: false, failed: false });
+    expect(triageSuggestions(meta, settings)).toEqual([]);
+  });
+
+  it('lets one of two asks set up side by side run, so they never share the marker', async () => {
+    await fresh();
+    const meta = metaFor([review]);
+    sendMessage.mockImplementation(async () => ({ ok: true, model: 'm', text: JSON.stringify({ findings: [{ title: 'Handle leaks', task: 'Close it.', path: null, line: null }] }) }));
+    const scope = { threads: [], comment: { anchor: review.anchor, author: review.author, text: review.body, threads: [] } };
+    const [first, second] = await Promise.all([fixFromComments(meta, [review], settings, () => undefined, source, scope), fixFromComments(meta, [review], settings, () => undefined, source, scope)]);
+    expect([first.changed, second.changed].filter(Boolean)).toHaveLength(1);
+  });
+});
+
+describe('the check before a fix is drafted', () => {
+  beforeEach(() => {
+    stored.clear();
+    sendMessage.mockReset();
+  });
+  const settings = { ...DEFAULT_SETTINGS, aiEnabled: true, aiBaseUrl: 'https://ai-gateway.vercel.sh', aiModel: 'anthropic/claude-sonnet-5' };
+  const bug: RawComment = { anchor: 'discussion_r700', kind: 'thread', author: 'greptile-apps[bot]', body: '`total` counts missing values as zero, here and in `summarize`.', createdAt: at, path: 'src/b.ts', line: 3 };
+  const lines = ['const x = 1;', 'export { x };', 'use(x);', 'end();'];
+  const source = { pull: { title: 't', description: '' }, target: async () => ({ path: 'src/b.ts', start: 3, end: 3, lines }) };
+  const fresh = async (): Promise<void> => {
+    await new Promise<void>((resolve) => loadAiForPage(`github:/o/r/pull/10-${Math.random()}`, resolve));
+    await new Promise<void>((resolve) => loadAiForPage('github:/o/r/pull/10', resolve));
+    stored.set('local:aiKey', 'sk-test');
+  };
+  const schemaOf = (message: unknown): string => (typeof message === 'object' && message !== null && 'schemaName' in message && typeof message.schemaName === 'string' ? message.schemaName : '');
+  const kindOf = (message: unknown): string => (typeof message === 'object' && message !== null && 'type' in message && message.type === 'geld:ai-evaluate' ? 'decision' : schemaOf(message));
+  const drafted = { ok: true, model: 'm', text: JSON.stringify({ suggestions: [{ ids: [bug.anchor], summary: 'Skips missing values.', replacement: 'use(x ?? NaN);' }] }) };
+  const ask = { threads: [bug.anchor], comment: null };
+
+  it('hands a finding the reasoning model calls wider to an agent, with what it needs, and drafts nothing', async () => {
+    await fresh();
+    const meta = metaFor([bug]);
+    const schemas: string[] = [];
+    sendMessage.mockImplementation(async (message: unknown) => {
+      if (kindOf(message) !== '') schemas.push(kindOf(message));
+      return schemaOf(message) === 'geld_route' ? { ok: true, model: 'm', text: JSON.stringify({ routes: [{ id: bug.anchor, scope: 'wider', needs: 'Also skip missing values in `summarize`.' }] }) } : drafted;
+    });
+    await fixFromComments(meta, [bug], settings, () => undefined, source, ask);
+    expect(schemas).toEqual(['geld_route']);
+    const row = triageSuggestions(meta, settings)[0];
+    expect(row?.entry).toMatchObject({ replacement: null, routed: true, summary: 'Also skip missing values in `summarize`.' });
+    expect(row === undefined ? null : triageNoteFor(row.item)).toBe('Also skip missing values in `summarize`.');
+  });
+
+  it('drafts a finding the check keeps to its lines, and one it could not read', async () => {
+    await fresh();
+    const meta = metaFor([bug]);
+    sendMessage.mockImplementation(async (message: unknown) => (schemaOf(message) === 'geld_route' ? { ok: true, model: 'm', text: JSON.stringify({ routes: [{ id: bug.anchor, scope: 'lines', needs: '' }] }) } : drafted));
+    await fixFromComments(meta, [bug], settings, () => undefined, source, ask);
+    expect(triageSuggestions(meta, settings)[0]?.entry).toMatchObject({ replacement: ['use(x ?? NaN);'] });
+    expect(triageSuggestions(meta, settings)[0]?.entry.routed).toBeUndefined();
+    sendMessage.mockImplementation(async (message: unknown) => (schemaOf(message) === 'geld_route' ? { ok: false, reason: 'The gateway refused the request.' } : drafted));
+    await fixFromComments(meta, [bug], settings, () => undefined, source, ask);
+    expect(triageSuggestions(meta, settings)[0]?.entry).toMatchObject({ replacement: ['use(x ?? NaN);'] });
+  });
+
+  it('asks the decision model instead when the reader has one, leaning to an agent from as likely as not', async () => {
+    const decided = (noul: number) => async (message: unknown) => {
+      if (typeof message === 'object' && message !== null && 'type' in message && message.type === 'geld:ai-evaluate') return { ok: true, model: 'jev', answers: { [`wider:${bug.anchor}`]: { type: 'noul', noul } } };
+      return schemaOf(message) === 'geld_route' ? { ok: false, reason: 'not asked' } : drafted;
+    };
+    const withJev = { ...settings, aiJev: true };
+    await fresh();
+    stored.set('local:jevKey', 'ts-test');
+    stored.set('local:jevSource', 'own');
+    const meta = metaFor([bug]);
+    const schemas: string[] = [];
+    sendMessage.mockImplementation(async (message: unknown) => {
+      if (kindOf(message) !== '') schemas.push(kindOf(message));
+      return decided(0.5)(message);
+    });
+    await fixFromComments(meta, [bug], withJev, () => undefined, source, ask);
+    expect(schemas).toEqual(['decision']);
+    expect(triageSuggestions(meta, withJev)[0]?.entry).toMatchObject({ replacement: null, routed: true, summary: '' });
+    sendMessage.mockImplementation(decided(0.3));
+    await fixFromComments(meta, [bug], withJev, () => undefined, source, ask);
+    expect(triageSuggestions(meta, withJev)[0]?.entry).toMatchObject({ replacement: ['use(x ?? NaN);'] });
+  });
+
+  it('keeps the partners of a shared fix on the agent row its own thread goes to, whatever their own answer', async () => {
+    const other: RawComment = { ...bug, anchor: 'discussion_r800', author: 'coderabbitai[bot]', body: 'Same problem.' };
+    stored.set('local:aiRuns', {
+      'github:/o/r/pull/10': {
+        ranAt: at,
+        rewrites: [],
+        seen: [bug.anchor, other.anchor],
+        suggestions: [{ key: bug.anchor, threads: [bug.anchor, other.anchor], headSha: 'head1', path: 'src/b.ts', start: 3, end: 3, original: ['use(x);'], replacement: ['use(y);'], summary: 'Old.', state: 'open', sources: [bug.anchor, other.anchor] }],
+      },
+    });
+    await fresh();
+    const meta = metaFor([bug, other]);
+    sendMessage.mockImplementation(async (message: unknown) => (schemaOf(message) === 'geld_route' ? { ok: true, model: 'm', text: JSON.stringify({ routes: [{ id: bug.anchor, scope: 'wider', needs: 'Change both callers.' }, { id: other.anchor, scope: 'lines', needs: '' }] }) } : drafted));
+    await fixFromComments(meta, [bug, other], settings, () => undefined, source, ask);
+    const rows = triageSuggestions(meta, settings);
+    expect(rows.map(({ entry, partners }) => [entry.threads, entry.routed, partners.length])).toEqual([[[bug.anchor, other.anchor], true, 1]]);
+    expect(rows[0]?.behind).toBeNull();
+  });
+
+  it('checks a row it sent to an agent again at a new commit, though its lines read the same', async () => {
+    const item = metaFor([bug]).items[0];
+    stored.set('local:aiRuns', {
+      'github:/o/r/pull/10': {
+        ranAt: at,
+        rewrites: [],
+        seen: [bug.anchor],
+        summary: { tldr: 'One finding.', updatedAt: at, forItems: [item?.id ?? ''] },
+        suggestions: [{ key: bug.anchor, threads: [bug.anchor], headSha: 'head1', path: 'src/b.ts', start: 3, end: 3, original: ['use(x);'], replacement: null, summary: 'Also change `summarize`.', state: 'open', routed: true, sources: [bug.anchor], itemIds: { [bug.anchor]: item?.id ?? '' } }],
+      },
+    });
+    await fresh();
+    const pushed = { ...metaFor([bug]), headSha: 'head2' };
+    const schemas: string[] = [];
+    sendMessage.mockImplementation(async (message: unknown) => {
+      if (kindOf(message) !== '') schemas.push(kindOf(message));
+      return schemaOf(message) === 'geld_route' ? { ok: true, model: 'm', text: JSON.stringify({ routes: [{ id: bug.anchor, scope: 'lines', needs: '' }] }) } : drafted;
+    });
+    await runAi(pushed, [bug], settings, () => undefined, source);
+    expect(schemas).toEqual(['geld_route', 'geld_suggest']);
+    expect(triageSuggestions(pushed, settings)[0]?.entry).toMatchObject({ headSha: 'head2', replacement: ['use(x ?? NaN);'] });
+  });
+
+  it('asks about a shared row’s partners with its owner at a new commit, so a fresh draft keeps them', async () => {
+    const other: RawComment = { ...bug, anchor: 'discussion_r800', author: 'coderabbitai[bot]', body: 'Same problem.' };
+    const meta0 = metaFor([bug, other]);
+    stored.set('local:aiRuns', {
+      'github:/o/r/pull/10': {
+        ranAt: at,
+        rewrites: [],
+        seen: [bug.anchor, other.anchor],
+        summary: { tldr: 'One finding.', updatedAt: at, forItems: meta0.items.map((each) => each.id).sort() },
+        suggestions: [{ key: bug.anchor, threads: [bug.anchor, other.anchor], headSha: 'head1', path: 'src/b.ts', start: 3, end: 3, original: ['use(x);'], replacement: null, summary: 'Change both callers.', state: 'open', routed: true, sources: [bug.anchor, other.anchor] }],
+      },
+    });
+    await fresh();
+    const pushed = { ...meta0, headSha: 'head2' };
+    sendMessage.mockImplementation(async (message: unknown) => {
+      if (schemaOf(message) === 'geld_route') return { ok: true, model: 'm', text: JSON.stringify({ routes: [bug, other].map((each) => ({ id: each.anchor, scope: 'lines', needs: '' })) }) };
+      return { ok: true, model: 'm', text: JSON.stringify({ suggestions: [{ ids: [bug.anchor, other.anchor], summary: 'Skips missing values.', replacement: 'use(x ?? NaN);' }] }) };
+    });
+    await runAi(pushed, [bug, other], settings, () => undefined, source);
+    expect(triageSuggestions(pushed, settings).map(({ entry, partners }) => [entry.threads, entry.replacement, partners.length])).toEqual([[[bug.anchor, other.anchor], ['use(x ?? NaN);'], 1]]);
+  });
+});
+
+describe('a run asked for with no API key on this device', () => {
+  beforeEach(() => {
+    stored.clear();
+    sendMessage.mockReset();
+  });
+  const settings = { ...DEFAULT_SETTINGS, aiEnabled: true, aiBaseUrl: 'https://ai-gateway.vercel.sh', aiModel: 'anthropic/claude-sonnet-5' };
+  const bug: RawComment = { anchor: 'discussion_r900', kind: 'thread', author: 'greptile-apps[bot]', body: 'Off by one.', createdAt: at, path: 'src/b.ts', line: 3 };
+  const source = { pull: { title: 't', description: '' }, target: async () => ({ path: 'src/b.ts', start: 3, end: 3, lines: ['a', 'b', 'c'] }) };
+  const fresh = async (): Promise<void> => {
+    await new Promise<void>((resolve) => loadAiForPage(`github:/o/r/pull/11-${Math.random()}`, resolve));
+    await new Promise<void>((resolve) => loadAiForPage('github:/o/r/pull/11', resolve));
+  };
+
+  it('says so in the triage instead of doing nothing, and asks the model nothing', async () => {
+    await fresh();
+    const meta = metaFor([bug]);
+    expect(aiStateFor(meta, [bug], settings).kind).toBe('ready');
+    expect(await runAi(meta, [bug], settings, () => undefined, source)).toEqual({ changed: true });
+    expect(aiStateFor(meta, [bug], settings).kind).toBe('needs-key');
+    expect(sendMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'geld:ai-complete' }));
+  });
+
+  it('answers a chat’s Fix with the reason and that a key is what is missing', async () => {
+    await fresh();
+    const meta = metaFor([bug]);
+    expect(await fixFromComments(meta, [bug], settings, () => undefined, source, { threads: [bug.anchor], comment: null })).toEqual({ changed: true, failed: true, reason: NO_KEY_REASON, needsKey: true });
+  });
+
+  it('runs as usual once a key is saved', async () => {
+    await fresh();
+    const meta = metaFor([bug]);
+    await runAi(meta, [bug], settings, () => undefined, source);
+    stored.set('local:aiKey', 'sk-test');
+    sendMessage.mockImplementation(async () => ({ ok: true, model: 'm', text: JSON.stringify({ suggestions: [{ ids: [bug.anchor], summary: 'Fixes it.', replacement: 'B' }] }) }));
+    await fixFromComments(meta, [bug], settings, () => undefined, source, { threads: [bug.anchor], comment: null });
+    expect(aiStateFor(meta, [bug], settings).kind).not.toBe('needs-key');
+  });
+
+  it('keeps the fixes an earlier run wrote while it asks for a key, since applying them needs none', async () => {
+    stored.set('local:aiRuns', {
+      'github:/o/r/pull/11': {
+        ranAt: at,
+        rewrites: [],
+        seen: [bug.anchor],
+        suggestions: [{ key: bug.anchor, threads: [bug.anchor], headSha: 'head1', path: 'src/b.ts', start: 3, end: 3, original: ['c'], replacement: ['C'], summary: 'Fixes it.', state: 'open', sources: [bug.anchor] }],
+      },
+    });
+    await fresh();
+    const meta = metaFor([bug]);
+    await runAi(meta, [bug], settings, () => undefined, source);
+    expect(aiStateFor(meta, [bug], settings).kind).toBe('needs-key');
+    expect(triageSuggestions(meta, settings).map(({ entry }) => entry.replacement)).toEqual([['C']]);
+  });
+});
+
+describe('a chat’s Fix', () => {
+  const settings = { ...DEFAULT_SETTINGS, aiEnabled: true, aiBaseUrl: 'https://ai-gateway.vercel.sh', aiModel: 'anthropic/claude-sonnet-5' };
+
+  it('is offered while there is something to triage, and not when there is nothing', () => {
+    expect(chatFixesOffered({ kind: 'ready' }, settings)).toBe(true);
+    expect(chatFixesOffered({ kind: 'stale', ranAt: at, reason: 'comments' }, settings)).toBe(true);
+    expect(chatFixesOffered({ kind: 'nothing' }, settings)).toBe(false);
+    expect(chatFixesOffered({ kind: 'off' }, settings)).toBe(false);
+    expect(chatFixesOffered({ kind: 'app', hasLocal: false }, settings)).toBe(false);
+    expect(chatFixesOffered({ kind: 'ready' }, { ...settings, suggestedFixes: 'off' })).toBe(false);
+  });
+
+  it('offers a comment’s own Fix only when it reports findings outside its threads', () => {
+    const meta = { ...metaFor([]), bots: [{ id: 'coderabbit', login: 'coderabbitai[bot]', verdict: 'findings' as const, reviewedSha: 'head1', unthreaded: { count: 1, sourceId: 'pullrequestreview-9', digest: 'd' } }] };
+    expect(commentReportsOutsideThreads(meta, 'pullrequestreview-9')).toBe(true);
+    expect(commentReportsOutsideThreads(meta, 'issuecomment-5')).toBe(false);
+    expect(commentReportsOutsideThreads(metaFor([]), 'pullrequestreview-9')).toBe(false);
+  });
+
+  it('keeps This comment for a comment whose tasks were all discarded, so they can be written afresh', async () => {
+    const origin = { anchor: 'pullrequestreview-7', author: 'coderabbitai[bot]', title: 'Handle leaks' };
+    stored.set('local:aiRuns', {
+      'github:/o/r/pull/12': {
+        ranAt: at,
+        rewrites: [],
+        seen: [],
+        suggestions: [{ key: 'pullrequestreview-7~0', threads: [], headSha: 'head1', path: '', start: 0, end: 0, original: [], replacement: null, summary: 'Close it.', state: 'discarded', sources: ['pullrequestreview-7'], origin }],
+      },
+    });
+    await new Promise<void>((resolve) => loadAiForPage(`github:/o/r/pull/12-${Math.random()}`, resolve));
+    await new Promise<void>((resolve) => loadAiForPage('github:/o/r/pull/12', resolve));
+    expect(triageSuggestions(metaFor([]), settings)).toEqual([]);
+    expect(commentReportsOutsideThreads(metaFor([]), 'pullrequestreview-7')).toBe(true);
+  });
+});

@@ -24,6 +24,8 @@ export function textWidth(text: string, font: string): number {
  * The longest form of `path` no wider than `maxWidth`: every segment when
  * it fits; else the file name plus the most segments that do, taken from
  * the start first and from the end second, the gap marked with one "…".
+ * Where even the file name does not fit, it is cut in its middle, so its
+ * start and its extension both still show ("attachm…box.ts").
  */
 export function fitPath(path: string, maxWidth: number, measure: (text: string) => number): string {
   if (path === '' || maxWidth <= 0) return path;
@@ -44,6 +46,12 @@ export function fitPath(path: string, maxWidth: number, measure: (text: string) 
       best = candidate;
       bestScore = score;
     }
+  }
+  if (fits(best)) return best;
+  for (let keep = file.length - 1; keep >= 2; keep -= 1) {
+    const tail = Math.floor(keep / 2);
+    const cut = `${file.slice(0, keep - tail)}${ELLIPSIS}${file.slice(file.length - tail)}`;
+    if (fits(cut)) return cut;
   }
   return best;
 }

@@ -1,5 +1,6 @@
 import { storage } from 'wxt/utils/storage';
 import type { Conflict } from './conflicts';
+import type { InstallNeed } from './messages';
 import type { NightlyRelease } from '@geld/core/nightly';
 
 /**
@@ -65,6 +66,15 @@ export interface NightlyWrite {
   readonly whole: string;
   readonly paths: readonly string[];
 }
+
+/** An install that stopped before anything was downloaded, for want of the folder or Chrome's OK to write to it. */
+export interface NightlyBlock {
+  readonly version: string;
+  readonly need: InstallNeed;
+  readonly reason: string;
+  readonly at: string;
+}
+
 export interface NightlyStatus {
   readonly checkedAt: string | null;
   /** The latest release with a nightly build, whether or not it is newer than this one. */
@@ -85,6 +95,7 @@ export interface NightlyStatus {
   /** The API limited Geld's requests: none is sent before this time. */
   readonly limitedUntil: string | null;
   readonly writing: NightlyWrite | null;
+  readonly blocked: NightlyBlock | null;
 }
 
 export const EMPTY_STATUS: NightlyStatus = {
@@ -101,6 +112,7 @@ export const EMPTY_STATUS: NightlyStatus = {
   etag: null,
   limitedUntil: null,
   writing: null,
+  blocked: null,
 };
 
 export const nightlyStatusItem = /* @__PURE__ */ storage.defineItem<NightlyStatus>('local:nightlyStatus', { fallback: EMPTY_STATUS });
@@ -110,7 +122,7 @@ export async function readNightlyStatus(): Promise<NightlyStatus> {
   return { ...EMPTY_STATUS, ...(await nightlyStatusItem.getValue()) };
 }
 
-/** Each GitHub tab's hidden-file count, kept for the worker's next start so a tab's badge can take the ↑ too. */
+/** Each GitHub tab's hidden-file count, kept for the worker's next start so a tab's badge can take the ! or OFF too. */
 export const nightlyTabCountsItem = /* @__PURE__ */ storage.defineItem<Readonly<Record<string, number>>>('session:nightlyTabCounts', { fallback: {} });
 
 /** The other Geld that keeps this build from running (conflicts.ts), null while it may run. */

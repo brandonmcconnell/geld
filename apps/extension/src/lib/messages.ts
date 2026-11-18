@@ -1,6 +1,9 @@
 import type { AnyCategoryId, ChangeTotals, ErrorReport, FileStats, RepoConfigMode, SettingsIssue, UsageCounter } from '@geld/core';
 import { isUsageCounter, parseErrorReports } from '@geld/core';
 import type { JevRequest, JevResult, ModelInfo } from '@geld/review';
+import type { CreatePullOutcome, PullAttempt } from './create-pull';
+import type { FeedbackDraft } from './feedback';
+import { parseDraft } from './feedback';
 
 /** Messages exchanged between the content script, popup and background. */
 
@@ -64,6 +67,15 @@ export interface OpenSettingsMessage {
   readonly type: 'geld:open-settings';
   /** A settings section to open the options page at (its `data-section`), rather than the popup. */
   readonly section?: string;
+}
+
+/** Content script → background: inject the chat sidebar's view (`chat-ui.js`) into the sender's frame. */
+export interface LoadChatUiMessage {
+  readonly type: 'geld:load-chat-ui';
+}
+
+export function isLoadChatUiMessage(value: unknown): value is LoadChatUiMessage {
+  return typeof value === 'object' && value !== null && Reflect.get(value, 'type') === 'geld:load-chat-ui';
 }
 
 /** Any context → background: Geld's own errors, already scrubbed (`error-capture.ts`). */
@@ -204,11 +216,41 @@ export interface FeedbackOpenMessage {
   readonly type: 'geld:feedback-open';
   readonly tabId?: number;
   readonly diagnostics?: boolean;
+  /** A Geld Nightly rollback the reader is saying why about, its builds in words ("build 4179"). */
+  readonly rollback?: FeedbackRollback;
+  /** Words to start an empty draft with (a "Request a bot" or "Request an agent" link). */
+  readonly draft?: FeedbackDraft;
+}
+
+/** Content script → background: open the feedback page about the sender's tab, an empty draft started with `draft`. */
+export interface OpenFeedbackMessage {
+  readonly type: 'geld:open-feedback';
+  readonly draft: FeedbackDraft;
+}
+
+export interface FeedbackRollback {
+  readonly from: string;
+  readonly to: string;
+}
+
+function isFeedbackRollback(value: unknown): value is FeedbackRollback {
+  return isRecord(value) && typeof value.from === 'string' && typeof value.to === 'string';
 }
 
 export type FeedbackSubmitResponse =
   | { readonly ok: true; readonly number: number; readonly url: string }
   | { readonly ok: false; readonly message: string };
+
+/**
+ * Content script → background: open the pull request GitHub's compare form failed to, through the API with the
+ * reader's Geld App token, as `gh pr create` does. Taken only from a tab on that repository's own pages.
+ */
+export interface CreatePullMessage {
+  readonly type: 'geld:create-pull';
+  readonly attempt: PullAttempt;
+  /** The login GitHub's page says is signed in (`meta[name="user-login"]`): the request goes only as that same account. */
+  readonly viewer: string;
+}
 
 /**
  * Options → background: look for a newer pattern catalog right now. The
@@ -350,13 +392,48 @@ export function isFeedbackSubmitMessage(value: unknown): value is FeedbackSubmit
   return isRecord(value) && value.type === 'geld:feedback-submit' && typeof value.title === 'string' && typeof value.body === 'string';
 }
 
+function isPullAttempt(value: unknown): value is PullAttempt {
+  return (
+    isRecord(value) &&
+    ['owner', 'repo', 'base', 'head', 'title', 'body'].every((key) => typeof value[key] === 'string') &&
+    (value.headRepo === null || typeof value.headRepo === 'string') &&
+    typeof value.draft === 'boolean'
+  );
+}
+
+/** Content script → background: whether Geld is signed in with the GitHub App as the account the page is signed in as, which the API retry needs. Answered with a boolean, never the account. */
+export interface ApiSignedInMessage {
+  readonly type: 'geld:api-signed-in';
+  readonly viewer: string;
+}
+
+export function isApiSignedInMessage(value: unknown): value is ApiSignedInMessage {
+  return isRecord(value) && value.type === 'geld:api-signed-in' && typeof value.viewer === 'string';
+}
+
+export function isCreatePullMessage(value: unknown): value is CreatePullMessage {
+  return isRecord(value) && value.type === 'geld:create-pull' && isPullAttempt(value.attempt) && typeof value.viewer === 'string';
+}
+
+export function isCreatePullOutcome(value: unknown): value is CreatePullOutcome {
+  if (!isRecord(value)) return false;
+  if (value.ok === true) return typeof value.number === 'number' && typeof value.url === 'string';
+  return value.ok === false && (value.reason === 'unavailable' || value.reason === 'refused') && typeof value.message === 'string';
+}
+
 export function isFeedbackOpenMessage(value: unknown): value is FeedbackOpenMessage {
   return (
     isRecord(value) &&
     value.type === 'geld:feedback-open' &&
     (value.tabId === undefined || typeof value.tabId === 'number') &&
-    (value.diagnostics === undefined || typeof value.diagnostics === 'boolean')
+    (value.diagnostics === undefined || typeof value.diagnostics === 'boolean') &&
+    (value.rollback === undefined || isFeedbackRollback(value.rollback)) &&
+    (value.draft === undefined || parseDraft(value.draft) !== null)
   );
+}
+
+export function isOpenFeedbackMessage(value: unknown): value is OpenFeedbackMessage {
+  return isRecord(value) && value.type === 'geld:open-feedback' && parseDraft(value.draft) !== null;
 }
 
 export function isFeedbackSubmitResponse(value: unknown): value is FeedbackSubmitResponse {

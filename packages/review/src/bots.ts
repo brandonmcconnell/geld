@@ -10,7 +10,8 @@
  * is read by Codex but written for every agent, so it says nothing.
  */
 
-import type { BotVerdict } from './model';
+import type { BotVerdict, UnthreadedRecord } from './model';
+import { fnv1aHex } from './model';
 import type { CommentReaction } from './cluster';
 
 export interface ReviewBot {
@@ -432,6 +433,35 @@ function outsideDiffCount(text: string): number {
 }
 
 /**
+ * Where the outside-diff comments end: CodeRabbit's next section, as a heading of its own line (after its emoji, quote
+ * marks or tags), the comment sections with their count, the others closing the line. A finding's words ("Preserve
+ * review details when…") are no heading.
+ */
+const AFTER_OUTSIDE_DIFF =
+  /^[^\w\n]*(?:<[^>\n]*>[^\w\n]*)*(?:(?:nitpick|additional|duplicate) comments\s*\(\d+\)|(?:review details|prompt for all review comments with ai agents|prompt to fix all issues)(?:\s*<\/[a-z]+>)*[^\w\n]*$)/im;
+
+/**
+ * The parts of a review that hold its findings with no thread (`ParsedBotBody.unthreaded`): the outside-diff comments
+ * and the failed pre-merge checks, cut out before any length limit, since inline comments' details come first and a
+ * cut from the top would keep only those. Empty when the review has neither.
+ */
+export function unthreadedExcerpt(text: string): string {
+  const parts: string[] = [];
+  const outside = /\boutside diff range comments\s*\(\d+\)/i.exec(text);
+  if (outside !== null) {
+    const rest = text.slice(outside.index + outside[0].length);
+    const end = AFTER_OUTSIDE_DIFF.exec(rest);
+    parts.push(`${outside[0]}${end === null ? rest : rest.slice(0, end.index)}`);
+  }
+  const failed = /\bfailed pre-merge checks:[^\S\n]*\n[\s\S]*?(?=\bafter applying the fix\b|```|$)/i.exec(text);
+  if (failed !== null) parts.push(failed[0]);
+  return parts
+    .map((part) => part.trim())
+    .filter((part) => part !== '')
+    .join('\n\n');
+}
+
+/**
  * CodeRabbit's failed pre-merge checks, listed in its review's fix-all prompt ("Failed pre-merge checks:" then one
  * "- Docstring Coverage:" line per check, its advice under it): findings with no thread to resolve, standing until
  * CodeRabbit reviews again.
@@ -475,6 +505,15 @@ function hasHeading(text: string, heading: RegExp): boolean {
 
 function countShapedBy(botId: string, text: string, reviewBody: boolean): number | null {
   switch (botId) {
+    case 'devin': {
+      // Devin Review fixes some of what it finds and counts what is left: "found 2 findings. Devin automatically fixed
+      // all 2 findings." (or "…fixed it."), "found 4 findings. Devin fixed 3 findings; 1 finding is left for you to
+      // triage below." (surveyed Nov 2026). Its other words ("found 1 new potential issue") are read as any bot's.
+      if (!/\bfound \d+ findings?\b/i.test(text)) return null;
+      const left = /(\d+) findings? (?:is|are) left\b/i.exec(text);
+      if (left?.[1] !== undefined) return Number.parseInt(left[1], 10);
+      return /\bdevin (?:automatically )?fixed (?:it|them|all)\b/i.test(text) ? 0 : null;
+    }
     case 'claude': {
       const match = /(\d+)[^\S\n]*P1,[^\S\n]*(\d+)[^\S\n]*P2/i.exec(text);
       return match?.[1] !== undefined && match[2] !== undefined ? Number.parseInt(match[1], 10) + Number.parseInt(match[2], 10) : null;
@@ -549,13 +588,13 @@ function macroscopeApprovability(text: string): ParsedBotBody | null {
   if (!/^\s*(?:#{1,6}\s*)?Approvability\s*$/im.test(text)) return null;
   const verdict = /\bVerdict:?\**\s*:?\s*([^\n]*)/i.exec(text)?.[1]?.replace(/[*_`]/g, '').trim() ?? '';
   const empty = { count: null, score: null, severity: null } as const;
-  if (/^needs human approval\b/i.test(verdict)) return { ...empty, clean: false, verdict: 'needs-human' };
   // "Would Approve" is eligible, held back by what it lists under "**Needs human approval because:**": Preview Mode
   // (it "would have approved this PR outside preview mode") or an unresolved finding, which its thread counts. A
   // review that did not run ("Per-review cost limit exceeded … Approvability relies on correctness review") leaves
-  // the gate saying nothing about the code; the skipped check says why.
+  // the gate saying nothing about the code, even under "Needs Human Approval": the skip notice or check says why.
   const blockers = /\bneeds human approval because\b([\s\S]*)/i.exec(text)?.[1] ?? '';
   if (/\b(?:limit exceeded|limit reached|relies on correctness review|could not report|skipped for prerequisites)\b/i.test(blockers)) return { ...empty, clean: false };
+  if (/^needs human approval\b/i.test(verdict)) return { ...empty, clean: false, verdict: 'needs-human' };
   if (/^(?:approved|would approve)\b/i.test(verdict)) return { ...empty, clean: true };
   return { ...empty, clean: false };
 }
@@ -624,6 +663,12 @@ export function findingSeverity(body: string): FindingSeverity | null {
 
 const SEVERITY_RANK: Readonly<Record<FindingSeverity, number>> = { high: 3, medium: 2, low: 1 };
 
+/**
+ * What Devin fixed itself ("Fixed by Devin (3)" over a list), which grades nothing still open: raw in its
+ * `<details>`, as the page reads it up to the "View findings in Devin Review" line.
+ */
+const DEVIN_FIXED_LIST = /fixed by devin\s*\(\d+\)[\s\S]*?(?=<\/details>|^\s*\[?view findings in devin review|(?![\s\S]))/gim;
+
 export function parseBotBody(body: string, botId: string, anchor?: string): ParsedBotBody {
   // HTML comments are the bots' own markers (Cursor's automation ids, Greptile's score), never words to weigh.
   const text = body.replace(/\r\n?/g, '\n').replace(/<!--[\s\S]*?-->/g, '').trim();
@@ -690,14 +735,16 @@ export function parseBotBody(body: string, botId: string, anchor?: string): Pars
   // "Needs a human reviewer." (Sourcery's assessment), "Needs Human Approval" (Macroscope's verdict): the bot would
   // not sign off, whatever kind words came before ("they look great!").
   // ...a negated one ("does not need human approval") is no verdict; "not only needs human approval" is one still.
-  const needsHuman = /\bneeds? (?:a )?human (?:review(?:er)?|approval)\b/i.test(text.replace(/\b(?:not|no|never|without|doesn.t|does not|don.t|do not|didn.t|did not)\b(?!\s+(?:only|just|merely)\b)(?:\s+\w+){0,2}\s+needs? (?:a )?human (?:review(?:er)?|approval)\b/gi, ''));
+  // What Devin already fixed states no verdict and grades nothing still open.
+  const weighed = botId === 'devin' ? text.replace(DEVIN_FIXED_LIST, '') : text;
+  const needsHuman = /\bneeds? (?:a )?human (?:review(?:er)?|approval)\b/i.test(weighed.replace(/\b(?:not|no|never|without|doesn.t|does not|don.t|do not|didn.t|did not)\b(?!\s+(?:only|just|merely)\b)(?:\s+\w+){0,2}\s+needs? (?:a )?human (?:review(?:er)?|approval)\b/gi, ''));
   // "The PR is ready to merge" (Amazon Q) — unless the sentence says it is not ("not yet ready to merge", "isn't
   // ready to merge", "before it is ready to merge").
   const readyToMerge =
-    /\bready to merge\b/i.test(text) &&
-    !/\b(?:not|isn.t|aren.t|never|before|until|far from|nowhere near)\b(?:\s+\w+){0,3}\s+ready to merge\b/i.test(text) &&
+    /\bready to merge\b/i.test(weighed) &&
+    !/\b(?:not|isn.t|aren.t|never|before|until|far from|nowhere near)\b(?:\s+\w+){0,3}\s+ready to merge\b/i.test(weighed) &&
     // ...nor with a condition after it ("ready to merge after the failing check is fixed", "once …", "if …").
-    !/\bready to merge\s+(?:after|once|when|if|provided|pending|following|as soon as|but|except|unless)\b/i.test(text);
+    !/\bready to merge\s+(?:after|once|when|if|provided|pending|following|as soon as|but|except|unless)\b/i.test(weighed);
   // CodeRabbit's chat answers in anyone's words ("The fix is correct. No issues found."): only its review's own clean
   // word, or a review that counts none, is clean.
   const clean =
@@ -713,7 +760,7 @@ export function parseBotBody(body: string, botId: string, anchor?: string): Pars
           (count === 0 && (score === null || botId === 'greptile' || shaped !== null)));
   // A severity word under a negation is not a severity: "no established behavioral blocker", "no critical issues",
   // "without security risk". The denied phrase goes before the words are weighed.
-  const affirmed = text.replace(/\b(?:no|not|without|zero|non-)(?:\s+\w+){0,3}[\s-]+(?:high severity|critical|blockers?|blocking|security (?:issues?|vulnerabilit(?:y|ies)|risks?))\b/gi, '');
+  const affirmed = weighed.replace(/\b(?:no|not|without|zero|non-)(?:\s+\w+){0,3}[\s-]+(?:high severity|critical|blockers?|blocking|security (?:issues?|vulnerabilit(?:y|ies)|risks?))\b/gi, '');
   const severity: FindingSeverity | null = /\b(?:high severity|critical|blocker|security (?:issue|vulnerability|risk))\b/i.test(affirmed)
     ? 'high'
     : /\bmedium(?: severity| risk)?\b/i.test(affirmed)
@@ -721,7 +768,7 @@ export function parseBotBody(body: string, botId: string, anchor?: string): Pars
       : /\blow(?: severity| risk)?\b/i.test(affirmed)
         ? 'low'
         : null;
-  const changesRequested = /\b(?:verdict|assessment)\W{0,6}(?:request(?:s|ed)? changes|changes requested)\b/i.test(text);
+  const changesRequested = /\b(?:verdict|assessment)\W{0,6}(?:request(?:s|ed)? changes|changes requested)\b/i.test(weighed);
   // CodeRabbit scores nothing and states no verdict in words: a "5/5" or "Verdict: …" from it is chat.
   const coderabbit = botId === 'coderabbit';
   const verdict = coderabbit ? {} : needsHuman ? ({ verdict: 'needs-human' } as const) : changesRequested ? ({ verdict: 'changes-requested' } as const) : {};
@@ -751,6 +798,12 @@ export interface RawCheckRun {
    * completed. The report's grace (`REPORT_GRACE_MS`) runs from here.
    */
   readonly completedAt?: string;
+  /**
+   * For a finished check with neither time known, ISO: when the page first
+   * saw it already finished, so it had finished by then (run-starts.ts). A
+   * run asked for after that is not this check's.
+   */
+  readonly doneBy?: string;
 }
 
 export interface DerivedBotVerdict {
@@ -778,6 +831,14 @@ export interface DerivedBotVerdict {
    * "Needs a human reviewer."): nothing was found to count, so the chip says that rather than "findings".
    */
   readonly needsHuman?: true;
+  /** Findings its latest review holds with no thread to resolve (`ParsedBotBody.unthreaded`), and that review. */
+  readonly unthreaded?: UnthreadedRecord;
+}
+
+interface UnthreadedSeen {
+  readonly count: number;
+  readonly anchor: string;
+  readonly digest: string;
 }
 
 /**
@@ -1206,7 +1267,7 @@ interface ThreadRun {
   /** When the latest of these threads was posted (epoch ms), when known. */
   readonly lastAt: number | null;
   /** Findings the run's summary holds with no thread to resolve (`ParsedBotBody.unthreaded`), and that summary. */
-  readonly unthreaded?: { readonly count: number; readonly anchor: string };
+  readonly unthreaded?: UnthreadedSeen;
   /** The worst grade among the open threads (`findingSeverity`), when any of them grades itself. */
   readonly severity?: FindingSeverity;
 }
@@ -1316,6 +1377,8 @@ export function verdictsFrom(
   const checkStartedAt = new Map<string, number>();
   /** When each bot's check finished (epoch ms), when known: places the run only when its start is unknown (a commit status). */
   const checkFinishedAt = new Map<string, number>();
+  /** By when each bot's undated finished check had finished (`RawCheckRun.doneBy`). */
+  const checkDoneBy = new Map<string, number>();
   /** Bots that have posted a review thread here, resolved or not. */
   const postedThreads = new Set<string>();
   /** Bots whose check was a run the bot did not make, with the reason the check gave (`checkRefusal`). */
@@ -1366,6 +1429,9 @@ export function verdictsFrom(
     const finished = check.completedAt === undefined ? NaN : Date.parse(check.completedAt);
     if (Number.isNaN(finished)) checkFinishedAt.delete(bot.id);
     else checkFinishedAt.set(bot.id, finished);
+    const doneBy = running || check.doneBy === undefined ? NaN : Date.parse(check.doneBy);
+    if (Number.isNaN(doneBy)) checkDoneBy.delete(bot.id);
+    else checkDoneBy.set(bot.id, doneBy);
     const record: DerivedBotVerdict = {
       id: bot.id,
       login,
@@ -1387,9 +1453,29 @@ export function verdictsFrom(
   const statusOnly = new Map<string, { readonly login: string; readonly anchor: string; readonly at: number | null; readonly own: boolean; readonly acknowledged: boolean; readonly triggered?: boolean; readonly askedAt?: number | null }>();
   const threadRuns = new Map<string, ThreadRun>();
   /** The latest summary's findings with no thread of their own, for the run its threads go on to build. */
-  const unthreadedBy = new Map<string, { readonly count: number; readonly anchor: string }>();
+  const unthreadedBy = new Map<string, UnthreadedSeen>();
   /** The thread run a request set aside, in case the request is refused and that run is still the bot's last real one. */
   const runsBeforeAsk = new Map<string, ThreadRun>();
+  /** The outside-thread findings of the review a request set aside: they come back with that run, threads or none. */
+  const unthreadedBeforeAsk = new Map<string, UnthreadedSeen>();
+  const setAside = (id: string): void => {
+    const prior = threadRuns.get(id);
+    if (prior !== undefined) runsBeforeAsk.set(id, prior);
+    const outside = unthreadedBy.get(id);
+    if (outside !== undefined) unthreadedBeforeAsk.set(id, outside);
+    threadRuns.delete(id);
+    unthreadedBy.delete(id);
+  };
+  const restoreAsked = (id: string): void => {
+    const prior = runsBeforeAsk.get(id);
+    if (!threadRuns.has(id) && prior !== undefined) threadRuns.set(id, prior);
+    const outside = unthreadedBeforeAsk.get(id);
+    if (!unthreadedBy.has(id) && outside !== undefined) unthreadedBy.set(id, outside);
+  };
+  const forgetAsked = (id: string): void => {
+    runsBeforeAsk.delete(id);
+    unthreadedBeforeAsk.delete(id);
+  };
   /** When each bot last rewrote one of its comments: a summary edited after a run was asked for is that run's report. */
   const lastEditBy = new Map<string, number>();
   /** When each comment was last rewritten, by anchor: the summary a verdict was read from has an edit of its own. */
@@ -1468,12 +1554,7 @@ export function verdictsFrom(
         // The threads set aside here are what a refusal brings back. Only a report from the bot clears the
         // stash (below): a second request, or the bot's own "Starting", before any report leaves it the last
         // real run.
-        if (botById(asked.id)?.resolvesThreads !== true) {
-          const prior = threadRuns.get(asked.id);
-          if (prior !== undefined) runsBeforeAsk.set(asked.id, prior);
-          threadRuns.delete(asked.id);
-          unthreadedBy.delete(asked.id);
-        }
+        if (botById(asked.id)?.resolvesThreads !== true) setAside(asked.id);
         // A request, even a retry, asks for a new run: it is when this run was asked for.
         const acknowledged = viaWorkflow ? workflow === 'queued' : botById(asked.id)?.acknowledges === 'reaction' && reactedBy(comment, asked.id);
         statusOnly.set(asked.id, { login: asked.login, anchor: comment.anchor, at: Number.isNaN(at) ? null : at, own: false, acknowledged, askedAt: Number.isNaN(at) ? null : at });
@@ -1488,7 +1569,7 @@ export function verdictsFrom(
       postedThreads.add(id);
       reported(id, comment);
       statusOnly.delete(id);
-      runsBeforeAsk.delete(id);
+      forgetAsked(id);
       const run = threadRuns.get(id);
       const open = (run?.open ?? 0) + (comment.resolved ? 0 : 1);
       const openAnchor = run?.openAnchor ?? (comment.resolved ? null : comment.anchor);
@@ -1507,9 +1588,8 @@ export function verdictsFrom(
       const at = Number.isNaN(rewritten) ? posted : Math.max(rewritten, Number.isNaN(posted) ? rewritten : posted);
       if (!Number.isNaN(at)) answeredBy.set(id, { askedAt: statusOnly.get(id)?.at ?? (Number.isNaN(posted) ? at : posted), at, finished: !Number.isNaN(rewritten), anchor: comment.anchor });
       statusOnly.delete(id);
-      const prior = runsBeforeAsk.get(id);
-      if (!threadRuns.has(id) && prior !== undefined) threadRuns.set(id, prior);
-      runsBeforeAsk.delete(id);
+      restoreAsked(id);
+      forgetAsked(id);
       continue;
     }
     const refusal = refusalReason(comment.body);
@@ -1524,8 +1604,7 @@ export function verdictsFrom(
       // whether it is behind the head — so the refusal is the verdict only for a bot that never reviewed here.
       statusOnly.delete(id);
       const existing = byId.get(id);
-      const prior = runsBeforeAsk.get(id);
-      if (!threadRuns.has(id) && prior !== undefined) threadRuns.set(id, prior);
+      restoreAsked(id);
       const reviewed = threadRuns.has(id) || (existing?.sourceId !== undefined && (existing.verdict === 'clean' || existing.verdict === 'findings'));
       if (reviewed) continue;
       byId.set(id, { id, login: comment.author, verdict: 'failed', reviewedSha: headSha, ...(existing?.checkName === undefined ? {} : { checkName: existing.checkName }), sourceId: comment.anchor, reason: refusal });
@@ -1534,12 +1613,7 @@ export function verdictsFrom(
     if (isStatusLineComment(comment.body)) {
       // A new run began: the threads so far belong to the run before it — and are what a refusal of this run
       // brings back, as with a request.
-      if (botById(id)?.resolvesThreads !== true) {
-        const prior = threadRuns.get(id);
-        if (prior !== undefined) runsBeforeAsk.set(id, prior);
-        threadRuns.delete(id);
-        unthreadedBy.delete(id);
-      }
+      if (botById(id)?.resolvesThreads !== true) setAside(id);
       const at = comment.createdAt === undefined ? NaN : Date.parse(comment.createdAt);
       // "Review triggered" marks the run, whatever status line follows it before the bot reports.
       const triggered = commandReply(comment.body) === 'started' || statusOnly.get(id)?.triggered === true;
@@ -1563,18 +1637,18 @@ export function verdictsFrom(
     if (!isReviewShaped(parsed) && threadRuns.has(id)) {
       reported(id, comment);
       statusOnly.delete(id);
-      runsBeforeAsk.delete(id);
+      forgetAsked(id);
       continue;
     }
     reported(id, comment);
     if (parsed.count !== null) countedSummaries.add(comment.anchor);
-    if (parsed.unthreaded !== undefined) unthreadedBy.set(id, { count: parsed.unthreaded, anchor: comment.anchor });
+    if (parsed.unthreaded !== undefined) unthreadedBy.set(id, { count: parsed.unthreaded, anchor: comment.anchor, digest: fnv1aHex(comment.body) });
     else unthreadedBy.delete(id);
     // Macroscope's Approvability verdict follows its threads by seconds: a gate over them, not a count that replaces them.
     if (botById(id)?.resolvesThreads !== true) threadRuns.delete(id);
     statusOnly.delete(id);
     // The bot reported: whatever a request set aside is an older run now, not what a later refusal brings back.
-    runsBeforeAsk.delete(id);
+    forgetAsked(id);
     const existing = byId.get(id);
     const login = comment.author;
     if (existing !== undefined) {
@@ -1636,7 +1710,7 @@ export function verdictsFrom(
   // A bot whose latest word is "starting" has a run under way or just finished: what it found before belongs to
   // an earlier run (those threads are items in their own right). The check says how this run ended; with no
   // check to go by the bot is running until it says more.
-  for (const [id, { login, anchor, at, own, acknowledged, triggered }] of statusOnly) {
+  for (const [id, { login, anchor, at, own, acknowledged, triggered, askedAt }] of statusOnly) {
     const existing = byId.get(id);
     // The bot rewrote its summary after the run was asked for: that is the report, and the summary's verdict (read
     // above, from its words as they are now) stands. Greptile re-reviews into the same comment.
@@ -1658,7 +1732,12 @@ export function verdictsFrom(
     // another bot's "Starting…" over a skipped check may be the skip itself, and must not read running for 45 minutes.
     // Whose skip it is does not change with time; the run going stale is decided below, as for a run with no check.
     const skippedBefore = id === 'coderabbit' && triggered === true && before === undefined && checkSkipped.has(id);
-    const checkIsThisRun = existing?.checkName !== undefined && !(before !== undefined && at !== null && before < at) && !skippedBefore;
+    // Undated, but the page saw it finished before the run was asked for: the run before's, however the bot then
+    // answers. CodeRabbit's "Review triggered." over yesterday's green check read clean until its new check showed (geld#671).
+    const doneBy = checkDoneBy.get(id);
+    const asked = askedAt ?? at;
+    const doneBefore = before === undefined && doneBy !== undefined && asked !== null && doneBy < asked;
+    const checkIsThisRun = existing?.checkName !== undefined && !(before !== undefined && at !== null && before < at) && !doneBefore && !skippedBefore;
     // A request that aged unanswered, with no check of its own to say how the run went: the earlier run stands
     // whole, its threads included — the request had set them aside — so a run whose findings were all resolved
     // reads "resolved" below, not as its summary's count from before they were, and a bot that only ever posted
@@ -1668,17 +1747,18 @@ export function verdictsFrom(
     if (stale && !checkIsThisRun && options.partial !== true) {
       const prior = runsBeforeAsk.get(id);
       if (prior !== undefined && !threadRuns.has(id)) {
-        threadRuns.set(id, prior);
+        restoreAsked(id);
         continue;
       }
+      // A review with no threads stands too: its findings outside threads come back with it.
+      if (prior === undefined) restoreAsked(id);
     }
     // The run asked for was not made: its own check skipped it ("Review rate limited"). As with a refusal in so many
     // words, a review the bot made earlier stands, the threads the request set aside included, and a bot that never
     // reviewed here keeps the skip and its reason, never a bare red "failed" from the check's verdict.
     const skippedThisRun = checkIsThisRun ? checkSkipped.get(id) : undefined;
     if (existing !== undefined && skippedThisRun !== undefined) {
-      const prior = runsBeforeAsk.get(id);
-      if (prior !== undefined && !threadRuns.has(id)) threadRuns.set(id, prior);
+      restoreAsked(id);
       const reviewed = threadRuns.has(id) || (existing.sourceId !== undefined && (existing.verdict === 'clean' || existing.verdict === 'findings'));
       if (!reviewed && !(existing.verdict === 'failed' && existing.reason !== undefined)) {
         byId.set(id, { id, login, verdict: 'failed', reviewedSha: existing.reviewedSha, ...(existing.checkName === undefined ? {} : { checkName: existing.checkName }), sourceId: anchor, reason: skippedThisRun });
@@ -1713,8 +1793,9 @@ export function verdictsFrom(
     const reviewedSha = existing === undefined ? headSha : shaOver(existing);
     const checkName = existing?.checkName;
     const named = checkName === undefined ? {} : { checkName };
-    // The run's summary scored the pull request (Greptile's N/5): that stays with the run, open threads or not.
-    const scored = existing?.verdict === 'findings' && existing.score !== undefined ? { score: existing.score } : {};
+    // The run's summary scored the pull request (Greptile's N/5): that stays with the run, open threads or not, and
+    // whatever the summary's own words read as.
+    const scored = (existing?.verdict === 'findings' || existing?.verdict === 'clean') && existing.score !== undefined ? { score: existing.score } : {};
     // Findings the summary holds with no thread (CodeRabbit's outside the diff) stand whatever becomes of its threads.
     const unthreaded = run.unthreaded?.count ?? 0;
     if (run.open + unthreaded > 0) {
@@ -1842,6 +1923,13 @@ export function verdictsFrom(
     if (record === undefined || record.verdict === 'running') continue;
     const refusal = record.verdict === 'failed' && record.reason !== undefined;
     byId.set(id, { ...record, runJudged: true, ...(refusal || record.reviewedSha !== refusedSha ? {} : { reviewedSha: UNKNOWN_SHA }) });
+  }
+  // What the bot's latest review holds with no thread, as it said it: counted from the review, never from the threads
+  // the reader happens to see (a capped item list, a thread marked done by hand, threads merged into one row).
+  for (const [id, record] of byId) {
+    const seen = threadRuns.get(id)?.unthreaded ?? unthreadedBy.get(id);
+    if (record.verdict !== 'findings' || seen === undefined || seen.count <= 0) continue;
+    byId.set(id, { ...record, unthreaded: { count: seen.count, sourceId: seen.anchor, digest: seen.digest } });
   }
 
   return [...byId.values()];

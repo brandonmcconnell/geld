@@ -17,7 +17,8 @@
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from '../dom';
 import { authorOf } from './crawler';
 import { fitPathInto } from './path-fit';
-import { ICON_CHECK_CIRCLE, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_FILE_SYMLINK_FILE, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_SYNC, ICON_X } from '../ui/icons';
+import { ICON_CHECK_CIRCLE, ICON_CHECK_CIRCLE_FILL, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CIRCLE, ICON_COPY, ICON_FILE_SYMLINK_FILE, ICON_GEAR, ICON_HISTORY, ICON_LINK_EXTERNAL, ICON_PIN, ICON_PIN_FILL, ICON_SPARKLE_FILL, ICON_SPINNER, ICON_SYNC, ICON_X } from '../ui/icons';
+import { NO_KEY_REASON } from '../../lib/ai-key';
 import { ATTR_WHO } from './hovercard';
 import { ATTR_EDITED_FOR, ATTR_TIME_FOR } from './panel';
 import { dropOrphanedLoans, isTeleported, moveNode, onRestore, ownedBy, restoreAll, teleportedNodes, teleportInto } from './teleport';
@@ -95,6 +96,98 @@ export interface ChatHandlers {
   readonly onToggleSource: (thread: HTMLElement) => void;
   /** Open a comment by its anchor where the panel keeps it (the bot's current word, from "See latest"). */
   readonly onOpenAnchor: (anchor: string) => void;
+  /** The thread's Fix, asking the AI triage for a fix for it; null where the triage cannot write one (AI off, no file). */
+  readonly fixOf?: (thread: HTMLElement) => ChatFix | null;
+}
+
+/** Where a fix asked for from a chat stands: being written, then in the triage at the top of the digest. */
+export type ChatFixState = 'idle' | 'running' | 'done' | 'failed';
+
+export interface ChatFix {
+  readonly state: ChatFixState;
+  /** Its fix is being applied: asking afresh waits until that lands, or the two would record over each other. */
+  readonly applying: boolean;
+  /** Why the model gave no answer, said on the control: Fix asks again. */
+  readonly error?: string;
+  /** No API key on this device: the control leads to Geld's settings instead. */
+  readonly needsKey?: boolean;
+  readonly onFix: () => void;
+  readonly onAddKey: () => void;
+}
+
+/** What a comment's Fix asks for: its own findings outside its threads, the threads it came with, or both. */
+export type CommentFixScope = 'comment' | 'threads' | 'both';
+
+export interface CommentFix {
+  /** Its open threads a fix can be written for: Threads is offered only with one or more. */
+  readonly threads: number;
+  /** It reports findings outside its threads (or tasks were written from it): This comment is offered only then. */
+  readonly comment: boolean;
+  readonly state: ChatFixState;
+  /** One of its threads' fixes is being applied: Threads and Both wait until that lands. */
+  readonly applying: boolean;
+  /** The choice being written or last written, so its button is the one that says so. */
+  readonly scope: CommentFixScope | null;
+  readonly error?: string;
+  /** No API key on this device: the row says so with a way to Geld's settings. */
+  readonly needsKey?: boolean;
+  readonly onFix: (scope: CommentFixScope) => void;
+  readonly onAddKey: () => void;
+}
+
+const FIX_WORDS: Readonly<Record<ChatFixState, string>> = {
+  idle: 'Ask the AI triage for a fix. It appears in the triage at the top of the digest.',
+  running: 'The AI triage is writing the fix.',
+  done: 'The fix is in the triage at the top of the digest. Fix again to write it afresh.',
+  failed: 'The model could not answer. Try again.',
+};
+
+/** A thread chat's Fix, in Rerun's box: the sparkle and the word, GitHub's spinner in the sparkle's place while it is written. */
+function threadFixControl(fix: ChatFix): HTMLElement {
+  if (fix.state === 'failed' && fix.needsKey === true) {
+    const add = createElement('button', { type: 'button', class: 'geld-review__rerun geld-review__chat-fix', title: NO_KEY_REASON, 'data-state': 'needs-key' }, [icon(ICON_GEAR), createElement('span', {}, ['Add API key'])]);
+    add.addEventListener('click', () => fix.onAddKey());
+    return add;
+  }
+  const running = fix.state === 'running';
+  const words = fix.state === 'failed' && fix.error !== undefined ? `The model could not answer: ${fix.error} Fix asks again.` : FIX_WORDS[fix.state];
+  const button = createElement('button', { type: 'button', class: 'geld-review__rerun geld-review__chat-fix', title: fix.applying ? 'Its fix is being applied' : words, 'data-state': fix.state, ...(running ? { 'data-running': '', disabled: '', 'aria-busy': 'true' } : fix.applying ? { disabled: '' } : {}) }, [icon(ICON_SPARKLE_FILL), icon(ICON_SPINNER), createElement('span', {}, ['Fix'])]);
+  button.addEventListener('click', () => fix.onFix());
+  return button;
+}
+
+/** The choices a comment's Fix offers: This comment for what it reports outside its threads, Threads for its open threads, Both for both. */
+export function commentFixScopes(fix: Pick<CommentFix, 'comment' | 'threads'>): readonly CommentFixScope[] {
+  if (fix.comment && fix.threads > 0) return ['comment', 'threads', 'both'];
+  return fix.comment ? ['comment'] : fix.threads > 0 ? ['threads'] : [];
+}
+
+/** A comment chat's Fix row: "Fix:", then This comment, Threads and Both (the primary) as buttons of their own. */
+function commentFixRow(fix: CommentFix): HTMLElement {
+  const running = fix.state === 'running';
+  const threads = fix.threads === 1 ? 'its thread' : `its ${fix.threads} threads`;
+  const words: Readonly<Record<CommentFixScope, readonly [string, string]>> = {
+    comment: ['This comment', 'What this comment reports outside its threads (findings outside the diff, failed checks), as tasks for an agent'],
+    threads: ['Threads', `A fix for ${threads}, to apply as a suggestion`],
+    both: ['Both', `What this comment reports outside its threads and a fix for ${threads}`],
+  };
+  const choices = commentFixScopes(fix).map((scope) => [scope, ...words[scope]] as const);
+  const group = createElement('div', { class: 'geld-review__chat-fix-choices', role: 'group', 'aria-label': 'Fix' });
+  for (const [scope, label, title] of choices) {
+    const primary = scope === 'both' || choices.length === 1;
+    const pressed = running && fix.scope === scope;
+    const waits = fix.applying && scope !== 'comment';
+    const button = createElement('button', { type: 'button', class: `btn btn-sm${primary ? ' btn-primary' : ''}`, title: waits ? 'A fix for its threads is being applied' : title, ...(running || waits ? { disabled: '' } : {}), ...(pressed ? { 'aria-busy': 'true' } : {}) }, [pressed ? 'Fixing…' : label]);
+    button.addEventListener('click', () => fix.onFix(scope));
+    group.append(button);
+  }
+  const row = createElement('div', { class: 'geld-review__chat-fix-row', 'data-state': fix.state }, [createElement('span', { class: 'geld-review__chat-fix-label' }, ['Fix:']), group]);
+  if (fix.state === 'failed' && fix.needsKey === true) {
+    const add = createElement('button', { type: 'button', class: 'geld-review__chat-fix-link' }, ['Add an API key']);
+    add.addEventListener('click', () => fix.onAddKey());
+    row.append(createElement('span', { class: 'geld-review__chat-fix-note', 'data-tone': 'danger', role: 'alert' }, [NO_KEY_REASON, ' ', add]));
+  } else if (fix.state === 'done' || fix.state === 'failed') row.append(createElement('span', { class: 'geld-review__chat-fix-note', role: 'status' }, [fix.state === 'done' ? 'In the triage at the top of the digest.' : fix.error === undefined ? FIX_WORDS.failed : `The model could not answer: ${fix.error}`]));
+  return row;
 }
 
 /** Focus key of a chat's pinned-context toggle, so a rebuild returns focus to it. */
@@ -230,7 +323,8 @@ export function renderChatView(slot: HTMLElement, threads: readonly HTMLElement[
     .map((thread) => {
       const source = sources.get(thread) ?? null;
       const shown = source === null ? '' : [source.anchor, source.label, source.preview, source.revision?.state ?? '', source.at ?? '', source.latestAnchor ?? '', source.rerun?.running === true ? 'running' : '', handlers.sourceOpen(thread) ? 'open' : ''].join(',');
-      return `${threadAnchorOf(thread)}:${handlers.pathOf(thread)}:${shown}`;
+      const fix = handlers.fixOf?.(thread) ?? null;
+      return `${threadAnchorOf(thread)}:${handlers.pathOf(thread)}:${shown}:${fix === null ? '' : `${fix.state}${fix.applying ? ':applying' : ''}`}`;
     })
     .join(' ');
   // The same threads a rebuilt panel carried over (`parkChats`): the chat goes back as it was, loans, reply box and all.
@@ -272,6 +366,8 @@ function dressThreads(list: HTMLElement, threads: readonly HTMLElement[], handle
     }
     const jump = jumpHrefOf(thread);
     if (jump !== null) actions.append(createElement('a', { class: 'geld-review__icon geld-review__chat-jump', href: jump, 'aria-label': 'Jump to the comment in the diff', title: 'Jump to the comment in the diff' }, [icon(ICON_FILE_SYMLINK_FILE)]));
+    const fix = handlers.fixOf?.(thread) ?? null;
+    if (fix !== null) actions.append(threadFixControl(fix));
     const resolve = headResolveControl(thread, body);
     if (resolve !== null) actions.append(resolve);
     const lines = threadLinesOf(thread);
@@ -512,8 +608,8 @@ function isExternalHref(href: string): boolean {
 let rerunIds = 0;
 
 /**
- * "Rerun" with the sync glyph, on the byline's right. Running: the glyph
- * spins, the words stay (so nothing shifts), the border goes transparent,
+ * "Rerun" with the sync glyph, on the byline's right. Running: GitHub's
+ * spinner takes the glyph's place, the words stay (so nothing shifts), the border goes transparent,
  * the pointer is the default one and GitHub's tooltip says "<bot> is
  * running"; a click then asks, in GitHub's own dialog, before posting the
  * trigger again. A click while idle posts at once and the control takes
@@ -523,7 +619,7 @@ function rerunControl(rerun: ChatRerun): HTMLElement {
   rerunIds += 1;
   const id = `geld-rerun-${rerunIds}`;
   const wrap = createElement('span', { class: 'geld-review__rerun-wrap' });
-  const button = createElement('button', { type: 'button', id, class: 'geld-review__rerun', ...(rerun.running ? { 'data-running': '', 'aria-describedby': `${id}-tip` } : { 'aria-label': `Rerun ${rerun.bot}` }) }, [icon(ICON_SYNC), createElement('span', {}, ['Rerun'])]);
+  const button = createElement('button', { type: 'button', id, class: 'geld-review__rerun', ...(rerun.running ? { 'data-running': '', 'aria-describedby': `${id}-tip` } : { 'aria-label': `Rerun ${rerun.bot}` }) }, [icon(ICON_SYNC), icon(ICON_SPINNER), createElement('span', {}, ['Rerun'])]);
   // GitHub's own tooltip element (the page defines `tool-tip`; an element made here is upgraded like its own), so
   // the words come up in GitHub's style. Without the definition (an Enterprise version before it) it stays sr-only.
   const tip = document.createElement('tool-tip');
@@ -627,7 +723,7 @@ export interface ChatThreadLink {
  * leading to the thread where it opens (the threads are rows of their own).
  * The comment's own header stays hidden: its ⋯ is worn by the row above.
  */
-export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: ChatByline | null = null, threads: readonly ChatThreadLink[] = [], onOpenThread: ((anchor: string) => void) | null = null): void {
+export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: ChatByline | null = null, threads: readonly ChatThreadLink[] = [], onOpenThread: ((anchor: string) => void) | null = null, fix: CommentFix | null = null): void {
   // Without a byline the row above is the header, and the body needs no gutter to sit under a name.
   const chat = createElement('section', { class: 'geld-review__chat', 'data-geld-chat': 'comment', 'aria-label': 'Comment', ...(byline === null ? { 'data-geld-headless': '' } : {}) });
   if (byline !== null) {
@@ -683,6 +779,7 @@ export function renderCommentChat(slot: HTMLElement, node: HTMLElement, byline: 
     }
     chat.append(list);
   }
+  if (fix !== null) chat.append(commentFixRow(fix));
   slot.replaceChildren(createElement('div', { class: 'geld-review__chats' }, [chat]));
   teleportInto(body, [node]);
   if (body.childElementCount === 0) {
@@ -721,7 +818,7 @@ function pinnedContext(thread: HTMLElement, source: ChatSource, handlers: ChatHa
   const open = handlers.sourceOpen(thread);
   const revision = source.revision?.state === 'revision' ? source.revision : null;
   const preview = revision === null ? source.preview : firstLineOf(revision.body) || source.preview;
-  const children: Node[] = [createElement('span', { class: 'geld-review__chat-pin-glyph', 'aria-hidden': 'true' }, [icon(ICON_PIN)])];
+  const children: Node[] = [createElement('span', { class: 'geld-review__chat-pin-glyph', 'aria-hidden': 'true' }, [icon(open ? ICON_PIN_FILL : ICON_PIN)])];
   if (source.avatarSrc !== null) children.push(createElement('img', { class: 'geld-review__avatar', 'data-kind': source.bot ? 'bot' : 'user', src: source.avatarSrc, alt: '', width: '20', height: '20' }));
   children.push(createElement('span', { class: 'geld-review__chat-pin-label' }, [source.label]));
   // The reading's own time, when worth saying ("Greptile's run summary · 2 hours ago"): a past revision's, the
@@ -882,7 +979,7 @@ function dressOverviewUnresolve(thread: HTMLElement): void {
 /**
  * The lines a thread is on, as GitHub names them: the Overview's heading ("Line 8230", "Lines 845 - 853"), the
  * classic snippet's "Comment on lines +3331 to +3335", or for a single classic line the last numbered row of the
- * snippet (the line the comment is on). Exported for its test only.
+ * snippet (the line the comment is on).
  */
 export function threadLinesOf(thread: HTMLElement): { readonly start: number; readonly end: number } | null {
   const of = (start: string | undefined, end: string | undefined): { readonly start: number; readonly end: number } | null => {
@@ -1425,8 +1522,11 @@ function annotateMessages(messages: readonly HTMLElement[], viewer: string, pinn
     if (bubble !== null) mark(bubble, ATTR_PART, 'bubble');
     // Review comments keep their reactions in a wrapper of their own beside the body's; an issue comment nests
     // them inside the body's wrapper. The part is the row itself then, so it lays out and floats the same way.
-    if (reactionsHolder !== null && reactionsHolder !== bubble && reactionsHolder !== meta) mark(reactionsHolder, ATTR_PART, 'reactions');
-    else if (reactionsRow !== null && reactionsRow !== bubble && !reactionsRow.matches('[data-geld-part]')) mark(reactionsRow, ATTR_PART, 'reactions');
+    // A row `placeControls` already moved under the bubble stands in Geld's own holder, which its own rules lay out and
+    // hide while it holds no pills: marked again when a reply arrives, every empty holder grew back 6px of padding.
+    const placed = reactionsHolder?.hasAttribute(OWN_UI_ATTRIBUTE) === true;
+    if (!placed && reactionsHolder !== null && reactionsHolder !== bubble && reactionsHolder !== meta) mark(reactionsHolder, ATTR_PART, 'reactions');
+    else if (!placed && reactionsRow !== null && reactionsRow !== bubble && !reactionsRow.matches('[data-geld-part]')) mark(reactionsRow, ATTR_PART, 'reactions');
     for (const form of message.querySelectorAll<HTMLFormElement>(':scope > form.js-comment-update, :scope > form[data-testid="comment-edit-form"]')) mark(form, ATTR_PART, 'edit');
   });
   onRestore(() => {

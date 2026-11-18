@@ -67,6 +67,8 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
   let sync: SyncState = EMPTY_SYNC_STATE;
   let localError: string | null = null;
   let closed=false;
+  let confirmingOverwrite = false;
+  let resolving = false;
   let syncClock: ReturnType<typeof setInterval> | null = null;
 
   const stopSyncClock = (): void => {
@@ -92,7 +94,18 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
     render();
   };
 
-  function render(): void {
+  // Either answer to the settings conflict rewrites one side, so nothing else may be pressed until it is done.
+  const resolve = async (action: 'resolve-remote' | 'resolve-local'): Promise<void> => {
+    if (resolving) return;
+    resolving = true;
+    render();
+    localError = await send(action);
+    resolving = false;
+    confirmingOverwrite = false;
+    render();
+  };
+
+  function render(focus: 'cancel' | 'overwrite' | null = null): void {
     if(closed)return;
     stopSyncClock();
     host.replaceChildren();
@@ -206,20 +219,38 @@ export function mountAccountWidget(host: HTMLElement, options: AccountWidgetOpti
       promptHost.append(alert);
     }
 
-    const choice = sync.pendingChoice;
-    if (choice !== null) {
-      const when = new Date(choice.remoteUpdatedAt).toLocaleString();
+    if (sync.pendingChoice === null) {
+      confirmingOverwrite = false;
+    } else if (confirmingOverwrite) {
+      const cancel = button(['Cancel'], 'geld-button--small', () => {
+        confirmingOverwrite = false;
+        render('overwrite');
+      });
+      const overwrite = button(['Overwrite'], 'geld-button--small geld-button--primary', () => void resolve('resolve-local'));
+      cancel.disabled = resolving;
+      overwrite.disabled = resolving;
       promptHost.append(
         el('div', 'geld-account__prompt', [
-          el('p', 'geld-account__prompt-text', [
-            `Your GitHub account already has Geld settings (saved ${when}) that differ from this device's. Which should win?`,
-          ]),
-          el('div', 'geld-account__prompt-actions', [
-            button(['Use account settings'], 'geld-button--small geld-button--primary', () => void act('resolve-remote')),
-            button(['Keep mine (overwrite account)'], 'geld-button--small', () => void act('resolve-local')),
-          ]),
+          el('p', 'geld-account__prompt-text', ["Are you sure you want to replace your account's Geld settings with this device's? This cannot be undone."]),
+          el('div', 'geld-account__prompt-actions', [overwrite, cancel]),
         ]),
       );
+      if (focus === 'cancel') cancel.focus();
+    } else {
+      const overwrite = button(['Overwrite account'], 'geld-button--small', () => {
+        confirmingOverwrite = true;
+        render('cancel');
+      });
+      const useAccount = button(['Use account'], 'geld-button--small geld-button--primary', () => void resolve('resolve-remote'));
+      useAccount.disabled = resolving;
+      overwrite.disabled = resolving;
+      promptHost.append(
+        el('div', 'geld-account__prompt', [
+          el('p', 'geld-account__prompt-text', ["Your account already has Geld settings that differ from this device's. Which should win?"]),
+          el('div', 'geld-account__prompt-actions', [useAccount, overwrite]),
+        ]),
+      );
+      if (focus === 'overwrite') overwrite.focus();
     }
   }
 

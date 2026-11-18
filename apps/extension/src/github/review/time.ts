@@ -103,6 +103,18 @@ export function absoluteTimeText(datetime: string): string {
   return new Date(then).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+/** The earliest of `moments` (ISO datetimes), skipping what is missing or unreadable; null when none is known. */
+export function earliestMoment(moments: readonly (string | null | undefined)[]): string | null {
+  let best: { readonly at: string; readonly time: number } | null = null;
+  for (const at of moments) {
+    if (at === null || at === undefined) continue;
+    const time = Date.parse(at);
+    if (Number.isNaN(time)) continue;
+    if (best === null || time < best.time) best = { at, time };
+  }
+  return best?.at ?? null;
+}
+
 /** A `<relative-time>` for `datetime`, worded by GitHub's element once it upgrades, by `relativeTimeText` until then. */
 export function relativeTimeElement(datetime: string, className: string): HTMLElement {
   const wrapper = createElement('span', { class: className });

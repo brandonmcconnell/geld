@@ -11,7 +11,7 @@ import { createMatcher } from '@geld/core';
 import type { RepoConfigDecision, TabRepoConfig, TabState } from '../lib/messages';
 import { REVEAL_HASH_PREFIX } from '../lib/messages';
 import type { RepoRule } from '@geld/core';
-import { applyRepoConfigs, compileAuthorRules, compileRepoRules, decideRepo, declaredReviewBots, describeRepoConfig, repoFromPathname } from '@geld/core';
+import { applyRepoConfigs, compileAuthorRules, compileRepoRules, decideRepo, declaredReviewBots, repoResolvesOnFix, describeRepoConfig, repoFromPathname } from '@geld/core';
 import { geldRunCommand } from '@geld/review';
 import type { AuthorRules } from '@geld/core';
 import { extensionAlive, persist } from '../lib/context';
@@ -29,6 +29,7 @@ import { RepoConfigSource, validConfigs } from './repo-config-source';
 import { createElement, isOwnElement, OWN_UI_ATTRIBUTE, queryAll, restoreManagedText, svgFromString, writeAttribute } from './dom';
 import { conversationHeadSha, detectHeadSha, documentNavigatedSinceLoad, fetchHeadSha, forgetAskedHead, rememberAskedHead, shaFromCommitUrl, watchFilesRefresh } from './head-sha';
 import { applyQuickReview, quickReviewStandBusy, reassertStatusPills, rememberReviewGroup, removeQuickReview } from './quick-review';
+import { animateBarGroup, ghostBarDepartures } from './ui/bar-motion';
 import type { HeaderStatGroup } from './header-stats';
 import { applyHeaderStats, branchGroupTotals, findHeaderStatGroups, holdsHeaderStats, isCountsStandIn, isSrOnlyText, removeCountsStandIn, restoreHeaderStats, syncCountsStandIn } from './header-stats';
 import { rememberTabCounts, setTabCounts } from './tab-counts';
@@ -45,7 +46,9 @@ import { applyDiffstatSurfaces } from './diffstat-surfaces';
 import type { ListSurface } from './list-surfaces';
 import { applySurfaceStyles, removeSurfaceStyles, surfacesOf } from './list-surfaces';
 import { applyAuthorHiding, removeAuthorHiding } from './pr-authors';
+import { reassertDescriptionMenu } from './description-menu';
 import { applyPeoplePresence, removePeoplePresence } from './people-presence';
+import { applyCreatePullRetry, removeCreatePullRetry } from './create-pull-retry';
 import { applyBlockedListHiding, removeBlockedListHiding } from './blocked-lists';
 import { blockedFor } from './blocked-users';
 import { applyPrListStats, PR_STAT_CLASS, removePrListStats } from './pr-list';
@@ -129,6 +132,9 @@ const VIRTUAL_NAVIGATION_PASSES = 4;
 /** How long a revealed file is held aligned at the top while diffs above it load: a plain list, and a virtualised one. */
 const ALIGN_MS = 1500;
 const VIRTUAL_ALIGN_MS = 8000;
+/** A file picked in GitHub's tree: how long to wait for GitHub's scroll to begin, and the still frames that end it. */
+const TREE_SCROLL_START_MS = 600;
+const TREE_SCROLL_STILL_FRAMES = 6;
 
 interface ClassifiedEntry extends Classified {
   readonly entry: DiffEntry;
@@ -537,13 +543,18 @@ export class GeldController {
     // Likewise before paint: chips whose row GitHub just re-rendered come
     // straight back from the in-memory diff states, so no frame lacks them.
     if (chipRemoved(records)) this.applyListChips();
+    // GitHub's parts its bar just dropped (the tabs back in view) stay as ghosts to be carried out rather than vanish.
+    if (this.mayDressPage()) ghostBarDepartures(records);
     // The status pill too: a header GitHub (re)rendered shows Geld's pill in its first frame.
     if (this.settings.quickReview && this.mayDressPage()) reassertStatusPills();
-    // The description GitHub just rendered (a switch back to the conversation tab) is folded in its first frame.
-    if (this.mayDressPage()) foldDescriptionNow(this.settings);
+    // With the parts and the pill in place, the bar's left side slides as one block to where it now stands.
+    if (this.mayDressPage()) animateBarGroup();
+    // The description GitHub just rendered (a switch back to the conversation tab, a saved edit) is folded in its first frame.
+    if (this.mayDressPage()) foldDescriptionNow(this.settings, records);
     // The Overview's top card, which GitHub draws and re-renders between passes, dressed in its first frame, and the
     // digest back after a re-render of the column took it.
     dressOverviewNow(this.settings, this.mayDressPage());
+    if (this.mayDressPage()) reassertDescriptionMenu();
     // GitHub's skeleton back in the counts wrapper the group stands in by its fallback: out before this frame paints.
     if (this.settings.quickReview && this.currentPage !== null && quickReviewStandBusy()) this.placeQuickReview(this.currentPage, new URL(window.location.href));
     this.schedule(false);
@@ -694,6 +705,7 @@ export class GeldController {
     const target = event.target instanceof Element ? event.target : null;
     if (target === null) return;
     if (this.searchPanel !== null) this.keepSearchPanel(target, this.currentPage.stateKey);
+    this.followTreePick(target);
     if (this.settings.groupHidden) return;
     // Read the page afresh: React re-renders tree rows, so a view captured on
     // the last pass may hold stale elements that no longer match the click.
@@ -732,6 +744,71 @@ export class GeldController {
     }
     this.activePanel.set(stateKey, opened.panel);
     this.searchPanel = null;
+  }
+
+  /**
+   * GitHub's React files view scrolls to a file picked in its tree by where the file stands at the click, but the
+   * files above it are `content-visibility: auto` boxes at estimated heights until they render, which they do during
+   * that smooth scroll: it ends hundreds or thousands of pixels short. Once it ends, the file is put back at the
+   * offset GitHub aimed for and held there while the files around it settle.
+   */
+  private followTreePick(target: Element): void {
+    if (!this.mayDressPage()) return;
+    const row = target.closest('li[role="treeitem"]');
+    if (row === null) return;
+    const view = legacyAdapter.read() ?? reactAdapter.read();
+    if (view === null || view.kind !== 'react' || view.virtualized) return;
+    const anchor = view.treeFiles.find((file) => file.element === row)?.anchor ?? null;
+    if (anchor === null) return;
+    const live = (): HTMLElement | null => document.getElementById(anchor);
+    const picked = live();
+    if (picked === null) return;
+    const from = picked.getBoundingClientRect().top + window.scrollY;
+    this.cancelAlign?.();
+    this.cancelAlign = null;
+    this.afterTreeScroll((landed) => this.keepAligned(live, ALIGN_MS, true, from - landed));
+  }
+
+  /** Calls `onLanded` with the scroll position once GitHub's scroll has run and stopped; never when it does not begin or the reader takes over. */
+  private afterTreeScroll(onLanded: (landed: number) => void): void {
+    const began = performance.now();
+    let last = window.scrollY;
+    let moved = false;
+    let still = 0;
+    let stopped = false;
+    const stop = (): void => {
+      stopped = true;
+      window.removeEventListener('wheel', stop);
+      window.removeEventListener('touchstart', stop);
+      window.removeEventListener('keydown', stop);
+      if (this.cancelAlign === stop) this.cancelAlign = null;
+    };
+    this.cancelAlign = stop;
+    const options: AddEventListenerOptions = { passive: true, once: true };
+    const frame = (): void => {
+      if (stopped) return;
+      const y = window.scrollY;
+      if (y !== last) {
+        moved = true;
+        still = 0;
+        last = y;
+      } else still += 1;
+      if (!moved && performance.now() - began > TREE_SCROLL_START_MS) return stop();
+      if (moved && still >= TREE_SCROLL_STILL_FRAMES) {
+        stop();
+        onLanded(y);
+        return;
+      }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(() => {
+      if (stopped) return;
+      // Listened for from the next frame: the keydown that picked the file is still being dispatched.
+      window.addEventListener('wheel', stop, options);
+      window.addEventListener('touchstart', stop, options);
+      window.addEventListener('keydown', stop, options);
+      frame();
+    });
   }
 
   private markTouched(stateKey: string, path: string): void {
@@ -995,7 +1072,9 @@ export class GeldController {
     if (page.kind !== 'pull-conversation' || repo === null || !this.settings.prOverview) return undefined;
     const resolved = this.resolvedConfig(repo);
     const declared = resolved !== null && !resolved.loading && this.repoDecision(repo) === 'use' ? declaredReviewBots(validConfigs(resolved)) : null;
-    return { declared, configured: this.repoConfigs.botConfigs(window.location.origin, repo).found, apiTriggers: this.apiTriggers(repo) };
+    const inUse = resolved !== null && this.repoDecision(repo) === 'use';
+    const resolveOnFix = !inUse ? null : resolved.loading ? 'loading' : repoResolvesOnFix(validConfigs(resolved));
+    return { declared, configured: this.repoConfigs.botConfigs(window.location.origin, repo).found, apiTriggers: this.apiTriggers(repo), resolveOnFix };
   }
 
   /**
@@ -1166,6 +1245,7 @@ export class GeldController {
     if (!document.documentElement.hasAttribute(ATTR_DRESSED)) document.documentElement.setAttribute(ATTR_DRESSED, '');
     this.syncTabCounts();
     applyAttachmentLightbox(this.settings.attachmentLightbox);
+    guard('content:create-pull-retry', () => applyCreatePullRetry());
 
     // Another page state (a navigation) is always the whole page, whatever the batches said.
     const full = scope === null || this.lastPassKey !== page.stateKey;
@@ -1745,16 +1825,21 @@ export class GeldController {
    * the target down after we aligned it. Re-align a few times while that
    * settles, but stop as soon as the user scrolls on their own. `live` names
    * the target's current element (a virtualised row can be remounted meanwhile).
+   * `offset` is where its top belongs below the viewport's, its scroll margin by default.
    */
-  private keepAligned(live: () => HTMLElement | null, holdMs: number, settleWhenStable: boolean): void {
+  private keepAligned(live: () => HTMLElement | null, holdMs: number, settleWhenStable: boolean, offset?: number): void {
     const first = live();
     if (first === null) return;
-    const scrollMargin = Number.parseFloat(getComputedStyle(first).scrollMarginTop) || 0;
+    const scrollMargin = offset ?? (Number.parseFloat(getComputedStyle(first).scrollMarginTop) || 0);
     const deadline = performance.now() + holdMs;
     let stableChecks = 0;
-    let userScrolled = false;
+    let stopped = false;
     const stop = (): void => {
-      userScrolled = true;
+      stopped = true;
+      window.removeEventListener('wheel', stop);
+      window.removeEventListener('touchstart', stop);
+      window.removeEventListener('keydown', stop);
+      if (this.cancelAlign === stop) this.cancelAlign = null;
     };
     this.cancelAlign = stop;
     const options: AddEventListenerOptions = { passive: true, once: true };
@@ -1763,13 +1848,9 @@ export class GeldController {
     window.addEventListener('keydown', stop, options);
 
     const check = (): void => {
+      if (stopped) return;
       const target = live();
-      if (userScrolled || performance.now() > deadline || target === null) {
-        window.removeEventListener('wheel', stop);
-        window.removeEventListener('touchstart', stop);
-        window.removeEventListener('keydown', stop);
-        return;
-      }
+      if (performance.now() > deadline || target === null) return stop();
       const drift = target.getBoundingClientRect().top - scrollMargin;
       if (Math.abs(drift) > 4) {
         stableChecks = 0;
@@ -1779,7 +1860,7 @@ export class GeldController {
       } else if (settleWhenStable && (stableChecks += 1) >= 3) {
         // A plain list is settled once it has stayed put; a virtualised one mounts more rows above at any moment
         // until the hold ends, so a quiet half-second there proves nothing.
-        return;
+        return stop();
       }
       setTimeout(check, 150);
     };
@@ -2153,6 +2234,8 @@ export class GeldController {
 
   /** `rebuild`: the page is dressed again right after, so the digest keeps what the reader opened and unfolded. */
   private teardown(rebuild = false): void {
+    this.cancelAlign?.();
+    this.cancelAlign = null;
     document.documentElement.removeAttribute(ATTR_DRESSED);
     // A rebuild stands the counts in the tab row again at once: GitHub's beside the branch names would show for a frame.
     if (!rebuild) setTabCounts(false);
@@ -2170,6 +2253,7 @@ export class GeldController {
     removeCommitHover();
     removeAuthorHiding();
     removePeoplePresence();
+    removeCreatePullRetry();
     removeBlockedListHiding();
     removeSurfaceStyles();
     for (const group of findHeaderStatGroups()) restoreHeaderStats(group);

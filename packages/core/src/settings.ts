@@ -104,6 +104,11 @@ export interface GeldSettings {
   readonly errorReports: boolean;
   /** Send anonymous usage statistics (installs, updates, one daily ping with the version) to geld.sh. On by default. */
   readonly usageStats: boolean;
+  /**
+   * When the reader answered the extension's privacy prompt (`usageStats` and `errorReports`, from the prompt or by
+   * turning either on or off in the options), as an ISO time. Empty until then, which is what shows the prompt.
+   */
+  readonly consentDecidedAt: string;
   /** GitHub Enterprise Server hostnames Geld also runs on (permission granted by the user). */
   readonly enterpriseHosts: readonly string[];
   /**
@@ -187,6 +192,21 @@ export interface GeldSettings {
    * model proposes. `all`: both. `off`: never show one.
    */
   readonly suggestedFixes: SuggestedFixMode;
+  /**
+   * The coding agent the triage hands open findings to first. `auto` lets the pull request decide: the agent its
+   * author used (from its related links) when the reader is that author, else the menu's order.
+   */
+  readonly codingAgent: CodingAgentId;
+  /** A triage fix committed with Apply resolves the threads it answers; a repository's `review.resolveOnFix: false` turns it off there too. */
+  readonly resolveOnFix: boolean;
+}
+
+/** Ids shared with `@geld/review`'s coding agent registry (`CODING_AGENTS`), which keys its entries by them. */
+export const CODING_AGENT_IDS = ['auto', 'cursor', 'copilot', 'claude', 'codex', 'devin', 't3code'] as const;
+export type CodingAgentId = (typeof CODING_AGENT_IDS)[number];
+
+export function isCodingAgentId(value: unknown): value is CodingAgentId {
+  return typeof value === 'string' && CODING_AGENT_IDS.some((id) => id === value);
 }
 
 export const SUGGESTED_FIX_MODES = ['all', 'bots', 'ai', 'off'] as const;
@@ -232,6 +252,17 @@ export function digestViewOf(settings: Pick<GeldSettings, 'prOverview' | 'compac
 }
 
 /** The settings that make `view`, chosen at `at` (ISO). A folded timeline keeps its depth (`minimal` stays). */
+/** What the reader allows Geld to send: the two optional categories of the privacy prompt. */
+export interface ConsentChoice {
+  readonly usageStats: boolean;
+  readonly errorReports: boolean;
+}
+
+/** A privacy choice as the settings it writes, its time recorded so the prompt shows no more. */
+export function consentPatch(choice: ConsentChoice, at: string): Pick<GeldSettings, 'usageStats' | 'errorReports' | 'consentDecidedAt'> {
+  return { usageStats: choice.usageStats, errorReports: choice.errorReports, consentDecidedAt: at };
+}
+
 export function digestViewPatch(settings: Pick<GeldSettings, 'compactTimeline'>, view: DigestView, at: string): Pick<GeldSettings, 'prOverview' | 'compactTimeline' | 'digestViewChosenAt'> {
   const folded: CompactTimelineMode = settings.compactTimeline === 'off' ? 'compact' : settings.compactTimeline;
   if (view === 'github') return { prOverview: false, compactTimeline: settings.compactTimeline, digestViewChosenAt: at };
@@ -266,6 +297,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   prOverview: true,
   compactTimeline: 'compact',
   digestViewChosenAt: '',
+  consentDecidedAt: '',
   reviewGrouping: 'type',
   collapseDescription: true,
   attachmentLightbox: true,
@@ -280,6 +312,8 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   aiJev: false,
   aiDecisionModel: '',
   suggestedFixes: 'bots',
+  codingAgent: 'auto',
+  resolveOnFix: true,
 };
 
 /**
@@ -530,6 +564,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     prOverview: bool(record, 'prOverview', DEFAULT_SETTINGS.prOverview),
     compactTimeline: isCompactTimelineMode(record.compactTimeline) ? record.compactTimeline : DEFAULT_SETTINGS.compactTimeline,
     digestViewChosenAt: typeof record.digestViewChosenAt === 'string' ? record.digestViewChosenAt : DEFAULT_SETTINGS.digestViewChosenAt,
+    consentDecidedAt: typeof record.consentDecidedAt === 'string' ? record.consentDecidedAt : DEFAULT_SETTINGS.consentDecidedAt,
     reviewGrouping: isReviewGrouping(record.reviewGrouping) ? record.reviewGrouping : DEFAULT_SETTINGS.reviewGrouping,
     collapseDescription: bool(record, 'collapseDescription', DEFAULT_SETTINGS.collapseDescription),
     attachmentLightbox: bool(record, 'attachmentLightbox', DEFAULT_SETTINGS.attachmentLightbox),
@@ -544,6 +579,8 @@ export function normalizeSettings(value: unknown): GeldSettings {
     aiJev: bool(record, 'aiJev', DEFAULT_SETTINGS.aiJev),
     aiDecisionModel: typeof record.aiDecisionModel === 'string' ? record.aiDecisionModel.trim() : DEFAULT_SETTINGS.aiDecisionModel,
     suggestedFixes: isSuggestedFixMode(record.suggestedFixes) ? record.suggestedFixes : DEFAULT_SETTINGS.suggestedFixes,
+    codingAgent: isCodingAgentId(record.codingAgent) ? record.codingAgent : DEFAULT_SETTINGS.codingAgent,
+    resolveOnFix: bool(record, 'resolveOnFix', DEFAULT_SETTINGS.resolveOnFix),
   };
 }
 

@@ -13,7 +13,9 @@ import { isOwnElement } from './dom';
  *   stack popover, dialogs land there).
  * - `conversation`: the timeline, the merge box, the sidebar.
  * - `files`: the diff list, the file tree, the files toolbar.
- * - `header`: the page header and its tabs (the diffstat lives there).
+ * - `header`: the page header and its tabs (the diffstat lives there), and GitHub's bar over the new pull request page,
+ *   which takes the tabs, the label, the counts and the review group as it sticks: a full pass there ran in the middle
+ *   of their slide.
  * - `unknown`: anything else, which gets the full pass as before.
  *
  * Order matters: the timeline is checked before the files containers so a
@@ -32,7 +34,7 @@ const CONVERSATION =
 const FILES =
   '#files, #diff_file_tree, file-tree, [data-testid="virtualized-diffs-list"], [class*="PullRequestDiffsList"], [class*="DiffFileTree"], [class*="TreeView"], [role="tree"], .js-diff-progressive-container, #toc, .pr-toolbar, [class*="FilesToolbar"], copilot-diff-entry, .diff-view, [data-geld-sidebar]';
 const FILE_TREE = 'file-tree, #diff_file_tree, [data-geld-sidebar]';
-const HEADER = '.gh-header, [data-component="PageHeader"], #partial-discussion-header, .tabnav, .UnderlineNav, #diffstat, .toc-diff-stats, [class*="PullRequestHeader"], [class*="PullRequestTabs"], .pagehead';
+const HEADER = '.gh-header, [data-component="PageHeader"], [data-testid="diff-comparison-viewer-sticky-header-slot"], #partial-discussion-header, .tabnav, .UnderlineNav, #diffstat, .toc-diff-stats, [class*="PullRequestHeader"], [class*="PullRequestTabs"], .pagehead';
 
 /** Batches larger than this are page loads or navigations; they get the full pass without a look. */
 const MAX_CLASSIFIED = 300;

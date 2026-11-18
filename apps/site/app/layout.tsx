@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { BrandSelection } from '@/components/brand-selection';
 import { CornerShapePolyfill } from '@/components/corner-shape-polyfill';
+import { PrivacyControls } from '@/components/privacy-controls';
 import { RouteTransition } from '@/components/route-transition';
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
@@ -64,13 +65,15 @@ export default function RootLayout({ children }: { readonly children: React.Reac
         <BrandSelection />
         <CornerShapePolyfill />
         <TooltipProvider>
-          <SiteHeader />
-          {/* Pages crossfade through a blur between routes (RouteTransition + `::view-transition-*(root)` in globals.css). */}
-          <RouteTransition />
-          <main id="main" className="flex-1">
-            {children}
-          </main>
-          <SiteFooter />
+          <PrivacyControls>
+            <SiteHeader />
+            {/* Pages crossfade through a blur between routes (RouteTransition + `::view-transition-*(root)` in globals.css). */}
+            <RouteTransition />
+            <main id="main" className="flex-1">
+              {children}
+            </main>
+            <SiteFooter />
+          </PrivacyControls>
         </TooltipProvider>
       </body>
     </html>

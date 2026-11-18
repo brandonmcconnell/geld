@@ -5,7 +5,7 @@ export { pullPathOf, timelineCommentRequest };
 import { loadWriter, prefetchWriter, writerNow } from './comment-writer';
 import { createElement, OWN_UI_ATTRIBUTE, svgFromString } from './dom';
 import type { HeaderStatGroup } from './header-stats';
-import { ATTR_COUNTS_STAND_IN, countsSkeletonStandIn, countsWrapperBusy, isCountsStandIn } from './header-stats';
+import { countsSkeletonStandIn, countsWrapperBusy, isCountsStandIn, LIVE_COUNTS_STAND_IN } from './header-stats';
 import { persistentBarActions, persistentBarStuck } from './persistent-bar';
 import { detectHeadSha } from './head-sha';
 import type { MergeActions, MergeBox, MergeMethod, StatusAction } from './merge-actions';
@@ -24,9 +24,11 @@ import { ATTR_INSTANT_MERGE, labelBehind, pillPlace, rememberStatusHint, removeS
 import { fetchReviewers, REVIEW_BY_HASH, REVIEWS_HASH, reviewLink, standingReviewers, tallyOf, tallyWords } from './review-tally';
 import { ICON_ALERT_FILL_12, ICON_CHECK, ICON_CHECK_SEND, ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT, ICON_CODE_REVIEW, ICON_CODE_REVIEW_SEND, ICON_COMMENT, ICON_COMMENT_SEND, ICON_GIT_MERGE, ICON_GIT_MERGE_QUEUE, ICON_GIT_PULL_REQUEST, ICON_GIT_PULL_REQUEST_CLOSED, ICON_GIT_PULL_REQUEST_DRAFT, ICON_SPINNER, ICON_TRASH, ICON_TRIANGLE_DOWN, ICON_X, ICON_X_SEND } from './ui/icons';
 import { pageFetch } from './page-fetch';
+import { isGhost, leaveGhost } from './ui/bar-motion';
 import { reportError } from '../lib/error-capture';
 import { isOverviewPage } from './review/overview-page';
-import { overviewMergeOf, removeOverviewMerge, syncOverviewMerge } from './overview-merge';
+import { greenOverviewMerges, liveOverviewMerge, overviewMergeOf, removeOverviewMerge, setOverviewMergeBusy, syncOverviewMerge } from './overview-merge';
+import { removeStuckStatus, syncStuckStatus } from './stuck-status';
 import { countUsage } from '../lib/usage-count';
 import type { UsageCounter } from '@geld/core';
 
@@ -591,7 +593,7 @@ function stickyPlace(state: Mounted): { readonly place: Place; readonly near: HT
   // GitHub or Geld just replaced (the skeleton turning into counts) waits for the pass, so the group never jumps meanwhile.
   const hidden = state.anchor !== null && state.anchor.isConnected && !isShown(state.anchor);
   if (bar !== null && (state.anchor === null || hidden || persistentBarStuck())) {
-    const counts = bar.querySelector<HTMLElement>(`:scope > [${ATTR_COUNTS_STAND_IN}]`);
+    const counts = bar.querySelector<HTMLElement>(`:scope > ${LIVE_COUNTS_STAND_IN}`);
     if (counts !== null) return { place: 'bar', near: counts, put: (root) => counts.insertAdjacentElement('beforebegin', root), placed: (root) => counts.previousElementSibling === root };
     return { place: 'bar', near: bar, put: (root) => bar.prepend(root), placed: (root) => bar.firstElementChild === root };
   }
@@ -657,6 +659,9 @@ function place(state: Mounted): void {
   const sticky = stickyPlace(state);
   // Beside a node React has yet to hydrate, the group would make React throw the page's markup away (`react-hydration.ts`).
   if (!reactSettled(sticky?.near ?? state.anchor)) return;
+  // Leaving a sticky header that stays in view slides out of it; the compact header itself hides as the group leaves.
+  const was = state.root.getAttribute(ATTR_PLACE);
+  if (was !== null && was !== 'header' && was !== (sticky?.place ?? null)) leaveGhost(state.root, 'down');
   if (sticky !== null) {
     if (!sticky.placed(state.root)) sticky.put(state.root);
   } else if (state.anchor !== null && state.anchor.previousElementSibling !== state.root) {
@@ -664,7 +669,7 @@ function place(state: Mounted): void {
   }
   // A group left by another copy of Geld (one whose extension was reloaded or updated under the page, or a second
   // build installed beside this one) stood beside this one as a second 💬; only one copy is ever live (`geld:takeover`).
-  for (const stray of document.querySelectorAll(`.${GROUP_CLASS}`)) if (stray !== state.root) stray.remove();
+  for (const stray of document.querySelectorAll(`.${GROUP_CLASS}`)) if (stray !== state.root && !isGhost(stray)) stray.remove();
   const place = sticky?.place ?? null;
   if (state.root.getAttribute(ATTR_PLACE) !== place) {
     if (place === null) state.root.removeAttribute(ATTR_PLACE);
@@ -691,6 +696,7 @@ export function removeQuickReview(): void {
   // Pills the hint put in place before the controls were made go too.
   removeStatusPills();
   removeOverviewMerge();
+  removeStuckStatus();
   earlyPillClick = null;
   if (mounted === null) return;
   closePanel();
@@ -1348,6 +1354,7 @@ function showStatus(state: Mounted): void {
     state.pills = syncStatusPills(true, openFromPill);
     showMergedPills(state.pills);
     syncOverviewMerge(null, 'SQUASH', { onMerge: () => undefined, onMethod: () => undefined });
+    syncStuckStatus(null);
     return;
   }
   const actions = state.mergeActions;
@@ -1364,14 +1371,24 @@ function showStatus(state: Mounted): void {
   // success dresses them as merged until the reload.
   state.pills = syncStatusPills(on || holding || (state.sending && state.pills.length > 0), openFromPill);
   showInstantMerge(state);
-  const overviewMerge = state.sending ? null : overviewMergeOf(actions);
-  syncOverviewMerge(overviewMerge, state.overviewMethod ?? overviewMerge?.methods[0] ?? 'SQUASH', {
-    onMerge: (method, anchor) => openMergeBox(state, null, overviewMerge?.kind === 'bypass', method, anchor),
-    onMethod: (method) => {
-      state.overviewMethod = method;
-      showStatus(state);
+  const overviewMerge = overviewMergeOf(actions);
+  syncOverviewMerge(
+    overviewMerge,
+    state.overviewMethod ?? overviewMerge?.methods[0] ?? 'SQUASH',
+    {
+      onMerge: (method, anchor) => {
+        if (state.sending) return;
+        if (overviewMerge?.kind === 'queue' || overviewMerge?.kind === 'auto') chooseOverviewQueue(state, overviewMerge.kind, anchor);
+        else openMergeBox(state, null, overviewMerge?.kind === 'bypass', method, anchor);
+      },
+      onMethod: (method) => {
+        state.overviewMethod = method;
+        showStatus(state);
+      },
     },
-  });
+    state.sending,
+  );
+  syncStuckStatus(actions?.box.conflicts ?? null);
   // The menu says what the merge button beside it says: a reading that changed it since it opened is shown at once.
   if (state.statusMenu !== null && state.statusMenu.dataset.placeholder === undefined && state.statusOpener?.isConnected === true && state.statusMenu.dataset.options !== menuSignature(actions)) refreshOpenMenu(state);
   if (state.statusMenu !== null && (state.statusOpener === null || !state.pills.includes(state.statusOpener))) {
@@ -1489,7 +1506,9 @@ function showMerged(state: Mounted, pullPath: string): void {
  */
 export function reassertStatusPills(): void {
   const pullPath = pullPathOf(window.location.pathname);
-  if (pullPath === null || !headerReactSettled()) return;
+  if (pullPath === null) return;
+  greenOverviewMerges();
+  if (!headerReactSettled()) return;
   if (mounted !== null && mounted.pullPath === pullPath) {
     showStatus(mounted);
     // GitHub re-renders its bar (on load, between tabs) and adds its tabs to it once they scroll under it: the group
@@ -1789,13 +1808,20 @@ function closeStatusMenu(state: Mounted, settle = true): void {
   if (held && settle) showStatus(state);
 }
 
-function chooseStatus(state: Mounted, option: StatusOption): void {
-  if (option.action === 'merge') openMergeBox(state, null, option.bypass === true);
+/** `anchor` is the Overview's merge control when the choice came from it: a box its answer opens hangs from it, and focus goes back to it. */
+function chooseStatus(state: Mounted, option: StatusOption, anchor: HTMLElement | null = null): void {
+  if (option.action === 'merge') openMergeBox(state, null, option.bypass === true, null, anchor);
   // The browser's own confirmation, not a box to click through: closing is undone only by reopening.
   else if (option.action === 'close' || option.action === 'queue' || option.action === 'auto') {
-    if (window.confirm(CONFIRM_WORDS[option.action])) void runStatus(state, option.action);
-    else if (state.statusOpener?.isConnected === true) state.statusOpener.focus({ preventScroll: true });
-  } else void runStatus(state, option.action);
+    if (window.confirm(CONFIRM_WORDS[option.action])) void runStatus(state, option.action, anchor);
+    else returnFocus(state, anchor);
+  } else void runStatus(state, option.action, anchor);
+}
+
+/** Back to what the reader chose from: the Overview's merge button, else the status pill. */
+function returnFocus(state: Mounted, anchor: HTMLElement | null): void {
+  const target = anchor === null ? state.statusOpener : (liveOverviewMerge(anchor)?.querySelector<HTMLElement>('.geld-overview-merge__main') ?? null);
+  if (target?.isConnected === true) target.focus({ preventScroll: true });
 }
 
 /**
@@ -1803,13 +1829,22 @@ function chooseStatus(state: Mounted, option: StatusOption): void {
  * pull request (the others in its scope already there), only after the browser's confirmation naming it, since the
  * flat path acts on the pull request being read.
  */
-function chooseStackChoice(state: Mounted, group: StackGroup, choice: StackChoice): void {
+function chooseStackChoice(state: Mounted, group: StackGroup, choice: StackChoice, anchor: HTMLElement | null = null): void {
   if (choice.targets.length === 1 && choice.targets[0]?.current === true) {
-    chooseStatus(state, { status: group.status, action: group.action, note: group.note });
+    chooseStatus(state, { status: group.status, action: group.action, note: group.note }, anchor);
     return;
   }
-  if (window.confirm(stackConfirmWords(group.action, choice))) void runStackChoice(state, group.action, choice);
-  else if (state.statusOpener?.isConnected === true) state.statusOpener.focus({ preventScroll: true });
+  if (window.confirm(stackConfirmWords(group.action, choice))) void runStackChoice(state, group.action, choice, anchor);
+  else returnFocus(state, anchor);
+}
+
+/** The Overview's "Merge when ready" or "Enable auto-merge", as the status menu's item for it goes. */
+function chooseOverviewQueue(state: Mounted, action: 'queue' | 'auto', anchor: HTMLElement): void {
+  if (state.sending) return;
+  const group = action === 'queue' ? stackMenuOf(state.mergeActions)?.find((candidate) => candidate.action === 'queue') : undefined;
+  const choice = group?.choices.find((candidate) => candidate.via.current);
+  if (group !== undefined && choice !== undefined) chooseStackChoice(state, group, choice, anchor);
+  else chooseStatus(state, action === 'queue' ? { status: 'queued', action, note: 'Merge when ready' } : { status: 'merged', action, note: 'Enable auto-merge' }, anchor);
 }
 
 const STACK_REQUEST: { readonly [A in Exclude<StackAction, 'merge' | 'queue'>]: Request } = { ready: readyRequest, draft: draftRequest, close: closeRequest, reopen: reopenRequest };
@@ -1828,7 +1863,7 @@ const STACK_RETRY: { readonly [A in StackAction]: (count: number) => { readonly 
  * with GitHub's default method and the commit it would write, read afresh; the rest is one request per pull request,
  * top first. A refusal opens GitHub's reason with a retry of what was left.
  */
-async function runStackChoice(state: Mounted, action: StackAction, choice: StackChoice): Promise<void> {
+async function runStackChoice(state: Mounted, action: StackAction, choice: StackChoice, anchor: HTMLElement | null = null): Promise<void> {
   const nonce = fetchNonce();
   // The pull request it was chosen on: the controls move with the reader to another one, and nothing chosen here may
   // go out from there or dress its pills.
@@ -1841,13 +1876,19 @@ async function runStackChoice(state: Mounted, action: StackAction, choice: Stack
     const box = first === null || method === 'SQUASH' ? first : await fetchMergeBox(choice.via.path, method, false);
     if (!here()) return;
     if (box === null) {
-      openRetryBox(state, action, actionErrorText(action, 0, null), {
+      openRetryBox(
+        state,
+        action,
+        actionErrorText(action, 0, null),
+        {
           ...STACK_RETRY.merge(1),
           run: async () => {
-            await runStackChoice(state, action, choice);
+            await runStackChoice(state, action, choice, anchor);
             return null;
           },
-        });
+        },
+        anchor,
+      );
       return;
     }
     steps = [{ number: choice.via.number, request: mergeRequest(choice.via.path, { method, commitTitle: box.commitTitle, commitMessage: box.commitMessage, authorEmail: box.authorEmail, bypass: false, stacked: true, stackEntries: choice.targets.length }, nonce) }];
@@ -1866,7 +1907,7 @@ async function runStackChoice(state: Mounted, action: StackAction, choice: Stack
     return failed.failed;
   };
   const failed = await send();
-  if (failed !== null && here()) openRetryBox(state, action, failed, { ...STACK_RETRY[action](left.length), run: send });
+  if (failed !== null && here()) openRetryBox(state, action, failed, { ...STACK_RETRY[action](left.length), run: send }, anchor);
 }
 
 const CONFIRM_WORDS: { readonly [A in 'close' | 'queue' | 'auto']: string } = {
@@ -1905,15 +1946,21 @@ const CONFIRM_INFO: { readonly [A in Exclude<StatusAction, 'merge'>]: { readonly
 };
 
 /** Mark ready, convert to a draft, reopen or (confirmed) close at once; a refusal opens the box with GitHub's reason, for another try. */
-async function runStatus(state: Mounted, action: Exclude<StatusAction, 'merge'>): Promise<void> {
+async function runStatus(state: Mounted, action: Exclude<StatusAction, 'merge'>, anchor: HTMLElement | null = null): Promise<void> {
   const failed = await sendAction(state, action, CONFIRM_INFO[action].request(state.pullPath, fetchNonce()));
-  if (failed !== null && mounted === state) openConfirmBox(state, action, failed);
+  if (failed !== null && mounted === state) openConfirmBox(state, action, failed, anchor);
+}
+
+/** Every send marks the Overview's merge inert too, since its clicks wait on `sending`, and every end of one clears it. */
+function setSending(state: Mounted, sending: boolean): void {
+  state.sending = sending;
+  setOverviewMergeBusy(sending);
 }
 
 function buttonFor(state: Mounted, opener: Opener): HTMLElement | null {
   if (isReviewEvent(opener)) return state.segments[opener];
   // A box opened from the Overview's merge button belongs to that button, for its pressed look and for focus when it closes.
-  return state.panelAnchor?.querySelector<HTMLElement>('.geld-overview-merge__main') ?? state.statusOpener;
+  return liveOverviewMerge(state.panelAnchor)?.querySelector<HTMLElement>('.geld-overview-merge__main') ?? state.statusOpener;
 }
 
 function closePanel(restoreFocus = false): void {
@@ -1939,7 +1986,7 @@ function closePanel(restoreFocus = false): void {
 function onOutsidePointer(event: PointerEvent): void {
   if (mounted === null || mounted.panel === null) return;
   const target = event.target;
-  if (target instanceof Node && (mounted.panel.contains(target) || mounted.root.contains(target) || mounted.pills.some((pill) => pill.contains(target)) || mounted.panelAnchor?.contains(target) === true)) return;
+  if (target instanceof Node && (mounted.panel.contains(target) || mounted.root.contains(target) || mounted.pills.some((pill) => pill.contains(target)) || liveOverviewMerge(mounted.panelAnchor)?.contains(target) === true)) return;
   closePanel();
 }
 
@@ -1952,7 +1999,7 @@ function positionPanel(): void {
   if (mounted === null || mounted.panel === null) return;
   // A box chosen from the status pill hangs under the pill, its left edge on the pill's; the review boxes under the group.
   // One from the Overview's merge button hangs under that button, its right edge on the button's.
-  const button = mounted.panelAnchor?.isConnected === true ? mounted.panelAnchor : null;
+  const button = liveOverviewMerge(mounted.panelAnchor);
   const pill = button === null && mounted.opener !== null && !isReviewEvent(mounted.opener) && mounted.statusOpener?.isConnected === true ? mounted.statusOpener : null;
   const anchor = button ?? pill ?? mounted.root;
   if (!anchor.isConnected) return;
@@ -2117,7 +2164,7 @@ async function sendReview(state: Mounted, event: ReviewEvent, body: string): Pro
   if (headSha === null) return 'Could not read the pull request’s head commit. Reload the page and try again.';
   const pullPath = state.pullPath;
   const { url, init } = submitReviewRequest(pullPath, { body, event, headSha }, fetchNonce());
-  state.sending = true;
+  setSending(state, true);
   state.root.setAttribute('aria-busy', 'true');
   state.segments[event].setAttribute(ATTR_SENDING, '');
   window.clearTimeout(state.submittedTimer);
@@ -2138,7 +2185,7 @@ async function sendReview(state: Mounted, event: ReviewEvent, body: string): Pro
     afterSent('review', () => showSubmitted(state, pullPath, event, body));
     return null;
   } finally {
-    state.sending = false;
+    setSending(state, false);
     state.panelRefresh?.();
     state.root.removeAttribute('aria-busy');
     state.segments[event].removeAttribute(ATTR_SENDING);
@@ -2190,7 +2237,7 @@ function showSubmitted(state: Mounted, pullPath: string, event: ReviewEvent, bod
 async function sendComment(state: Mounted, text: string): Promise<string | null> {
   const pullPath = state.pullPath;
   const { url, init } = timelineCommentRequest(pullPath, text, fetchNonce());
-  state.sending = true;
+  setSending(state, true);
   state.root.setAttribute('aria-busy', 'true');
   state.segments.comment.setAttribute(ATTR_SENDING, '');
   window.clearTimeout(state.submittedTimer);
@@ -2211,7 +2258,7 @@ async function sendComment(state: Mounted, text: string): Promise<string | null>
     afterSent('comment', () => showCommented(state, pullPath, text));
     return null;
   } finally {
-    state.sending = false;
+    setSending(state, false);
     state.panelRefresh?.();
     state.root.removeAttribute('aria-busy');
     state.segments.comment.removeAttribute(ATTR_SENDING);
@@ -2407,10 +2454,10 @@ function openComposer(state: Mounted, initial: ReviewEvent, failure: string | nu
   discard.addEventListener('click', () => {
     // GitHub's own words and its own (native) confirmation, as its Discard review asks.
     if (!window.confirm('Are you sure you want to cancel? You will lose all your pending comments.')) return;
-    state.sending = true;
+    setSending(state, true);
     refresh();
     void discardPendingReview(pullPath).then((done) => {
-      state.sending = false;
+      setSending(state, false);
       state.panelRefresh?.();
       if (!done) {
         error.textContent = 'GitHub could not discard the review.';
@@ -2604,7 +2651,7 @@ async function sendAction(state: Mounted, kind: StatusAction, request: Step['req
  * Stops quietly, sending nothing more and reloading nothing, once `here` says the reader has left the page it began on.
  */
 async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Step[], done: () => void = () => undefined, here: () => boolean = () => true): Promise<{ readonly failed: string; readonly left: readonly Step[] } | null> {
-  state.sending = true;
+  setSending(state, true);
   state.root.setAttribute('aria-busy', 'true');
   window.clearTimeout(state.submittedTimer);
   state.status.textContent = ACTION_STATUS[kind];
@@ -2655,7 +2702,7 @@ async function sendSteps(state: Mounted, kind: StatusAction, steps: readonly Ste
     void catchUpAfterPost();
     return null;
   } finally {
-    state.sending = false;
+    setSending(state, false);
     state.panelRefresh?.();
     state.root.removeAttribute('aria-busy');
     for (const pill of state.pills) pill.removeAttribute('aria-busy');
@@ -2787,10 +2834,10 @@ function openMergeBox(state: Mounted, failure: string | null = null, pastRules =
  * The box a refused status change opens: GitHub's reason, Cancel and the
  * action again in GitHub's words.
  */
-function openConfirmBox(state: Mounted, kind: Exclude<StatusAction, 'merge'>, failure: string | null = null): void {
+function openConfirmBox(state: Mounted, kind: Exclude<StatusAction, 'merge'>, failure: string | null = null, anchor: HTMLElement | null = null): void {
   const pullPath = state.pullPath;
   const { icon, label, request } = CONFIRM_INFO[kind];
-  openRetryBox(state, kind, failure, { icon, label, run: () => sendAction(state, kind, request(pullPath, fetchNonce())) });
+  openRetryBox(state, kind, failure, { icon, label, run: () => sendAction(state, kind, request(pullPath, fetchNonce())) }, anchor);
 }
 
 interface Retry {
@@ -2801,7 +2848,7 @@ interface Retry {
 }
 
 /** GitHub's reason a change was refused, with a button to try it again. */
-function openRetryBox(state: Mounted, kind: StatusAction, failure: string | null, retry: Retry): void {
+function openRetryBox(state: Mounted, kind: StatusAction, failure: string | null, retry: Retry, anchor: HTMLElement | null = null): void {
   const { icon, label } = retry;
   const error = createElement('p', { class: 'geld-quick-review__error color-fg-danger', role: 'alert', hidden: '' });
   if (failure !== null) {
@@ -2834,7 +2881,7 @@ function openRetryBox(state: Mounted, kind: StatusAction, failure: string | null
   });
   cancel.addEventListener('click', () => closePanel(true));
   submit.addEventListener('click', () => void send());
-  showPanel(state, panel, kind);
+  showPanel(state, panel, kind, liveOverviewMerge(anchor));
   submit.focus({ preventScroll: true });
 }
 

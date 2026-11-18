@@ -608,6 +608,26 @@ describe('shortenDescription', () => {
     expect(descriptionUnshortened()).toBe(false);
   });
 
+  it('says a description is unshortened again when a saved edit renders new blocks into the same body', () => {
+    const body = mountDescription(`${h(2, 'One')}<p>a</p>${h(2, 'Two')}<p>b</p>`);
+    shortenDescription(true);
+    const watch = new MutationObserver(() => {});
+    watch.observe(body, { childList: true, subtree: true });
+    body.innerHTML = `${h(2, 'One')}<p>a</p>${h(2, 'Two')}<p>edited</p>`;
+    const records = watch.takeRecords();
+    expect(descriptionUnshortened()).toBe(false);
+    expect(descriptionUnshortened(records)).toBe(true);
+    shortenDescription(true);
+    expect(body.children[3]?.hasAttribute('data-geld-desc-fold')).toBe(true);
+    // Geld's own controls coming and going are not GitHub rendering the description.
+    shortenDescription(false);
+    shortenDescription(true);
+    const own = watch.takeRecords();
+    watch.disconnect();
+    expect(own.length).toBeGreaterThan(0);
+    expect(descriptionUnshortened(own)).toBe(false);
+  });
+
   it('leaves the description folded when released, so a tab switch never shows it whole, and stops handling it', async () => {
     const body = mountDescription(`${h(2, 'One')}<p>a</p>${h(2, 'Two')}<p>b</p>`);
     shortenDescription(true);

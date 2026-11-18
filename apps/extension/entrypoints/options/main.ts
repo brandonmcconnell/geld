@@ -53,7 +53,10 @@ import { formatDiagnostics, readDiagnostics } from '../../src/lib/diagnostics';
 import { collectTabPerf } from '../../src/lib/perf-report';
 import { settingsItem } from '../../src/lib/storage';
 import type { JevSource } from '../../src/lib/local-state';
-import { aiGatewayItem, aiKeyItem, jevKeyItem, jevSourceItem } from '../../src/lib/local-state';
+import { AI_KEY_SECTION } from '../../src/lib/ai-key';
+import { aiGatewayItem, aiKeyItem, cursorKeyItem, jevKeyItem, jevSourceItem } from '../../src/lib/local-state';
+import type { CursorRequest } from '../../src/lib/chat-messages';
+import { CURSOR_ORIGIN, isCursorMeReply } from '../../src/lib/chat-messages';
 import type { ModelInfo } from '@geld/review';
 import { decisionModelsIn, defaultDecisionModel, isEvaluationModel, jevModelFor, knownDecisionModels, TYPESAFE_API } from '@geld/review';
 import { issueTrackerEditor } from '../../src/ui/issue-tracker-editor';
@@ -67,6 +70,8 @@ import { mountAccountWidget } from '../../src/ui/account-widget';
 import { polyfillCornerShape } from '../../src/ui/corner-shape';
 import { bindSwitch, requireElement } from '../../src/ui/switch';
 import { installErrorCapture } from '../../src/lib/error-capture';
+import { mountConsentBanner } from '../../src/ui/consent-banner';
+import { globalPrivacyRefused } from '../../src/lib/privacy-signal';
 
 installErrorCapture('options');
 
@@ -182,6 +187,7 @@ function requireCategoryFields(): { readonly categoriesField: CategoriesField; r
 
 async function main(): Promise<void> {
   let settings = await settingsItem.getValue();
+  mountConsentBanner(requireElement('consent', HTMLDivElement), settings);
   // The active pattern catalog: bundled, or the newer signed copy the background fetched.
   let cachedCatalog = await catalogItem.getValue();
   let catalog: Catalog = catalogFromCache(cachedCatalog);
@@ -205,16 +211,21 @@ async function main(): Promise<void> {
       if (index > 0) host.append(el('hr', 'options__divider'));
       const label = el('span', 'geld-label', [field.label]);
       label.id = `${field.key}-label`;
-      const note = surfaceNotes[field.key];
+      // Turning either of the privacy prompt's settings on or off answers the prompt too; under Global Privacy
+      // Control both stay off, as the prompt keeps them, and the senders refuse them as well.
+      const answers = field.key === 'usageStats' || field.key === 'errorReports';
+      const refused = answers && globalPrivacyRefused();
+      const note = refused ? 'Your browser sends Global Privacy Control, so this stays off.' : surfaceNotes[field.key];
       const help = el('p', 'geld-help', richText(note === undefined ? field.description : `${field.description} ${note}`));
       help.id = `${field.key}-help`;
-      const button = switchButton(field.key, settings[field.key], label.id, help.id);
+      const button = switchButton(field.key, settings[field.key] && !refused, label.id, help.id);
+      if (refused) button.disabled = true;
       host.append(el('div', 'geld-row', [el('div', '', [label, help]), button]));
-      const bound = bindSwitch(button, settings[field.key], async (value) => {
-        settings = await settingsItem.patch({ [field.key]: value });
+      const bound = bindSwitch(button, settings[field.key] && !refused, async (value) => {
+        settings = await settingsItem.patch({ [field.key]: value && !refused, ...(answers ? { consentDecidedAt: new Date().toISOString() } : {}) });
         saved('Saved', 'success');
       });
-      toggleSwitches.push({ field, set: bound.set });
+      toggleSwitches.push({ field, set: (checked) => bound.set(checked && !refused) });
     });
   }
 
@@ -794,11 +805,13 @@ async function main(): Promise<void> {
   let reviewBotsArea: HTMLTextAreaElement | null = null;
   const aiFieldKeys = new Set<string>(['aiEnabled', 'aiBaseUrl', 'aiModel', 'aiJev', 'aiDecisionModel']);
   let aiRendered = false;
+  let keyFieldShown = false;
   for (const field of reviewSection?.fields ?? []) {
     if ('key' in field && aiFieldKeys.has(field.key)) {
       if (!aiRendered) {
         aiRendered = true;
         await renderAiFields();
+        await renderCursorKey();
       }
       continue;
     }
@@ -870,6 +883,62 @@ async function main(): Promise<void> {
   }
 
   /**
+   * The Cursor API key the chat sidebar uses to read and continue a pull request's Cursor agents. Independent of the
+   * AI switch: the agent's chat needs no gateway. Saving asks for api.cursor.com, which only a click here can ask for,
+   * then checks the key.
+   */
+  async function renderCursorKey(): Promise<void> {
+    const label = el('label', 'geld-label', ['Cursor API key']);
+    label.htmlFor = 'cursor-key';
+    const dashboard = el('a', 'options__link', ['Cursor’s dashboard']);
+    dashboard.href = 'https://cursor.com/dashboard?tab=integrations';
+    dashboard.target = '_blank';
+    dashboard.rel = 'noreferrer';
+    const help = el('p', 'geld-help', [
+      'Lets the chat beside a pull request read and continue the Cursor agents that worked on it, in their own conversation, so what you send there shows in Cursor too. Create a key under API Keys in ',
+      dashboard,
+      '. Stored only on this device.',
+    ]);
+    const input = el('input', 'geld-input geld-code options__input options__input--grow');
+    input.id = 'cursor-key';
+    input.type = 'password';
+    input.spellcheck = false;
+    input.placeholder = 'key_…';
+    input.setAttribute('autocomplete', 'off');
+    input.value = await cursorKeyItem.getValue();
+    const statusEl = el('span', 'geld-status');
+    statusEl.setAttribute('aria-live', 'polite');
+    const status = statusReporter(statusEl);
+    const save = el('button', 'geld-button geld-button--primary geld-button--small', ['Save key']);
+    save.type = 'button';
+    const check = async (): Promise<void> => {
+      const request: CursorRequest = { type: 'geld:cursor', action: 'me' };
+      const reply: unknown = await browser.runtime.sendMessage(request).catch(() => null);
+      if (!isCursorMeReply(reply)) status('Geld could not check the key.', 'error');
+      else if (!reply.ok) status(reply.reason, 'error');
+      else status(reply.email === null ? 'Connected.' : `Connected as ${reply.email}.`, 'success');
+    };
+    save.addEventListener('click', async () => {
+      const key = input.value.trim();
+      if (key === '') {
+        await cursorKeyItem.setValue('');
+        status('Cleared. The chat no longer reaches Cursor.', 'success');
+        return;
+      }
+      // Asked first, while the click still counts as the reader's gesture.
+      const allowed = await browser.permissions.request({ origins: [CURSOR_ORIGIN] }).catch(() => false);
+      await cursorKeyItem.setValue(key);
+      if (!allowed) {
+        status('Saved. Allow Geld to reach api.cursor.com to use it.', 'error');
+        return;
+      }
+      status('Checking the key…', 'neutral');
+      await check();
+    });
+    block([el('div', 'options__field-head', [label, help]), input, el('div', 'geld-row options__actions', [statusEl, save])]);
+  }
+
+  /**
    * The AI fields, in the order they are needed: the switch, the gateway (URL
    * with one-click presets, then its key), the writing model (listed from the
    * gateway as soon as URL and key are there, never an evaluation model), and
@@ -885,6 +954,7 @@ async function main(): Promise<void> {
     if (enabledField === undefined || urlField === undefined || modelField === undefined || jevField === undefined || decisionField === undefined) return;
 
     toggleBlock(enabledField);
+    const firstAiBlock = reviewStack.children.length;
 
     /* Gateway URL: saved on Save or on choosing a preset; the model list follows after a pause. */
     const urlHead = fieldHead(urlField);
@@ -1008,6 +1078,14 @@ async function main(): Promise<void> {
       void refreshModels();
     });
     block([el('div', 'options__field-head', [keyLabel, keyHelp]), keyInput, el('div', 'geld-row options__actions', [keyStatusEl, keySave])]);
+    // Opened from a triage that found no key (`#ai-key`): the field is drawn after the page's own jump to the hash, so go to it here, once.
+    if (location.hash === `#${AI_KEY_SECTION}` && !keyFieldShown) {
+      keyFieldShown = true;
+      requestAnimationFrame(() => {
+        keyInput.scrollIntoView({ block: 'center' });
+        keyInput.focus({ preventScroll: true });
+      });
+    }
 
     /* Writing model: a combobox over the gateway's list, disabled with a reason until URL and key are both there. */
     const modelHead = fieldHead(modelField);
@@ -1152,6 +1230,16 @@ async function main(): Promise<void> {
     };
     toggleBlock(jevField, [jevNote, decisionBlock, jevKeyBlock]);
     reviewSwitches.push({ field: jevField, set: () => renderJevState() });
+
+    // Off, nothing under the switch is used, so it is not shown either; what was set stays for when it is on again.
+    const aiBlocks = Array.from(reviewStack.children)
+      .slice(firstAiBlock)
+      .filter((node): node is HTMLElement => node instanceof HTMLElement);
+    const showAiFields = (on: boolean): void => {
+      for (const node of aiBlocks) node.hidden = !on;
+    };
+    showAiFields(settings.aiEnabled);
+    reviewSwitches.push({ field: enabledField, set: showAiFields });
 
     /** Fetch the gateway's models when URL and key are both there; gate the model field otherwise. */
     let modelsRun = 0;
@@ -1441,21 +1529,31 @@ async function main(): Promise<void> {
   applyCatalog(await catalogItem.getValue());
 
   /* Keep the page in sync with changes made elsewhere (popup, other windows, gist sync). */
+  // A watch hears only later changes: one stored while the page was being built (the privacy prompt answered in the
+  // popup, another window) is read here, or a switch would show the state from before it.
+  // The signature of the settings the category lists were built from, so the read below rebuilds them when it differs.
   let lastSignature = categorySignature(settings);
+  const syncCategories = (next: GeldSettings): void => {
+    const signature = categorySignature(next);
+    // Rebuilding while someone edits a category would eat their input, draft or Saved status.
+    if (signature === lastSignature) return;
+    if (isEditingCategory() || hasUnsavedEdits()) renderDeferred = true;
+    else {
+      lastSignature = signature;
+      renderAll();
+    }
+  };
+  settings = await settingsItem.getValue();
+  for (const { field, set } of toggleSwitches) set(settings[field.key]);
+  for (const { field, set } of reviewSwitches) set(settings[field.key]);
+  for (const show of choiceSetters) show(settings);
+  syncCategories(settings);
   settingsItem.watch((next) => {
     settings = next;
     for (const { field, set } of toggleSwitches) set(next[field.key]);
     for (const { field, set } of reviewSwitches) set(next[field.key]);
     for (const show of choiceSetters) show(next);
-    const signature = categorySignature(next);
-    // Rebuilding while someone edits a category would eat their input, draft or Saved status.
-    if (signature !== lastSignature) {
-      if (isEditingCategory() || hasUnsavedEdits()) renderDeferred = true;
-      else {
-        lastSignature = signature;
-        renderAll();
-      }
-    }
+    syncCategories(next);
     // Not in the signature (that rebuild would drop unsaved category edits): an import, a reset or another window is shown in place.
     for (const checkbox of document.querySelectorAll<HTMLInputElement>('input[data-auto-viewed]')) {
       const id = checkbox.dataset.autoViewed ?? '';

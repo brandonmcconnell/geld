@@ -648,6 +648,38 @@ summary::-webkit-details-marker {
   margin-top: 12px;
 }
 
+/* The privacy prompt (consent-banner.ts), in the popup and on the options page until it is answered. */
+.geld-consent__options {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.geld-consent__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.geld-consent__option input {
+  margin-top: 2px;
+}
+
+.geld-consent__option-text {
+  display: grid;
+  gap: 2px;
+}
+
+.geld-consent__gpc {
+  margin-top: 8px;
+}
+
+/* Its three choices keep to one line in the popup's 336px: 8px apart, the room the notice gives them at 12px is a few pixels short of a margin for error. */
+.geld-consent .geld-alert__actions {
+  column-gap: 8px;
+}
+
 /* Account widget (popup + options header) ----------------------------------- */
 
 .geld-account {
@@ -775,8 +807,7 @@ summary::-webkit-details-marker {
 
 .geld-account__prompt {
   padding: 12px 14px;
-  border: 1px solid var(--border);
-  background: color-mix(in oklch, var(--muted) 40%, transparent);
+  background: light-dark(oklch(0.96 0.06 85), oklch(0.3 0.06 75));
   font-size: 12.5px;
 }
 
@@ -788,6 +819,15 @@ summary::-webkit-details-marker {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.geld-account__prompt .geld-button:not(.geld-button--primary) {
+  border-color: light-dark(oklch(0.8 0.12 80), oklch(0.5 0.1 75));
+  background: light-dark(oklch(0.92 0.09 85), oklch(0.36 0.08 75));
+}
+
+.geld-account__prompt .geld-button:not(.geld-button--primary):hover {
+  background: light-dark(oklch(0.89 0.11 85), oklch(0.41 0.09 75));
 }
 
 .geld-account__error {

@@ -20,7 +20,7 @@ export type ListSettingKey = {
 }[keyof GeldSettings];
 
 /** Settings that pick one of a fixed set of string values. */
-export type ChoiceSettingKey = 'repoConfigs' | 'compactTimeline' | 'reviewGrouping' | 'suggestedFixes';
+export type ChoiceSettingKey = 'repoConfigs' | 'compactTimeline' | 'reviewGrouping' | 'suggestedFixes' | 'codingAgent';
 
 /** Freeform string settings (URLs, model ids). Distinct from {@link ChoiceSettingKey}. */
 export type TextSettingKey = 'aiBaseUrl' | 'aiModel' | 'aiDecisionModel';
@@ -153,6 +153,15 @@ export function presetMatches(preset: TextPreset, value: string): boolean {
   return new RegExp(`^${pattern}$`, 'i').test(value);
 }
 
+/** The gateway preset a URL is ("Vercel AI Gateway"), else "another gateway": a name for reports, without the account or resource a URL can hold. */
+export function aiGatewayLabel(baseUrl: string): string {
+  for (const field of textFields(fieldsFor('extension'))) {
+    if (field.key !== 'aiBaseUrl') continue;
+    for (const preset of field.presets ?? []) if (presetMatches(preset, baseUrl)) return preset.label;
+  }
+  return 'another gateway';
+}
+
 /** Presets grouped for display: one entry per group in first-seen order, ungrouped presets under `null`. */
 export function presetGroups(presets: readonly TextPreset[]): readonly { readonly group: string | null; readonly presets: readonly TextPreset[] }[] {
   const groups = new Map<string | null, TextPreset[]>();
@@ -262,7 +271,7 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         kind: 'toggle',
         key: 'attachmentLightbox',
         label: 'Attachment lightbox',
-        description: 'View image and video attachments in a larger player in issues and pull requests.',
+        description: 'View images, videos and PDFs in rendered Markdown in a larger player: issues, pull requests, discussions, READMEs and other Markdown files.',
         popup: false,
         surfaces: ['extension'],
       },
@@ -603,21 +612,47 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
         kind: 'choice',
         key: 'suggestedFixes',
         label: 'Suggested fixes',
-        description: 'Review bots often attach a fix; with AI on, Geld can propose one too. Choose which appear on an item.',
+        description: 'Review bots often attach a fix, and with AI on, Geld can propose one too. Choose which appear on an item. The AI triage proposes fixes to apply whenever you run it, unless this is `Off`.',
         popup: false,
         options: [
           { value: 'bots', label: 'From bots', description: 'Show the fix a review bot attached to its comment.' },
           { value: 'ai', label: 'From AI', description: 'Only fixes the consolidation model proposes (needs a gateway key).' },
           { value: 'all', label: 'Both', description: 'Bot fixes and, with AI on, proposed ones.' },
-          { value: 'off', label: 'Off', description: 'Never show a suggested fix; the finding alone.' },
+          { value: 'off', label: 'Off', description: 'Never show or propose a fix, the AI triage included. The finding alone.' },
         ],
+      },
+      {
+        kind: 'choice',
+        key: 'codingAgent',
+        label: 'Coding agent',
+        description:
+          'Who the AI triage offers to hand open findings to first. The others stay one click away in its menu. `Auto` recommends the agent a pull request’s links show its author used, when you are that author.',
+        popup: false,
+        surfaces: ['extension'],
+        options: [
+          { value: 'auto', label: 'Auto', description: 'The agent this pull request’s author used, when you are the author. Otherwise the menu’s order.' },
+          { value: 'cursor', label: 'Cursor', description: 'Mentions `@cursor` on the pull request to start a Cursor cloud agent.' },
+          { value: 'copilot', label: 'Copilot', description: 'Mentions `@copilot` on the pull request.' },
+          { value: 'claude', label: 'Claude', description: 'Mentions `@claude` on the pull request.' },
+          { value: 'codex', label: 'Codex', description: 'Mentions `@codex` on the pull request.' },
+          { value: 'devin', label: 'Devin', description: 'Starts a Devin session with `/devin` on the pull request.' },
+          { value: 't3code', label: 'T3 Code', description: 'Opens the finding in T3 Code as a draft on this pull request’s branch, for you to send.' },
+        ],
+      },
+      {
+        kind: 'toggle',
+        key: 'resolveOnFix',
+        label: 'Resolve threads when a fix is applied',
+        description: 'Apply commits the AI triage’s fix and resolves the threads it answers. Off, the threads stay open for you to resolve. A repository can turn it off for everyone with `review.resolveOnFix: false` in its `geld.yml`.',
+        popup: false,
+        surfaces: ['extension'],
       },
       {
         kind: 'toggle',
         key: 'aiEnabled',
         label: 'AI features',
         description:
-          'Consolidate bot findings, write the TL;DR and propose fixes with a model of your choosing. Off, nothing below is used and no request is made; on, it takes effect once a gateway URL, key and model are set.',
+          'Consolidate bot findings, write the TL;DR and propose fixes with a model of your choosing. Off, no request is made and its settings are hidden but kept. On, they show below, and it takes effect once a gateway URL, key and model are set.',
         popup: false,
         surfaces: ['extension'],
       },

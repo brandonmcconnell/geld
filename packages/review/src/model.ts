@@ -154,6 +154,16 @@ export interface BotVerdictRecord {
   readonly runJudged?: true;
   /** A `findings` verdict that is the bot asking for a person's review rather than a count of findings (`DerivedBotVerdict.needsHuman`). */
   readonly needsHuman?: true;
+  /** Findings the bot's review holds with no thread to resolve (CodeRabbit's outside the diff, its failed checks). */
+  readonly unthreaded?: UnthreadedRecord;
+}
+
+export interface UnthreadedRecord {
+  readonly count: number;
+  /** The review that holds them. */
+  readonly sourceId: string;
+  /** Of that review's words, so a rewrite with the same count still reads as new (`fnv1aHex`). */
+  readonly digest: string;
 }
 
 export interface ReviewerRecord {
@@ -264,6 +274,7 @@ export const botVerdictSchema = z.object({
   reason: z.string().min(1).optional(),
   runJudged: z.literal(true).optional(),
   needsHuman: z.literal(true).optional(),
+  unthreaded: z.object({ count: z.number().int().positive(), sourceId: z.string().min(1), digest: z.string().min(1) }).optional(),
 });
 
 export const reviewerSchema = z.object({
@@ -363,7 +374,8 @@ function botVerdictFrom(value: z.infer<typeof botVerdictSchema>): BotVerdictReco
   const sourced = value.sourceId === undefined ? named : { ...named, sourceId: value.sourceId };
   const reasoned = value.reason === undefined ? sourced : { ...sourced, reason: value.reason };
   const judged = value.runJudged === undefined ? reasoned : { ...reasoned, runJudged: true as const };
-  return value.needsHuman === undefined ? judged : { ...judged, needsHuman: true };
+  const human = value.needsHuman === undefined ? judged : { ...judged, needsHuman: true as const };
+  return value.unthreaded === undefined ? human : { ...human, unthreaded: { count: value.unthreaded.count, sourceId: value.unthreaded.sourceId, digest: value.unthreaded.digest } };
 }
 
 function metaFrom(value: z.infer<typeof geldPrMetaSchema>): GeldPrMeta {

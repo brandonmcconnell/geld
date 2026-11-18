@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { completeChat, joinUrl, listModels } from './ai-client';
+import { chatDeltaOf, completeChat, joinUrl, listModels, providerMessage, providerWordsOnly, refusalKind, refusalReport, streamChat, vocabularyOf } from './ai-client';
+import type { ChatCompletionOptions } from './ai-client';
 import { evaluateDecision } from './jev';
 
 describe('ai-client', () => {
@@ -166,4 +167,198 @@ it('calls the given fetch on its own, as a browser requires of its native fetch'
       request: { model: 'jev-latest', state: 'Fixture', questions: { a: { type: 'noul', instructions: 'Yes?' } } },
     }),
   ).toEqual({ ok: true, model: 'jev', answers: { a: { type: 'noul', noul: 0.9 } } });
+});
+
+describe('a refused completion', () => {
+  const options = (fetchImpl: ChatCompletionOptions['fetch']): ChatCompletionOptions => ({
+    fetch: fetchImpl,
+    baseUrl: 'https://ai-gateway.vercel.sh',
+    apiKey: 'sk-synthetic-secret-1234',
+    model: 'anthropic/claude-sonnet-5',
+    messages: [
+      { role: 'system', content: 'You write titles.' },
+      { role: 'user', content: '{}' },
+    ],
+    jsonSchema: { type: 'object', properties: { tldr: { type: 'string' } }, required: ['tldr'], additionalProperties: false },
+    schemaName: 'geld_summary',
+  });
+
+  it('says what the provider said, without the key', async () => {
+    const result = await completeChat(
+      options(async () => Response.json({ error: { message: 'Model not found for key sk-synthetic-secret-1234', type: 'invalid_request_error' } }, { status: 404 })),
+    );
+    expect(result).toEqual({ ok: false, reason: 'Completion failed (404): Model not found for key <key>.', status: 404, kind: 'model' });
+  });
+
+  it('keeps to the status when the answer has no words to give', async () => {
+    expect(await completeChat(options(async () => new Response('<html><body>Bad gateway</body></html>', { status: 502 })))).toEqual({ ok: false, reason: 'Completion failed (502).', status: 502, kind: 'other' });
+    expect(providerMessage(JSON.stringify([{ error: { code: 400, message: 'Invalid JSON payload received.' } }]), '')).toBe('Invalid JSON payload received.');
+  });
+
+  it('asks again with the schema in the prompt when the gateway cannot take it as a response format', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const result = await completeChat(
+      options(async (_url, init) => {
+        const body: unknown = JSON.parse(String(init?.body));
+        if (typeof body === 'object' && body !== null && !Array.isArray(body)) bodies.push(Object.fromEntries(Object.entries(body)));
+        return bodies.length === 1 ? Response.json({ error: { message: "Invalid schema for response_format 'geld_summary'" } }, { status: 400 }) : Response.json({ choices: [{ message: { content: '{"tldr":"ok"}' } }] });
+      }),
+    );
+    expect(result).toEqual({ ok: true, text: '{"tldr":"ok"}', model: 'anthropic/claude-sonnet-5' });
+    expect(bodies[0]).toHaveProperty('response_format');
+    expect(bodies[1]).not.toHaveProperty('response_format');
+    expect(JSON.stringify(bodies[1]?.messages)).toContain('matching this JSON Schema');
+  });
+
+  it('reports the plain request’s own refusal when it is refused too, and asks only once more', async () => {
+    let calls = 0;
+    const result = await completeChat(
+      options(async () => {
+        calls += 1;
+        return calls === 1 ? Response.json({ error: { message: 'json_schema is not supported for this model' } }, { status: 400 }) : Response.json({ error: { message: 'You exceeded your current quota' } }, { status: 429 });
+      }),
+    );
+    expect(calls).toBe(2);
+    expect(result).toEqual({ ok: false, reason: 'Completion failed (429): You exceeded your current quota.', status: 429, kind: 'quota' });
+  });
+
+  it('reads the whole message for the response format, past the part the reason shows', async () => {
+    const long = `${'The request could not be processed as sent. '.repeat(8)}response_format is not supported for this model.`;
+    let calls = 0;
+    const result = await completeChat(
+      options(async () => {
+        calls += 1;
+        return Response.json({ error: { message: long } }, { status: 400 });
+      }),
+    );
+    expect(calls).toBe(2);
+    expect(result.ok === false && result.kind).toBe('response-format');
+    expect(result.ok === false && result.reason.length).toBeLessThan(long.length);
+  });
+
+  it('never reports a decision body it could not read in its own words', async () => {
+    const result = await evaluateDecision({
+      fetch: async () => new Response('private text the gateway echoed', { status: 200 }),
+      baseUrl: 'https://api.typesafe.ai',
+      apiKey: 'synthetic',
+      request: { model: 'jev-latest', state: 'Fixture', questions: { a: { type: 'noul', instructions: 'Yes?' } } },
+    });
+    expect(result).toEqual({ ok: false, reason: 'The decision model answered in an unexpected shape.' });
+  });
+
+  it('does not ask again for a 400 that is not about the response format', async () => {
+    for (const words of ["This model's maximum context length is 8192 tokens.", 'Messages require strict user/assistant alternation.', 'Tool input does not match its schema.']) {
+      let calls = 0;
+      const result = await completeChat(
+        options(async () => {
+          calls += 1;
+          return Response.json({ error: { message: words } }, { status: 400 });
+        }),
+      );
+      expect(calls).toBe(1);
+      expect(result.ok).toBe(false);
+    }
+  });
+});
+
+describe('the kind of a refusal', () => {
+  it('reads it from the words first, then the status', () => {
+    expect(refusalKind(400, "Invalid schema for response_format 'geld_suggest'")).toBe('response-format');
+    expect(refusalKind(400, "output_config.format.schema: Invalid schema: Enum value 'blocking' does not match declared type '['string', 'null']'")).toBe('response-format');
+    expect(refusalKind(400, "This model's maximum context length is 8192 tokens.")).toBe('too-long');
+    expect(refusalKind(429, 'Rate limit reached for model gpt-5')).toBe('rate-limit');
+    expect(refusalKind(429, 'You exceeded your current quota')).toBe('quota');
+    expect(refusalKind(401, 'Incorrect API key provided: <key>.')).toBe('key');
+    expect(refusalKind(400, 'The model `no-such-model` does not exist')).toBe('model');
+    expect(refusalKind(403, null)).toBe('key');
+    expect(refusalKind(400, 'Invalid input near: privatePayroll = 125000')).toBe('other');
+  });
+});
+
+it('leaves temperature to the provider unless the caller sets one', async () => {
+  const bodies: unknown[] = [];
+  const fetchImpl = async (_input: string, init?: RequestInit): Promise<Response> => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }));
+  };
+  const options: ChatCompletionOptions = { fetch: fetchImpl, baseUrl: 'https://api.openai.com', apiKey: 'synthetic', model: 'gpt-5', messages: [{ role: 'user', content: 'hi' }] };
+  await completeChat(options);
+  await completeChat({ ...options, temperature: 0.2 });
+  expect(bodies[0]).not.toHaveProperty('temperature');
+  expect(bodies[1]).toHaveProperty('temperature', 0.2);
+});
+
+describe('a refusal as Geld reports it', () => {
+  const where = 'AI geld_consolidate via Vercel AI Gateway';
+  const schema = { type: 'object', properties: { items: { type: 'array', items: { properties: { severity: { anyOf: [{ type: 'string', enum: ['blocking', 'bug', 'nit'] }, { type: 'null' }] } } } } } };
+
+  it('sends a schema refusal whole: every word is the error vocabulary or Geld’s own schema', () => {
+    const reason = "Completion failed (400): output_config.format.schema: Invalid schema: Enum value 'blocking' does not match declared type '['string', 'null']'.";
+    expect(refusalReport(where, { reason, status: 400, kind: 'response-format' }, vocabularyOf('geld_consolidate', schema, 'anthropic/claude-sonnet-5'))).toEqual({
+      logged: `${where}: refused (400, response-format)`,
+      sent: `${where}: refused (400, response-format): ${reason}`,
+    });
+  });
+
+  it('leaves out what the request said, whatever kind the refusal seems to be', () => {
+    for (const kind of ['model', 'other', 'response-format', 'content-policy'] as const) {
+      const report = refusalReport(where, { reason: 'Invalid input near: model privatePayroll = 125000', status: 400, kind }, vocabularyOf(schema));
+      expect(report.sent).toBe(`${where}: refused (400, ${kind}): Invalid input near: model … = …`);
+    }
+  });
+
+  it('reports one of Geld’s own reasons as it is', () => {
+    expect(refusalReport(where, { reason: 'Timed out.' })).toEqual({ logged: `${where}: Timed out.`, sent: `${where}: Timed out.` });
+  });
+
+  it('runs words it does not know together into one gap', () => {
+    expect(providerWordsOnly('Model acme-secret-proj does not exist', new Set())).toBe('Model … does not exist');
+    expect(providerWordsOnly('Unknown field customer payroll ledger', new Set())).toBe('Unknown field …');
+  });
+
+  it('leaves out words in every writing system, and every symbol', () => {
+    expect(providerWordsOnly('Invalid input near: 顧客の秘密情報', new Set())).toBe('Invalid input near: …');
+    expect(providerWordsOnly('Invalid input near: Größe ١٢٣٤ 🔒 café', new Set())).toBe('Invalid input near: …');
+    expect(providerWordsOnly('Invalid value: “Müller”', new Set())).toBe('Invalid value: …');
+  });
+});
+
+describe('streamChat', () => {
+  const streamed = (chunks: readonly string[]): Response => {
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+        controller.close();
+      },
+    });
+    return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  };
+
+  it('hands each delta over as it arrives and returns the whole reply', async () => {
+    const deltas: string[] = [];
+    let sent: unknown = null;
+    const fetchImpl = async (_url: string, init?: RequestInit): Promise<Response> => {
+      sent = JSON.parse(String(init?.body));
+      return streamed(['data: {"model":"m-1","choices":[{"delta":{"role":"assistant"}}]}\n\n', 'data: {"choices":[{"delta":{"content":"Hel"}}]}\n', '\ndata: {"choices":[{"delta":{"content":"lo"}}]}\n\ndata: [DONE]\n\n']);
+    };
+    const result = await streamChat({ fetch: fetchImpl, baseUrl: 'https://gw.example', apiKey: 'k', model: 'm', messages: [{ role: 'user', content: 'hi' }], onDelta: (text) => deltas.push(text) });
+    expect(result).toEqual({ ok: true, text: 'Hello', model: 'm-1' });
+    expect(deltas).toEqual(['Hel', 'lo']);
+    expect(sent).toMatchObject({ stream: true, model: 'm' });
+  });
+
+  it('reads a gateway that ignored stream and answered with one completion', async () => {
+    const fetchImpl = async (): Promise<Response> => new Response(JSON.stringify({ model: 'm', choices: [{ message: { content: 'Whole' } }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    const deltas: string[] = [];
+    expect(await streamChat({ fetch: fetchImpl, baseUrl: 'https://gw.example', apiKey: 'k', model: 'm', messages: [], onDelta: (text) => deltas.push(text) })).toEqual({ ok: true, text: 'Whole', model: 'm' });
+    expect(deltas).toEqual(['Whole']);
+  });
+
+  it('stops at an error the provider sends mid-stream', async () => {
+    const fetchImpl = async (): Promise<Response> => streamed(['data: {"choices":[{"delta":{"content":"Par"}}]}\n\n', 'data: {"error":{"message":"overloaded"}}\n\n']);
+    const result = await streamChat({ fetch: fetchImpl, baseUrl: 'https://gw.example', apiKey: 'k', model: 'm', messages: [], onDelta: () => undefined });
+    expect(result).toEqual({ ok: false, reason: 'The provider stopped the reply: overloaded' });
+    expect(chatDeltaOf({ choices: [{ delta: { content: [{ text: 'a' }, { text: 'b' }] } }] })).toBe('ab');
+  });
 });

@@ -39,6 +39,8 @@ export interface BrowserInfo {
    */
   readonly userData: Readonly<Partial<Record<Platform, readonly string[]>>>;
   readonly windowsRoaming?: true;
+  /** The flag page that turns on folder access (File System Access), for a browser that ships it off (Brave). */
+  readonly folderAccessFlag?: string;
   /** The browser keeps its one profile in the user data folder itself (Opera), not in `Default` below it. */
   readonly rootProfile?: true;
   readonly macApp: string;
@@ -124,6 +126,7 @@ export const BROWSERS: readonly BrowserInfo[] = [
       id,
       label,
       extensionsUrl: 'brave://extensions',
+      folderAccessFlag: 'brave://flags/#file-system-access-api',
       userData: { darwin: [`BraveSoftware/${folder}`], win32: [`BraveSoftware/${folder}/User Data`], linux: [`BraveSoftware/${folder}`] },
       macApp: `Brave Browser${channel}`,
       linuxBinaries: binaries,

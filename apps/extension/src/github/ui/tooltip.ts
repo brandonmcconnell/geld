@@ -2,6 +2,7 @@ import type { ChangeTotals } from '@geld/core';
 import { formatCount, pluralize } from '@geld/core';
 import type { StatsBreakdown } from '../breakdown';
 import { createElement, OWN_UI_ATTRIBUTE } from '../dom';
+import { inlineText } from '../review/inline-text';
 
 export type { StatsBreakdown } from '../breakdown';
 
@@ -322,9 +323,9 @@ function onVisibilityChange(): void {
   if (document.hidden) hideTooltip();
 }
 
-/** A single line in place of the breakdown when the counts cannot be had. */
+/** A single line in place of the breakdown: the counts cannot be had, or a control says what it does. `code` spans are kept. */
 function renderMessage(message: string): void {
-  ensureTooltip().replaceChildren(createElement('div', { class: 'geld-tooltip__message' }, [message]));
+  ensureTooltip().replaceChildren(createElement('div', { class: 'geld-tooltip__message' }, [...inlineText(message)]));
 }
 
 /**
@@ -488,6 +489,17 @@ export function attachBreakdownTooltip(host: HTMLElement, anchor: HTMLElement, p
   host.addEventListener('mouseleave', hideTooltip);
   host.addEventListener('focus', () => show(host));
   host.addEventListener('blur', hideTooltip);
+}
+
+/** A message tooltip while `host` is hovered or focused, for as long as `signal` is not aborted. */
+export function attachTooltipMessage(host: HTMLElement, message: string, signal: AbortSignal): void {
+  host.addEventListener('mouseenter', () => showTooltipMessage(host, message), { signal });
+  host.addEventListener('focus', () => showTooltipMessage(host, message), { signal });
+  host.addEventListener('mouseleave', hideTooltip, { signal });
+  host.addEventListener('blur', hideTooltip, { signal });
+  signal.addEventListener('abort', () => {
+    if (activeHost === host) hideTooltip();
+  });
 }
 
 export function detachBreakdownTooltip(host: HTMLElement): void {

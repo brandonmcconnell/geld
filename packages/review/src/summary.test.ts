@@ -7,7 +7,9 @@ import { renderSummary } from './summary-render';
 import { PAYLOAD_BUDGET, parseGeldPrMeta } from './model';
 import { botByTrigger, botsTriggeredBy, botTitle, commandReply, geldRunAnswer, geldRunBots, geldRunCommand, isTriggerComment, workflowApiTriggerBots, UNKNOWN_SHA, isReviewShaped, isStatusLineComment, looksLikeBotLogin, mergeCheckRuns, parseBotBody, refusalReason, REPORT_GRACE_MS, resolveBotId, verdictsFrom } from './bots';
 import type { BotComment, DerivedBotVerdict, RawCheckRun, VerdictOptions } from './bots';
-import { parseConsolidateOutput } from './prompts';
+import { ADDRESSED_JSON_SCHEMA, CONSOLIDATE_JSON_SCHEMA, SUMMARY_JSON_SCHEMA, parseConsolidateOutput } from './prompts';
+import { BODY_JSON_SCHEMA, SUGGEST_JSON_SCHEMA } from './triage';
+import { ROUTE_JSON_SCHEMA } from './fix-route';
 
 const PRODUCER = { kind: 'action' as const, version: '0.1.0', ai: false };
 
@@ -345,6 +347,16 @@ describe('bots + prompts', () => {
     const findingsRaw = '<h2>Confidence Score: 4/5</h2>\n\nThe PR appears safe to merge, with a non-blocking request for a focused regression test.\n\n<h2>Findings</h2>\n\n1. <img alt="P2">&nbsp;**Review cards lack test coverage** <a href="#">▶</a>\n2. <img alt="P2">&nbsp;**Another one** <a href="#">▶</a>\n\n<details><summary><h3>Summary</h3></summary>\n\nThe PR lets a review\u2019s own body card render as a dressed chat message.\n</details>';
     expect(parseBotBody(findingsRaw, 'greptile')).toMatchObject({ count: 2, score: 4, clean: false });
     expect(parseBotBody('Confidence Score: 4/5\n[Medium impact] Adjusts how review comments are identified.\nThe PR appears safe to merge, with a non-blocking request.\nFindings\n\n**Review cards lack test coverage** ▶\n\nSummary\nThe PR lets a review\u2019s own body card render as a dressed chat message.', 'greptile')).toMatchObject({ count: 1, score: 4, clean: false });
+    // Its short summary lists no findings even when it posts them as threads seconds later: the open threads are the
+    // findings, and the summary's score still stands beside their count.
+    const shortSummary = 'Confidence Score: 4/5\n\n[Medium impact] The change adds a settings page.\n\nFix the race before merging.\n\nReviews (1) · Last reviewed commit: "feat: settings page" · Reviewed by Greptile';
+    const shortRun = verdictsFrom([], [
+      { author: 'greptile-apps[bot]', body: shortSummary, anchor: 'issuecomment-1', createdAt: '2026-10-20T18:00:00Z' },
+      { author: 'greptile-apps[bot]', body: '**Stale response wins**\n\nAn older request replaces a newer result.', anchor: 'discussion_r1', resolved: false, createdAt: '2026-10-20T18:00:03Z' },
+      { author: 'greptile-apps[bot]', body: '**Cache never cleared**\n\nThe list does not update.', anchor: 'discussion_r2', resolved: false, createdAt: '2026-10-20T18:00:03Z' },
+      { author: 'greptile-apps[bot]', body: '**Retries ignore the limit**\n\nThree pools run at once.', anchor: 'discussion_r3', resolved: false, createdAt: '2026-10-20T18:00:04Z' },
+    ], 'aaa');
+    expect(shortRun[0]).toMatchObject({ id: 'greptile', verdict: 'findings', count: 3, score: 4 });
     // A Findings section whose items cannot be read claims nothing either way.
     expect(parseBotBody('Confidence Score: 3/5\nFindings\nsomething unreadable\nSummary\nwords', 'greptile')).toMatchObject({ count: null, clean: false });
     expect(parseBotBody('1 high severity bug found.', 'bugbot').severity).toBe('high');
@@ -355,6 +367,22 @@ describe('bots + prompts', () => {
     // Survey of public pull requests, Oct 2026 — wordings that read as findings and are not:
     // Devin: two qualifiers before the noun ("1 new potential issue").
     expect(parseBotBody('**Devin Review** found 1 new potential issue. <a href="https://app.devin.ai/review/o/r/pull/1"><img alt="Devin Review"></a>', 'devin')).toMatchObject({ count: 1, clean: false });
+    // Devin Review counts what it fixed itself (mint#14895, Nov 2026): what is left is the count, so all fixed is clean.
+    const devinFixed = (summary: string, fixed: string): string =>
+      `${summary}\n\n<details>\n<summary><b>Fixed by Devin (1)</b></summary>\n\n${fixed}\n\n</details>\n\n[View findings in Devin Review](https://app.devin.ai/review/o/r/pull/1) · [Follow Devin's work](https://app.devin.ai/sessions/1)\n\n<!-- devin-review-badge-begin -->\n<a href="https://app.devin.ai/review/o/r/pull/1"><img alt="Devin Review"></a>\n<!-- devin-review-badge-end -->`;
+    const hiddenTabs = '- **Links to hidden tabs stay hidden** — Native hash path now also applies when the target exists but has no client rects (hidden tab panel), so useTabState gets hashchange.';
+    expect(parseBotBody(devinFixed('**Devin Review** found 1 finding. Devin automatically fixed it.', hiddenTabs), 'devin')).toMatchObject({ count: 0, clean: true });
+    expect(parseBotBody(devinFixed('**Devin Review** found 2 findings. Devin automatically fixed all 2 findings.', hiddenTabs), 'devin')).toMatchObject({ count: 0, clean: true });
+    // As the page reads it: no tags, the fixed list's lines run up to the "View findings" line.
+    expect(parseBotBody(`Devin Review found 1 finding. Devin automatically fixed it.\nFixed by Devin (1)\n${hiddenTabs}\nView findings in Devin Review · Follow Devin's work`, 'devin')).toMatchObject({ count: 0, clean: true });
+    // Some fixed, some left: the ones left are the findings, and what it fixed grades none of them.
+    const partly = parseBotBody(devinFixed('**Devin Review** found 4 findings. Devin fixed 3 findings; 1 finding is left for you to triage below.', '- **Critical crash on empty input** — Guarded the empty case.'), 'devin');
+    expect(partly).toMatchObject({ count: 1, clean: false, severity: null });
+    expect(parseBotBody('**Devin Review** found 1 finding. It is left for you to triage in Devin Review.', 'devin')).toMatchObject({ count: 1, clean: false });
+    // What it fixed states no verdict either: a fixed item's title is not Devin asking for a person.
+    const humanFixed = parseBotBody(devinFixed('**Devin Review** found 1 finding. Devin automatically fixed it.', '- **Fallback needs human review** — Removed the manual-review fallback.'), 'devin');
+    expect(humanFixed).toMatchObject({ count: 0, clean: true });
+    expect(humanFixed.verdict).toBeUndefined();
     // Codex: "Didn't find any major issues".
     expect(parseBotBody("Codex Review: Didn't find any major issues. Great work!", 'codex')).toMatchObject({ clean: true });
     // ...but not beside a count of findings: the count is the word.
@@ -647,6 +675,11 @@ describe('bots + prompts', () => {
     // A later comment with findings still counts.
     const found = verdictsFrom([{ name: 'Devin Review', status: 'completed', conclusion: 'success', sha: 'aaa' }], [{ author: 'devin-ai-integration[bot]', body: 'Starting Devin Review.', anchor: 'issuecomment-7' }, { author: 'devin-ai-integration[bot]', body: 'Found 3 issues in this change.', anchor: 'issuecomment-8' }], 'aaa');
     expect(found[0]).toMatchObject({ verdict: 'findings', count: 3, sourceId: 'issuecomment-8' });
+    // A finding Devin fixed itself is not one (mint#14895): its summary is a clean review.
+    const autofixed = verdictsFrom([], [{ author: 'devin-ai-integration[bot]', body: '**Devin Review** found 1 finding. Devin automatically fixed it.\n\n<details>\n<summary><b>Fixed by Devin (1)</b></summary>\n\n- **Links to hidden tabs stay hidden** — Fixed.\n\n</details>', anchor: 'issuecomment-9' }], 'aaa');
+    expect(autofixed[0]).toMatchObject({ id: 'devin', verdict: 'clean', sourceId: 'issuecomment-9' });
+    const humanFixed = verdictsFrom([], [{ author: 'devin-ai-integration[bot]', body: '**Devin Review** found 1 finding. Devin automatically fixed it.\n\n<details>\n<summary><b>Fixed by Devin (1)</b></summary>\n\n- **Fallback needs human review** — Removed the manual-review fallback.\n\n</details>', anchor: 'issuecomment-10' }], 'aaa');
+    expect(humanFixed[0]).toMatchObject({ id: 'devin', verdict: 'clean' });
     // Findings, then a new push and "Starting" again, then a green check and silence: the latest run found nothing.
     const rerun = verdictsFrom(
       [{ name: 'Devin Review', status: 'completed', conclusion: 'success', sha: 'bbb' }],
@@ -689,6 +722,43 @@ describe('bots + prompts', () => {
     // An earlier status, and the line aged with no report: the earlier run stands whole, its two threads resolved.
     const later = soon + 60 * 60_000;
     expect(verdictsFrom([{ ...green, completedAt: t('2026-10-13T21:13:00Z') }], comments, 'head', [], later)[0]).toMatchObject({ verdict: 'findings', count: 0 });
+  });
+
+  it('never takes a check the page saw finished before the request as the run asked for', () => {
+    // geld#671: CodeRabbit reviewed the day before, "@coderabbitai review" at 10:26:38, 👀, "Review triggered." at
+    // 10:26:44, and its check only went in progress at 10:26:54. The page had shown yesterday's green check since it
+    // opened, with no times, and read the reply as that check's clean run.
+    const t = (iso: string): string => new Date(iso).toISOString();
+    const comments = [
+      { author: 'coderabbitai[bot]', body: 'No actionable comments were generated in the recent review. 🎉', anchor: 'pullrequestreview-1', createdAt: t('2026-11-12T22:49:00Z') },
+      { author: 'brandonmcconnell', body: '@coderabbitai review', anchor: 'issuecomment-1', createdAt: t('2026-11-13T10:26:38Z') },
+      { author: 'coderabbitai[bot]', body: 'Action performed\nReview triggered.\nNote: CodeRabbit is an incremental review system and does not re-review already reviewed commits. This command is applicable only when automatic reviews are paused.', anchor: 'issuecomment-2', createdAt: t('2026-11-13T10:26:44Z') },
+    ];
+    const now = Date.parse('2026-11-13T10:26:50Z');
+    const old = { name: 'CodeRabbit', status: 'completed', conclusion: 'success', sha: 'head', detailsUrl: 'https://github.com/brandonmcconnell/geld/runs/1' };
+    const coderabbit = (checks: readonly RawCheckRun[], thread = comments) => verdictsFrom(checks, thread, 'head', [], now).find((v) => v.id === 'coderabbit');
+    expect(coderabbit([{ ...old, doneBy: t('2026-11-13T10:20:00Z') }])).toMatchObject({ verdict: 'running', sourceId: 'issuecomment-2' });
+    // The request alone, before the reply, is running too.
+    expect(coderabbit([{ ...old, doneBy: t('2026-11-13T10:20:00Z') }], comments.slice(0, 2))?.verdict).toBe('running');
+    // First seen finished after the request proves nothing: taken as the run's, as an undated check is.
+    expect(coderabbit([{ ...old, doneBy: t('2026-11-13T10:30:00Z') }])?.verdict).toBe('clean');
+    expect(coderabbit([old])?.verdict).toBe('clean');
+    // Its new check under way is the run, and so is that check once it has finished with the review posted.
+    expect(coderabbit([{ ...old, status: 'in_progress', conclusion: null, startedAt: t('2026-11-13T10:26:54Z') }])?.verdict).toBe('running');
+    const reviewed = [...comments, { author: 'coderabbitai[bot]', body: '**Actionable comments posted: 1**', anchor: 'pullrequestreview-2', createdAt: t('2026-11-13T10:31:00Z') }];
+    const finished = { ...old, startedAt: t('2026-11-13T10:26:54Z'), completedAt: t('2026-11-13T10:31:02Z') };
+    expect(verdictsFrom([finished], reviewed, 'head', [], Date.parse('2026-11-13T10:32:00Z')).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'findings', count: 1 });
+  });
+
+  it('keeps a run asked for running while its check runs, whatever else the bot posts meanwhile', () => {
+    // "bugbot run" while Cursor's security review, under the same login, posts a finding: Bugbot's run is not done.
+    const t = (iso: string): string => new Date(iso).toISOString();
+    const comments = [
+      { author: 'brandonmcconnell', body: 'bugbot run', anchor: 'issuecomment-1', createdAt: t('2026-11-13T10:00:00Z') },
+      { author: 'cursor[bot]', body: 'Severity: HIGH\nThe token is logged.', anchor: 'discussion_r1', isReviewComment: true, resolved: false, createdAt: t('2026-11-13T10:01:00Z') },
+    ];
+    const running = { name: 'Cursor Bugbot', status: 'in_progress', conclusion: null, sha: 'head', startedAt: t('2026-11-13T10:00:05Z') };
+    expect(verdictsFrom([running], comments, 'head', [], Date.parse('2026-11-13T10:02:00Z')).find((v) => v.id === 'bugbot')?.verdict).toBe('running');
   });
 
   it('reads a run started from CI, with nothing said in the thread, from its check alone', () => {
@@ -1026,6 +1096,47 @@ describe('bots + prompts', () => {
   it('rejects non-JSON model output', () => {
     expect(parseConsolidateOutput('not json', new Set(['a'])).ok).toBe(false);
   });
+
+  it('reads null optional fields as absent', () => {
+    const parsed = parseConsolidateOutput(
+      JSON.stringify({ items: [{ id: 'keep', title: 'Hello', severity: null, context: null, fix: null }] }),
+      new Set(['keep']),
+    );
+    expect(parsed).toEqual({ ok: true, value: [{ id: 'keep', title: 'Hello' }] });
+  });
+
+  it('sends schemas that strict structured outputs accept, every key required', () => {
+    const missing = (schema: unknown, path: string): readonly string[] => {
+      if (typeof schema !== 'object' || schema === null) return [];
+      const found: string[] = [];
+      if ('properties' in schema && typeof schema.properties === 'object' && schema.properties !== null) {
+        const required: readonly unknown[] = 'required' in schema && Array.isArray(schema.required) ? schema.required : [];
+        for (const key of Object.keys(schema.properties)) if (!required.includes(key)) found.push(`${path}.${key}`);
+        if (!('additionalProperties' in schema) || schema.additionalProperties !== false) found.push(`${path} allows extra keys`);
+      }
+      const entries: readonly (readonly [string, unknown])[] = Object.entries(schema);
+      for (const [key, value] of entries) found.push(...missing(value, `${path}.${key}`));
+      return found;
+    };
+    for (const [name, schema] of Object.entries({ CONSOLIDATE_JSON_SCHEMA, SUMMARY_JSON_SCHEMA, ADDRESSED_JSON_SCHEMA, SUGGEST_JSON_SCHEMA, BODY_JSON_SCHEMA, ROUTE_JSON_SCHEMA })) expect(missing(schema, name)).toEqual([]);
+  });
+
+  it('writes nullable fields as anyOf, so every enum value matches the one type it is declared with', () => {
+    // Anthropic's validator (`output_config.format`) refuses an enum checked against a type list: "Enum value 'blocking' does not match declared type".
+    const mismatched = (schema: unknown, path: string): readonly string[] => {
+      if (typeof schema !== 'object' || schema === null) return [];
+      const found: string[] = [];
+      if ('type' in schema && Array.isArray(schema.type)) found.push(`${path} has a type list`);
+      if ('enum' in schema && Array.isArray(schema.enum)) {
+        const declared = 'type' in schema ? schema.type : undefined;
+        for (const value of schema.enum) if (typeof value !== declared) found.push(`${path} enum ${String(value)} is not ${String(declared)}`);
+      }
+      const entries: readonly (readonly [string, unknown])[] = Object.entries(schema);
+      for (const [key, value] of entries) found.push(...mismatched(value, `${path}.${key}`));
+      return found;
+    };
+    for (const [name, schema] of Object.entries({ CONSOLIDATE_JSON_SCHEMA, SUMMARY_JSON_SCHEMA, ADDRESSED_JSON_SCHEMA, SUGGEST_JSON_SCHEMA, BODY_JSON_SCHEMA, ROUTE_JSON_SCHEMA })) expect(mismatched(schema, name)).toEqual([]);
+  });
 });
 
 describe('a bot that refuses to run', () => {
@@ -1249,8 +1360,11 @@ describe('a bot that refuses to run', () => {
     expect(verdictsFrom([], mixed, 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'findings', count: 1, sourceId: 'pullrequestreview-9' });
     const openMixed = mixed.map((comment) => (comment.anchor === 'discussion_r9' ? { ...comment, resolved: false } : comment));
     expect(verdictsFrom([], openMixed, 'head', [], now).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'findings', count: 2, sourceId: 'discussion_r9' });
+    // The outside one is named as the review holds it, whichever comment the chip opens, for the triage to read.
+    for (const comments of [mixed, openMixed]) expect(verdictsFrom([], comments, 'head', [], now).find((v) => v.id === 'coderabbit')?.unthreaded).toMatchObject({ count: 1, sourceId: 'pullrequestreview-9' });
     const reviewedAgain = [...mixed, { author: 'coderabbitai[bot]', body: 'No actionable comments were generated in the recent review. 🎉', anchor: 'pullrequestreview-10', createdAt: '2026-10-27T10:00:00Z' }];
     expect(verdictsFrom([], reviewedAgain, 'head', [], now).find((v) => v.id === 'coderabbit')?.verdict).toBe('clean');
+    expect(verdictsFrom([], reviewedAgain, 'head', [], now).find((v) => v.id === 'coderabbit')?.unthreaded).toBeUndefined();
     // A chat reply in anyone's words ("No issues found") is not CodeRabbit's clean word: the finding stands.
     expect(parseBotBody('The fix is correct. No issues found.', 'coderabbit').clean).toBe(false);
     for (const reply of ['No actionable comments remain.', 'Thanks, 0 issues remain.', 'The fix is correct; I rate it 5/5.', 'Verdict: request changes until the guard lands.']) {
@@ -1286,6 +1400,14 @@ describe('a bot that refuses to run', () => {
     expect(commandReply(notCompletedRaw)).toBe('done');
     expect(commandReply(notCompletedPage)).toBe('done');
     expect(isStatusLineComment(notCompletedPage)).toBe(false);
+    // A review with only findings outside the diff, then a request answered with no new review: they still stand, with
+    // the review that holds them, for the triage.
+    const outsideOnly = [
+      { author: 'coderabbitai[bot]', body: '**Actionable comments posted: 0**\n\n> **⚠️ Outside diff range comments (2)**', anchor: 'pullrequestreview-5', createdAt: '2026-10-22T20:00:00Z' },
+      { author: 'brandonmcconnell', body: '@coderabbitai review', anchor: 'issuecomment-6', createdAt: '2026-10-22T21:00:00Z' },
+      { author: 'coderabbitai[bot]', body: finishedPage, anchor: 'issuecomment-7', createdAt: '2026-10-22T21:00:05Z' },
+    ];
+    expect(verdictsFrom([], outsideOnly, 'head', [], Date.parse('2026-10-22T22:00:00Z')).find((v) => v.id === 'coderabbit')).toMatchObject({ verdict: 'findings', count: 2, unthreaded: { count: 2, sourceId: 'pullrequestreview-5' } });
     const before = [
       { author: 'coderabbitai[bot]', body: 'Actionable comments posted: 1', anchor: 'pullrequestreview-1', createdAt: '2026-10-22T22:49:37Z' },
       { author: 'coderabbitai[bot]', body: 'Guard the empty list.', anchor: 'discussion_r1', createdAt: '2026-10-22T22:49:36Z', resolved: true },

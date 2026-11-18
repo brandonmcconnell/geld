@@ -25,6 +25,9 @@ export type UpdateMode = 'manual' | 'automatic';
 /** How a nightly build got its new files: written through folder access, the downloads API, or by another profile sharing the folder. */
 export type UpdateMethod = 'folder' | 'downloads' | 'shared';
 
+/** What holds up a build Geld found but could not install: its folder is not connected, or the browser has not let it write there. */
+export type UpdateBlock = 'folder' | 'permission';
+
 export interface NightlyUsage {
   readonly mode: UpdateMode;
 }
@@ -59,6 +62,8 @@ export interface ActiveEvent extends Noted {
   readonly settings?: UsageSettings;
   /** Feature uses since the install's previous ping. */
   readonly counts?: Readonly<Partial<Record<UsageCounter, number>>>;
+  /** A nightly build's: what held up a newer build when this ping was made, so a ping sent later keeps its own day's answer. */
+  readonly blocked?: UpdateBlock;
 }
 
 export type UsageEvent = InstalledEvent | UpdatedEvent | ActiveEvent;
@@ -78,6 +83,13 @@ const BROWSERS: readonly UsageBrowser[] = ['chrome', 'edge', 'firefox', 'safari'
 const CHANNELS: readonly UsageChannel[] = ['stable', 'nightly'];
 const MODES: readonly UpdateMode[] = ['manual', 'automatic'];
 const METHODS: readonly UpdateMethod[] = ['folder', 'downloads', 'shared'];
+const BLOCKS: readonly UpdateBlock[] = ['folder', 'permission'];
+
+function parseNightlyUsage(value: unknown): NightlyUsage | null {
+  if (!isRecord(value)) return null;
+  const mode = oneOf(MODES, value.mode);
+  return mode === undefined ? null : { mode };
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -102,6 +114,7 @@ function parseEvent(value: unknown): UsageEvent | null {
       if (typeof value.firstOfWeek !== 'boolean' || typeof value.firstOfMonth !== 'boolean') return null;
       const settings = value.firstOfWeek && value.settings !== undefined ? parseUsageSettings(value.settings) : null;
       const counts = value.counts === undefined ? null : parseUsageCounts(value.counts);
+      const blocked = oneOf(BLOCKS, value.blocked);
       return {
         name: 'extension_active',
         ...noted,
@@ -109,6 +122,7 @@ function parseEvent(value: unknown): UsageEvent | null {
         firstOfMonth: value.firstOfMonth,
         ...(settings === null ? {} : { settings }),
         ...(counts === null ? {} : { counts }),
+        ...(blocked === undefined ? {} : { blocked }),
       };
     }
     case 'extension_updated': {
@@ -139,8 +153,8 @@ export function parseUsagePayload(value: unknown): UsagePayload | null {
   if (!Array.isArray(value.events) || value.events.length === 0 || value.events.length > MAX_USAGE_EVENTS) return null;
   const events = value.events.map(parseEvent);
   if (!events.every((event): event is UsageEvent => event !== null)) return null;
-  const mode = isRecord(value.selfUpdate) ? oneOf(MODES, value.selfUpdate.mode) : undefined;
-  return { v: USAGE_PAYLOAD_VERSION, version: value.version, channel, browser, ...(mode === undefined ? {} : { selfUpdate: { mode } }), events };
+  const selfUpdate = parseNightlyUsage(value.selfUpdate);
+  return { v: USAGE_PAYLOAD_VERSION, version: value.version, channel, browser, ...(selfUpdate === null ? {} : { selfUpdate }), events };
 }
 
 /** How far an update moved: the first part that changed, `downgrade` going back (a nightly roll back), `same` for a reinstall of one version. */
@@ -221,6 +235,7 @@ export function usageCaptures(payload: UsagePayload, receivedAt: number): UsageC
               first_of_month: event.firstOfMonth,
               ...(event.settings === undefined ? {} : usageSettingsProperties(event.settings)),
               ...usageCountProperties(event.counts ?? {}),
+              ...(payload.selfUpdate === undefined ? {} : { nightly_blocked: event.blocked ?? 'none' }),
             },
           },
         ];

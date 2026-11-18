@@ -481,6 +481,17 @@ const linkSpecs: readonly LinkSpec[] = [
     bot: 'claude',
   },
   {
+    // A thread's hosted link, what T3 Code's Copy thread writes (pingdotgg/t3code#26290): ids percent-encode anything
+    // outside [A-Za-z0-9_-]. Its prompt links (`/new?prompt=`) are drafts, not work done on the pull request.
+    id: 't3code',
+    service: 'T3 Code',
+    kind: 'agent',
+    host: /^app\.t3\.codes$/,
+    path: /^\/threads\/([\w%-]+)\/([\w%-]+)\/?$/,
+    read: ({ path }) => ({ id: `${group(path, 1)}/${group(path, 2)}`, noun: 'thread' }),
+    verb: 'View',
+  },
+  {
     id: 'jules',
     service: 'Jules',
     kind: 'agent',

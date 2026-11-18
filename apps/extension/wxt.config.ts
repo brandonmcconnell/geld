@@ -1,5 +1,6 @@
 import { readdirSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'wxt';
 import type { ThemeIcon } from 'wxt';
 import { ACTION_ICON_SIZES, actionIconPath } from './src/lib/action-icon';
@@ -61,7 +62,15 @@ export default defineConfig({
   // yourself, create the git-ignored `web-ext.config.ts` with `disabled: false`.
   webExt: { disabled: true },
   ...(nightly ? { outDirTemplate: '{{browser}}-mv{{manifestVersion}}-nightly' } : {}),
-  vite: ({ browser }) => ({ define: { __GELD_NIGHTLY__: JSON.stringify(selfUpdating(browser)), __GELD_CHANNEL__: JSON.stringify(nightly ? 'nightly' : 'stable') } }),
+  // Tailwind compiles only the chat sidebar's stylesheet (`src/chat/chat.css`, imported `?inline` into its shadow root); no other stylesheet uses it.
+  // Vite minifies CSS with Lightning CSS, which below these browsers rewrites `light-dark()` into variables it sets only
+  // beside a `color-scheme` the stylesheets never declare, so every `light-dark()` value came out invalid (a pressed
+  // review button lost its surface). Every browser Geld runs in has `light-dark()` itself.
+  vite: ({ browser }) => ({
+    plugins: [tailwindcss()],
+    build: { cssTarget: ['chrome123', 'edge123', 'firefox128', 'safari17.5'] },
+    define: { __GELD_NIGHTLY__: JSON.stringify(selfUpdating(browser)), __GELD_CHANNEL__: JSON.stringify(nightly ? 'nightly' : 'stable') },
+  }),
   manifest: ({ browser, manifestVersion: mv }) => {
     const updater = selfUpdating(browser);
     const channel = nightly ? 'nightly' : 'build';
@@ -93,7 +102,8 @@ export default defineConfig({
       // redirects to; it is fetched from the background script only.
       // api.github.com serves the optional GitHub sign-in (gist sync) and the
       // signed pattern catalog (catalog/patterns.json via the contents API).
-      web_accessible_resources:[{resources:['tracker-icons/*.svg'],matches:['https://*/*']}],
+      // Firefox's MV2 list cannot limit a page to github.com, and its frame never loaded there, so it has no PDF viewer.
+      web_accessible_resources:[{resources:['tracker-icons/*.svg','agent-icons/*.png'],matches:['https://*/*']},...(browser === 'firefox' ? [] : [{resources:['pdf-viewer.html'],matches:['https://github.com/*']}])],
       host_permissions: [
         'https://github.com/*',
         'https://patch-diff.githubusercontent.com/*',

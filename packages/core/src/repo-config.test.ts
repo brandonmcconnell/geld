@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createMatcher } from './matcher';
-import { applyRepoConfig, applyRepoConfigs, declaredReviewBots, describeRepoConfig, generatedConfigFrom, isEmptyRepoConfig, linguistGeneratedPatterns, parseRepoConfig } from './repo-config';
+import { applyRepoConfig, applyRepoConfigs, declaredReviewBots, describeRepoConfig, generatedConfigFrom, isEmptyRepoConfig, linguistGeneratedPatterns, parseRepoConfig, repoResolvesOnFix } from './repo-config';
 import { DEFAULT_SETTINGS } from './settings';
 
 describe('parseRepoConfig', () => {
@@ -142,4 +142,28 @@ describe('repository AI restrictions', () => {
 it('returns a validation issue instead of throwing when YAML aliases cannot resolve',()=>{
   expect(()=>parseRepoConfig('value: *missing')).not.toThrow();
   expect(parseRepoConfig('value: *missing')).toMatchObject({ok:false,issues:[{path:'$',message:expect.stringContaining('aliases')}]});
+});
+
+describe('review.resolveOnFix', () => {
+  it('reads whether a triage fix resolves its threads, beside the AI policy', () => {
+    expect(parseRepoConfig('review:\n  resolveOnFix: false')).toMatchObject({ ok: true, config: { review: { resolveOnFix: false } } });
+    expect(parseRepoConfig('review: { ai: true, resolveOnFix: true }')).toMatchObject({ ok: true, config: { review: { ai: true, resolveOnFix: true } } });
+    expect(parseRepoConfig('review: { resolveOnFix: "no" }')).toMatchObject({ ok: false, issues: [{ path: 'review.resolveOnFix' }] });
+    expect(parseRepoConfig('review: on')).toMatchObject({ ok: false, issues: [{ path: 'review' }] });
+  });
+
+  it('takes the repository’s word over its organisation’s, and nothing from configs that say nothing', () => {
+    const config = (text: string) => {
+      const parsed = parseRepoConfig(text);
+      if (!parsed.ok) throw new Error('invalid');
+      return parsed.config;
+    };
+    const org = config('review:\n  resolveOnFix: false');
+    const repo = config('review:\n  resolveOnFix: true');
+    const silent = config('reviewBots: [greptile]');
+    expect(repoResolvesOnFix([org, repo])).toBe(true);
+    expect(repoResolvesOnFix([org, silent])).toBe(false);
+    expect(repoResolvesOnFix([silent])).toBeNull();
+    expect(describeRepoConfig(org)).toBe('fixes leave threads open');
+  });
 });

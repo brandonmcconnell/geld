@@ -1,22 +1,26 @@
 /**
  * What a service's mark is drawn as. GitHub squares every App's and OAuth
  * App's avatar (`data-square`), but the pictures are not all squares: some are
- * a disc on transparent corners (Chromatic's, Capy's) and some are a glyph on
- * a transparent ground that never reaches the edges (Codex's, Amazon Q's).
- * The faint ring and the muted fill a square tile wears showed as a square
- * frame around both. Nothing on the page says which, so the picture is read:
- * it is drawn on a canvas (the avatar host answers CORS with `*`) and the
- * middle of each edge and the pixels a tenth of the way in along each
- * diagonal are sampled. An edge that is not covered means a cutout; covered
- * edges with clear diagonals mean a disc; anything else is a tile. Whether
- * any pixel is transparent says nothing: a solid tile with anti-aliased or
- * rounded corners (Claude's, cubic's) has some and is still a tile.
+ * a disc on transparent corners (Codecov's, Lighthouse's), some a glyph on a
+ * transparent ground that never reaches the edges (Codex's, Amazon Q's), and
+ * some a free shape that touches the edges with clear corners between (Capy's
+ * head and ears). The faint ring and the muted fill a square tile wears showed
+ * as a square frame around them. Nothing on the page says which, so the
+ * picture is read: it is drawn on a canvas (the avatar host answers CORS with
+ * `*`) and the middle of each edge is sampled. An edge that is not covered
+ * means a cutout. With all four covered, the share covered inside the
+ * inscribed circle and outside it decides: a disc fills the one and leaves
+ * the other clear, a tile covers its corners, and anything else is a cutout.
+ * Whether any pixel is transparent says nothing: a solid tile with
+ * anti-aliased or rounded corners (Claude's, cubic's) has some and is still a
+ * tile. Eight sample points let Capy's head read round at one size and a tile
+ * at another.
  *
  * A cutout is read twice more, for where it overlaps other marks and needs a
  * tile of its own: a solid blob over most of the square whose edge is nearly
  * all one colour has that colour as its `ground` (a picture that falls just
- * short of a tile, filled out to one everywhere, so no white shows round
- * it), and any other picture gets the `inset` that keeps its
+ * short of a tile, filled out to one where it overlaps, so no white shows
+ * round it), and any other picture gets the `inset` that keeps its
  * art a tenth of the size clear of the tile's edge. Answers are kept per URL
  * for the page's life, never longer: an App's avatar URL stays the same when
  * its picture changes. Until one is in, the mark wears its square frame.
@@ -50,6 +54,9 @@ const GROUND_AREA = 0.5;
 const GROUND_FILL = 0.7;
 const GROUND_SHARE = 0.85;
 const GROUND_DISTANCE = 32;
+const DISC_INSIDE = 0.98;
+const DISC_OUTSIDE = 0.02;
+const TILE_CORNERS = 0.6;
 const SQUARE: MarkReading = { shape: 'square', ink: null, ground: null, inset: 0 };
 const readings = new Map<string, MarkReading>();
 const pending = new Map<string, Promise<MarkReading>>();
@@ -67,10 +74,34 @@ export function readMark(data: Uint8ClampedArray, width: number, height: number)
   const midY = Math.floor(height / 2);
   const edges = [alpha(midX, 1), alpha(midX, height - 2), alpha(1, midY), alpha(width - 2, midY)];
   if (edges.some((value) => value < COVERED_ALPHA)) return cutoutOf(data, width, height);
-  const x = Math.round(width / 10);
-  const y = Math.round(height / 10);
-  const diagonals = [alpha(x, y), alpha(width - 1 - x, y), alpha(x, height - 1 - y), alpha(width - 1 - x, height - 1 - y)];
-  return diagonals.every((value) => value < 32) ? { ...SQUARE, shape: 'round' } : SQUARE;
+  const { inside, outside } = discCoverage(data, width, height);
+  if (inside >= DISC_INSIDE && outside <= DISC_OUTSIDE) return { ...SQUARE, shape: 'round' };
+  return outside >= TILE_CORNERS ? SQUARE : cutoutOf(data, width, height);
+}
+
+/** How much of the inscribed disc (within 0.9 of its radius) and of the corners outside it the picture covers. */
+function discCoverage(data: Uint8ClampedArray, width: number, height: number): { inside: number; outside: number } {
+  const cx = (width - 1) / 2;
+  const cy = (height - 1) / 2;
+  const radius = Math.min(width, height) / 2;
+  let inside = 0;
+  let insideCovered = 0;
+  let outside = 0;
+  let outsideCovered = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const distance = Math.hypot(x - cx, y - cy) / radius;
+      const covered = (data[(y * width + x) * 4 + 3] ?? 0) >= COVERED_ALPHA;
+      if (distance < 0.9) {
+        inside += 1;
+        if (covered) insideCovered += 1;
+      } else if (distance > 1) {
+        outside += 1;
+        if (covered) outsideCovered += 1;
+      }
+    }
+  }
+  return { inside: inside === 0 ? 0 : insideCovered / inside, outside: outside === 0 ? 0 : outsideCovered / outside };
 }
 
 function cutoutOf(data: Uint8ClampedArray, width: number, height: number): MarkReading {

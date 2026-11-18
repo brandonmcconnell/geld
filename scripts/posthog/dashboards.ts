@@ -208,6 +208,18 @@ export const USAGE_DASHBOARD: DashboardSpec = {
     },
     {
       kind: 'trend',
+      name: 'Daily active Automatic nightly installs, by what holds up their update',
+      description:
+        'none: nothing waiting, or the waiting build is installing. permission: a newer build is found but the browser has not let Geld write to its folder (the reader chose Allow this time, not Allow on every visit). folder: its folder is not connected or no longer reachable.',
+      series: [{ event: 'extension_active' }],
+      where: [NIGHTLY, { key: 'nightly_mode', value: 'automatic' }],
+      breakdown: 'nightly_blocked',
+      interval: 'day',
+      from: '-60d',
+      display: 'ActionsBar',
+    },
+    {
+      kind: 'trend',
       name: 'Weekly active installs, by browser',
       description: 'Chrome, Edge and Safari. Firefox builds send nothing.',
       series: [{ event: 'extension_active' }],
@@ -345,6 +357,11 @@ export const FEATURES_DASHBOARD: DashboardSpec = {
         used('flow_opened', 'Flow opened'),
         used('bot_review_requested', 'bot reviews requested'),
         used('ai_triage_run', 'AI triage runs'),
+        used('ai_triage_failed', 'AI triage runs that failed'),
+        used('ai_fix_applied', 'AI fixes applied'),
+        used('ai_comment_fix', 'AI fixes asked from a comment'),
+        used('ai_fix_discarded', 'AI fixes discarded'),
+        used('agent_handoff', 'handed to a coding agent'),
       ],
       interval: 'day',
       from: '-60d',
@@ -412,4 +429,54 @@ export const FEATURES_DASHBOARD: DashboardSpec = {
   ],
 };
 
-export const DASHBOARDS: readonly DashboardSpec[] = [USAGE_DASHBOARD, FEATURES_DASHBOARD];
+const ERRORS_SQL = `
+SELECT properties.where AS where,
+  properties.message AS message,
+  sum(toInt(properties.count)) AS times,
+  count() AS reports,
+  groupUniqArray(properties.version) AS versions,
+  max(timestamp) AS last_seen
+FROM events
+WHERE event = 'extension_error'
+  AND timestamp >= now() - INTERVAL 14 DAY
+GROUP BY where, message
+ORDER BY times DESC
+LIMIT 100
+`.trim();
+
+/** Errors from readers who turned on error reports (`/api/diagnostics`), each in its own words: what failed, how often, on which versions. */
+export const ERRORS_DASHBOARD: DashboardSpec = {
+  name: 'Geld · Errors',
+  description: 'Errors from installs that send error reports (an opt-in setting), scrubbed of addresses, paths, people and page text. AI refusals carry the provider’s own words, except content-policy ones.',
+  tiles: [
+    {
+      kind: 'trend',
+      name: 'Errors per day, by where',
+      description: 'Each report counts once, however often the error repeated before it was sent.',
+      series: [{ event: 'extension_error' }],
+      breakdown: 'where',
+      interval: 'day',
+      from: '-30d',
+      display: 'ActionsBar',
+    },
+    {
+      kind: 'trend',
+      name: 'AI failures per day, by message',
+      description: 'Requests an AI gateway refused, in the provider’s words.',
+      series: [{ event: 'extension_error' }],
+      where: [{ key: 'where', value: 'background:ai' }],
+      breakdown: 'message',
+      interval: 'day',
+      from: '-30d',
+      display: 'ActionsTable',
+    },
+    {
+      kind: 'sql',
+      name: 'Errors by message (last 14 days)',
+      description: 'Every distinct error, the times it happened, the versions it came from and when it was last seen.',
+      query: ERRORS_SQL,
+    },
+  ],
+};
+
+export const DASHBOARDS: readonly DashboardSpec[] = [USAGE_DASHBOARD, FEATURES_DASHBOARD, ERRORS_DASHBOARD];

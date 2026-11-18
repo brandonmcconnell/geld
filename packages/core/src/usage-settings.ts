@@ -2,7 +2,7 @@ import type { CategoryId } from './categories';
 import { CATEGORY_IDS, isCategoryId } from './categories';
 import { ISSUE_TRACKERS } from './trackers';
 import type { GeldSettings } from './settings';
-import { COMPACT_TIMELINE_MODES, DIGEST_VIEWS, digestViewOf, isAutoViewed, isCategoryEnabled, REPO_CONFIG_MODES, REVIEW_GROUPINGS, SUGGESTED_FIX_MODES } from './settings';
+import { COMPACT_TIMELINE_MODES, DIGEST_VIEWS, digestViewOf, isAutoViewed, isCategoryEnabled, REPO_CONFIG_MODES, REVIEW_GROUPINGS, SUGGESTED_FIX_MODES, CODING_AGENT_IDS } from './settings';
 
 /**
  * What the weekly usage ping says about settings, and the feature counts the
@@ -40,6 +40,7 @@ export const USAGE_TOGGLES = [
   'relatedLinks',
   'aiEnabled',
   'aiJev',
+  'resolveOnFix',
 ] as const satisfies readonly (keyof GeldSettings)[];
 export type UsageToggle = (typeof USAGE_TOGGLES)[number];
 
@@ -48,6 +49,7 @@ export const USAGE_CHOICES = {
   reviewGrouping: REVIEW_GROUPINGS,
   repoConfigs: REPO_CONFIG_MODES,
   suggestedFixes: SUGGESTED_FIX_MODES,
+  codingAgent: CODING_AGENT_IDS,
   digestView: DIGEST_VIEWS,
   issueTracker: [...ISSUE_TRACKERS, 'none'],
 } as const;
@@ -90,6 +92,14 @@ export const USAGE_COUNTERS = [
   'digest_view_changed',
   'flow_opened',
   'ai_triage_run',
+  'ai_triage_failed',
+  'ai_fix_applied',
+  'ai_fix_discarded',
+  'ai_comment_fix',
+  'agent_handoff',
+  'chat_opened',
+  'chat_assistant_sent',
+  'chat_agent_sent',
   'bot_review_requested',
   'review_approve',
   'review_request_changes',
@@ -102,6 +112,7 @@ export const USAGE_COUNTERS = [
   'status_ready',
   'status_draft',
   'status_reopen',
+  'rollback_feedback',
   'hid_tests',
   'hid_generated',
   'hid_vendored',
@@ -165,6 +176,7 @@ export function usageSettingsOf(settings: GeldSettings): UsageSettings {
       reviewGrouping: settings.reviewGrouping,
       repoConfigs: settings.repoConfigs,
       suggestedFixes: settings.suggestedFixes,
+      codingAgent: settings.codingAgent,
       digestView: digestViewOf(settings),
       issueTracker: settings.issueTracker?.provider ?? 'none',
     },

@@ -17,6 +17,7 @@
   "dependencies": {
     "@awesome.me/kit-2e791c163e": "1.0.4",
     "@base-ui/react": "^1.8.0",
+    "@c15t/react": "^1.8.0",
     "@geld/core": "workspace:*",
     "@geld/domain": "workspace:*",
     "@geld/github": "workspace:*",
@@ -28,6 +29,7 @@
     "hyperellipse": "^1.0.5",
     "lucide-react": "^1.41.0",
     "next": "^16.3.4",
+    "posthog-js": "^1.300.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "server-only": "^0.0.1"
