@@ -29,3 +29,8 @@ section.geld-provider-category-fallback[data-geld-provider-category-host] {
 html[data-geld-provider="gitlab"] :is(.geld-provider-essential-content, .geld-provider-category-content) > .geld-provider-category-list {
   padding-left: var(--gl-spacing-scale-3, 8px);
 }
+/* GitLab's List view: a folder is a bold `dir/` heading over its files, as the native list draws it. */
+.geld-provider-category-flat-dir { display: block; padding: var(--geld-provider-space-2) var(--geld-provider-space-2) 0; font-weight: var(--geld-provider-heading-weight); color: var(--geld-provider-text); overflow-wrap: anywhere; }
+/* Measured against GitLab's List view (Nov 2026): its heading stands 4px further out and its files 10px. */
+html[data-geld-provider="gitlab"] .geld-provider-category-flat-dir { margin-inline-start: -4px; }
+html[data-geld-provider="gitlab"] .geld-provider-category-flat > .geld-provider-category-list { margin-inline-start: -10px; }

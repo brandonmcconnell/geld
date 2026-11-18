@@ -27,6 +27,7 @@ import { isProviderReviewPage } from './types';
 import { ProviderNativeFind } from './native-find';
 import type { ProviderNativeFindEntry, ProviderNativeFindEnvironment } from './native-find';
 import './conversation-compact.css';
+import { ProviderReadingShell } from './reading-shell';
 
 const actionSubject = (input: ProviderReviewInput): string => JSON.stringify([input.subject.provider, input.subject.origin, input.subject.repository, input.subject.id, input.subject.headSha]);
 
@@ -82,6 +83,15 @@ export function providerReviewWithTrustedAccounts(input: ProviderReviewInput, co
   return { ...input, complete, bots };
 }
 
+/** On `<html>` while the digest is read in Digest view: each host's stylesheet hides its timeline's entries then. */
+const READING = 'data-geld-digest-reading';
+
+function setReadingMark(on: boolean): void {
+  const root = document.documentElement;
+  if (on && !root.hasAttribute(READING)) root.setAttribute(READING, '');
+  else if (!on) root.removeAttribute(READING);
+}
+
 export class ProviderConversation {
   private key = '';
   private viewControls: HTMLElement | null = null;
@@ -98,7 +108,9 @@ export class ProviderConversation {
   private actionControls: ProviderActionControls | null = null;
   private readonly statusControls = new ProviderStatusControls();
   private viewFocusFrame: number | null = null;
-  private status: HTMLElement | null = null;
+  private status: ProviderReadingShell | null = null;
+  /** Reads that failed in a row: the next is asked sooner than the minute's refresh, 3 s doubling to it. */
+  private failures = 0;
   private nextRefresh = 0;
   private error = '';
   private signature = '';
@@ -169,7 +181,7 @@ export class ProviderConversation {
     if (!settings.prOverview && !settings.quickReview && !wantsPeople) {
       if (this.abort !== null) { this.generation += 1; this.abort.abort(); this.abort = null; this.nextRefresh = 0; this.snapshotVersion += 1; }
       if (this.panel !== null) this.panel.element.hidden = true;
-      this.status?.remove(); this.status = null;
+      this.removeStatus();
       this.clearActions();
       this.restoreCompact(); this.hiddenPeople.clear();
       return;
@@ -177,7 +189,7 @@ export class ProviderConversation {
     if (this.adapter.fetchReview === undefined) return;
     const host = page.kind === 'overview' && settings.prOverview ? this.adapter.reviewHost?.(document) ?? null : null;
     const actionHost = settings.quickReview ? this.adapter.actionHost?.(document) ?? null : null;
-    if (host === null) { if (this.panel !== null) this.panel.element.hidden = true; this.status?.remove(); this.status = null; this.restoreCompact(); }
+    if (host === null) { if (this.panel !== null) this.panel.element.hidden = true; this.removeStatus(); this.restoreCompact(); }
     if (actionHost === null) this.clearActions();
     if (host === null && actionHost === null && !wantsPeople) return;
     if (this.abort === null && Date.now() >= this.nextRefresh) {
@@ -190,11 +202,19 @@ export class ProviderConversation {
         this.snapshot = snapshot;
         this.snapshotVersion += 1;
         this.error = '';
+        this.failures = 0;
       }).catch((error: unknown) => {
         if (generation !== this.generation || abort.signal.aborted) return;
         this.error = error instanceof Error ? error.message : 'Review unavailable';
         const retry = typeof error === 'object' && error !== null ? Reflect.get(error, 'retryAfterMs') : undefined;
-        if (typeof retry === 'number' && Number.isFinite(retry) && retry > 0) this.nextRefresh = Date.now() + Math.max(60_000, retry + 2000);
+        // A first read that failed (a host's rate limit with no Retry-After) used to wait out the minute's refresh.
+        this.failures += 1;
+        if (typeof retry === 'number' && Number.isFinite(retry) && retry > 0) this.nextRefresh = Date.now() + retry + 2000;
+        else if (this.snapshot === null) {
+          const wait = Math.min(60_000, 3000 * 2 ** (this.failures - 1));
+          this.nextRefresh = Date.now() + wait;
+          setTimeout(() => { if (generation === this.generation && !document.hidden) this.changed(); }, wait + 50);
+        }
       }).finally(() => {
         if (generation !== this.generation || abort.signal.aborted) return;
         this.abort = null;
@@ -230,7 +250,7 @@ export class ProviderConversation {
       const actionGeneration = this.generation;
       const actionKey = this.key;
       const actionHead = input.subject.headSha;
-      this.status?.remove(); this.status = null;
+      this.removeStatus();
       const references = (this.adapter.readReferences?.(page, document, people.events, [...input.threads.flatMap((thread) => thread.comments), ...comments]) ?? []).filter((reference) => (reference.source.anchor === null || !people.hiddenAnchors.has(reference.source.anchor)) && (reference.source.eventId === undefined || !people.hiddenEvents.has(reference.source.eventId)) && (reference.source.author === undefined || !hiddenIds.has(reference.source.author.id)));
       const reviewerControls = snapshot.reviewerControls;
       const viewerId = this.adapter.viewerAuthorId?.(document);
@@ -413,13 +433,12 @@ export class ProviderConversation {
       if (this.panel.element.dataset.state === 'unavailable') { this.restoreCompact(); }
       else this.compact(snapshot, settings);
     } else if (host !== null) {
-      if (this.status === null || !this.status.isConnected) {
-        this.status = element('p', '', 'geld-provider-review__muted');
-        this.status.setAttribute('role', 'status');
-        host.append(this.status);
-      }
-      const message = this.error === '' ? 'Reading review…' : `Review unavailable: ${this.error}`;
-      if (this.status.textContent !== message) this.status.textContent = message;
+      if (this.status === null) this.status = new ProviderReadingShell(document);
+      placeProviderDigest(host, this.status.element, descriptionHost, settings.digestAboveDescription);
+      // A read retried soon still reads; one that keeps failing gives the host's own timeline back.
+      if (this.error === '' || this.failures < 3) this.status.reading(); else this.status.failed(this.error);
+      // In Digest view the host's timeline is the digest's to fold: hidden while it is read, as GitHub's is.
+      setReadingMark(settings.compactTimeline !== 'off' && this.status.element.dataset.state === 'reading');
     }
     if (actionHost !== null && snapshot !== null) {
       const available = snapshot.actions.filter((action) => action.available);
@@ -450,6 +469,12 @@ export class ProviderConversation {
         actionHost.append(controls.element);
       }
     }
+  }
+
+  private removeStatus(): void {
+    this.status?.remove();
+    this.status = null;
+    setReadingMark(false);
   }
 
   private clearActions(): void {
@@ -688,7 +713,7 @@ export class ProviderConversation {
     this.clearActions();this.statusControls.clear();
     if (this.viewFocusFrame !== null) cancelAnimationFrame(this.viewFocusFrame);
     this.viewFocusFrame = null;
-    this.status?.remove(); this.status = null;
+    this.removeStatus();
     this.snapshot = null;
     this.publication.reset();
     this.key = '';

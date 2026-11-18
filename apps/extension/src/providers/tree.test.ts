@@ -665,3 +665,18 @@ it.each(['gitlab', 'bitbucket'] as const)('uses %s category equivalents and nati
   expect(original.getAttribute('onclick')).toBe('doNotCopy()');
   expect(host.querySelector('.geld-provider-category-icon')).toBeNull();
 });
+
+it('follows GitLab\'s List view with plain folder headings, and its Tree view with folders', () => {
+  document.documentElement.dataset.geldProvider = 'gitlab';
+  const { host, update } = fixture();
+  const toggle = document.createElement('button');toggle.setAttribute('aria-label', 'List view');document.body.append(toggle);
+  update();
+  const category = () => required(host.querySelector<HTMLElement>('.geld-provider-category-content'));
+  expect(category().querySelector('.geld-provider-category-flat-dir')).toBeNull();
+  expect(category().querySelectorAll('button.geld-provider-category-folder').length).toBeGreaterThan(0);
+  toggle.classList.add('selected');
+  update();
+  expect([...category().querySelectorAll('.geld-provider-category-flat-dir')].map((heading) => heading.textContent)).toEqual(['spec/', 'test/']);
+  expect(category().querySelector('button.geld-provider-category-folder')).toBeNull();
+  expect([...category().querySelectorAll<HTMLElement>('[data-geld-category-path]')].map((node) => node.dataset.geldCategoryPath)).toEqual(['spec/unit.test.ts', 'test/lazy.test.ts']);
+});

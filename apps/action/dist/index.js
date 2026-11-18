@@ -3410,6 +3410,7 @@ var init_usage_settings = __esm({
       "quickReview",
       "holdToMerge",
       "collapseDescription",
+      "digestAboveDescription",
       "attachmentLightbox",
       "relatedLinks",
       "aiEnabled",

@@ -47,6 +47,20 @@ function directory(paths: readonly string[]): Directory {
   return root;
 }
 
+/** GitLab's List view: one plain `dir/` heading per folder that holds files, its files under it, and the root's files first. */
+function flatDirectory(paths: readonly string[]): Directory {
+  const root: Directory = { name: '', path: '', dirs: new Map(), files: [] };
+  for (const path of paths) {
+    const cut = path.lastIndexOf('/');
+    if (cut < 0) { root.files.push(path); continue; }
+    const dir = path.slice(0, cut);
+    let child = root.dirs.get(dir);
+    if (child === undefined) { child = { name: `${dir}/`, path: dir, dirs: new Map(), files: [] }; root.dirs.set(dir, child); }
+    child.files.push(path);
+  }
+  return root;
+}
+
 /** Native nodes stay in their framework. Owned copies retain native file visuals and source controls. */
 export class ProviderCategoryTree {
   private readonly id = `geld-provider-tree-${++sequence}`;
@@ -78,6 +92,8 @@ export class ProviderCategoryTree {
   private readonly liveRows = new Map<string, LiveRow>();
   private readonly panels = new Map<string, Panel>();
   private readonly collapsed = new Set<string>();
+  /** Whether the host's file browser is in its flat list mode (GitLab's List view) rather than its tree. */
+  private flat = false;
   private readonly paths = new Set<string>();
   private readonly managed = new Map<HTMLElement, Map<string, Managed>>();
   private readonly focusTargets = new WeakMap<HTMLElement, FocusTarget>();
@@ -93,6 +109,7 @@ export class ProviderCategoryTree {
     const sameSubject = subjectKey !== null && this.subjectKey === subjectKey && this.provider === nativeProvider;
     if (this.provider !== nativeProvider || this.subjectKey !== subjectKey) this.clear();
     this.reconcile(files, hidden);
+    this.flat = nativeProvider === 'gitlab' && view.container.ownerDocument.querySelector('button[aria-label="List view"].selected') !== null;
     if ((files.length === 0 && hidden.categories.length === 0) || !view.container.isConnected) { this.clear(); return; }
     // With nothing hidden the native tree stays as the host drew it, as GitHub's does: a lone Essential heading says nothing.
     if (hidden.categories.length === 0 || view.treeHost?.querySelector<HTMLInputElement>('input[type="search"]')?.value.trim()) {
@@ -174,9 +191,9 @@ export class ProviderCategoryTree {
     this.captureRows(rows, files);
     const stats = new Map(files.map((file) => [file.path, file]));
     const essentialPaths = files.filter((file) => !hiddenPaths.has(file.path) && !view.filteredPaths.has(file.path)).map((file) => file.path);
-    const essentialSignature = JSON.stringify([this.folderClass, essentialPaths.map((path) => [path, this.presentations.get(path)?.markup ?? null, stats.get(path)])]);
+    const essentialSignature = JSON.stringify([this.folderClass, this.flat, essentialPaths.map((path) => [path, this.presentations.get(path)?.markup ?? null, stats.get(path)])]);
     if (this.essentialContent !== null && essentialSignature !== this.essentialSignature) {
-      this.essentialContent.replaceChildren(this.render(directory(essentialPaths), 'essential', stats));
+      this.essentialContent.replaceChildren(this.render((this.flat ? flatDirectory : directory)(essentialPaths), 'essential', stats));
       this.essentialSignature = essentialSignature;
     }
     for (const group of hidden.categories) {
@@ -201,9 +218,9 @@ export class ProviderCategoryTree {
       const text = `${group.category.title} (${formatCount(count)} ${count === 1 ? group.category.shortNoun : group.category.shortNounPlural})`;
       this.headerLabel(panel.button, text, group.category.icon);
       // Source markup changes carry native comment/status/selection updates, even without path changes.
-      const signature = JSON.stringify([this.folderClass, group.paths.map((path) => [path, this.presentations.get(path)?.markup ?? null, stats.get(path)])]);
+      const signature = JSON.stringify([this.folderClass, this.flat, group.paths.map((path) => [path, this.presentations.get(path)?.markup ?? null, stats.get(path)])]);
       if (signature !== panel.signature) {
-        panel.content.replaceChildren(this.render(directory(group.paths), group.category.id, stats));
+        panel.content.replaceChildren(this.render((this.flat ? flatDirectory : directory)(group.paths), group.category.id, stats));
         panel.signature = signature;
       }
     }
@@ -411,7 +428,15 @@ export class ProviderCategoryTree {
   private render(dir: Directory, category: string, stats: ReadonlyMap<string, FileStats>, depth = 0): HTMLElement {
     const list = element('ul', '', 'geld-provider-category-list');
     const sorted = [...dir.dirs.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
-    for (let folder of sorted) {
+    if (this.flat) {
+      // List view's folders are headings, not controls: GitLab draws them bold with a trailing slash and never folds them.
+      for (const folder of sorted) {
+        const item = element('li', '', 'geld-provider-category-flat');
+        item.append(element('span', folder.name, 'geld-provider-category-flat-dir'), this.render(folder, category, stats, depth + 1));
+        list.append(item);
+      }
+    }
+    for (let folder of this.flat ? [] : sorted) {
       let name = folder.name;
       while (folder.files.length === 0 && folder.dirs.size === 1) { const child = folder.dirs.values().next().value; if (child === undefined) break; name += `/${child.name}`; folder = child; }
       const item = element('li');

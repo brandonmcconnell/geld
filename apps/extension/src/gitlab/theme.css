@@ -63,7 +63,7 @@ html[data-geld-provider="gitlab"] {
   --geld-provider-space-6: var(--gl-spacing-scale-6);
 }
 
-html[data-geld-provider="gitlab"] .geld-provider-review {
+html[data-geld-provider="gitlab"] :is(.geld-provider-review, .geld-provider-review-shell) {
   --geld-provider-bg: var(--gl-background-color-section);
   --geld-provider-border: var(--gl-border-color-section);
 }
@@ -97,3 +97,6 @@ html[data-geld-provider="gitlab"] :is(.geld-provider-line-fold__line, .geld-prov
 @media (prefers-reduced-motion: reduce) {
   html[data-geld-provider="gitlab"] { --geld-provider-button-transition-duration: 0.01ms; }
 }
+
+/* While the digest is read in Digest view (providers/conversation.ts `setReadingMark`): the timeline it is about to fold. */
+html[data-geld-digest-reading] #notes-list > li.timeline-entry { display: none !important; }

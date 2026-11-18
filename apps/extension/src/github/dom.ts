@@ -151,6 +151,11 @@ export function svgFromString(markup: string): SVGElement {
   const template = document.createElement('template');
   template.innerHTML = markup.trim();
   const svg = template.content.firstElementChild;
-  if (!(svg instanceof SVGElement)) throw new Error('Expected SVG markup');
+  if (!isSvgElement(svg)) throw new Error('Expected SVG markup');
   return svg;
+}
+
+// By namespace rather than `instanceof SVGElement`: a DOM without that global (the scripts' acceptance fixtures) still parses octicons.
+function isSvgElement(node: Element | null): node is SVGElement {
+  return node !== null && node.namespaceURI === 'http://www.w3.org/2000/svg';
 }

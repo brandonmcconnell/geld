@@ -5,6 +5,7 @@ import { isDependencyUpdate, officialSourceForBot, relatedLinksFrom } from '@gel
 import type { LinkCandidate, RelatedLink } from '@geld/review/related-links';
 import { previewDocFromMarkdown } from '@geld/review';
 import type { PreviewLink, ProviderReviewComment } from '@geld/review';
+import { digestIcon } from './digest-icons';
 import { element } from './dom';
 import { projectProviderPeople } from './hidden-people';
 import { referenceForSubject } from './references';
@@ -21,6 +22,37 @@ export function providerRelatedHost(provider: 'gitlab' | 'bitbucket', doc: Docum
   const selector = provider === 'gitlab' ? 'aside[data-testid="issuable-sidebar"][data-issuable-type="merge_request"]' : 'aside [data-testid="pr-cards-list"]';
   const hosts = [...doc.querySelectorAll<HTMLElement>(selector)].filter((host) => host.closest(HOST_EXCLUDED) === null);
   return hosts.length === 1 ? hosts[0] ?? null : null;
+}
+
+/** Where the sections go: right under GitLab's Reviewers block, as GitHub's stand under Reviewers, else at the host's end. */
+function relatedAnchor(provider: 'gitlab' | 'bitbucket', host: HTMLElement): { readonly parent: HTMLElement; readonly before: Node | null } {
+  if (provider === 'gitlab') {
+    const reviewers = [...host.querySelectorAll<HTMLElement>('.block.reviewer')].filter((block) => block.closest('[data-geld-ui]') === null);
+    const block = reviewers.length === 1 ? reviewers[0] : undefined;
+    if (block?.parentElement != null) {
+      let after: Node = block;
+      while (after.nextSibling instanceof HTMLElement && after.nextSibling.classList.contains('geld-provider-related')) after = after.nextSibling;
+      return { parent: block.parentElement, before: after.nextSibling };
+    }
+  }
+  return { parent: host, before: null };
+}
+
+export type ReferenceState = 'open' | 'closed' | 'merged';
+
+/** GitHub's short form for a reference, nearest first: `#965` here, `project#965` in the same group, the full path elsewhere,
+ * with `!` for a merge request; the state is GitLab's own suffix on the link ("(closed)", "(merged)"). */
+export function referenceWords(reference: ProviderReviewReference, repository: string): { readonly ref: string; readonly title: string; readonly state: ReferenceState } {
+  const target = reference.target;
+  const sigil = target.provider === 'gitlab' && target.kind === 'issue' ? '#' : '!';
+  const here = repository.split('/'), there = target.repository.split('/');
+  // GitLab paths nest groups deeply, so a project elsewhere is named by its own name; the full path is the link's tooltip.
+  const path = target.repository === repository ? '' : there.length > 2 || here.slice(0, -1).join('/') === there.slice(0, -1).join('/') ? there.at(-1) ?? target.repository : target.repository;
+  const suffix = /\((closed|merged)\)\s*$/.exec(reference.label)?.[1];
+  const state: ReferenceState = suffix === 'merged' ? 'merged' : suffix === 'closed' ? 'closed' : 'open';
+  const words = reference.label.replace(/\s*\((?:closed|merged|opened)\)\s*$/, '').trim();
+  const title = reference.title ?? (/^[#!]?\d+$|[#!]\d+$/.test(words) ? '' : words);
+  return { ref: `${path}${sigil}${target.number}`, title, state };
 }
 
 function descriptionCandidates(body: HTMLElement | null, page: ProviderReviewPage): LinkCandidate[] {
@@ -78,11 +110,12 @@ export class ProviderRelatedContext {
     const native = new Set(work.map((reference) => reference.target.url));
     const external = links.filter((link) => !native.has(link.href));
     const signature = JSON.stringify([external, work]);
-    if (this.host === host && this.signature === signature && this.nodes.every((node) => node.parentElement === host)) return;
+    if (this.host === host && this.signature === signature && this.nodes.every((node) => node.isConnected && host.contains(node))) return;
     for (const node of this.nodes) node.remove();this.nodes.length = 0;
     this.host = host;this.signature = signature;
-    if (external.length > 0) this.add(host, 'links', 'Related links', external.map((link) => this.linkRow(link)));
-    if (work.length > 0) this.add(host, 'work', 'Related work', work.map((reference) => this.workRow(reference)));
+    const place = { ...relatedAnchor(page.provider, host), gitlab: page.provider === 'gitlab' };
+    if (external.length > 0) this.add(place, 'links', 'Related links', external.map((link) => this.linkRow(link)));
+    if (work.length > 0) this.add(place, 'work', 'Related work', work.map((reference) => this.workRow(reference, page.repository.path)));
   }
 
   clear(): void {
@@ -109,14 +142,21 @@ export class ProviderRelatedContext {
     return row;
   }
 
-  private workRow(reference: ProviderReviewReference): HTMLElement {
+  private workRow(reference: ProviderReviewReference, repository: string): HTMLElement {
     const row = element('li', '', 'geld-provider-related__row');
-    row.append(this.anchor(reference.target.url, reference.title === null ? reference.label : `${reference.label} · ${reference.title}`));
-    if (reference.target.repository !== '') row.append(element('span', reference.target.repository, 'geld-provider-related__context'));
+    const { ref, title, state } = referenceWords(reference, repository);
+    const anchor = this.anchor(reference.target.url, '', [`${reference.target.repository}${ref.slice(ref.search(/[#!]\d+$/))}`, title].filter(Boolean).join(' '));
+    const kind = reference.target.provider === 'gitlab' && reference.target.kind === 'issue' ? (state === 'open' ? 'issue-open' : 'issue-closed') : 'merge-request';
+    const glyph = digestIcon(kind);glyph.dataset.geldReferenceState = state;
+    const words = element('span', '', 'geld-provider-related__words');
+    words.append(element('span', ref, 'geld-provider-related__ref'));
+    if (title !== '') words.append(' ', title);
+    anchor.append(glyph, words);anchor.dataset.geldReferenceState = state;
+    row.append(anchor);
     return row;
   }
 
-  private add(host: HTMLElement, group: Group, label: string, rows: readonly HTMLElement[]): void {
+  private add(place: { readonly parent: HTMLElement; readonly before: Node | null; readonly gitlab: boolean }, group: Group, label: string, rows: readonly HTMLElement[]): void {
     const section = element('section', '', 'geld-provider-related');section.dataset.geldRelated = group;section.setAttribute('aria-label', label);
     section.append(element('h3', label));
     const list = element('ul');list.append(...rows);section.append(list);
@@ -125,6 +165,7 @@ export class ProviderRelatedContext {
       const more = element('button', `Show ${rows.length - 8} more`);more.type = 'button';
       more.addEventListener('click', () => { const focused = document.activeElement === more;this.all.add(group);for (const row of rows) row.hidden = false;more.remove();if (focused) rows[8]?.querySelector('a')?.focus(); });section.append(more);
     }
-    host.append(section);this.nodes.push(section);
+    if (place.gitlab) section.classList.add('block');
+    place.parent.insertBefore(section, place.before);this.nodes.push(section);
   }
 }

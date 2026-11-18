@@ -14,3 +14,11 @@
 .geld-provider-related button { font: inherit; color: var(--geld-provider-link); background: transparent; border: none; padding: var(--geld-provider-space-2) 0; cursor: pointer; }
 .geld-provider-related a:focus-visible, .geld-provider-related button:focus-visible { outline: 2px solid var(--geld-provider-link); outline-offset: 2px; }
 html[data-geld-provider="bitbucket"] .geld-provider-related { background: var(--geld-provider-bg); border: var(--geld-provider-border-width) solid var(--geld-provider-border); border-radius: var(--geld-provider-radius); padding: var(--geld-provider-space-4); box-shadow: var(--geld-provider-shadow); }
+/* Related work rows read as GitHub's: the state's glyph in the host's colour, the short reference muted, the title. */
+.geld-provider-related__link[data-geld-reference-state] { align-items: center; color: var(--geld-provider-text); text-decoration: none; overflow-wrap: normal; }
+.geld-provider-related__link[data-geld-reference-state] > svg { flex: none; inline-size: 16px; block-size: 16px; }
+.geld-provider-related__link > svg[data-geld-reference-state='open'] { color: var(--geld-provider-success); }
+.geld-provider-related__link > svg:is([data-geld-reference-state='closed'], [data-geld-reference-state='merged']) { color: var(--geld-provider-link); }
+.geld-provider-related__words { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.geld-provider-related__ref { color: var(--geld-provider-text-subtle); }
+.geld-provider-related__link[data-geld-reference-state]:hover .geld-provider-related__words { color: var(--geld-provider-link); text-decoration: underline; }

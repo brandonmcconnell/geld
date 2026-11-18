@@ -186,6 +186,9 @@ Decision needed: keep Merge checks as a provider row, or fold it into CI and the
 | Review group (approve, request changes, comment) | match in shape (`renderProviderActionControls`) | match in shape, comment plus verdict hands off to the native writer | — | — |
 | Header counts and breakdown | match: counts in the tab bar on every tab, hover and keyboard focus only | match: same rule for its Files tabs | diff | — |
 | Changes-tab category accordion | match: none when nothing is hidden | match: same rule | diff | — |
+| Category panels in the file browser's List and Tree views | match: List view's `dir/` headings, Tree view's folders | — (one tree) | diff | — |
+| Digest reading bar, timeline hidden while read | match (`ProviderReadingShell`) | match | — | — |
+| Related work under Reviewers, GitHub's row shape | match | — (Bitbucket's sidebar cards) | description | — |
 
 ### 3.7 Gaps that cannot close
 

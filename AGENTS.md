@@ -4037,6 +4037,9 @@ Related work contains only outgoing native references in the description, while 
 GitLab comment references require the native account ID and GFM target identity, while Bitbucket references require a qualified comment permalink and canonical target URL.
 Description references win over later comment mentions, and comment mentions are ordered chronologically so the first verified source remains stable.
 Hidden-person rules also apply to bot link sources, and a per-visit peek restores those links without altering shared settings.
+On GitLab both sections stand right under the native Reviewers block (`.block.reviewer`), as GitHub's stand under Reviewers, in GitLab's own `block` frame.
+A Related work row reads as GitHub's: the state's glyph, the reference nearest first (`#965`, a project of the same group or one nested deeper by its own name, `!` for a merge request) and the title, on one line cut with an ellipsis, the full path in its tooltip (`referenceWords`).
+The state is GitLab's own suffix on the rendered link ("(closed)", "(merged)").
 
 Nightly conflict handling includes the granted GitLab and Bitbucket runtime registrations, including Bitbucket's MAIN-world whitespace helper.
 Optional provider registration checks the nightly pause state before registering scripts, and conflict evaluation retires pre-existing provider registrations even when no GitHub registration remains.
@@ -4239,6 +4242,14 @@ A provider digest creates a local stacking context so its View menu scrolls belo
 GitLab's MR metadata supplies assigned reviewers when the detailed reviewer endpoint is unavailable, but assignees and suggested reviewers are not review requests.
 GitLab approval payloads can omit automation flags present on the same account's discussion payload, so reconcile only matching account IDs and usernames rather than classifying by a bot-like name.
 Automated conversation rows do not grant a registered bot identity, summary parser or trigger permission.
+While the review is read the digest stands as its Geld bar alone with a thin bar filling along its top (`ProviderReadingShell`, `reading-shell.ts`), and the host's timeline is hidden from its first frame (`html[data-geld-digest-reading]`, folded timeline only), as GitHub's digest reads the timeline behind its reading bar.
+A first read that fails is asked again after 3 s, doubling to a minute, rather than waiting out the minute's refresh: !4544's digest took a minute to show behind its whole timeline.
+The shell says why only after three failed reads, and the timeline comes back then.
+Every chevron in the digest stands 16px from its right edge in the muted text colour, the box's last row takes its inner bottom corners (`--geld-end-radius`), a row that opens to rows ends with its last row, and a round with nothing posted says so in a 40px row of its own.
+The Checks row's merge checks and CI counts stand apart by the row's gap, not by "·".
+"Identify reviewer" (binding a bot account to a review service for the repository) is offered only on an automated comment whose login or words name one of the services (`namesService`): every other automation, gitlab-bot's triage notes among them, was asked whether it was Bugbot, Greptile, Devin or CodeRabbit.
+The description's headings are slimmed as GitHub's are while it carries an outline (`data-geld-provider-description-outline`: h1 and h2 16px, the rest 14px, no rule under them).
+GitLab's Changes tab offers a List view and a Tree view, and the category panels follow it (`ProviderCategoryTree.flat`, read from the selected `List view` button): in List view a folder is a bold `dir/` heading over its files, as GitLab draws it, never a folder control.
 The provider digest's default grouping is by type with GitHub's rounds (`roundSections`): each recorded push opens a round, and its threads and comments are seated by when they were posted (a bot's by its latest edit).
 Rounds with an open thread stand under "N rounds to review", the newest open, the latest round with no threads at all is the current round, never a settled one, and is headed "Current round" when it is alone there, and the rest fold under "N settled rounds".
 Without a recorded push everything is one round.

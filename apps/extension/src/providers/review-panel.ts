@@ -719,8 +719,8 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     if (automatedAuthor(comment.author)) botBylineControls(comment, byline, body);
     const identify = options.identifyReviewer;
     if (identify !== undefined && comment.author.automated === true && !(input.bots ?? []).some((bot) => bot.authorId === comment.author.id)) {
-      const choices = identify.choices.filter((choice) => providerBotSupport(input.subject.provider, choice.id)?.support === 'supported');
-      identities.push(renderReviewerIdentity(article, comment, identify.repository, choices, (botId) => identify.save(comment, botId)));
+      const choices = identify.choices.filter((choice) => providerBotSupport(input.subject.provider, choice.id)?.support === 'supported' && namesService(comment, choice.id));
+      if (choices.length > 0) identities.push(renderReviewerIdentity(article, comment, identify.repository, choices, (botId) => identify.save(comment, botId)));
     }
     const actions = options.actionsForSource?.(comment).filter((action) => action.available) ?? [];
     // GitHub's comment ⋯: the host's own actions, then where the comment stands in the timeline and its link.
@@ -1105,13 +1105,12 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
     const summary = section.querySelector('[data-geld-review-toggle]');
     summary?.setAttribute('aria-label', `Checks · ${[merge?.textContent, merge === null || current.length > 0 || coverage !== 'complete' ? ciText : null].filter(value => typeof value === 'string' && value !== '').join(' · ')}`);
     if (summary !== null && coverage !== 'unavailable' && current.length > 0) {
-      const preview = node('span', coverage === 'partial' ? 'Partial · ' : '', 'geld-provider-review__row-preview');
-      if (merge !== null) preview.prepend(merge, doc.createTextNode(' · '));
+      // The parts stand apart by the row's gap, as GitHub's check counts do, not by separators.
+      const preview = node('span', '', 'geld-provider-review__row-preview geld-provider-review__check-preview');
+      if (merge !== null) preview.append(merge);
+      if (coverage === 'partial') preview.append(node('span', 'Partial'));
       summary.append(preview);
-      let first = true;
       for (const [label, count] of counts) {
-        if (!first) preview.append(doc.createTextNode(' · '));
-        first = false;
         const part = node('span', '', 'geld-provider-review__check-part');
         const source = current.find((check) => providerCheckPresentation(check, input.subject.provider).label === label);
         if (source !== undefined) part.dataset.geldCheckState = providerCheckPresentation(source, input.subject.provider).state;
@@ -1121,12 +1120,9 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         preview.append(part);
       }
     } else if (summary !== null) {
-      const preview = node('span', '', 'geld-provider-review__row-preview');
+      const preview = node('span', '', 'geld-provider-review__row-preview geld-provider-review__check-preview');
       if (merge !== null) preview.append(merge);
-      if (merge === null || coverage !== 'complete' || current.length > 0) {
-        if (merge !== null) preview.append(doc.createTextNode(' · '));
-        preview.append(doc.createTextNode(ciText));
-      }
+      if (merge === null || coverage !== 'complete' || current.length > 0) preview.append(node('span', ciText));
       summary.append(preview);
     }
     const mergeList = mergeChecksList();
@@ -1723,7 +1719,7 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
         for (const comment of round.comments) group.append(commentRow(comment));
         section.append(group);
       }
-      if (round.items.length + round.comments.length === 0) section.append(node('p', 'No conversation since this push.', 'geld-provider-review__muted'));
+      if (round.items.length + round.comments.length === 0) section.append(node('p', 'No conversation since this push.', 'geld-provider-review__muted geld-provider-review__empty-round'));
     };
     // GitHub's round row: a progress glyph, who posted, "Round N", the resolved meter, a comment count and the time.
     const render = (round: Round, open: boolean): HTMLElement => {
@@ -2418,4 +2414,15 @@ export function renderProviderReviewPanel(host: HTMLElement, initialInput: Provi
       panel.remove();
     },
   };
+}
+
+/** A bot account is offered as one of the review services only when its own words name that service: the binding still
+ * needs the reader's confirmation, but an automation that never says it is CodeRabbit or Bugbot is not asked about. */
+export function namesService(comment: ProviderReviewComment, id: string): boolean {
+  const bot = botById(id);
+  if (bot == null) return false;
+  const names = [bot.title, bot.id, ...bot.logins.map((login) => login.replace(/\[bot\]$/, '').replace(/-(?:apps?|ai|bot|dev|com|bugs)$/, ''))]
+    .map((name) => name.trim().toLowerCase()).filter((name) => name.length >= 4);
+  const words = `${comment.author.login} ${comment.body}`.toLowerCase();
+  return names.some((name) => new RegExp(`(?:^|[^a-z0-9])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![a-z0-9])`).test(words));
 }
