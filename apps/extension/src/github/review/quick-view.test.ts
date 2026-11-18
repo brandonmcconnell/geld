@@ -85,9 +85,9 @@ describe('compactEvents', () => {
 });
 
 /** An Overview Comments section listed newest first, holding one run of two commits (brandonmcconnell/geld#466, Nov 2026). */
-function overviewCommits(): HTMLElement {
+function overviewCommits(githubTime = ''): HTMLElement {
   const commitRow = (sha: string, title: string): string =>
-    `<div data-testid="timeline-commit-row"><a href="/o/r/pull/1/changes/${sha.repeat(40)}" class="Title__x">${title}</a><div class="Actions__x"><a href="/o/r/pull/1/changes/${sha.repeat(40)}">${sha.repeat(7)}</a></div></div>`;
+    `<div data-testid="timeline-commit-row"><a href="/o/r/pull/1/changes/${sha.repeat(40)}" class="Title__x">${title}</a>${githubTime}<div class="Actions__x"><a href="/o/r/pull/1/changes/${sha.repeat(40)}">${sha.repeat(7)}</a></div></div>`;
   const home = document.createElement('section');
   home.innerHTML = `<h2 id="overview-comments">Comments</h2><button><svg class="octicon octicon-sort-desc"></svg></button><div data-testid="timeline-item" data-item-type="commits"><div data-testid="timeline-commit-group">${commitRow('b', 'newer')}${commitRow('a', 'older')}</div></div>`;
   document.body.append(home);
@@ -108,5 +108,15 @@ describe('Overview commit runs', () => {
     restoreAll();
     expect(document.querySelector('[data-geld-oldest-first]')).toBeNull();
     expect(document.querySelector('.geld-review__commit-time')).toBeNull();
+  });
+
+  it('adds no time to a row where GitHub already says when the commit was made', () => {
+    for (const githubTime of ['<span> · </span><span>27m ago</span>', '<relative-time datetime="2026-11-07T21:50:48Z">27 minutes ago</relative-time>']) {
+      const slot = document.createElement('div');
+      document.body.append(slot);
+      renderQuickView(slot, [overviewCommits(githubTime)]);
+      expect(slot.querySelector('.geld-review__commit-time')).toBeNull();
+      restoreAll();
+    }
   });
 });

@@ -279,6 +279,7 @@ export function timeCommitRows(list: HTMLElement, onChange: () => void): void {
   for (const row of list.querySelectorAll<HTMLElement>(`.TimelineItem, .js-commits-list-item, ${OVERVIEW_COMMIT_ROW}`)) {
     if (row.querySelector(`.${TIME_CLASS}`) !== null || row.querySelector('.geld-review__push') !== null) continue;
     const overview = row.matches(OVERVIEW_COMMIT_ROW);
+    if (overview && timedByGitHub(row)) continue;
     const link = row.querySelector<HTMLAnchorElement>(overview ? 'a[href*="/changes/"]' : 'a[href*="/commits/"]');
     const sha = link === null ? null : commitShaOf(link);
     if (link === null || sha === null) continue;
@@ -294,6 +295,19 @@ export function timeCommitRows(list: HTMLElement, onChange: () => void): void {
 }
 
 const OVERVIEW_COMMIT_ROW = '[data-testid="timeline-commit-row"]';
+
+const SHORT_AGE = /(?:^|[\s·])(?:just now|\d+\s?[smhdwy] ago|(?:a|an|\d+) (?:second|minute|hour|day|week|month|year)s? ago|yesterday|last (?:week|month|year))\s*$/i;
+
+/** Whether GitHub's own row already says when the commit was made ("· 27m ago" after the message, signed in), so a second time would repeat it. */
+function timedByGitHub(row: HTMLElement): boolean {
+  for (const time of row.querySelectorAll('relative-time, time')) if (time.closest(`.${TIME_CLASS}`) === null) return true;
+  const walker = row.ownerDocument.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    if (node.parentElement?.closest(`.${TIME_CLASS}`) != null) continue;
+    if (SHORT_AGE.test(node.textContent ?? '')) return true;
+  }
+  return false;
+}
 
 /** The commit a row's link names: the conversation's `/pull/N/commits/<sha>`, the Overview's `/pull/N/changes/<sha>`. */
 export function commitShaOf(link: Element): string | null {
