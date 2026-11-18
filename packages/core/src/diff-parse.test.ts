@@ -88,7 +88,42 @@ describe('parseUnifiedDiff', () => {
 
   it('spots mode-only and whitespace-only changes', () => {
     expect(files[5]).toEqual({ path: 'scripts/run.sh', additions: 0, deletions: 0, status: 'modified', kinds: ['modes'] });
-    expect(files[6]).toEqual({ path: 'src/indent.ts', additions: 2, deletions: 2, status: 'modified', kinds: ['whitespace'] });
+    expect(files[6]).toEqual({ path: 'src/indent.ts', additions: 2, deletions: 2, status: 'modified', kinds: ['whitespace'], ignoringWhitespace: { additions: 0, deletions: 0 } });
+  });
+
+  it('counts each file as `git diff -w` would, beside the raw counts, only when they differ', () => {
+    // A block moved into a new wrapper: re-indented lines are no change with whitespace ignored, the wrapper is.
+    const diff = [
+      'diff --git a/src/config.ts b/src/config.ts',
+      'index 1111111..2222222 100644',
+      '--- a/src/config.ts',
+      '+++ b/src/config.ts',
+      '@@ -1,6 +1,8 @@',
+      ' export default {',
+      '-  projects: [',
+      '-    { name: "a" },',
+      '-  ],',
+      '+  projects: run',
+      '+    ? [',
+      '+        { name: "a" },',
+      '+      ]',
+      '+    : [],',
+      ' };',
+      '@@ -20,2 +22,2 @@',
+      '-const x = 1;',
+      '+const x = 2;',
+      'diff --git a/src/plain.ts b/src/plain.ts',
+      'index 3333333..4444444 100644',
+      '--- a/src/plain.ts',
+      '+++ b/src/plain.ts',
+      '@@ -1,2 +1,2 @@',
+      '-old',
+      '+new',
+      '',
+    ].join('\n');
+    const [config, plain] = parseUnifiedDiff(diff);
+    expect(config).toMatchObject({ additions: 6, deletions: 4, ignoringWhitespace: { additions: 5, deletions: 3 } });
+    expect(plain?.ignoringWhitespace).toBeUndefined();
   });
 
   it('leaves ordinary edits without kinds', () => {

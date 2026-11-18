@@ -89,6 +89,21 @@ export function buildBreakdown(items: readonly Classified[]): HiddenBreakdown {
   return { totals, incomplete, categories, lines, filtered };
 }
 
+/**
+ * The diff's files counted as GitHub's own totals count them. While GitHub hides whitespace changes (`?w=1`, or the
+ * reader's saved preference) its numbers leave whitespace-only edits out and the `.diff` never does, so what Geld hides
+ * must be read the same way before it is taken from those numbers: whichever reading adds up to them, else the nearer.
+ */
+export function filesCountedLike(files: readonly FileStats[], totals: ChangeTotals | null): readonly FileStats[] {
+  if (totals === null || !files.some((file) => file.ignoringWhitespace !== undefined)) return files;
+  const ignoring = files.map((file) => (file.ignoringWhitespace === undefined ? file : { ...file, ...file.ignoringWhitespace }));
+  const off = (list: readonly FileStats[]): number => {
+    const sum = list.reduce((acc, file) => ({ additions: acc.additions + file.additions, deletions: acc.deletions + file.deletions }), { additions: 0, deletions: 0 });
+    return Math.abs(sum.additions - totals.additions) + Math.abs(sum.deletions - totals.deletions);
+  };
+  return off(ignoring) < off(files) ? ignoring : files;
+}
+
 /** Classify raw diff statistics (from a `.diff`) with a matcher; `hideCommentLines` also collapses comment-only lines of visible files. */
 export function breakdownFromFiles(
   files: readonly FileStats[],

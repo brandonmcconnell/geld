@@ -22,7 +22,7 @@ import type { RepoConfigChoices } from '../lib/local-state';
 import { debugScopesItem, repoConfigChoicesItem, whitespaceOptOutsItem } from '../lib/local-state';
 import type { FileStats, GeldSettings } from '@geld/core';
 import type { Classified, HiddenBreakdown } from './breakdown';
-import { breakdownFromFiles, buildBreakdown, EMPTY_BREAKDOWN } from './breakdown';
+import { breakdownFromFiles, buildBreakdown, EMPTY_BREAKDOWN, filesCountedLike } from './breakdown';
 import { DiffSource, retriesLater } from './diff-source';
 import type { ResolvedRepoConfig } from './repo-config-source';
 import { RepoConfigSource, validConfigs } from './repo-config-source';
@@ -1921,7 +1921,7 @@ export class GeldController {
       // The page's own diff: first in line whether or not its head SHA has been read yet.
       const state = this.diffSource.request(page.diffUrl, sha, 'page');
       if (state.status === 'ready') {
-        const fromDiff = breakdownFromFiles(state.files, matcher, this.settings.hideCommentLines, view?.filteredPaths ?? null);
+        const fromDiff = breakdownFromFiles(filesCountedLike(state.files, allTotals), matcher, this.settings.hideCommentLines, view?.filteredPaths ?? null);
         headerHidden = fromDiff.hidden;
         // GitHub's header gives the line counts but no file count (that is on the Files tab); the diff knows it, so
         // the tooltip's Essential and Total rows can say "N files" like the category rows between them.
