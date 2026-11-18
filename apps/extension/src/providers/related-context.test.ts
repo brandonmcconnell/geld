@@ -2,7 +2,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS } from '@geld/core';
 import type { ProviderAdapter, ProviderReviewPage, ProviderReviewSnapshot } from './types';
-import { ProviderRelatedContext, providerRelatedHost, providerRelatedLinks } from './related-context';
+import { ProviderRelatedContext, providerRelatedHost, providerRelatedLinks, referenceWords } from './related-context';
 
 vi.mock('wxt/browser', () => ({ browser: { runtime: { getURL: (path: string) => `chrome-extension://geld${path}` } } }));
 
@@ -67,4 +67,20 @@ it('does not leak bot reply links from a thread owned by a hidden person', () =>
   const source = { ...snapshot, comments: [], input: { ...snapshot.input, threads: [{ id: 'thread', anchor: starter.anchor, url: starter.url, comments: [starter, comment], resolved: false, outdated: false }] } };
   expect(providerRelatedLinks(page, null, source, ['hidden-person'])).toEqual([]);
   expect(providerRelatedLinks(page, null, source, ['hidden-person'], new Set(['person']))[0]?.service).toBe('CodeRabbit');
+});
+
+it('words GitLab references nearest first with their state, and stands under the Reviewers block', () => {
+  const target = (path: string, kind: 'issue' | 'merge-request', number: string) => ({ provider: 'gitlab' as const, origin: repository.origin, repository: path, projectId: '3', nativeId: '9', number, kind, url: `https://gitlab.com/${path}/-/${kind === 'issue' ? 'work_items' : 'merge_requests'}/${number}` });
+  const reference = (label: string, title: string | null, t: ReturnType<typeof target>) => ({ id: label, direction: 'outgoing' as const, label, title, target: t, source: { reviewUrl: page.url, anchor: null } });
+  expect(referenceWords(reference('#965 (closed)', 'Move the file', target('group/project', 'issue', '965')), 'group/project')).toEqual({ ref: '#965', title: 'Move the file', state: 'closed' });
+  expect(referenceWords(reference('Issue #7 — Prevent it', 'Prevent it', target('group/other', 'issue', '7')), 'group/project')).toEqual({ ref: 'other#7', title: 'Prevent it', state: 'open' });
+  expect(referenceWords(reference('!3 (merged)', null, target('elsewhere/repo', 'merge-request', '3')), 'group/project')).toEqual({ ref: 'elsewhere/repo!3', title: '', state: 'merged' });
+
+  document.body.innerHTML = '<aside data-testid="issuable-sidebar" data-issuable-type="merge_request"><div class="issuable-sidebar"><div class="block assignee"></div><div class="block reviewer"></div><div class="block labels"></div></div></aside>';
+  const adapter: ProviderAdapter = { id: 'gitlab', describe: () => page, readDiff: () => null, headerTargets: () => [], listRows: () => [], fetchDiff: async () => ({ files: [], revision: page.version, complete: true }),
+    readReferences: () => [reference('#965 (closed)', 'Move the file', target('group/project', 'issue', '965'))] };
+  new ProviderRelatedContext(adapter).update(page, DEFAULT_SETTINGS, document);
+  const work = document.querySelector('[aria-label="Related work"]');
+  expect(work?.previousElementSibling?.className).toBe('block reviewer');
+  expect(work?.querySelector('a')?.textContent).toBe('#965 Move the file');
 });

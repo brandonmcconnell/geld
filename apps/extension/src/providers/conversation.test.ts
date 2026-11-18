@@ -339,7 +339,7 @@ describe('provider conversation integrations', () => {
   });
 
   it('saves a native identity only after selection and confirmation, then uses the saved settings', async () => {
-    const topLevel = { ...comment('**Actionable comments posted: 0**'), id: '2', anchor: 'note_2', url: `${url}#note_2` };
+    const topLevel = { ...comment('<!-- This is an auto-generated comment by CodeRabbit -->\n**Actionable comments posted: 0**'), id: '2', anchor: 'note_2', url: `${url}#note_2` };
     const source = { ...snapshot([topLevel]), input: { ...snapshot().input, threads: [] } };
     const saveTrustedBot = vi.fn(async (_input: ProviderReviewInput, _comment: ProviderReviewComment, _botId: string) => undefined);
     const f = fixture(source, { saveTrustedBot });
@@ -355,6 +355,13 @@ describe('provider conversation integrations', () => {
     expect(f.host.querySelector('.geld-provider-reviewer-identity')).toBeNull();
     expect(f.host.querySelector('[data-geld-review-bot="coderabbit"]')?.textContent).toContain('No findings');
     expect(f.send).not.toHaveBeenCalled();
+  });
+
+  it('does not ask about an automation whose words name no review service', async () => {
+    const topLevel = { ...comment('ddieulivol currently has 8 active review requests'), id: '2', anchor: 'note_2', url: `${url}#note_2` };
+    const f = fixture({ ...snapshot([topLevel]), input: { ...snapshot().input, threads: [] } }, {});
+    await vi.waitFor(() => expect(f.host.querySelector('.geld-provider-review[data-state="ready"]')).not.toBeNull());
+    expect(f.host.querySelector('.geld-provider-reviewer-identity')).toBeNull();
   });
 
   it('shows configuration failures without calling the gateway', async () => {
@@ -868,7 +875,7 @@ describe('persistent provider conversation views', () => {
       fetchReview: () => new Promise(resolve => { finish = resolve; }),
     });
     expect(f.host.querySelector('.geld-provider-view')).toBeNull();
-    expect(f.host.textContent).toContain('Reading review');
+    expect(f.host.textContent).toContain('Reading the review');
     finish?.(snapshot());
     await vi.waitFor(() => expect(f.host.querySelector('[data-geld-view-slot] > .geld-provider-view')).not.toBeNull());
     expect(f.host.querySelector(':scope > .geld-provider-view')).toBeNull();

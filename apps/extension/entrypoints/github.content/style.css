@@ -6202,9 +6202,13 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   border-radius: var(--geld-chat-radius) var(--geld-chat-tight) var(--geld-chat-radius) var(--geld-chat-radius);
 }
 
-/* Inside the bubble the markdown is GitHub's; only the size and the first and last margins are the chat's. */
+/*
+ * Inside the bubble the markdown is GitHub's; only the size and the first and last margins are the chat's. The
+ * Overview gives its markdown box a 4px top margin, which stood the words 4px lower in the bubble than its foot.
+ */
 .geld-review__chat [data-geld-part='bubble'] .comment-body,
 .geld-review__chat [data-geld-part='bubble'] .markdown-body {
+  margin: 0 !important;
   padding: 0 !important;
   font-size: 14px;
   line-height: 1.5;

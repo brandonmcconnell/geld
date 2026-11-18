@@ -62,6 +62,7 @@ svg.geld-provider-digest-icon[data-geld-outline] > [fill="currentColor"] { fill:
 .geld-provider-review__section-toggle::after {
   content: ''; flex: 0 0 auto; margin-inline-start: auto; inline-size: .4em; block-size: .4em;
   border-inline-end: 1.5px solid currentColor; border-block-end: 1.5px solid currentColor; transform: rotate(45deg);
+  color: var(--geld-provider-text-subtle);
 }
 .geld-provider-review__section-toggle[aria-expanded='true']::after { transform: rotate(225deg); }
 .geld-provider-review__section-toggle:hover { background: var(--geld-provider-button-hover-bg); }
@@ -190,7 +191,7 @@ svg.geld-provider-digest-icon[data-geld-outline] > [fill="currentColor"] { fill:
 .geld-provider-review [data-geld-level='band'] > .geld-provider-review__section-content { padding: 0; background: var(--geld-provider-bg); }
 .geld-provider-review [data-geld-level='row'] { border-top: var(--geld-provider-border-width) solid var(--geld-provider-border); background: var(--geld-provider-bg); }
 .geld-provider-review [data-geld-level='row'] > .geld-provider-review__section-toggle {
-  min-block-size: 40px; padding: 0 var(--geld-provider-space-3) 0 var(--geld-provider-space-5); gap: 10px;
+  min-block-size: 40px; padding: 0 var(--geld-provider-space-5); gap: 10px;
   font-weight: var(--geld-provider-font-weight); color: var(--geld-provider-text);
 }
 .geld-provider-review [data-geld-level='row'] > .geld-provider-review__section-content { padding: 0 0 var(--geld-provider-space-3); }
@@ -357,9 +358,9 @@ svg.geld-provider-digest-icon[data-geld-outline] > [fill="currentColor"] { fill:
 .geld-provider-review .geld-provider-review__row-menu > .geld-provider-review__menu-list > :is(button, a):hover,
 .geld-provider-review .geld-provider-review__row-menu > .geld-provider-review__menu-list > span > button:hover { background: var(--geld-provider-button-hover-bg); }
 /* A thread row's ⋯ stands left of its chevron, inside the row's 40px. */
-.geld-provider-review .geld-provider-review__item > [data-geld-row-menu] { position: absolute; inset-block-start: 6px; inset-inline-end: calc(var(--geld-provider-space-3) + 1em + var(--geld-provider-space-2)); z-index: 3; }
-.geld-provider-review .geld-provider-review__item:has(> [data-geld-row-menu]) > .geld-provider-review__section-toggle { padding-inline-end: calc(var(--geld-provider-space-3) + 1em + var(--geld-provider-space-2) + 32px); }
-.geld-provider-review .geld-provider-review__item:has(> [data-geld-row-menu]) > .geld-provider-review__section-toggle::after { position: absolute; inset-block-start: 16px; inset-inline-end: calc(var(--geld-provider-space-3) + 3px); margin: 0; }
+.geld-provider-review .geld-provider-review__item > [data-geld-row-menu] { position: absolute; inset-block-start: 6px; inset-inline-end: calc(var(--geld-provider-space-5) + 1em + var(--geld-provider-space-2)); z-index: 3; }
+.geld-provider-review .geld-provider-review__item:has(> [data-geld-row-menu]) > .geld-provider-review__section-toggle { padding-inline-end: calc(var(--geld-provider-space-5) + 1em + var(--geld-provider-space-2) + 32px); }
+.geld-provider-review .geld-provider-review__item:has(> [data-geld-row-menu]) > .geld-provider-review__section-toggle::after { position: absolute; inset-block-start: 16px; inset-inline-end: var(--geld-provider-space-5); margin: 0; }
 .geld-provider-review .geld-provider-review__item > [data-geld-row-menu] > .geld-provider-review__menu-list { inset-inline: auto 0; }
 
 /* A suggested fix: a small label over the code, in the thread's column. */
@@ -380,8 +381,8 @@ svg.geld-provider-digest-icon[data-geld-outline] > [fill="currentColor"] { fill:
 /* The Review bots row's "Request a review", at the row's end before its chevron as GitHub's: the send glyph, or
    GitHub's spinner while a bot runs, and the help at the menu's foot. */
 .geld-provider-review [data-geld-status-row]:has(> .geld-provider-review__request-menu) { position: relative; }
-.geld-provider-review [data-geld-status-row] > .geld-provider-review__request-menu { position: absolute; inset-block-start: 6px; inset-inline-end: calc(var(--geld-provider-space-3) + 1em + var(--geld-provider-space-2)); z-index: 3; }
-.geld-provider-review [data-geld-status-row]:has(> .geld-provider-review__request-menu) > .geld-provider-review__section-toggle { padding-inline-end: calc(var(--geld-provider-space-3) + 1em + var(--geld-provider-space-2) + 32px); }
+.geld-provider-review [data-geld-status-row] > .geld-provider-review__request-menu { position: absolute; inset-block-start: 6px; inset-inline-end: calc(var(--geld-provider-space-5) + 1em + var(--geld-provider-space-2)); z-index: 3; }
+.geld-provider-review [data-geld-status-row]:has(> .geld-provider-review__request-menu) > .geld-provider-review__section-toggle { padding-inline-end: calc(var(--geld-provider-space-5) + 1em + var(--geld-provider-space-2) + 32px); }
 .geld-provider-review [data-geld-status-row] > .geld-provider-review__request-menu > .geld-provider-review__menu-list { inset-inline: auto 0; min-inline-size: 220px; }
 .geld-provider-review .geld-provider-review__request-menu > .geld-provider-review__menu-list > p { margin: 0; padding: var(--geld-provider-space-3); }
 .geld-provider-review .geld-provider-review__request-menu > summary[data-geld-running] { color: var(--geld-provider-text-subtle); }
@@ -395,7 +396,7 @@ svg.geld-provider-digest-icon[data-geld-outline] > [fill="currentColor"] { fill:
 .geld-provider-review .geld-provider-review__byline-control[data-kind='latest'] > svg { transform: scaleX(-1); }
 /* The chevron keeps the row's far end, as on GitHub, with Request a review just before it. */
 .geld-provider-review [data-geld-status-row]:has(> .geld-provider-review__request-menu) > .geld-provider-review__section-toggle::after {
-  position: absolute; inset-block-start: calc(50% - .3em); inset-inline-end: calc(var(--geld-provider-space-5) + 2px); margin: 0;
+  position: absolute; inset-block-start: calc(50% - .3em); inset-inline-end: var(--geld-provider-space-5); margin: 0;
 }
 .geld-provider-review [data-geld-status-row]:has(> .geld-provider-review__request-menu) > .geld-provider-review__request-menu { inset-block-start: 50%; translate: 0 -50%; inset-inline-end: calc(var(--geld-provider-space-5) + 1em); }
 .geld-provider-review [data-geld-status-row]:has(> .geld-provider-review__request-menu) > .geld-provider-review__section-toggle { padding-inline-end: calc(var(--geld-provider-space-5) + 1em + 36px); }
@@ -408,3 +409,28 @@ svg.geld-provider-digest-icon[data-geld-outline] > [fill="currentColor"] { fill:
 /* The host's own CI section lent to the CI row (`native-checks.ts`): it stands in for Geld's list, the merge checks stay. */
 .geld-provider-review [data-geld-ci-checks]:has(> [data-geld-native-checks]) > :not([data-geld-native-checks], .geld-provider-review__check-heading) { display: none; }
 .geld-provider-review__native-checks { padding-block: var(--geld-provider-space-2); }
+
+/* While the review is read: the Geld bar alone, a thin bar along its top edge filling as it goes (reading-shell.ts). */
+.geld-provider-review-shell {
+  position: relative; margin-block: var(--geld-provider-space-5); font: var(--geld-provider-font); color: var(--geld-provider-text);
+  background: var(--geld-provider-bg-subtle); border: var(--geld-provider-border-width) solid var(--geld-provider-border);
+  border-radius: var(--geld-provider-radius); box-shadow: var(--geld-provider-shadow);
+}
+.geld-provider-review-shell > .geld-provider-review__header {
+  box-sizing: border-box; min-block-size: calc(var(--geld-provider-button-min-height) + var(--geld-provider-space-3));
+  display: flex; align-items: center; gap: var(--geld-provider-space-5); padding: var(--geld-provider-space-2) var(--geld-provider-space-5);
+}
+.geld-provider-review__reading { position: absolute; z-index: 3; inset-block-start: -1px; inset-inline: -1px; block-size: 2px; overflow: hidden; pointer-events: none; border-radius: var(--geld-provider-radius) var(--geld-provider-radius) 0 0; }
+.geld-provider-review__reading-fill { inline-size: calc(var(--geld-progress, 0) * 100%); block-size: 100%; background: var(--geld-provider-link); transition: inline-size 300ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .geld-provider-review__reading-fill { transition: none; } }
+/* The digest's last row rounds with the box: every surface on the way down to it takes the box's inner bottom corners, and anything with a sibling after it none. */
+.geld-provider-review[data-provider] { --geld-end-radius: calc(var(--geld-provider-radius) - var(--geld-provider-border-width)); }
+.geld-provider-review[data-provider] :not(:last-child) { --geld-end-radius: 0px; }
+.geld-provider-review[data-provider] [data-geld-review-open='false'] > .geld-provider-review__section-toggle { --geld-end-radius: inherit; }
+.geld-provider-review[data-provider] :is(.geld-provider-review__section, .geld-provider-review__section-toggle, .geld-provider-review__section-content) {
+  border-end-start-radius: var(--geld-end-radius); border-end-end-radius: var(--geld-end-radius);
+}
+/* A row that opens to rows ends with its last row, as on GitHub, with no space under it. */
+.geld-provider-review [data-geld-level='row'] > .geld-provider-review__section-content:has(> [data-geld-level]:last-child) { padding-block-end: 0; }
+/* A round with nothing posted says so in a row of its own height, its words centred in it. */
+.geld-provider-review [data-geld-level] .geld-provider-review__section-content > p.geld-provider-review__empty-round { display: flex; align-items: center; box-sizing: border-box; min-block-size: 40px; margin: 0; padding-inline: var(--geld-provider-space-5); }

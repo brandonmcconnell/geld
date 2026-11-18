@@ -37,3 +37,16 @@
   background-repeat: no-repeat;
   pointer-events: none;
 }
+
+/* Headings in an outlined description are slimmed as GitHub's are: h1 and h2 16px, the rest 14px, no rule, a 24px line. */
+[data-geld-provider-description-outline] > :is(h1, h2, h3, h4, h5, h6),
+[data-geld-provider-description-outline] > .markdown-heading > :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0 0 8px !important;
+  padding: 8px 0 0 !important;
+  border-bottom: 0 !important;
+  line-height: 24px !important;
+}
+[data-geld-provider-description-outline] > :is(h1, h2),
+[data-geld-provider-description-outline] > .markdown-heading > :is(h1, h2) { font-size: 16px !important; }
+[data-geld-provider-description-outline] > :is(h3, h4, h5, h6),
+[data-geld-provider-description-outline] > .markdown-heading > :is(h3, h4, h5, h6) { font-size: 14px !important; }

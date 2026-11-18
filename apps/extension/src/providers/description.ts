@@ -10,6 +10,8 @@ const FOLD = 'data-geld-provider-description-hidden';
 const DEPTH = 'data-geld-provider-description-depth';
 const RAIL_PROPERTIES = ['depth', 'rails', 'positions', 'sizes', 'gap', 'edge'].map(name => `--geld-provider-description-${name}`);
 const CAP = 'data-geld-provider-description-capped';
+/** On the body while it carries an outline: its headings are slimmed as GitHub's are (description.css). */
+const SLIM = 'data-geld-provider-description-outline';
 function property(block: HTMLElement, name: string, value: string): void { if (block.style.getPropertyValue(name) !== value) block.style.setProperty(name, value); }
 interface Heading { readonly key: string; readonly block: Element; readonly label: string; readonly outline: OutlineHeading; readonly toggle: HTMLButtonElement }
 
@@ -68,7 +70,9 @@ export class ProviderDescription {
     });
     for (const item of previous) if (!this.headings.some((next) => next.toggle === item.toggle)) this.removeHeading(item);
     for (const block of this.blocks) if (!blocks.includes(block)) this.clearRails(block);
-    this.blocks = blocks;this.apply();
+    this.blocks = blocks;
+    if (this.headings.length > 0) { if (!host.hasAttribute(SLIM)) host.setAttribute(SLIM, ''); } else host.removeAttribute(SLIM);
+    this.apply();
   }
 
   reveal(target: Element): void {
@@ -89,6 +93,7 @@ export class ProviderDescription {
     this.host?.removeEventListener('scroll', this.scrolled);
     window.removeEventListener('resize', this.schedule);
     this.host?.removeAttribute(CAP);
+    this.host?.removeAttribute(SLIM);
     for (const item of this.headings) this.removeHeading(item);this.headings = [];
     for (const block of this.blocks) this.clearRails(block);
     for (const block of [...this.folded.keys()]) this.restore(block);

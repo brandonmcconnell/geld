@@ -191,3 +191,6 @@ html[data-geld-provider="bitbucket"] .geld-provider-line-fold {
 ::highlight(geld-bitbucket-script-comment) { color: var(--ds-text-code-comments); }
 ::highlight(geld-bitbucket-script-variable) { color: var(--ds-text-code-accent-1); }
 ::highlight(geld-bitbucket-script-attr) { color: var(--ds-text-code-tags); }
+
+/* While the digest is read in Digest view (providers/conversation.ts `setReadingMark`): the activity it is about to fold. */
+html[data-geld-digest-reading] [data-qa="pull-request-activity"] { display: none !important; }

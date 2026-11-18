@@ -36,6 +36,7 @@ export const USAGE_TOGGLES = [
   'quickReview',
   'holdToMerge',
   'collapseDescription',
+  'digestAboveDescription',
   'attachmentLightbox',
   'relatedLinks',
   'aiEnabled',
