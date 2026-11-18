@@ -300,13 +300,17 @@ export function commitShaOf(link: Element): string | null {
   return /\/pull\/\d+\/(?:commits|changes)\/([0-9a-f]{7,40})(?:[/?#]|$)/i.exec(link.getAttribute('href') ?? '')?.[1] ?? null;
 }
 
-/** The commit a timeline commit row names, whichever page drew it; null for a row that names none. */
-export function commitRowSha(row: Element): string | null {
+/**
+ * The commits a timeline commit row names, whichever page drew it: one for a conversation row, every commit of the
+ * group for an Overview entry (newest first, as that page lists them). Each once.
+ */
+export function commitRowShas(row: Element): readonly string[] {
+  const shas: string[] = [];
   for (const link of row.querySelectorAll('a[href*="/commits/"], a[href*="/changes/"]')) {
     const sha = commitShaOf(link) ?? /\/commits\/([0-9a-f]{7,40})(?:[/?#]|$)/i.exec(link.getAttribute('href') ?? '')?.[1] ?? null;
-    if (sha !== null) return sha;
+    if (sha !== null && !shas.includes(sha)) shas.push(sha);
   }
-  return null;
+  return shas;
 }
 
 const ATTR_OLDEST_FIRST = 'data-geld-oldest-first';

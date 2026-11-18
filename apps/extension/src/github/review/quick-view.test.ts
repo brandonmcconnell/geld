@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
-import { commitRowSha, joinCommitSubjects, renderQuickView } from './quick-view';
+import { commitRowShas, joinCommitSubjects, renderQuickView } from './quick-view';
 import { restoreAll } from './teleport';
 
 vi.mock('./commit-dates', () => ({ commitDate: (sha: string) => (sha.startsWith('b') ? '2026-11-07T21:50:48Z' : '2026-11-07T21:37:49Z') }));
@@ -96,7 +96,7 @@ function overviewCommits(): HTMLElement {
   return entry;
 }
 
-describe('commitRowSha', () => {
+describe('commitRowShas', () => {
   const row = (html: string): Element => {
     const node = document.createElement('div');
     node.innerHTML = html;
@@ -104,13 +104,18 @@ describe('commitRowSha', () => {
   };
 
   it('reads the conversation\'s commit link and the Overview\'s', () => {
-    expect(commitRowSha(row('<a href="/o/r/pull/146/commits/0ee8447493ff23a44d9317d5b62606f1bfb626e9">Fix</a>'))).toBe('0ee8447493ff23a44d9317d5b62606f1bfb626e9');
+    expect(commitRowShas(row('<a href="/o/r/pull/146/commits/0ee8447493ff23a44d9317d5b62606f1bfb626e9">Fix</a>'))).toEqual(['0ee8447493ff23a44d9317d5b62606f1bfb626e9']);
     // geld#146's Overview links each commit row into the Changes tab, which left its round with no start (Nov 2026).
-    expect(commitRowSha(row('<a href="/u/1">who</a><a href="/o/r/pull/146/changes/918a240aa">Fix</a>'))).toBe('918a240aa');
+    expect(commitRowShas(row('<a href="/u/1">who</a><a href="/o/r/pull/146/changes/918a240aa">Fix</a>'))).toEqual(['918a240aa']);
   });
 
-  it('is null for a row that names no commit', () => {
-    expect(commitRowSha(row('<a href="/o/r/pull/146/changes">Files</a>'))).toBeNull();
+  it('names every commit of an Overview group once, as the page lists them', () => {
+    const group = '<a href="/o/r/pull/146/changes/918a240aa">Later</a><a href="/o/r/pull/146/changes/918a240aa">918a240</a><a href="/o/r/pull/146/changes/0ee8447bb">Earlier</a>';
+    expect(commitRowShas(row(group))).toEqual(['918a240aa', '0ee8447bb']);
+  });
+
+  it('is empty for a row that names no commit', () => {
+    expect(commitRowShas(row('<a href="/o/r/pull/146/changes">Files</a>'))).toEqual([]);
   });
 });
 
