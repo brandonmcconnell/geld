@@ -72,6 +72,8 @@ import type { BotRequestClick } from './bot-requests';
 import { awaitingReaction, botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, requestSentence, triggerAnchors, withBotRequests } from './bot-requests';
 import { pollTriggerReactions, resetTriggerReactions, withFetchedReactions } from './trigger-reactions';
 import { AGENT_NOTES_KEY, menuHoldsRebuild, pressHeld, ATTR_CHECK_RUNS, ATTR_CTL_SLOT, ATTR_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, descriptionCard, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, reseatPanelNow, openRowGroup, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderCheckRunsList, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel, renderDeploymentsList, renderPreviewsList, DEPLOYMENTS_KEY, whoAttributes } from './panel';
+import { holdThread } from './held-thread';
+import type { HeldThread } from './held-thread';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setNoteProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
@@ -211,6 +213,12 @@ interface VisitState {
    */
   pinnedEntry: { readonly anchor: string; readonly preview: string; readonly time: string; readonly avatarSrc: string | null } | null;
   /**
+   * The thread open in a round as last read, and the round it stood in. Resolving or unresolving it makes GitHub
+   * swap the thread for its partial with the comments deferred, and until they land the crawl has no thread: the
+   * round drew without its open row and put it back seconds later, or gave it up. The last reading stands in.
+   */
+  heldThread: HeldThread | null;
+  /**
    * Bots asked for a review from Geld this visit (the request menu or a
    * chat's Rerun), with when and whether the trigger posted: their pills
    * spin from the click, before the trigger comment is on the page
@@ -275,9 +283,18 @@ const visit: VisitState = {
   manualDone: new Set(),
   settling: null,
   pinnedEntry: null,
+  heldThread: null,
   requests: new Map(),
   triage: freshTriage(),
 };
+
+/** A comment still in the document, or named by a thread whose comments GitHub has deferred (its partial after a resolve). */
+function threadStillOnPage(anchor: string): boolean {
+  if (document.getElementById(anchor) !== null) return true;
+  const id = /^discussion_r(\d+)$/.exec(anchor)?.[1];
+  if (id === undefined) return false;
+  return [...document.querySelectorAll('[data-hidden-comment-ids]')].some((node) => (node.getAttribute('data-hidden-comment-ids') ?? '').split(',').some((entry) => entry.trim() === id));
+}
 
 /** The open comment line wears the words it opened with (see `VisitState.pinnedEntry`). */
 function pinOpenEntry(entries: readonly ReviewEntry[]): readonly ReviewEntry[] {
@@ -3513,6 +3530,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     visit.openItemAnchors = null;
     visit.openRoundMarks = null;
     visit.openSeat = null;
+    visit.heldThread = null;
     visit.knownRequired = null;
     resetRefs();
     resetWholePaths();
@@ -3781,7 +3799,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   // GitHub lists no commits, only "force-pushed from a to b"). Bot run summaries belong to their round rather than to rows of their own.
   const pushRoots = new Set(leftoverList.filter((entry) => entry.kind === 'push').map((entry) => entry.root));
   const commitRoots = leftoverList.filter((entry) => entry.kind === 'commit' || entry.kind === 'push').map((entry) => entry.root);
-  const batches = phase('batches', () =>
+  let batches = phase('batches', () =>
     buildBatches(meta, crawledDom, settings, commitRoots, pushRoots, roundEntries, roundPreviews).map((batch) => {
       const pinnedComments = pinOpenEntry(batch.comments);
       return pinnedComments === batch.comments ? batch : { ...batch, comments: pinnedComments };
@@ -3790,6 +3808,11 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   reseatOpenRound(batches);
   settleAfterResolve(meta, batches, settings.reviewGrouping);
   reseatOpenItem(meta);
+  const kept = holdThread(batches, visit.openSubKey?.startsWith('item:') === true ? visit.openSubKey : null, visit.heldThread, Date.now(), threadStillOnPage, visit.openKey);
+  visit.heldThread = kept.held;
+  batches = [...kept.batches];
+  // Read again shortly: the thread's comments land within a moment and it moves to where its new state puts it.
+  if (kept.holding) reapplySoon();
   seatOpenThread(batches, settings.reviewGrouping);
   reseatOpenLine(batches);
   // A round's bot comment lines and its preview pills both stand for their comments: neither needs a fold row too.
