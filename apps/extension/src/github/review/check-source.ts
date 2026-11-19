@@ -30,6 +30,8 @@
 
 import type { RawCheckRun } from '@geld/review';
 import { botByCheckName } from '@geld/review';
+import { pageFetch } from '../page-fetch';
+import type { CrawledCheckRun } from './crawler';
 import { crawlCheckRuns } from './crawler';
 import { fragmentHeaders } from './deeplink';
 
@@ -39,7 +41,7 @@ const REFRESH_RUNNING_MS = 20_000;
 const REFRESH_SETTLED_MS = 5 * 60_000;
 
 interface Reading {
-  checks: readonly RawCheckRun[];
+  checks: readonly CrawledCheckRun[];
   fetchedAt: number;
   /** The merge box's words when this reading was taken: a change there is a change in the checks. */
   fingerprint: string;
@@ -63,7 +65,7 @@ function keyOf(subject: CheckSubject, headSha: string): string {
 async function fetchChecks(subject: CheckSubject, headSha: string, reading: Reading): Promise<void> {
   try {
     const url = `${subject.origin}/${encodeURIComponent(subject.owner)}/${encodeURIComponent(subject.repo)}/commit/${headSha}/status-details?popover=true`;
-    const response = await fetch(url, { headers: fragmentHeaders(), credentials: 'same-origin', cache: 'no-store' });
+    const response = await pageFetch(url, { headers: fragmentHeaders(), credentials: 'same-origin', cache: 'no-store' });
     if (!response.ok) {
       reading.failed = true;
       return;
@@ -90,7 +92,7 @@ function botCheckRunning(checks: readonly RawCheckRun[]): boolean {
  * Reports row) and arms the clock for the next read (`nextCheckRefresh`) now
  * that `fetchedAt` has moved.
  */
-export function headChecks(subject: CheckSubject, headSha: string, fingerprint: string, onChange: () => void): readonly RawCheckRun[] {
+export function headChecks(subject: CheckSubject, headSha: string, fingerprint: string, onChange: () => void): readonly CrawledCheckRun[] {
   if (headSha === '') return [];
   const key = keyOf(subject, headSha);
   let reading = readings.get(key);

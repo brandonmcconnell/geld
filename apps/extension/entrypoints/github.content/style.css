@@ -6990,6 +6990,275 @@ html[data-geld-timeline='compact'] .TimelineItem-break {
   animation: geld-spin 1s linear infinite;
 }
 
+/* ---- the head's checks, drawn as GitHub's merge box lists them ------------
+   Mirrors GitHub's own checks list (its merge box's CSS modules and Primer's Button, Label and Avatar, read Nov 2026):
+   the inset surface scrolling inside itself at 300px, 28px group headings whose chevron turns as the group opens,
+   37px rows with no rule between them, the name a link that takes the accent colour and an underline under the
+   pointer, the muted description cut with an ellipsis, the Required label and a 32px ⋯. Change one with the other. */
+.geld-checks {
+  box-sizing: border-box;
+  max-height: 300px;
+  padding-inline: 8px;
+  overflow-y: auto;
+  background: var(--bgColor-inset, var(--color-canvas-inset, #f6f8fa));
+  color: var(--fgColor-default, var(--color-fg-default, #1f2328));
+  font-size: var(--text-body-size-medium, 14px);
+  line-height: 1.5;
+}
+
+.geld-checks__body {
+  padding-block: 8px;
+}
+
+.geld-checks__empty {
+  margin: 0;
+  padding: 8px;
+  color: var(--fgColor-muted, var(--color-fg-muted, #59636e));
+  font-size: var(--text-body-size-small, 12px);
+}
+
+.geld-checks__group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.geld-checks__count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding-left: 8px;
+  color: var(--fgColor-muted, var(--color-fg-muted, #59636e));
+  font-size: var(--text-body-size-small, 12px);
+  font-weight: var(--base-text-weight-semibold, 600);
+}
+
+.geld-checks__group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--borderRadius-medium, 6px);
+  background: transparent;
+  color: var(--fgColor-muted, var(--color-fg-muted, #59636e));
+  font: inherit;
+  font-size: var(--text-body-size-small, 12px);
+  font-weight: var(--base-text-weight-medium, 500);
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.geld-checks__group-toggle:hover {
+  background: var(--button-invisible-bgColor-hover, var(--control-transparent-bgColor-hover, #818b981a));
+}
+
+.geld-checks__group-toggle:focus-visible,
+.geld-checks__name:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, #0969da);
+  outline-offset: -2px;
+}
+
+.geld-checks__group-toggle > svg {
+  flex: none;
+  fill: currentColor;
+}
+
+.geld-checks__group-toggle[aria-expanded='true'] > svg {
+  transform: rotate(90deg);
+}
+
+.geld-checks__group-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+}
+
+.geld-checks__group-body[data-open='false'] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .geld-checks__group-toggle > svg {
+    transition: transform 0.2s cubic-bezier(0.65, 0, 0.35, 1);
+  }
+
+  .geld-checks__group-body {
+    transition:
+      grid-template-rows 0.25s cubic-bezier(0.85, 0, 0.3, 1),
+      opacity 0.25s cubic-bezier(0.85, 0, 0.3, 1),
+      visibility 0.25s;
+  }
+}
+
+.geld-checks__group-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.geld-checks__rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.geld-checks__row {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 37px;
+  margin: 0 2px;
+  padding: 2px 6px;
+  overflow: hidden;
+  border-radius: var(--borderRadius-medium, 6px);
+  isolation: isolate;
+}
+
+.geld-checks__row:hover,
+.geld-checks__row:focus-within {
+  background: var(--bgColor-muted, var(--color-canvas-subtle, #f6f8fa));
+}
+
+.geld-checks__state {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 8px;
+}
+
+.geld-checks__state > svg {
+  fill: currentColor;
+}
+
+.geld-checks__state[data-tone='success'] {
+  color: var(--fgColor-success, var(--color-success-fg, #1a7f37));
+}
+
+.geld-checks__state[data-tone='danger'] {
+  color: var(--fgColor-danger, var(--color-danger-fg, #d1242f));
+}
+
+.geld-checks__state[data-tone='attention'] {
+  color: var(--fgColor-attention, var(--color-attention-fg, #9a6700));
+}
+
+.geld-checks__state[data-tone='muted'] {
+  color: var(--fgColor-muted, var(--color-fg-muted, #59636e));
+}
+
+.geld-checks__picture {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-left: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px var(--avatar-borderColor, #1f232826);
+}
+
+.geld-checks__picture--none {
+  box-shadow: none;
+}
+
+.geld-checks__text {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.geld-checks__name {
+  flex: 0 1 auto;
+  min-width: 2em;
+  margin: 0 8px;
+  overflow: hidden;
+  color: var(--fgColor-default, var(--color-fg-default, #1f2328));
+  font-size: var(--text-body-size-medium, 14px);
+  font-weight: var(--base-text-weight-normal, 400);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+a.geld-checks__name:hover {
+  color: var(--fgColor-accent, var(--color-accent-fg, #0969da));
+  text-decoration: underline;
+}
+
+.geld-checks__words {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-right: 4px;
+  overflow: hidden;
+  color: var(--fgColor-muted, var(--color-fg-muted, #59636e));
+  font-size: var(--text-body-size-small, 12px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geld-checks__words--waiting {
+  font-style: italic;
+}
+
+.geld-checks__required {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  box-sizing: border-box;
+  height: 20px;
+  margin-left: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--borderColor-default, var(--color-border-default, #d1d9e0));
+  border-radius: 999px;
+  color: var(--fgColor-default, var(--color-fg-default, #1f2328));
+  font-size: var(--text-body-size-small, 12px);
+  font-weight: var(--base-text-weight-medium, 500);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.geld-checks__actions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  box-sizing: border-box;
+  min-width: 40px;
+  height: 32px;
+  padding-right: 4px;
+}
+
+.geld-checks__tip-wrap {
+  display: inline-flex;
+}
+
+.geld-checks__tip-wrap:has(> [aria-expanded='true']) > tool-tip {
+  display: none !important;
+}
+
+.geld-checks__more {
+  width: 32px;
+  height: 32px;
+}
+
+.geld-review__gear-slot .geld-checks__tip-wrap > button {
+  color: var(--geld-review-muted);
+}
+
+.geld-review__gear-slot .geld-checks__tip-wrap > button:hover,
+.geld-review__gear-slot .geld-checks__tip-wrap > button[aria-expanded='true'] {
+  color: var(--fgColor-default, var(--color-fg-default, #1f2328));
+}
+
 /* ---- chats: an opened conversation as one chat ---------------------------- */
 
 /*
