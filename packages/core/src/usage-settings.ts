@@ -34,6 +34,7 @@ export const USAGE_TOGGLES = [
   'errorReports',
   'prOverview',
   'quickReview',
+  'chatSidebar',
   'holdToMerge',
   'collapseDescription',
   'attachmentLightbox',

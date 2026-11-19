@@ -529,18 +529,20 @@ async function main(): Promise<void> {
   async function refreshContext(): Promise<void> {
     if (tab === null) return;
     const state = await requestTabState(tab.id);
+    const tabOff = state?.tabDisabled === true;
     repo = state?.repo ?? repo;
     renderRepo();
 
     const rules = compileRepoRules(settings.repoRules);
     const decision = repo === null ? { allowed: true, rule: null } : decideRepo(rules, repo);
 
-    const showStats = settings.enabled && decision.allowed && state !== null && state.hasDiff && state.visible !== null && state.all !== null;
+    const showStats = settings.enabled && !tabOff && decision.allowed && state !== null && state.hasDiff && state.visible !== null && state.all !== null;
 
     // One line says it all when there are numbers; prose only when there are none. Off a repo, or off by a rule, the
     // "No repo detected" line or the org and repo toggles say it instead.
     let line: string | null = null;
     if (!settings.enabled) line = 'Geld is turned off.';
+    else if (tabOff) line = 'Geld is off in this tab.';
     else if (repo !== null && decision.allowed && !showStats) {
       if (state === null || !state.hasDiff) line = 'No diff on this page.';
       else line = state.hiddenCount === 0 ? 'Nothing hidden on this page.' : `${pluralize(state.hiddenCount, 'file', 'files')} hidden on this page.`;
@@ -562,7 +564,7 @@ async function main(): Promise<void> {
     }
 
     actions.hidden = repo === null || !settings.enabled;
-    renderRepoConfig(settings.enabled && decision.allowed ? (state?.repoConfig ?? null) : null);
+    renderRepoConfig(settings.enabled && !tabOff && decision.allowed ? (state?.repoConfig ?? null) : null);
     if (repo !== null) {
       const org = orgOf(repo);
       const orgDecision = decideRepo(rules, ownerProbe(org));

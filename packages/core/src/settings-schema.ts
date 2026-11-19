@@ -589,6 +589,14 @@ export const SETTINGS_SCHEMA: readonly SettingsSection[] = [
       },
       {
         kind: 'toggle',
+        key: 'chatSidebar',
+        label: 'Chat',
+        description: 'Put a Chat button in the digest that opens a chat beside the page, with the assistant and with the agents that worked on the pull request. Off, the button and the chat go away.',
+        popup: false,
+        surfaces: ['extension'],
+      },
+      {
+        kind: 'toggle',
         key: 'holdToMerge',
         label: 'Hold ⌘ to merge from the status pill',
         description: 'While ⌘ (Ctrl on Windows and Linux) is held, the pull request’s status pill becomes a Merge button whenever GitHub would merge it now. Off, the pill only opens its menu of statuses.',
