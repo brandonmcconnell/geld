@@ -15,7 +15,7 @@ const PARTIAL = `
     <div class="merge-status-icon flex-self-center">
       <svg data-component="Octicon" class="octicon octicon-check mx-auto d-block color-fg-success" viewBox="0 0 16 16"></svg>
     </div>
-    <a href="/apps/cursor" class="d-inline-block tooltipped tooltipped-e Link--muted mr-2 rounded-2" aria-label="@cursor generated this status."><img class="avatar" src="https://avatars.githubusercontent.com/in/1210556?s=40&amp;v=4" width="20" height="20" alt="@cursor" /></a>
+    <a href="/apps/cursor" class="d-inline-block tooltipped tooltipped-e Link--muted mr-2 rounded-2" aria-label="@cursor generated this status." style="background-color: #ffffff"><img class="avatar" src="https://avatars.githubusercontent.com/in/1210556?s=40&amp;v=4" width="20" height="20" alt="@cursor" /></a>
     <div class="color-fg-muted col-10 css-truncate css-truncate-target">
       <strong class="text-emphasized mr-2">
         Cursor Bugbot
@@ -67,6 +67,16 @@ describe('crawlCheckRuns on the commit status partial', () => {
     expect(checks[0]).toMatchObject({ name: 'Cursor Bugbot', status: 'completed', conclusion: 'success', sha, description: 'Successful in 4m — No issues found' });
     expect(checks[0]?.detailsUrl).toContain('/wxt-dev/wxt/runs/51234');
     expect(checks[1]).toMatchObject({ name: 'Greptile', status: 'in_progress', conclusion: null, description: 'In progress — Reviewing' });
+  });
+
+  it('reads the App\'s picture and the colour behind it, and leaves both out for a row with none', () => {
+    const parsed = new DOMParser().parseFromString(PARTIAL, 'text/html');
+    const checks = crawlCheckRuns(parsed, sha);
+    expect(checks[0]?.avatarUrl).toBe('https://avatars.githubusercontent.com/in/1210556?s=40&v=4');
+    expect(checks[0]?.avatarBackground).toMatch(/^(#ffffff|rgb\(255, 255, 255\))$/);
+    expect(checks[1]).not.toHaveProperty('avatarUrl');
+    expect(checks[1]).not.toHaveProperty('avatarBackground');
+    expect(checks[0]).not.toHaveProperty('required');
   });
 });
 

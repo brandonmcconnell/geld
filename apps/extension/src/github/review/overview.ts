@@ -21,6 +21,7 @@ import { settingsItem } from '../../lib/storage';
 import type { OpenFeedbackMessage, OpenSettingsMessage } from '../../lib/messages';
 import { missingToolDraft } from '../../lib/feedback';
 import { clickResolve, copyText, focusReply, resolveIfOpen, isResolvable, openReactions, postTopLevelComments, quoteReply, threadRootOf, tickSummaryCheckbox, timelineRootOf } from './actions';
+import type { CrawledCheckRun } from './crawler';
 import { authorOf, avatarSrcFor, avatarSrcForLogin, avatarSrcOf, blockText, commitsInRow, createdAtOf, forgetThreads, normalizeAvatarSrc, crawlCheckRuns, crawlLeftovers, crawlReviews, crawlSidebarReviewers, findIn, latestReviewers, revisionMarker, THREAD_SELECTOR, TIMELINE_ROW } from './crawler';
 import type { CrawledComment, CrawledReview, SidebarReviewer } from './crawler';
 import type { CommentToClassify, JevDecisions, PreviewToClassify, ThreadToClassify } from './ai';
@@ -3410,7 +3411,7 @@ function subjectOf(): MarkdownSubject | null {
  * again when the merge box's words change and on its own clock
  * (`headChecks`); that clock gets a pass of its own, as a report's grace does.
  */
-function pageChecks(headSha: string): readonly RawCheckRun[] {
+function pageChecks(headSha: string): readonly CrawledCheckRun[] {
   const fromPage = crawlCheckRuns(document, headSha);
   const subject = subjectOf();
   // ZERO_SHA stands for a head not read yet: there is no such commit to ask GitHub about.
