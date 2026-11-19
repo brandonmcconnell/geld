@@ -70,7 +70,7 @@ import { ATTR_SUMMARY, findSummaryComment, mergeWithCrawler, usableMeta, withLiv
 import type { BotRequestClick } from './bot-requests';
 import { awaitingReaction, botRequestStates, nextRequestDeadline, REQUEST_ACK_MS, requestSentence, triggerAnchors, withBotRequests } from './bot-requests';
 import { pollTriggerReactions, resetTriggerReactions, withFetchedReactions } from './trigger-reactions';
-import { AGENT_NOTES_KEY, menuHoldsRebuild, pressHeld, ATTR_CHECK_RUNS, ATTR_CTL_SLOT, ATTR_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, descriptionCard, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, reseatPanelNow, openRowGroup, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderCheckRunsList, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel, renderDeploymentsList, renderPreviewsList, DEPLOYMENTS_KEY, whoAttributes } from './panel';
+import { AGENT_NOTES_KEY, menuHoldsRebuild, pressHeld, ATTR_CTL_SLOT, ATTR_SLOT, ATTR_EDITED_FOR, ATTR_GEAR_SLOT, ATTR_TIME_FOR, batchKey, BOTS_KEY, descriptionCard, noteSubKey, renderAgentNotesList, PANEL_CLASS, panelSignature, CHECKS_KEY, foldKey, isVerdict, itemKey, mountPanel, pinPanelHost, reseatPanelNow, openRowGroup, PREVIEWS_KEY, releasePanelPin, renderBatchView, renderBotsList, renderCommentsList, renderReportsList, REPORTS_KEY, reviewerGroups, reviewerStatuses, REVIEWS_KEY, syncPanelGroups, syncSpinners, unmountPanel, renderDeploymentsList, renderPreviewsList, DEPLOYMENTS_KEY, whoAttributes } from './panel';
 import type { Batch, BotLine, ReviewEntry, ReviewEntryState, ReviewThreadRef } from './panel';
 import { hideHoverCard, setHoverProvider, setNoteProvider, setReportProvider, setWhoProvider } from './hovercard';
 import type { HoverPreview, ReportCard, WhoCard } from './hovercard';
@@ -104,6 +104,8 @@ import { rememberTopCard, setTopCard } from './top-card';
 import { closeOverviewChecks, isOverviewPage, OVERVIEW_FOR_YOU, OVERVIEW_ITEM, openCollapsedThreads, openOverviewChecks, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, showAllOverviewComments } from './overview-page';
 import { pageFetch } from '../page-fetch';
 import { closeFlow, flowFiles, openFlowDialog } from './flow';
+import { ATTR_CHECK_LIST, checkListStale, placeCheckListGear, removeCheckListGear, renderCheckList } from './check-list';
+import { actionMenuOpenIn, closeActionMenu } from '../ui/action-menu';
 import type { ChatFile } from '@geld/review';
 import type { ChatPageContext } from './chat-sidebar';
 import { closeChat, setChatContext, syncChatToPage, toggleChat, warmChat } from './chat-sidebar';
@@ -3429,8 +3431,8 @@ function quickViewFor(key: string, meta: GeldPrMeta, groups: readonly FoldGroup[
   if (key === REVIEWS_KEY || key === PREVIEWS_KEY || key === DEPLOYMENTS_KEY || key === REPORTS_KEY || key === BOTS_KEY || key === AGENT_NOTES_KEY || key.startsWith('batch:')) return [document.documentElement];
   if (key === CHECKS_KEY) {
     const section = checksSection();
-    // The Overview has no checks section: the row lists the head's checks itself, as the list rows do.
-    if (section === null) return isOverviewPage() ? [document.documentElement] : [];
+    // With no checks section (a merged or closed pull request, the Overview before its list) the row lists the head's checks itself.
+    if (section === null) return [document.documentElement];
     // The React merge box: GitHub renders the check list only once expanded, and its section header repeats what
     // the row says, so the expandable content is shown alone. Matched on the bare name: GitHub's CSS-module classes
     // went from `MergeBoxExpandable-module__expandableWrapper--x` to `expandableWrapper__x` in Oct 2026, and with
@@ -3482,12 +3484,16 @@ function completePath(path: string, hash: string | null, meta: GeldPrMeta): stri
  * refreshed after a reaction, see `chatNeedsRedress`): the panel itself
  * stands, nothing in the model changed, but the chat shows a raw comment.
  */
-function slotNeedsRender(slot: HTMLElement): boolean {
+function slotNeedsRender(slot: HTMLElement, headSha: string): boolean {
   if (slot.childElementCount === 0) return true;
-  // GitHub's checks list is back (the Overview's overlay, reopened after Escape closed it): it takes the stand-in's place.
-  if (slot.querySelector(`[${ATTR_CHECK_RUNS}]`) !== null && checksSection() !== null) return true;
-  // And the other way: the Overview's top card shows again, so its list goes home and the stand-in takes over.
-  if (slot.parentElement?.getAttribute(ATTR_SLOT) === CHECKS_KEY && isOverviewPage() && checksSection() === null && slot.querySelector(`[${ATTR_CHECK_RUNS}]`) === null) return true;
+  if (slot.parentElement?.getAttribute(ATTR_SLOT) === CHECKS_KEY) {
+    const own = slot.querySelector(`[${ATTR_CHECK_LIST}]`) !== null;
+    const section = checksSection() !== null;
+    // GitHub's checks list is back (the Overview's overlay, reopened after Escape closed it): it takes the stand-in's place.
+    // And the other way: GitHub's list went (the Overview's top card shows again, a merge in place), so the stand-in takes over.
+    if (own === section) return true;
+    if (own && !actionMenuOpenIn(slot) && checkListStale(slot, pageChecks(headSha))) return true;
+  }
   if ([...slot.querySelectorAll<HTMLElement>('.geld-review__qv, .geld-review__chat-body')].some((view) => view.childElementCount === 0)) return true;
   return [...slot.querySelectorAll<HTMLElement>('.geld-review__chat')].some(chatNeedsRedress);
 }
@@ -3975,8 +3981,8 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     // the App avatar nearest its `/apps/<slug>` link or check row (`requestableBots`), else GitHub's mark for the
     // App, by its id.
     botIconFor: (botId) => botAvatarByLogin(botId) ?? botSourceAvatar(botId, meta) ?? iconByBot.get(botId) ?? botAppAvatarFor(botId),
-    // The Overview has no checks section; its open pull request's checks are the head's, as the merge box would list them.
-    checks: checkCountsFrom(checksSectionText() ?? boxText) ?? (isOverviewPage() && !pullRequestClosed() ? checkCountsOfRuns(pageChecks(headSha)) : null),
+    // With no checks section (a merged or closed pull request, the Overview before its list) the checks are the head's, as the merge box would list them.
+    checks: checkCountsFrom(checksSectionText() ?? boxText) ?? checkCountsOfRuns(pageChecks(headSha)),
     requiredFailing: requiredFailingIn(checksSection()),
     workflowApproval: approvalButton === null ? null : workflowApprovalLabel(approvalButton),
     previews,
@@ -4610,7 +4616,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
         visit.openKey = null;
         restoreAll();
       }
-    } else if (slotNeedsRender(mounted.slot) && readySlotForRender(mounted.slot)) {
+    } else if (slotNeedsRender(mounted.slot, meta.headSha) && readySlotForRender(mounted.slot)) {
       if (visit.openKey === REVIEWS_KEY) {
         // An index of people's reviews; each line points at the round where its conversation opens.
         renderCommentsList(mounted.slot, model, panelHandlers);
@@ -4692,7 +4698,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
           }
         }
       } else if (visit.openKey === CHECKS_KEY) {
-        if (checksSection() === null) renderCheckRunsList(mounted.slot, pageChecks(meta.headSha));
+        if (checksSection() === null) renderCheckList(mounted.slot, pageChecks(meta.headSha), reapplySoon);
         else renderQuickView(mounted.slot, nodes);
       } else if (visit.openKey.startsWith(foldKey('closure:'))) {
         // The comment left with the change, as a one-comment chat without a byline: the row above is its header
@@ -4731,6 +4737,11 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   if (mounted !== null) {
     phase('dress', () => {
       wearControls(mounted.root, panelHandlers);
+      const gearSlot = mounted.root.querySelector<HTMLElement>(`[${ATTR_GEAR_SLOT}]`);
+      if (gearSlot !== null) {
+        if (checksSection() === null) placeCheckListGear(gearSlot, reapplySoon);
+        else removeCheckListGear(gearSlot);
+      }
       wearGear(mounted.root);
       // Spinners rendered into the slot after the mount (preview lines, a round's CI glyph) join the same phase.
       syncSpinners(mounted.root);
@@ -4908,6 +4919,7 @@ export function teardownReviewOverview(why: 'stop' | 'leave' | 'rebuild' = 'stop
   lastSettings = null;
   overviewChecksInDigest = false;
   closeFlow();
+  closeActionMenu();
   // The sidebar stays open across the pull request's own tabs and a settings rebuild, and goes with Geld or the pull request.
   if (why === 'stop') closeChat();
   else syncChatToPage();
