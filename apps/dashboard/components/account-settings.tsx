@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { z } from 'zod';
-import { Button } from '@geld/ui';
+import { Button } from '@/components/button';
 import { authClient } from '@/lib/auth-client';
 import { useDashboard } from './app-shell';
 export function AccountSettings() {
@@ -50,10 +50,10 @@ export function AccountSettings() {
         setMessage('This connection could not be removed. Keep at least one sign-in method or set a password first.');
       else {
         setIdentities((rows) => rows.filter((row) => row.id !== accountId));
-        setMessage('Provider disconnected. Any linked repository permissions stay under that provider’s control.');
+        setMessage('Identity disconnected. Repository permissions stay with your Git host.');
       }
     } catch {
-      setMessage('The provider could not be disconnected.');
+      setMessage('The identity could not be disconnected.');
     } finally {
       setBusy(false);
     }
@@ -103,16 +103,14 @@ export function AccountSettings() {
     <div className="page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">ACCOUNT</p>
-          <h1>Your account</h1>
-          <p>Control your identity, security and data.</p>
+          <h1>Account</h1>
         </div>
       </div>
       <section className="settings-card">
         <h2>Email address</h2>
         <p>{session.user?.email ?? 'Sign in to manage your account.'}</p>
         <form
-          className="form-stack max-w-md"
+          className="form-stack max-w-xs"
           onSubmit={(event) => {
             event.preventDefault();
             void perform('email');
@@ -121,6 +119,7 @@ export function AccountSettings() {
           <label>
             New email
             <input
+              name="email"
               className="field"
               type="email"
               autoComplete="email"
@@ -136,14 +135,14 @@ export function AccountSettings() {
       </section>
       <section className="settings-card">
         <h2>Password</h2>
-        <p>A password is optional. Use a verified email link to set or reset one.</p>
+        <p>Set or reset your password by email.</p>
         <Button variant="outline" disabled={busy || !session.configured} onClick={() => perform('password')}>
           Send a password setup link
         </Button>
       </section>
       <section className="settings-card">
         <h2>Connected identities</h2>
-        <p>Unlink a provider to remove its Geld sign-in connection. Keep another sign-in method available.</p>
+        <p>Keep at least one sign-in method connected.</p>
         {identities
           .filter((row) => row.providerId !== 'credential')
           .map((row) => (
@@ -154,11 +153,18 @@ export function AccountSettings() {
                     ? 'GitHub repositories'
                     : row.providerId === 'github-oauth'
                       ? 'GitHub optional OAuth'
-                      : row.providerId}
+                      : row.providerId === 'github'
+                        ? 'GitHub'
+                        : row.providerId === 'gitlab'
+                          ? 'GitLab'
+                          : row.providerId === 'bitbucket'
+                            ? 'Bitbucket'
+                            : row.providerId}
+                  {` (${session.viewers?.[row.providerId] ?? row.accountId})`}
                 </h3>
               </div>
               <Button variant="outline" size="sm" disabled={busy || !session.configured} onClick={() => unlink(row.id)}>
-                Unlink provider
+                Disconnect identity
               </Button>
             </div>
           ))}

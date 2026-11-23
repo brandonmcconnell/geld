@@ -1,9 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { z } from 'zod';
 import { TrackerSettings } from './tracker-settings';
-import { Button } from '@geld/ui';
+import { Button } from '@/components/button';
 const policySchema = z.object({
   trigger: z.enum(['click', 'created', 'push']),
   drafts: z.boolean(),
@@ -49,16 +48,8 @@ export function ReviewDefaults({ teamId }: { readonly teamId: string }) {
   }, [teamId]);
   return (
     <div className="page">
-      <nav className="breadcrumbs">
-        <Link href={`/teams/${teamId}`}>Team</Link>
-        <span>/</span>
-        <span>Review defaults</span>
-      </nav>
       <h1>Review defaults</h1>
-      <p>
-        Automatic guides consume pooled team credits. On-click is the default. Defaults add reviewers alongside
-        CODEOWNERS and provider assignments.
-      </p>
+      <p>Set guide triggers and default reviewers for this team or a repository.</p>
       <section className="settings-card">
         <form
           className="form-stack max-w-xl"
@@ -106,6 +97,7 @@ export function ReviewDefaults({ teamId }: { readonly teamId: string }) {
           <label>
             Scope
             <select
+              name="repo"
               className="field"
               value={repo}
               onChange={(e) => {
@@ -129,6 +121,7 @@ export function ReviewDefaults({ teamId }: { readonly teamId: string }) {
             <label>
               PR number, optional
               <input
+                name="pull"
                 className="field"
                 type="number"
                 min={1}
@@ -141,6 +134,7 @@ export function ReviewDefaults({ teamId }: { readonly teamId: string }) {
           <label className="settings-row">
             <span>Override inherited policy</span>
             <input
+              name="policy.override"
               type="checkbox"
               checked={policy.override}
               onChange={(e) => setPolicy({ ...policy, override: e.target.checked })}
@@ -149,6 +143,7 @@ export function ReviewDefaults({ teamId }: { readonly teamId: string }) {
           <label>
             When to generate
             <select
+              name="policy.trigger"
               className="field"
               value={policy.trigger}
               onChange={(e) => {
@@ -164,6 +159,7 @@ export function ReviewDefaults({ teamId }: { readonly teamId: string }) {
           <label className="settings-row">
             <span>Include drafts</span>
             <input
+              name="policy.drafts"
               type="checkbox"
               checked={policy.drafts}
               onChange={(e) => setPolicy({ ...policy, drafts: e.target.checked })}
@@ -172,6 +168,7 @@ export function ReviewDefaults({ teamId }: { readonly teamId: string }) {
           <label className="settings-row">
             <span>Lock overrides below this scope</span>
             <input
+              name="policy.locked"
               type="checkbox"
               checked={policy.locked}
               onChange={(e) => setPolicy({ ...policy, locked: e.target.checked })}
@@ -184,6 +181,7 @@ export function ReviewDefaults({ teamId }: { readonly teamId: string }) {
                 <label className="settings-row" key={m.id}>
                   <span>{m.name}</span>
                   <input
+                    name="value"
                     type="checkbox"
                     checked={reviewers.includes(m.id)}
                     onChange={(e) =>

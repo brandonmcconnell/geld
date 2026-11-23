@@ -3,9 +3,9 @@ import { RepositorySelection } from './repository-selection';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { ArrowUpRight, Check, CodeXml, GitFork, Link2 } from 'lucide-react';
+import { ArrowUpRight, Check, CodeXml, GitFork, Link2 } from '@/components/icons';
 import { z } from 'zod';
-import { Button, buttonVariants } from '@geld/ui';
+import { Button, buttonVariants } from '@/components/button';
 import { measure } from '@/lib/measurement';
 import { authClient } from '@/lib/auth-client';
 import { useDashboard } from './app-shell';
@@ -14,7 +14,9 @@ export function Connections() {
   const { session } = useDashboard();
   const [accounts, setAccounts] = useState<z.infer<typeof accountsSchema>>([]);
   const [message, setMessage] = useState('');
-  const setupNeeded = useSearchParams().get('repository') === 'setup-needed';
+  const params = useSearchParams();
+  const setupNeeded = params.get('repository') === 'setup-needed';
+  const [view, setView] = useState(params.get('view') === 'repositories' || setupNeeded ? 'repositories' : 'accounts');
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const abort = new AbortController();
@@ -54,7 +56,7 @@ export function Connections() {
       });
       if (result.error) setMessage('This connection is not configured or could not be authorized.');
     } catch {
-      setMessage('This provider could not connect. Try again.');
+      setMessage('This Git account could not connect. Try again.');
     }
     setBusy(false);
   }
@@ -62,13 +64,31 @@ export function Connections() {
     <div className="page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">YOUR CONNECTIONS</p>
-          <h1>Bring your work together.</h1>
-          <p>Connect the providers you use. Your provider permissions stay in control.</p>
+          <h1>Git connections</h1>
         </div>
         <Link href="/" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
-          Go to review queue
+          Review queue
         </Link>
+      </div>
+      <div className="queue-tabs" role="tablist" aria-label="Connection setup">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === 'accounts'}
+          className={'queue-tab' + (view === 'accounts' ? ' selected' : '')}
+          onClick={() => setView('accounts')}
+        >
+          Git accounts
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === 'repositories'}
+          className={'queue-tab' + (view === 'repositories' ? ' selected' : '')}
+          onClick={() => setView('repositories')}
+        >
+          Repository access
+        </button>
       </div>
       {setupNeeded && (
         <div className="status-message">
@@ -84,12 +104,9 @@ export function Connections() {
           </Link>
         </div>
       )}
-      <section className="settings-card">
-        <h2>Git providers</h2>
-        <p>
-          Use one Geld account across GitHub, GitLab and Bitbucket. Email-only accounts can connect a provider whenever
-          they are ready.
-        </p>
+      <section className="settings-card" hidden={view !== 'accounts'}>
+        <h2>{accounts.length ? 'Connected accounts' : 'Connect your Git account'}</h2>
+        <p>Sign in to a Git host, then choose which repositories to review.</p>
         {[
           { provider: 'github', name: 'GitHub', icon: CodeXml },
           { provider: 'gitlab', name: 'GitLab', icon: GitFork },
@@ -118,7 +135,7 @@ export function Connections() {
           </div>
         ))}
       </section>
-      <section className="settings-card">
+      <section className="settings-card" hidden={view !== 'repositories'}>
         <h2>GitHub repository access</h2>
         <p>
           The repository App is separate from sign-in. Install it on each organisation whose private repositories you
@@ -160,17 +177,18 @@ export function Connections() {
           </Button>
         </details>
       </section>
-      <RepositorySelection key={session.user?.id ?? 'signed-out'} />
-      <section className="settings-card">
-        <h2>Your account email</h2>
-        <p>
-          {session.user?.email ?? 'Sign in to choose your email.'} You can keep your verified provider email or verify a
-          custom address.
-        </p>
-        <Link href="/settings/account" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
-          Choose another email
-        </Link>
-      </section>
+      <div hidden={view !== 'repositories'}>
+        <RepositorySelection key={session.user?.id ?? 'signed-out'} />
+      </div>
+      {view === 'accounts' && accounts.length > 0 && (
+        <div className="connection-next">
+          <span className="muted">Next, choose repository access.</span>
+          <Button size="sm" onClick={() => setView('repositories')}>
+            Continue
+            <ArrowUpRight size={14} />
+          </Button>
+        </div>
+      )}
       {message && (
         <div className="status-message" role="status">
           {message}

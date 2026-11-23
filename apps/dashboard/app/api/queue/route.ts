@@ -43,6 +43,7 @@ async function readGET(request: Request): Promise<Response> {
       401,
     );
   const url = new URL(request.url);
+  const onlyRepositories = url.searchParams.get('repositoriesOnly') === 'true';
   const requestedTeam = url.searchParams.get('team');
   const teamId = demoEnabled() && requestedTeam === 'demo-team' ? null : requestedTeam;
   const db = database();
@@ -83,8 +84,15 @@ async function readGET(request: Request): Promise<Response> {
       .positive()
       .max(4000)
       .safeParse(cursorRaw ?? 1);
-    if (requested.success ? !directPage.success : !cursor) return json({ error: 'Invalid queue page' }, 400);
-    const selected = requested.success ? refs : cursor ? refs.slice(cursor.batch * 8, (cursor.batch + 1) * 8) : [];
+    if (requested.success || onlyRepositories ? !directPage.success : !cursor)
+      return json({ error: 'Invalid queue page' }, 400);
+    const selected = requested.success
+      ? refs
+      : onlyRepositories && directPage.success
+        ? refs.slice((directPage.data - 1) * 32, directPage.data * 32)
+        : cursor
+          ? refs.slice(cursor.batch * 8, (cursor.batch + 1) * 8)
+          : [];
     const repositories: RepositorySummary[] = [];
     const pulls: PullSummary[] = [];
     let morePulls = false;
@@ -95,6 +103,7 @@ async function readGET(request: Request): Promise<Response> {
       ).repository(ref);
       if (!repo.ok || repo.value.permission === 'none') continue;
       repositories.push(repo.value);
+      if (onlyRepositories) continue;
       const page = await (
         await providerClient(ref.provider, ref.host, ref.owner)
       ).pulls(ref, String(requested.success && directPage.success ? directPage.data : (cursor?.pullPage ?? 1)));
@@ -107,9 +116,13 @@ async function readGET(request: Request): Promise<Response> {
       ? morePulls && directPage.success
         ? String(directPage.data + 1)
         : null
-      : cursor
-        ? nextQueueCursor(cursor, morePulls, refs.length > (cursor.batch + 1) * 8)
-        : null;
+      : onlyRepositories && directPage.success
+        ? refs.length > directPage.data * 32
+          ? String(directPage.data + 1)
+          : null
+        : cursor
+          ? nextQueueCursor(cursor, morePulls, refs.length > (cursor.batch + 1) * 8)
+          : null;
     return json({
       pulls,
       repositories,
@@ -166,7 +179,6 @@ async function readGET(request: Request): Promise<Response> {
         label: app.host === 'github.com' ? `GitHub · ${app.slug}` : `GitHub Enterprise · ${app.host} · ${app.slug}`,
       });
   }
-  const onlyRepositories = url.searchParams.get('repositoriesOnly') === 'true';
   const page = z.coerce
     .number()
     .int()

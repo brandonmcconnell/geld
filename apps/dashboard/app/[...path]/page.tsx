@@ -1,8 +1,7 @@
 import { Suspense } from 'react';
-import Link from 'next/link';
 import { connection } from 'next/server';
 import { notFound } from 'next/navigation';
-import { organisationPath, parseDashboardRoute, repositoryPath } from '@geld/domain';
+import { parseDashboardRoute } from '@geld/domain';
 import { Repositories } from '@/components/repositories';
 import { ReviewQueue } from '@/components/review-queue';
 import { ReviewScreen } from '@/components/review-screen';
@@ -12,7 +11,7 @@ export default function ProviderPage({ params }: { readonly params: Promise<{ pa
     <Suspense
       fallback={
         <div className="page" role="status">
-          Loading the provider view...
+          Loading repository...
         </div>
       }
     >
@@ -34,21 +33,7 @@ async function ProviderView({ params }: { readonly params: Promise<{ path: strin
     return route.settings ? (
       <RepositorySettings owner={route.ref.owner} provider={route.ref.provider} repository={route.ref} />
     ) : (
-      <>
-        <div className="page pb-0">
-          <nav className="breadcrumbs" aria-label="Breadcrumb">
-            <Link href="/">Review queue</Link>
-            <span>/</span>
-            <Link href={organisationPath(route.ref)}>{route.ref.owner}</Link>
-            <span>/</span>
-            <span>{route.ref.repo}</span>
-            <Link href={`${repositoryPath(route.ref)}/~settings`} className="ml-auto">
-              Repository settings
-            </Link>
-          </nav>
-        </div>
-        <ReviewQueue repository={route.ref} />
-      </>
+      <ReviewQueue repository={route.ref} />
     );
   return <ReviewScreen key={JSON.stringify(route.ref)} reference={route.ref} />;
 }

@@ -3,16 +3,13 @@ import { useEffect, useState } from 'react';
 import {
   CATEGORY_IDS,
   DEFAULT_SETTINGS,
-  fieldsFor,
   validateSettingsDocument,
   isCategoryEnabled,
   withCategoryEnabled,
   categoryById,
 } from '@geld/core';
 import { z } from 'zod';
-import { Button } from '@geld/ui';
-import { IssueTrackerEditor } from '@geld/ui/issue-tracker-editor';
-const trackerField = fieldsFor('site').find((field) => field.kind === 'issue-tracker');
+import { Button } from '@/components/button';
 export function ReviewPreferences() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [document, setDocument] = useState(JSON.stringify(DEFAULT_SETTINGS, null, 2));
@@ -78,18 +75,15 @@ export function ReviewPreferences() {
   }
   return (
     <div className="page">
-      <p className="eyebrow">PERSONAL SETTINGS</p>
       <h1>Review preferences</h1>
-      <p>
-        The same matcher and validation are used in the dashboard, extension and website. Hidden files remain available
-        as supporting changes.
-      </p>
+      <p>Choose which files Geld hides by default. Hidden files remain available in Diff.</p>
       <section className="settings-card">
         <h2>Hidden categories</h2>
         {CATEGORY_IDS.map((category) => (
           <label className="settings-row" key={category}>
             <span>{categoryById(category).title}</span>
             <input
+              name="value"
               type="checkbox"
               checked={isCategoryEnabled(settings, category)}
               onChange={(e) => {
@@ -104,20 +98,6 @@ export function ReviewPreferences() {
           Save preferences
         </Button>
       </section>
-      {trackerField && (
-        <section className="settings-card">
-          <IssueTrackerEditor
-            field={trackerField}
-            value={settings.issueTracker}
-            disabled={busy}
-            onSave={async (value) =>
-              (await act('save', JSON.stringify({ ...settings, issueTracker: value }, null, 2)))
-                ? { ok: true }
-                : { ok: false, message: 'Personal tracker could not be saved.' }
-            }
-          />
-        </section>
-      )}
       <section className="settings-card">
         <h2>GitHub settings sync</h2>
         <p>
@@ -141,6 +121,7 @@ export function ReviewPreferences() {
             Settings JSON
           </label>
           <textarea
+            name="review-settings-json"
             id="review-settings-json"
             className="field font-mono w-full"
             rows={20}

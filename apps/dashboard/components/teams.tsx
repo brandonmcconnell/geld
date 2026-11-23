@@ -1,9 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Plus, Users } from 'lucide-react';
+import { Plus, Users } from '@/components/icons';
 import { z } from 'zod';
-import { Button, buttonVariants } from '@geld/ui';
+import { Button, buttonVariants } from '@/components/button';
 import { EmptyState } from './app-shell';
 const teamsSchema = z.object({
   teams: z.array(
@@ -37,9 +37,7 @@ export function Teams() {
     <div className="page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">WORK TOGETHER</p>
           <h1>Teams</h1>
-          <p>One billable workspace for the people and repositories you review with.</p>
         </div>
         <Link href="/settings/billing" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
           Plans and billing
@@ -94,6 +92,7 @@ export function Teams() {
             Team name
           </label>
           <input
+            name="team-name"
             id="team-name"
             className="field"
             value={name}
