@@ -154,6 +154,8 @@ export interface GeldSettings {
    * line counts, on every tab (the Files changed tab's own button gives way to it).
    */
   readonly quickReview: boolean;
+  /** A Chat button in the digest's Geld row that opens the chat sidebar (the assistant and the agents that worked on the pull request). */
+  readonly chatSidebar: boolean;
   /**
    * Holding ⌘ (Ctrl off a Mac) turns the header's status pill into a 1-click
    * merge where GitHub would merge the pull request now. Off, the pill only
@@ -303,6 +305,7 @@ export const DEFAULT_SETTINGS: GeldSettings = {
   attachmentLightbox: true,
   relatedLinks: true,
   quickReview: true,
+  chatSidebar: true,
   holdToMerge: false,
   reviewBots: [],
   aiEnabled: false,
@@ -570,6 +573,7 @@ export function normalizeSettings(value: unknown): GeldSettings {
     attachmentLightbox: bool(record, 'attachmentLightbox', DEFAULT_SETTINGS.attachmentLightbox),
     relatedLinks: bool(record, 'relatedLinks', DEFAULT_SETTINGS.relatedLinks),
     quickReview: bool(record, 'quickReview', DEFAULT_SETTINGS.quickReview),
+    chatSidebar: bool(record, 'chatSidebar', DEFAULT_SETTINGS.chatSidebar),
     holdToMerge: bool(record, 'holdToMerge', DEFAULT_SETTINGS.holdToMerge),
     reviewBots: isStringArray(record.reviewBots) ? record.reviewBots : DEFAULT_SETTINGS.reviewBots,
     aiEnabled: bool(record, 'aiEnabled', DEFAULT_SETTINGS.aiEnabled),

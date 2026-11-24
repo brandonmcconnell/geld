@@ -3943,6 +3943,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   const aiState = aiStateFor(meta, rawComments, settings);
   const prAuthor = prAuthorLogin();
   setChatContext(chatContextFor(page.stateKey, meta, settings, prAuthor));
+  if (!settings.chatSidebar) closeChat();
 
   const model: PanelModel = {
     meta,
@@ -3983,6 +3984,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
     previewLinks: (entry) => previewLinks(entry, previews, allDeployments),
     reports,
     grouping: settings.reviewGrouping,
+    chat: settings.chatSidebar,
     view: digestViewOf(settings),
     intro: settings.digestViewChosenAt === '',
     openCommits: visit.openCommits,
