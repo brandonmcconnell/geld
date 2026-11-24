@@ -1762,7 +1762,7 @@ dialog.geld-block-dialog {
   margin-inline: 4px -4px;
 }
 
-html[data-geld-on] section[aria-label='Description'] [class*='editMetadata'] > [class*='editButton'] {
+html[data-geld-on] section:is([aria-label='Description'], [aria-labelledby]:has(> [class*='card'] > h2.sr-only:first-child)) [class*='editMetadata'] > [class*='editButton'] {
   margin-inline-end: 0;
 }
 
@@ -1770,7 +1770,7 @@ html[data-geld-on] section[aria-label='Description'] [class*='editMetadata'] > [
  * The ⋯ goes in only once React has hydrated the row: until then its glyph is drawn in its place, as the button draws
  * it at rest, so it shows with the pencil and the pencil never moves.
  */
-html[data-geld-on] section[aria-label='Description'] [class*='editMetadata']:not(:has(> [data-geld-desc-menu]))::after {
+html[data-geld-on] section:is([aria-label='Description'], [aria-labelledby]:has(> [class*='card'] > h2.sr-only:first-child)) [class*='editMetadata']:not(:has(> [data-geld-desc-menu]))::after {
   content: '';
   flex: none;
   width: 28px;
@@ -1786,7 +1786,7 @@ html[data-geld-on] section[aria-label='Description'] [class*='editMetadata']:not
  * it), so it was 172px wide and its spinner stood 78px left of the pencil. Without the label it is the spinner's
  * width and stands where "Edited" will, beside the pencil. The label still names the button (`aria-labelledby`).
  */
-html[data-geld-on] section[aria-label='Description'] [class*='editMetadata'] [class*='editHistoryLoading'][data-loading='true'] [data-component='text'] {
+html[data-geld-on] section:is([aria-label='Description'], [aria-labelledby]:has(> [class*='card'] > h2.sr-only:first-child)) [class*='editMetadata'] [class*='editHistoryLoading'][data-loading='true'] [data-component='text'] {
   display: none;
 }
 
@@ -1796,11 +1796,11 @@ html[data-geld-on] section[aria-label='Description'] [class*='editMetadata'] [cl
  * until it comes, for a signed-in reader only (signed out the row is empty), and goes after 10 s if it never does.
  * Mirrors Primer's small round IconButton: 28px, 8px below the text, the 16px smiley centred.
  */
-html[data-geld-on]:has(> head > meta[name='user-login']:not([content=''])) section[aria-label='Description'] > [class*='body']:has(> [class*='editMetadata']:not([hidden])):not(:has(> [class*='reactions'], [data-geld-desc-agents])) {
+html[data-geld-on]:has(> head > meta[name='user-login']:not([content=''])) section:is([aria-label='Description'], [aria-labelledby]:has(> [class*='card'] > h2.sr-only:first-child)) > [class*='body']:has(> [class*='editMetadata']:not([hidden])):not(:has(> [class*='reactions'], [data-geld-desc-agents])) {
   position: relative;
 }
 
-html[data-geld-on]:has(> head > meta[name='user-login']:not([content=''])) section[aria-label='Description'] > [class*='body']:has(> [class*='editMetadata']:not([hidden])):not(:has(> [class*='reactions'], [data-geld-desc-agents]))::after {
+html[data-geld-on]:has(> head > meta[name='user-login']:not([content=''])) section:is([aria-label='Description'], [aria-labelledby]:has(> [class*='card'] > h2.sr-only:first-child)) > [class*='body']:has(> [class*='editMetadata']:not([hidden])):not(:has(> [class*='reactions'], [data-geld-desc-agents]))::after {
   content: '';
   display: block;
   box-sizing: border-box;
@@ -1814,7 +1814,7 @@ html[data-geld-on]:has(> head > meta[name='user-login']:not([content=''])) secti
   animation: geld-desc-reaction-wait 0s 10s forwards;
 }
 
-html[data-geld-on]:has(> head > meta[name='user-login']:not([content=''])) section[aria-label='Description'] > [class*='body']:has(> [class*='editMetadata']:not([hidden])):not(:has(> [class*='reactions'], [data-geld-desc-agents]))::before {
+html[data-geld-on]:has(> head > meta[name='user-login']:not([content=''])) section:is([aria-label='Description'], [aria-labelledby]:has(> [class*='card'] > h2.sr-only:first-child)) > [class*='body']:has(> [class*='editMetadata']:not([hidden])):not(:has(> [class*='reactions'], [data-geld-desc-agents]))::before {
   content: '';
   position: absolute;
   bottom: 6px;
@@ -3036,8 +3036,9 @@ html[data-geld-timeline='compact'] section:has(> [data-geld-folded] #overview-co
   min-height: 0 !important;
 }
 
-/* The description card the panel grows out of: one box, shared border. */
-[data-geld-attached] {
+/* The description card the panel grows out of: one box, shared border. Since Nov 2026 the Overview's border is its inner card's. */
+[data-geld-attached],
+[data-geld-attached] > [class*='card'] {
   border-bottom-left-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
 }
@@ -3048,18 +3049,25 @@ html[data-geld-timeline='compact'] section:has(> [data-geld-folded] #overview-co
  * (`data-geld-top-card`, set before paint) and the page's own markup, so it holds from GitHub's first frame and
  * through the re-render that swaps the server-rendered boxes for React's, where attributes on the boxes were lost.
  */
-html[data-geld-top-card] [class*='CondensedForYouContainer']:has(> section[aria-label='Recommended action']):has(+ section[aria-label='Description']) {
+/* Inside `:has()` the new box is told by its `aria-labelledby` alone, since a `:has()` cannot hold another: next to the top card, or after the mini statuses, nothing else is. */
+html[data-geld-top-card] [class*='CondensedForYouContainer']:has(> section[aria-label='Recommended action']):has(+ section:is([aria-label='Description'], [aria-labelledby])) {
   border-bottom-left-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
 }
 
-html[data-geld-top-card] [class*='CondensedForYouContainer']:has(> section[aria-label='Recommended action']) + section[aria-label='Description'] {
+html[data-geld-top-card] [class*='CondensedForYouContainer']:has(> section[aria-label='Recommended action']) + section:is([aria-label='Description'], [aria-labelledby]:has(> [class*='card'] > h2.sr-only:first-child)) {
   margin-top: calc(-1px - var(--geld-overview-gap, 24px)) !important;
   border-top-left-radius: 0 !important;
   border-top-right-radius: 0 !important;
 }
 
-html[data-geld-top-card] section[aria-label='Description']:has(+ .geld-review) {
+html[data-geld-top-card] [class*='CondensedForYouContainer']:has(> section[aria-label='Recommended action']) + section:is([aria-label='Description'], [aria-labelledby]:has(> [class*='card'] > h2.sr-only:first-child)) > [class*='card'] {
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+}
+
+html[data-geld-top-card] section:is([aria-label='Description'], [aria-labelledby]:has(> [class*='card'] > h2.sr-only:first-child)):has(+ .geld-review),
+html[data-geld-top-card] section:is([aria-label='Description'], [aria-labelledby]:has(> [class*='card'] > h2.sr-only:first-child)):has(+ .geld-review) > [class*='card'] {
   border-bottom-left-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
 }
@@ -3073,8 +3081,8 @@ html[data-geld-top-card] section[aria-label='Description']:has(+ .geld-review) {
  * wrapper left standing is a 1px box of border, a second line under the status row.
  */
 html[data-geld-top-card='folded'] [class*='CondensedForYouContainer'] > [class*='MiniStatusGrid'],
-html[data-geld-top-card='folded'] :has(~ section[aria-label='Description']) :is([class*='MiniStatusGrid'], [data-testid='mini-status']),
-html[data-geld-top-card='folded'] :has(~ section[aria-label='Description']) :has([class*='MiniStatusGrid'], [data-testid='mini-status']):not(:has(section[aria-label='Recommended action'])) {
+html[data-geld-top-card='folded'] :has(~ section:is([aria-label='Description'], [aria-labelledby])) :is([class*='MiniStatusGrid'], [data-testid='mini-status']),
+html[data-geld-top-card='folded'] :has(~ section:is([aria-label='Description'], [aria-labelledby])) :has([class*='MiniStatusGrid'], [data-testid='mini-status']):not(:has(section[aria-label='Recommended action'])) {
   display: none !important;
 }
 
@@ -9640,11 +9648,11 @@ html[data-geld-timeline='compact'] [data-testid='timeline-commit-row'] {
  * On the Overview the description's "Edited" menu floats beside it, and a column beside a float is narrowed for its
  * whole height: the menu stands in the box's corner instead, the first block keeping room beside it (description.ts).
  */
-section[aria-label='Description']:has([data-geld-desc-agents]) {
+section:is([aria-label='Description'], [aria-labelledby]:has(> [class*='card'] > h2.sr-only:first-child)):has([data-geld-desc-agents]) {
   position: relative;
 }
 
-section[aria-label='Description'] [class*='editMetadata']:has(~ * [data-geld-desc-agents]) {
+section:is([aria-label='Description'], [aria-labelledby]:has(> [class*='card'] > h2.sr-only:first-child)) [class*='editMetadata']:has(~ * [data-geld-desc-agents]) {
   position: absolute;
   top: 16px;
   inset-inline-end: 16px;

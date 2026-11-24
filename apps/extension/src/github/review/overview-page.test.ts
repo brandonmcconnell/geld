@@ -5,7 +5,7 @@ import { crawlConversation, crawlLeftovers, crawlReviews, crawlSidebarReviewers,
 import { editLogUrlOf, nodeIdOf } from './edit-times';
 import { restoreAll, teleportInto } from './teleport';
 import { applyTopCardHint, rememberTopCard } from './top-card';
-import { closeOverviewChecks, isOverviewPage, openOverviewChecks, openResolvedComments, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, overviewNewestFirst, showAllOverviewComments } from './overview-page';
+import { closeOverviewChecks, isOverviewPage, overviewDescription, openOverviewChecks, openResolvedComments, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, overviewNewestFirst, showAllOverviewComments } from './overview-page';
 
 /** An Overview comment's header as GitHub rendered it on brandonmcconnell/geld#461 (Nov 2026), trimmed. */
 function header(login: string, href: string, at: string, muted = '', extra = ''): string {
@@ -80,6 +80,18 @@ describe('the Overview tab', () => {
     expect(section?.querySelector('#overview-comments')).not.toBeNull();
     expect(section === null ? null : overviewCommentsControls(section)?.className).toBe('controlsRow__XfPhtA');
     expect(section === null ? false : overviewNewestFirst(section)).toBe(true);
+  });
+
+  it('is told by the description box GitHub has drawn since Nov 2026, labelled by a hidden heading in its card', () => {
+    // geld#746 as the Overview rendered it on Nov 23, 2026, trimmed: no `aria-label`, a "Created by" header.
+    document.body.innerHTML = `<section aria-labelledby="_r_1n_" class="container__qcj0r_ floatingReactionsContainer__qLSv3m"><div class="card__qXAw2H"><h2 id="_r_1n_" class="sr-only">Description</h2>
+      <div class="header__aOWhon"><span>Created by brandonmcconnell</span><div class="editMetadata__ws0CPo"></div></div>
+      <div class="body__fphukB"><div class="markdown-body"><p>Stacked on #744.</p></div></div></div></section>
+      <section class="container__-reUmk"><div><h2 id="overview-comments">Comments</h2></div></section>`;
+    expect(isOverviewPage()).toBe(true);
+    expect(overviewDescription()?.getAttribute('aria-labelledby')).toBe('_r_1n_');
+    document.body.innerHTML = '<section aria-labelledby="x"><div class="card"><h2 id="x" class="sr-only">Comments</h2></div></section>';
+    expect(isOverviewPage()).toBe(false);
   });
 
   it('reads comments, reviews and threads in timeline order, oldest first, though the page lists them newest first', () => {
