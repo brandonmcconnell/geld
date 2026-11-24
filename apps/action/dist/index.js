@@ -2128,16 +2128,7 @@ function parseUnifiedDiff(diffText) {
   const files = [];
   let current = null;
   let inHunk = false;
-  const closeHunk = () => {
-    if (current === null || current.hunkOld.length === 0 && current.hunkNew.length === 0) return;
-    const kept = commonLines(current.hunkOld, current.hunkNew);
-    current.wsAdditions += current.hunkNew.length - kept;
-    current.wsDeletions += current.hunkOld.length - kept;
-    current.hunkOld = [];
-    current.hunkNew = [];
-  };
   const flush = () => {
-    closeHunk();
     if (current !== null) {
       const kinds = [];
       if (current.renamed && current.hunks === 0) kinds.push("renames");
@@ -2157,9 +2148,6 @@ function parseUnifiedDiff(diffText) {
         const kept = new Set(named(current.newSide));
         const removedImports = [...new Set(named(current.oldSide))].filter((specifier) => !kept.has(specifier));
         if (removedImports.length > 0) stats = { ...stats, removedImports };
-      }
-      if (!current.binary && (current.wsAdditions !== current.additions || current.wsDeletions !== current.deletions)) {
-        stats = { ...stats, ignoringWhitespace: { additions: current.wsAdditions, deletions: current.wsDeletions } };
       }
       files.push(stats);
     }
@@ -2189,18 +2177,13 @@ function parseUnifiedDiff(diffText) {
         commentAdded: [],
         commentRemoved: [],
         oldSide: canReadImports(path) ? [] : null,
-        newSide: canReadImports(path) ? [] : null,
-        hunkOld: [],
-        hunkNew: [],
-        wsAdditions: 0,
-        wsDeletions: 0
+        newSide: canReadImports(path) ? [] : null
       };
       inHunk = false;
       continue;
     }
     if (current === null) continue;
     if (line.startsWith("@@")) {
-      closeHunk();
       inHunk = true;
       current.hunks += 1;
       current.oldSide?.push([]);
@@ -2228,7 +2211,6 @@ function parseUnifiedDiff(diffText) {
       current.additions += 1;
       const text = line.slice(1);
       current.added.push(text.replace(WHITESPACE, ""));
-      current.hunkNew.push(text.replace(WHITESPACE, ""));
       current.newSide?.at(-1)?.push(text);
       if (current.syntax !== null && isCommentOnlyLine(text, current.syntax, current.newState)) current.commentAdded.push(current.newLine);
       current.newLine += 1;
@@ -2236,15 +2218,11 @@ function parseUnifiedDiff(diffText) {
       current.deletions += 1;
       const text = line.slice(1);
       current.removed.push(text.replace(WHITESPACE, ""));
-      current.hunkOld.push(text.replace(WHITESPACE, ""));
       current.oldSide?.at(-1)?.push(text);
       if (current.syntax !== null && isCommentOnlyLine(text, current.syntax, current.oldState)) current.commentRemoved.push(current.oldLine);
       current.oldLine += 1;
     } else if (line.startsWith(" ") || line === "") {
       const text = line.slice(1);
-      const stripped = text.replace(WHITESPACE, "");
-      current.hunkOld.push(stripped);
-      current.hunkNew.push(stripped);
       current.oldSide?.at(-1)?.push(text);
       current.newSide?.at(-1)?.push(text);
       if (current.syntax !== null) {
@@ -2258,47 +2236,15 @@ function parseUnifiedDiff(diffText) {
   flush();
   return files;
 }
-function commonLines(old, next) {
-  let start = 0;
-  while (start < old.length && start < next.length && old[start] === next[start]) start += 1;
-  let end = 0;
-  while (end < old.length - start && end < next.length - start && old[old.length - 1 - end] === next[next.length - 1 - end]) end += 1;
-  const a = old.slice(start, old.length - end);
-  const b = next.slice(start, next.length - end);
-  if (a.length === 0 || b.length === 0) return start + end;
-  if (a.length * b.length > MAX_LCS_CELLS) {
-    const left = /* @__PURE__ */ new Map();
-    for (const line of a) left.set(line, (left.get(line) ?? 0) + 1);
-    let matched = 0;
-    for (const line of b) {
-      const count = left.get(line) ?? 0;
-      if (count === 0) continue;
-      left.set(line, count - 1);
-      matched += 1;
-    }
-    return start + end + matched;
-  }
-  let previous = new Uint32Array(b.length + 1);
-  let row = new Uint32Array(b.length + 1);
-  for (let i = 1; i <= a.length; i += 1) {
-    for (let j = 1; j <= b.length; j += 1) {
-      row[j] = a[i - 1] === b[j - 1] ? (previous[j - 1] ?? 0) + 1 : Math.max(previous[j] ?? 0, row[j - 1] ?? 0);
-    }
-    [previous, row] = [row, previous];
-  }
-  return start + end + (previous[b.length] ?? 0);
-}
-var DIFF_PARSE_VERSION, MAX_COMMENT_LINES, HUNK_HEADER, WHITESPACE, MAX_LCS_CELLS;
+var MAX_COMMENT_LINES, HUNK_HEADER, WHITESPACE;
 var init_diff_parse = __esm({
   "../../packages/core/src/diff-parse.ts"() {
     "use strict";
     init_comment_lines();
     init_file_flow();
-    DIFF_PARSE_VERSION = 2;
     MAX_COMMENT_LINES = 2e3;
     HUNK_HEADER = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
     WHITESPACE = /\s+/g;
-    MAX_LCS_CELLS = 4e6;
   }
 });
 
@@ -12413,7 +12359,6 @@ __export(src_exports, {
   COUNT_PATTERN: () => COUNT_PATTERN,
   CUSTOM_GROUP_ID: () => CUSTOM_GROUP_ID,
   DEFAULT_SETTINGS: () => DEFAULT_SETTINGS,
-  DIFF_PARSE_VERSION: () => DIFF_PARSE_VERSION,
   DIGEST_VIEWS: () => DIGEST_VIEWS,
   EMPTY_REPO_CONFIG: () => EMPTY_REPO_CONFIG,
   EMPTY_TOTALS: () => EMPTY_TOTALS,
