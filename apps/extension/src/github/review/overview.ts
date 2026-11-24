@@ -100,7 +100,7 @@ import { stopWatchingBrandScale, stopWatchingBrandSelection } from './brand';
 import { applyHold, holdRow, readerScrolled, releaseHold, watchPanelForHold } from './hold';
 import { adoptReplacement, ATTR_TELEPORTED, closestAtHome, compareHome, dropOrphanedLoans, forgetLoan, onRestore, restoreAll, teleportInto, wornPiecesOf } from './teleport';
 import { rememberTopCard, setTopCard } from './top-card';
-import { closeOverviewChecks, isOverviewPage, OVERVIEW_FOR_YOU, OVERVIEW_ITEM, openCollapsedThreads, openOverviewChecks, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, showAllOverviewComments } from './overview-page';
+import { closeOverviewChecks, isOverviewPage, OVERVIEW_FOR_YOU, OVERVIEW_ITEM, openCollapsedThreads, openOverviewChecks, openResolvedComments, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, showAllOverviewComments } from './overview-page';
 import { pageFetch } from '../page-fetch';
 import { closeFlow, flowFiles, openFlowDialog } from './flow';
 import type { ChatFile } from '@geld/review';
@@ -3741,7 +3741,7 @@ function applyReviewOverviewPass(settings: GeldSettings, paths?: readonly string
   if (pressUntil !== null) reapplyAt(pressUntil);
   if (hidingTimeline) {
     loadMinimizedReviews();
-    if (openCollapsedThreads() > 0) reapplySoon();
+    if (openCollapsedThreads() + openResolvedComments() > 0) reapplySoon();
   }
   // In compact mode the review threads live in their rows and GitHub's checks section in the CI row:
   // both fold out of the page, so nothing below is left to reveal or scroll to.

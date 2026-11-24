@@ -5,7 +5,7 @@ import { crawlConversation, crawlLeftovers, crawlReviews, crawlSidebarReviewers,
 import { editLogUrlOf, nodeIdOf } from './edit-times';
 import { restoreAll, teleportInto } from './teleport';
 import { applyTopCardHint, rememberTopCard } from './top-card';
-import { closeOverviewChecks, isOverviewPage, openOverviewChecks, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, overviewNewestFirst, showAllOverviewComments } from './overview-page';
+import { closeOverviewChecks, isOverviewPage, openOverviewChecks, openResolvedComments, overviewChecksList, overviewCommentsControls, overviewCommentsFiltered, overviewCommentsSection, overviewNewestFirst, showAllOverviewComments } from './overview-page';
 
 /** An Overview comment's header as GitHub rendered it on brandonmcconnell/geld#461 (Nov 2026), trimmed. */
 function header(login: string, href: string, at: string, muted = '', extra = ''): string {
@@ -255,6 +255,26 @@ describe("the Overview's Comments view", () => {
     document.body.innerHTML = VIEWS.replace('"false">All', '"true">All').replace('"true">Unresolved', '"false">Unresolved');
     expect(overviewCommentsFiltered()).toBe(false);
     expect(showAllOverviewComments(document, 100_000)).toBe(false);
+  });
+});
+
+describe("the Overview's comments hidden on GitHub", () => {
+  const EXPAND = '<button data-dd-action-name="pull_requests.comments.expand" aria-labelledby="t">↕</button><span id="t">Unminimize comment</span>';
+  const hidden = (id: number, reason: string): string =>
+    `<div data-testid="timeline-item" data-item-type="issue"><article id="issuecomment-${id}">${header('greptile-apps', '/apps/greptile-apps', '2026-11-01T14:46:56.000Z', ` · <span>Hidden as ${reason}</span>`, EXPAND)}</article></div>`;
+
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  it('expands one hidden as resolved, once, and leaves the other reasons as GitHub shows them', () => {
+    // Shaped as geld#146's Greptile comment rendered on the Overview (Nov 2026): the header alone until expanded.
+    document.body.innerHTML = hidden(1, 'resolved') + hidden(2, 'spam') + hidden(3, 'outdated');
+    const pressed: string[] = [];
+    for (const button of document.querySelectorAll('button[data-dd-action-name]')) button.addEventListener('click', () => pressed.push(button.closest('article')?.id ?? ''));
+    expect(openResolvedComments()).toBe(1);
+    expect(openResolvedComments()).toBe(0);
+    expect(pressed).toEqual(['issuecomment-1']);
   });
 });
 
