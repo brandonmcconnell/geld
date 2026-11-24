@@ -1,0 +1,23 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.4.5/schema.json",
+	"vcs": { "enabled": false },
+	"extends": ["ultracite/biome/core", "ultracite/biome/react"],
+	"css": {
+		"parser": {
+			"tailwindDirectives": true
+		}
+	},
+	"overrides": [
+		{
+			// Brand marks are decorative; consumers add aria-label/title where needed.
+			"includes": ["src/components/svgs/**"],
+			"linter": {
+				"rules": {
+					"a11y": {
+						"noSvgWithoutTitle": "off"
+					}
+				}
+			}
+		}
+	]
+}

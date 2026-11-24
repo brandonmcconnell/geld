@@ -1,0 +1,31 @@
+{
+	"name": "@geld/hub-emulator",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "node --experimental-strip-types --disable-warning=ExperimentalWarning src/main.ts",
+		"start": "node --experimental-strip-types --disable-warning=ExperimentalWarning src/main.ts",
+		"test": "vitest run",
+		"format": "biome format",
+		"biome:lint": "biome lint",
+		"biome:check": "biome check",
+		"typecheck": "tsc --noEmit",
+		"check": "pnpm run typecheck && pnpm run test"
+	},
+	"dependencies": {
+		"@emulators/core": "0.13.0",
+		"@emulators/github": "0.13.0",
+		"fflate": "0.8.2",
+		"graphql": "16.11.0",
+		"octokit": "5.0.5"
+	},
+	"devDependencies": {
+		"@geld/hub-tsconfig": "workspace:*",
+		"@types/node": "22.19.17",
+		"typescript": "5.9.3",
+		"vitest": "3.2.4",
+		"ultracite": "7.4.3",
+		"@biomejs/biome": "2.4.5"
+	},
+	"license": "AGPL-3.0-only"
+}

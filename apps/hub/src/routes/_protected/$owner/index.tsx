@@ -1,0 +1,471 @@
+import {
+	BuildingIcon,
+	ChevronDownIcon,
+	ExternalLinkIcon,
+	FollowersIcon,
+	LocationIcon,
+	PenIcon,
+} from "@geld/hub-icons";
+import {
+	Avatar,
+	AvatarFallback,
+	AvatarImage,
+} from "@geld/hub-ui/components/avatar";
+import { Button } from "@geld/hub-ui/components/button";
+import { Spinner } from "@geld/hub-ui/components/spinner";
+import { Tabs, TabsList, TabsTrigger } from "@geld/hub-ui/components/tabs";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
+import { parseAsStringLiteral, useQueryState } from "nuqs";
+import { type ReactNode, useEffect, useMemo, useRef } from "react";
+import { Skeleton, SkeletonBox } from "skullet/react";
+import { DetailActivityHeader } from "#/components/details/detail-activity";
+import { ContributionGraph } from "#/components/profile/contribution-graph";
+import { PinnedRepoCard } from "#/components/profile/pinned-repo-card";
+import { UserActivityFeed } from "#/components/profile/user-activity-feed";
+import { RepositoryRow } from "#/components/repo/repository-row";
+import {
+	githubProfileReposQueryOptions,
+	githubUserActivityQueryOptions,
+	githubUserContributionsQueryOptions,
+	githubUserPinnedReposQueryOptions,
+	githubUserProfileQueryOptions,
+	githubViewerQueryOptions,
+} from "#/lib/github.query";
+import type { GitHubUserProfile } from "#/lib/github.types";
+import {
+	repoListHasNextPage,
+	repoListPageQueryParser,
+	safeRepoListPage,
+	sliceReposForPage,
+} from "#/lib/repo-list-page";
+import { buildSeo, formatPageTitle } from "#/lib/seo";
+import { useHasMounted } from "#/lib/use-has-mounted";
+
+export const Route = createFileRoute("/_protected/$owner/")({
+	ssr: false,
+	loader: ({ context, params }) => {
+		const scope = { userId: context.user.id };
+		void context.queryClient.prefetchQuery(
+			githubUserProfileQueryOptions(scope, params.owner),
+		);
+		void context.queryClient.prefetchQuery(githubViewerQueryOptions(scope));
+		void context.queryClient.prefetchQuery(
+			githubUserPinnedReposQueryOptions(scope, params.owner),
+		);
+		void context.queryClient.prefetchQuery(
+			githubUserContributionsQueryOptions(scope, params.owner),
+		);
+	},
+	head: ({ match, params }) =>
+		buildSeo({
+			path: match.pathname,
+			title: formatPageTitle(`@${params.owner}`),
+			description: `GitHub profile for ${params.owner}.`,
+			robots: "noindex",
+		}),
+	component: ProfilePage,
+});
+
+/** GitHub-style profile tabs: `?tab=repositories` */
+const profileTabSearchParser = parseAsStringLiteral([
+	"repositories",
+] as const).withOptions({ history: "push" });
+
+const SAMPLE_PROFILE: GitHubUserProfile = {
+	id: -1,
+	login: "octocat",
+	name: "The Octocat",
+	avatarUrl: "",
+	bio: "Building developer tools. Reviewing pull requests on weekends.",
+	company: "GitHub",
+	location: "San Francisco",
+	blog: "octocat.dev",
+	twitterUsername: null,
+	followers: 1200,
+	following: 9,
+	publicRepos: 8,
+	createdAt: "2011-01-25T18:44:36Z",
+	url: "",
+};
+
+function ProfilePage() {
+	const { owner } = Route.useParams();
+	const { user } = Route.useRouteContext();
+	const scope = { userId: user.id };
+	const hasMounted = useHasMounted();
+	const [tabSearchParam, setTabSearchParam] = useQueryState(
+		"tab",
+		profileTabSearchParser,
+	);
+	const [reposPage, setReposPage] = useQueryState(
+		"page",
+		repoListPageQueryParser,
+	);
+	const profileTab = tabSearchParam === "repositories" ? "repos" : "overview";
+
+	const prevOwnerRef = useRef(owner);
+	useEffect(() => {
+		if (prevOwnerRef.current !== owner) {
+			prevOwnerRef.current = owner;
+			void setReposPage(null);
+		}
+	}, [owner, setReposPage]);
+
+	// Server-side: available immediately from loader
+	const profileQuery = useQuery(githubUserProfileQueryOptions(scope, owner));
+	const viewerQuery = useQuery(githubViewerQueryOptions(scope));
+	const pinnedReposQuery = useQuery(
+		githubUserPinnedReposQueryOptions(scope, owner),
+	);
+
+	// Client-side: load after mount
+	const contributionsQuery = useQuery({
+		...githubUserContributionsQueryOptions(scope, owner),
+		enabled: hasMounted,
+	});
+
+	const profile = profileQuery.data;
+	const contributions = contributionsQuery.data;
+	const pinnedRepos = pinnedReposQuery.data;
+	const isOwnProfile = viewerQuery.data?.login === owner;
+
+	const activityQuery = useInfiniteQuery({
+		...githubUserActivityQueryOptions(scope, owner, isOwnProfile),
+		enabled:
+			hasMounted && viewerQuery.data !== undefined && profileTab === "overview",
+	});
+	const activity = activityQuery.data?.pages.flat();
+
+	const profileReposQuery = useQuery({
+		...githubProfileReposQueryOptions(scope, owner),
+		enabled: hasMounted && profileTab === "repos",
+	});
+
+	const profileRepos =
+		profileTab === "repos" ? (profileReposQuery.data ?? []) : [];
+	const safeReposPage = safeRepoListPage(reposPage ?? 1, profileRepos.length);
+	useEffect(() => {
+		if (profileTab !== "repos") return;
+		if ((reposPage ?? 1) !== safeReposPage) {
+			void setReposPage(safeReposPage === 1 ? null : safeReposPage);
+		}
+	}, [profileTab, reposPage, safeReposPage, setReposPage]);
+
+	const paginatedProfileRepos = useMemo(
+		() => sliceReposForPage(profileRepos, safeReposPage),
+		[profileRepos, safeReposPage],
+	);
+
+	if (profileQuery.error) throw profileQuery.error;
+	if (profileQuery.data === null) throw new Error("Not found");
+	if (profileTab === "repos" && profileReposQuery.error) {
+		throw profileReposQuery.error;
+	}
+
+	const profileTabs = (
+		<Tabs
+			value={profileTab}
+			onValueChange={(value) => {
+				void setTabSearchParam(value === "repos" ? "repositories" : null);
+				if (value !== "repos") {
+					void setReposPage(null);
+				}
+			}}
+			className="w-full sm:w-auto sm:shrink-0"
+		>
+			<TabsList className="h-7 gap-0 w-full justify-start sm:w-auto">
+				<TabsTrigger
+					value="overview"
+					className="h-6 px-2.5 py-0 text-[11px] font-medium leading-none"
+				>
+					Overview
+				</TabsTrigger>
+				<TabsTrigger
+					value="repos"
+					className="h-6 px-2.5 py-0 text-[11px] font-medium leading-none"
+				>
+					Repositories
+				</TabsTrigger>
+			</TabsList>
+		</Tabs>
+	);
+
+	return (
+		<div className="overflow-stable h-full">
+			{/* Banner — contribution graph with aurora overlay */}
+			<div className="relative h-48 overflow-hidden sm:h-56">
+				{contributions ? (
+					<ContributionGraph
+						calendar={contributions}
+						className="absolute inset-0"
+					/>
+				) : null}
+			</div>
+
+			{/* Profile content */}
+			<div className="relative mx-auto max-w-3xl px-6">
+				{/* Avatar — overlaps the banner */}
+				<div className="-mt-16 flex items-end justify-between sm:-mt-20">
+					<Avatar className="size-28 border-4 border-card sm:size-32">
+						{profile ? (
+							<>
+								<AvatarImage src={profile.avatarUrl} alt={profile.login} />
+								<AvatarFallback>
+									{(profile.name ?? profile.login).charAt(0).toUpperCase()}
+								</AvatarFallback>
+							</>
+						) : (
+							<SkeletonBox width="100%" height="100%" radius="50%" />
+						)}
+					</Avatar>
+
+					{isOwnProfile && (
+						<Button variant="ghost" size="icon" className="mb-1 size-8" asChild>
+							<a
+								href={`https://github.com/settings/profile`}
+								target="_blank"
+								rel="noopener noreferrer"
+							>
+								<PenIcon size={14} strokeWidth={2} />
+							</a>
+						</Button>
+					)}
+				</div>
+
+				{/* User info */}
+				<div className="mt-3 flex flex-col gap-3 pb-8">
+					<Skeleton
+						data={profile}
+						sample={SAMPLE_PROFILE}
+						label="Loading profile"
+					>
+						{(loaded) => <ProfileSummary profile={loaded} tabs={profileTabs} />}
+					</Skeleton>
+
+					{profile && profileTab === "overview" ? (
+						<>
+							{/* Pinned Repos */}
+							{pinnedRepos && pinnedRepos.length > 0 && (
+								<section className="flex flex-col pt-6">
+									<DetailActivityHeader title="Pinned" />
+									<div className="grid grid-cols-2 gap-3">
+										{pinnedRepos.map((repo) => (
+											<PinnedRepoCard key={repo.name} repo={repo} />
+										))}
+									</div>
+								</section>
+							)}
+
+							{/* Activity */}
+							{activity && activity.length > 0 && (
+								<section className="flex flex-col pt-10 pb-16">
+									<DetailActivityHeader title="Activity" />
+									<UserActivityFeed events={activity} />
+									{activityQuery.hasNextPage && (
+										<button
+											type="button"
+											className="mt-2 ml-5 flex h-8 w-fit items-center gap-1.5 rounded-md px-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-ghost-hover hover:text-foreground disabled:opacity-60"
+											disabled={activityQuery.isFetchingNextPage}
+											onClick={() => activityQuery.fetchNextPage()}
+										>
+											{activityQuery.isFetchingNextPage ? (
+												<Spinner className="size-3.5" />
+											) : (
+												<ChevronDownIcon size={14} strokeWidth={2} />
+											)}
+											Show older activity
+										</button>
+									)}
+								</section>
+							)}
+						</>
+					) : null}
+
+					{profile && profileTab === "repos" ? (
+						<section className="-mx-[max(0rem,calc((100vw-100%)/2))] flex flex-col pt-20">
+							<div className="mx-auto w-full max-w-4xl px-3 md:px-6">
+								{profileReposQuery.isLoading ? (
+									<div className="flex justify-center py-12">
+										<Spinner className="size-6 text-muted-foreground" />
+									</div>
+								) : !profileReposQuery.data ||
+									profileReposQuery.data.length === 0 ? (
+									<p className="py-8 text-center text-sm text-muted-foreground">
+										No repositories to show.
+									</p>
+								) : (
+									<>
+										<div className="divide-y-[0.5px] divide-border overflow-hidden rounded-xl border-[0.5px] border-border bg-surface-1">
+											{paginatedProfileRepos.map((repo) => (
+												<div
+													key={repo.id}
+													style={{
+														contentVisibility: "auto",
+														containIntrinsicSize: "auto 72px",
+													}}
+												>
+													<RepositoryRow repo={repo} scope={scope} />
+												</div>
+											))}
+										</div>
+										{repoListHasNextPage(safeReposPage, profileRepos.length) ? (
+											<Button
+												type="button"
+												variant="secondary"
+												size="sm"
+												className="mx-auto mt-6 rounded-full"
+												onClick={() => {
+													void setReposPage(safeReposPage + 1);
+												}}
+											>
+												<ChevronDownIcon size={14} strokeWidth={2} />
+												Load more
+											</Button>
+										) : null}
+									</>
+								)}
+							</div>
+						</section>
+					) : null}
+				</div>
+			</div>
+		</div>
+	);
+}
+
+function ProfileMetadata({ profile }: { profile: GitHubUserProfile }) {
+	const items: Array<{
+		icon: React.ComponentType<{ size?: number; strokeWidth?: number }>;
+		label: string;
+		href?: string;
+	}> = [];
+
+	if (profile.company) {
+		items.push({ icon: BuildingIcon, label: profile.company });
+	}
+	if (profile.location) {
+		items.push({ icon: LocationIcon, label: profile.location });
+	}
+	if (profile.blog) {
+		const url = profile.blog.startsWith("http")
+			? profile.blog
+			: `https://${profile.blog}`;
+		const displayUrl = profile.blog
+			.replace(/^https?:\/\//, "")
+			.replace(/\/$/, "");
+		items.push({ icon: ExternalLinkIcon, label: displayUrl, href: url });
+	}
+	if (profile.twitterUsername) {
+		items.push({
+			icon: ExternalLinkIcon,
+			label: `@${profile.twitterUsername}`,
+			href: `https://x.com/${profile.twitterUsername}`,
+		});
+	}
+
+	if (items.length === 0) return null;
+
+	return (
+		<div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+			{items.map((item) => {
+				const content = (
+					<span className="flex items-center gap-1.5">
+						<item.icon size={14} strokeWidth={1.75} />
+						<span>{item.label}</span>
+					</span>
+				);
+
+				if (item.href) {
+					return (
+						<a
+							key={item.label}
+							href={item.href}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="transition-colors hover:text-foreground"
+						>
+							{content}
+						</a>
+					);
+				}
+
+				return <span key={item.label}>{content}</span>;
+			})}
+		</div>
+	);
+}
+
+function ProfileSummary({
+	profile,
+	tabs,
+}: {
+	profile: GitHubUserProfile;
+	tabs: ReactNode;
+}) {
+	return (
+		<div className="flex flex-col gap-3">
+			<div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+				<div className="flex min-w-0 flex-1 flex-col gap-0.5">
+					<h1 className="text-2xl font-semibold tracking-tight">
+						{profile.name ?? profile.login}
+					</h1>
+					<div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-base text-muted-foreground">
+						<span>@{profile.login}</span>
+						<span className="text-border">·</span>
+						<span className="text-sm">
+							Joined{" "}
+							{new Date(profile.createdAt).toLocaleDateString("en-US", {
+								month: "long",
+								year: "numeric",
+							})}
+						</span>
+					</div>
+				</div>
+				{tabs}
+			</div>
+
+			{profile.bio && (
+				<p className="max-w-lg text-sm leading-relaxed">{profile.bio}</p>
+			)}
+
+			{/* Metadata row */}
+			<ProfileMetadata profile={profile} />
+
+			{/* Followers / Following */}
+			<div className="flex items-center gap-4 text-sm">
+				<a
+					href={`https://github.com/${profile.login}?tab=followers`}
+					target="_blank"
+					rel="noopener noreferrer"
+					className="flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground"
+				>
+					<FollowersIcon size={15} strokeWidth={1.75} />
+					<span className="font-semibold text-foreground">
+						{formatCount(profile.followers)}
+					</span>
+					<span>{profile.followers === 1 ? "follower" : "followers"}</span>
+				</a>
+				<span className="text-border">·</span>
+				<a
+					href={`https://github.com/${profile.login}?tab=following`}
+					target="_blank"
+					rel="noopener noreferrer"
+					className="text-muted-foreground transition-colors hover:text-foreground"
+				>
+					<span className="font-semibold text-foreground">
+						{formatCount(profile.following)}
+					</span>{" "}
+					following
+				</a>
+			</div>
+		</div>
+	);
+}
+
+function formatCount(count: number): string {
+	if (count >= 1000) {
+		return `${(count / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+	}
+	return count.toString();
+}

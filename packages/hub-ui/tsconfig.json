@@ -1,0 +1,10 @@
+{
+	"extends": "@geld/hub-tsconfig/react-library.json",
+	"include": ["src"],
+	"compilerOptions": {
+		"baseUrl": ".",
+		"paths": {
+			"@geld/hub-ui/*": ["./src/*"]
+		}
+	}
+}

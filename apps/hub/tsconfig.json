@@ -1,0 +1,12 @@
+{
+	"extends": "@geld/hub-tsconfig/start-app.json",
+	"include": ["**/*.ts", "**/*.tsx"],
+	"compilerOptions": {
+		"types": ["vite/client", "void/env"],
+		"baseUrl": ".",
+		"paths": {
+			"#/*": ["./src/*"],
+			"@/*": ["./src/*"]
+		}
+	}
+}

@@ -1,0 +1,34 @@
+{
+	"short_name": "Geld",
+	"name": "Geld Dashboard",
+	"description": "GitHub dashboard for pull requests, issues, and code reviews.",
+	"icons": [
+		{
+			"src": "favicon.svg",
+			"sizes": "any",
+			"type": "image/svg+xml"
+		},
+		{
+			"src": "favicon.ico",
+			"sizes": "64x64 32x32 24x24 16x16",
+			"type": "image/x-icon"
+		},
+		{
+			"src": "logo192.png",
+			"type": "image/png",
+			"sizes": "192x192"
+		},
+		{
+			"src": "logo512.png",
+			"type": "image/png",
+			"sizes": "512x512"
+		}
+	],
+	"id": "/",
+	"start_url": "/login",
+	"scope": "/",
+	"display": "standalone",
+	"categories": ["developer tools", "productivity"],
+	"theme_color": "#000000",
+	"background_color": "#ffffff"
+}

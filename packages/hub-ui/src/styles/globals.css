@@ -1,0 +1,1202 @@
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/geist-mono";
+@import "tailwindcss";
+
+@plugin "tailwindcss-animate";
+@plugin "@tailwindcss/typography";
+
+@source "../../../apps/hub/**/*.{ts,tsx}";
+@source "../**/*.{ts,tsx}";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design tokens
+ * -------------
+ * Neutral grays measured from Linear's live app (see `--ln-*` below), dressed in
+ * frosted glass instead of Linear's hairline rings: chips, buttons, selects and
+ * tabs sit on the surface with a soft inner light rim and a blurred 1px halo
+ * (`--glass-*`), never a crisp 0.5px outline. Solid CTAs get an edge a shade
+ * darker than their fill and a faint lit top line.
+ * Cards and the main pane keep the hairline ring and low two-layer drop.
+ *
+ * Layers, outermost first:
+ *   1. `--ln-*`     raw Linear-derived values (light in :root, dark in .dark).
+ *   2. shadcn vars  `--background`, `--card`, `--border`, ... aliased onto (1) so
+ *                   every shadcn-style component and existing app code keep working.
+ *   3. @theme       Tailwind utilities: `bg-shell`, `bg-main`, `shadow-ring`,
+ *                   `shadow-button`, `shadow-popover`, `bg-row-hover`, ...
+ */
+
+@theme {
+	--container-8xl: 96rem;
+	--font-sans:
+		"Inter Variable", "Inter", "Avenir Next", ui-sans-serif, system-ui,
+		sans-serif;
+	--font-mono:
+		"Geist Mono Variable", "SF Mono", ui-monospace, "Cascadia Code", monospace;
+	/* Tight type scale: 13px is the working size (rows, menus, buttons). */
+	--text-xs: 0.75rem;
+	--text-xs--line-height: calc(16 / 12);
+	--text-sm: 0.8125rem;
+	--text-sm--line-height: 1.45;
+	--text-base: 1rem;
+	--text-base--line-height: 1.55;
+	--text-lg: 1.0625rem;
+	--text-lg--line-height: 1.45;
+	--text-xl: 1.1875rem;
+	--text-xl--line-height: 1.4;
+	--text-2xl: 1.375rem;
+	--text-2xl--line-height: 1.3;
+	--text-3xl: 1.625rem;
+	--text-3xl--line-height: 1.2;
+	--text-4xl: 1.875rem;
+	--text-4xl--line-height: 1.15;
+	--text-5xl: 2rem;
+	--text-5xl--line-height: 1.1;
+
+	/* Accordion (Radix exposes the measured height as a CSS variable) */
+	--animate-accordion-down: accordion-down 0.2s ease-out;
+	--animate-accordion-up: accordion-up 0.2s ease-out;
+
+	@keyframes accordion-down {
+		from {
+			height: 0;
+		}
+		to {
+			height: var(--radix-accordion-content-height);
+		}
+	}
+
+	@keyframes accordion-up {
+		from {
+			height: var(--radix-accordion-content-height);
+		}
+		to {
+			height: 0;
+		}
+	}
+}
+
+/* 1. Linear-derived tokens ------------------------------------------------ */
+
+:root {
+	/* Neutral scale, cool grey: every surface, rule and text grey derives from these */
+	--neutral-hue: 235;
+	--neutral-tint: 1;
+	--neutral-1: oklch(
+		0.165 calc(0.007 * var(--neutral-tint)) var(--neutral-hue)
+	);
+	--neutral-2: oklch(
+		0.197 calc(0.008 * var(--neutral-tint)) var(--neutral-hue)
+	);
+	--neutral-3: oklch(
+		0.256 calc(0.011 * var(--neutral-tint)) var(--neutral-hue)
+	);
+	--neutral-4: oklch(
+		0.303 calc(0.013 * var(--neutral-tint)) var(--neutral-hue)
+	);
+	--neutral-5: oklch(
+		0.349 calc(0.014 * var(--neutral-tint)) var(--neutral-hue)
+	);
+	--neutral-6: oklch(
+		0.396 calc(0.016 * var(--neutral-tint)) var(--neutral-hue)
+	);
+	--neutral-7: oklch(
+		0.459 calc(0.018 * var(--neutral-tint)) var(--neutral-hue)
+	);
+	--neutral-8: oklch(0.548 calc(0.02 * var(--neutral-tint)) var(--neutral-hue));
+	--neutral-9: oklch(
+		0.645 calc(0.018 * var(--neutral-tint)) var(--neutral-hue)
+	);
+	--neutral-10: oklch(
+		0.716 calc(0.016 * var(--neutral-tint)) var(--neutral-hue)
+	);
+	--neutral-11: oklch(
+		0.86 calc(0.008 * var(--neutral-tint)) var(--neutral-hue)
+	);
+	--neutral-12: oklch(
+		0.932 calc(0.004 * var(--neutral-tint)) var(--neutral-hue)
+	);
+
+	/* Surfaces: the outer shell (sidebar) and the main pane that floats over it */
+	--ln-sidebar: color-mix(in oklch, var(--neutral-12) 88%, white);
+	--ln-main: color-mix(in oklch, var(--neutral-12) 29%, white);
+	--ln-main-border: color-mix(
+		in oklch,
+		var(--neutral-11) 27%,
+		var(--neutral-12)
+	);
+	--ln-main-shadow:
+		lch(0 0 0 / 0.02) 0 3px 6px -2px, lch(0 0 0 / 0.04) 0 1px 1px 0;
+	/* The hairline under a page header's first row */
+	--ln-header-rule: color-mix(in oklch, var(--neutral-12) 88%, white);
+	--ln-group: color-mix(in oklch, var(--neutral-12) 70%, white);
+	--ln-row-hover: var(--ln-group);
+	--ln-row-selected: lch(0 0 0 / 0.06);
+	--ln-nav-hover: color-mix(in oklch, var(--neutral-11) 10%, var(--neutral-12));
+	--ln-nav-selected: color-mix(
+		in oklch,
+		var(--neutral-11) 14%,
+		var(--neutral-12)
+	);
+	--ln-checkbox: color-mix(in oklch, var(--neutral-8) 61%, var(--neutral-9));
+
+	/* Glass takes its light and its shadow from the theme, never pure white or
+	   black, so tinted themes keep their hue in every rim and edge. */
+	--glass-light: var(--ln-card);
+	--glass-shade: color-mix(in oklch, var(--ln-text), black 60%);
+	--glass-edge: color-mix(in oklch, var(--glass-light) 90%, transparent);
+	--glass-rim: color-mix(in oklch, var(--glass-light) 70%, transparent);
+	--glass-halo:
+		color-mix(in oklch, var(--glass-shade) 15%, transparent) 0 0 1px 0,
+		color-mix(in oklch, var(--glass-shade) 3%, transparent) 0 1px 2px 0;
+	--glass-control: var(--glass-chip);
+	--glass-well:
+		inset 0 1px 2px 0 color-mix(in oklch, var(--glass-shade) 5%, transparent),
+		inset 0 0 0 1px color-mix(in oklch, var(--glass-shade) 4%, transparent);
+	--glass-chip: inset 0 0 0 1px var(--glass-rim), var(--glass-halo);
+	--glass-solid:
+		inset 0 1px 0 0 color-mix(in oklch, var(--glass-light) 22%, transparent),
+		inset 0 0 0 1px color-mix(in oklch, var(--glass-shade) 7%, transparent),
+		var(--glass-halo);
+
+	--ln-button: var(--ln-main);
+	--ln-button-hover: var(--ln-group);
+	--ln-button-ring: var(--glass-control);
+	--ln-tab-selected: var(--ln-card);
+	--ln-tab-selected-ring:
+		inset 0 0 0 1px var(--glass-rim),
+		color-mix(in oklch, var(--glass-shade) 14%, transparent) 0 0 1px 0,
+		color-mix(in oklch, var(--glass-shade) 6%, transparent) 0 1px 2px 0;
+	--ln-ring-color: lch(0 0 0 / 0.09);
+	--ln-ghost-hover: lch(0 0 0 / 0.05);
+	--ln-menu-hover: lch(0 0 0 / 0.045);
+	--ln-item-hover: lch(0 0 0 / 0.05);
+	--ln-go-fill: lch(0 0 0 / 0.03);
+	--ln-send: lch(100 0 0);
+	--ln-send-ring: var(--glass-control);
+
+	/* Overlays */
+	--ln-popover: lch(100 0 0);
+	--ln-popover-border: var(--neutral-12);
+	--ln-popover-shadow:
+		lch(0 0 0 / 0.1) 0 0 1px 0, lch(0 0 0 / 0.08) 0 2px 6px -2px,
+		lch(0 0 0 / 0.06) 0 8px 16px -8px;
+	--ln-tooltip: var(--ln-popover);
+	--ln-tooltip-border: var(--ln-popover-border);
+	--ln-key-border: lch(0 0 0 / 0.1);
+	--ln-dialog: var(--ln-popover);
+	--ln-dialog-backdrop: lch(0 0 0 / 0.3);
+	--ln-sheet-backdrop: lch(0 0 0 / 0.23);
+	--ln-scrim: lch(0 0 0 / 0.2);
+
+	/* Chips, comment cards */
+	--ln-chip: var(--ln-main);
+	--ln-chip-border: color-mix(
+		in oklch,
+		var(--neutral-11) 92%,
+		var(--neutral-12)
+	);
+	--ln-card: lch(100 0 0);
+	--ln-card-border: var(--neutral-12);
+	--ln-comment-card: lch(100 0 0);
+	--ln-comment-card-border: color-mix(
+		in oklch,
+		var(--neutral-11) 44%,
+		var(--neutral-12)
+	);
+	--ln-activity-line: var(--neutral-11);
+	--ln-composer-placeholder: color-mix(
+		in oklch,
+		var(--neutral-9) 29%,
+		var(--neutral-10)
+	);
+	--ln-composer-send: color-mix(in oklch, var(--neutral-12) 88%, white);
+	--ln-pill-neutral: oklch(0.483 0.012 var(--neutral-hue) / 0.1);
+	--ln-pill-ok: lch(60 64.37 141.95 / 0.12);
+	--ln-pill-blocked: lch(50 73 29 / 0.1);
+
+	/* Text: neutral grays */
+	--ln-text: var(--neutral-4);
+	--ln-text-strong: color-mix(in oklch, var(--neutral-5) 53%, var(--neutral-6));
+	--ln-text-header: var(--neutral-6);
+	--ln-text-muted: color-mix(in oklch, var(--neutral-7) 26%, var(--neutral-8));
+	--ln-text-nav: color-mix(in oklch, var(--neutral-7) 34%, var(--neutral-8));
+	--ln-icon-faint: color-mix(in oklch, var(--neutral-9) 29%, var(--neutral-10));
+
+	/* Accent + state colors */
+	--ln-focus: lch(50.84 48.54 140.93);
+	--ln-accent: lch(50.84 48.54 140.93);
+	--ln-accent-text: lch(100 0 0);
+	--ln-success: lch(60 64.37 141.95);
+	--ln-warning: lch(72 80 80);
+	--ln-merged: lch(50 62 300);
+	--ln-merge: lch(50.84 48.54 140.93);
+	--ln-merge-hover: lch(56.77 52.96 141.15);
+	--ln-blocked: lch(58 73 29);
+	--ln-added: lch(45 80 141.95);
+	--ln-removed: lch(46 80 29);
+	--ln-inline-code: lch(20 50 286.91 / 0.05);
+	--ln-inline-code-ring: color-mix(
+		in oklch,
+		var(--neutral-11) 92%,
+		var(--neutral-12)
+	);
+
+	--ln-state-open: lch(60 64.37 141.95);
+	--ln-state-draft: color-mix(in oklch, var(--neutral-8) 15%, var(--neutral-9));
+	--ln-state-merged: lch(50 62 300);
+	--ln-state-closed: lch(58 73 29);
+	--ln-check-passed: lch(60 64.37 141.95);
+	--ln-check-running: lch(72 80 80);
+	--ln-check-failed: lch(58 73 29);
+	--ln-check-skipped: color-mix(
+		in oklch,
+		var(--neutral-9) 29%,
+		var(--neutral-10)
+	);
+	--ln-review-approved: lch(60 64.37 141.95);
+	--ln-review-changes: lch(58 73 29);
+	--ln-review-required: lch(72 80 80);
+	--ln-pill-merged: lch(50 62 300 / 0.1);
+	--ln-pill-warning: lch(72 80 80 / 0.16);
+	--ln-pill-ok-text: lch(42 60 141.95);
+	--ln-pill-merged-text: lch(42 62 300);
+	--ln-pill-blocked-text: lch(45 73 29);
+	--ln-pill-warning-text: lch(45 60 70);
+
+	--ln-line-number: color-mix(
+		in oklch,
+		var(--neutral-9) 29%,
+		var(--neutral-10)
+	);
+	--ln-gap: color-mix(in oklch, var(--neutral-12) 56%, white);
+
+	--ln-duration: 140ms;
+	--ln-ease: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.dark {
+	--ln-sidebar: color-mix(in oklch, var(--neutral-1) 85%, black);
+	--ln-main: color-mix(in oklch, var(--neutral-1) 47%, var(--neutral-2));
+	--ln-main-border: var(--neutral-3);
+	--ln-main-shadow: lch(0 0 0 / 0.3) 0 0.5px 1px 1px;
+	--ln-header-rule: var(--neutral-3);
+	--ln-group: color-mix(in oklch, var(--neutral-2) 64%, var(--neutral-3));
+	--ln-row-hover: var(--ln-group);
+	--ln-row-selected: lch(100 0 0 / 0.07);
+	--ln-nav-hover: color-mix(in oklch, var(--neutral-2) 61%, var(--neutral-3));
+	--ln-nav-selected: var(--neutral-3);
+	--ln-checkbox: color-mix(in oklch, var(--neutral-7) 92%, var(--neutral-8));
+
+	/* The light-mode glass mirrored: a fill a step above the surface, a barely-there
+	   light rim (light catches far more on a dark surface), and a soft blurred
+	   edge just darker than the surface. */
+	--glass-light: var(--ln-text-strong);
+	--glass-shade: color-mix(in oklch, var(--ln-sidebar), black 60%);
+	--glass-edge: color-mix(in oklch, var(--glass-light) 6%, transparent);
+	--glass-rim: color-mix(in oklch, var(--glass-light) 1.8%, transparent);
+	--glass-halo:
+		color-mix(in oklch, var(--glass-shade) 60%, transparent) 0 0 1px 0,
+		color-mix(in oklch, var(--glass-shade) 14%, transparent) 0 1px 2px 0;
+	--glass-well:
+		inset 0 1px 2px 0 color-mix(in oklch, var(--glass-shade) 12%, transparent),
+		inset 0 0 0 1px color-mix(in oklch, var(--glass-light) 2.5%, transparent);
+	--glass-chip:
+		inset 0 1px 0 0 color-mix(in oklch, var(--glass-light) 2.5%, transparent),
+		inset 0 0 0 1px var(--glass-rim), var(--glass-halo);
+	--glass-solid:
+		inset 0 1px 0 0 color-mix(in oklch, var(--glass-light) 10%, transparent),
+		inset 0 0 0 1px color-mix(in oklch, var(--glass-shade) 12%, transparent),
+		var(--glass-halo);
+
+	--ln-button: color-mix(in oklch, var(--ln-main), var(--glass-light) 3.5%);
+	--ln-button-hover: color-mix(in oklch, var(--ln-main), var(--glass-light) 6%);
+	--glass-control: var(--glass-chip);
+	--ln-button-ring: var(--glass-control);
+	--ln-chip: var(--ln-button);
+	--ln-tab-selected: color-mix(in oklch, var(--ln-main), var(--glass-light) 7%);
+	--ln-tab-selected-ring:
+		inset 0 1px 0 0 color-mix(in oklch, var(--glass-light) 3%, transparent),
+		inset 0 0 0 1px var(--glass-rim), var(--glass-halo);
+	--ln-ring-color: lch(100 0 0 / 0.137);
+	--ln-ghost-hover: lch(100 0 0 / 0.06);
+	--ln-menu-hover: lch(100 0 0 / 0.078);
+	--ln-item-hover: lch(100 0 0 / 0.074);
+	--ln-go-fill: lch(100 0 0 / 0.038);
+	--ln-send: var(--neutral-3);
+	--ln-send-ring: var(--glass-control);
+
+	--ln-popover: color-mix(in oklch, var(--neutral-2) 14%, var(--neutral-3));
+	--ln-popover-border: color-mix(
+		in oklch,
+		var(--neutral-5) 79%,
+		var(--neutral-6)
+	);
+	--ln-popover-shadow:
+		lch(0 0 0 / 0.125) 0 3px 8px 0, lch(0 0 0 / 0.125) 0 2px 5px 0,
+		lch(0 0 0 / 0.125) 0 1px 1px 0;
+	--ln-tooltip: color-mix(in oklch, var(--neutral-2) 14%, var(--neutral-3));
+	--ln-tooltip-border: var(--neutral-4);
+	--ln-key-border: lch(100 0 0 / 0.068);
+	--ln-dialog: color-mix(in oklch, var(--neutral-2) 49%, var(--neutral-3));
+	--ln-dialog-backdrop: lch(0 0 0 / 0.38);
+	--ln-sheet-backdrop: lch(0 0 0 / 0.45);
+	--ln-scrim: lch(0 0 0 / 0.45);
+
+	--ln-chip-border: color-mix(in oklch, var(--neutral-3) 51%, var(--neutral-4));
+	--ln-card: color-mix(in oklch, var(--neutral-2) 64%, var(--neutral-3));
+	--ln-card-border: color-mix(in oklch, var(--neutral-3) 43%, var(--neutral-4));
+	--ln-comment-card: color-mix(
+		in oklch,
+		var(--neutral-2) 64%,
+		var(--neutral-3)
+	);
+	--ln-comment-card-border: color-mix(
+		in oklch,
+		var(--neutral-3) 38%,
+		var(--neutral-4)
+	);
+	--ln-activity-line: color-mix(
+		in oklch,
+		var(--neutral-5) 51%,
+		var(--neutral-6)
+	);
+	--ln-composer-placeholder: var(--neutral-7);
+	--ln-composer-send: var(--neutral-3);
+	--ln-pill-neutral: oklch(0.684 0.012 var(--neutral-hue) / 0.1);
+	--ln-pill-ok: lch(67.2 64.37 141.95 / 0.14);
+	--ln-pill-blocked: lch(65.2 73 29 / 0.14);
+
+	--ln-text: lch(100 0 0);
+	--ln-text-strong: color-mix(
+		in oklch,
+		var(--neutral-11) 16%,
+		var(--neutral-12)
+	);
+	--ln-text-header: color-mix(
+		in oklch,
+		var(--neutral-11) 20%,
+		var(--neutral-12)
+	);
+	--ln-text-muted: color-mix(in oklch, var(--neutral-9) 65%, var(--neutral-10));
+	--ln-text-nav: color-mix(in oklch, var(--neutral-9) 79%, var(--neutral-10));
+	--ln-icon-faint: var(--neutral-7);
+
+	--ln-focus: lch(58.95 53 141.63);
+	--ln-success: lch(67.2 64.37 141.95);
+	--ln-warning: lch(80 90 85);
+	--ln-merged: lch(62 58 300);
+	--ln-blocked: lch(65.2 73 29);
+	--ln-added: lch(67.2 64.37 141.95);
+	--ln-removed: lch(65.2 73 29);
+	--ln-inline-code: lch(100 0 0 / 0.06);
+	--ln-inline-code-ring: var(--neutral-4);
+
+	--ln-state-open: lch(67.2 64.37 141.95);
+	--ln-state-draft: color-mix(in oklch, var(--neutral-8) 26%, var(--neutral-9));
+	--ln-state-merged: lch(62 58 300);
+	--ln-state-closed: lch(65.2 73 29);
+	--ln-check-passed: lch(67.2 64.37 141.95);
+	--ln-check-running: lch(80 90 85);
+	--ln-check-failed: lch(65.2 73 29);
+	--ln-check-skipped: color-mix(
+		in oklch,
+		var(--neutral-8) 78%,
+		var(--neutral-9)
+	);
+	--ln-review-approved: lch(67.2 64.37 141.95);
+	--ln-review-changes: lch(65.2 73 29);
+	--ln-review-required: lch(80 90 85);
+	--ln-pill-merged: lch(62 58 300 / 0.16);
+	--ln-pill-warning: lch(80 90 85 / 0.14);
+	--ln-pill-ok-text: lch(72 64.37 141.95);
+	--ln-pill-merged-text: lch(72 50 300);
+	--ln-pill-blocked-text: lch(72 60 29);
+	--ln-pill-warning-text: lch(84 70 85);
+
+	--ln-line-number: var(--neutral-7);
+	--ln-gap: var(--neutral-3);
+}
+
+/* 1b. Colour themes ---------------------------------------------------------
+   Each scheme picks its own theme: <html data-light-theme data-dark-theme>.
+   The default (Geld) is the neutral scale above. Scale themes only move its
+   hue or tint; Indigo is a fixed palette of its own. */
+
+:root[data-light-theme="tide"]:not(.dark),
+:root.dark[data-dark-theme="tide"] {
+	--neutral-hue: 195;
+}
+
+:root[data-light-theme="graphite"]:not(.dark),
+:root.dark[data-dark-theme="graphite"] {
+	--neutral-tint: 0;
+}
+
+:root[data-light-theme="paper"]:not(.dark),
+:root.dark[data-dark-theme="paper"] {
+	--neutral-hue: 75;
+	--neutral-tint: 1.4;
+}
+
+:root[data-light-theme="indigo"]:not(.dark) {
+	--ln-sidebar: lch(94 0.51 287.19);
+	--ln-main: lch(98 0.5 287.27);
+	--ln-main-border: lch(89.84 0 282);
+	--ln-header-rule: lch(93.4 0 0);
+	--ln-group: color-mix(in oklch, var(--ln-sidebar) 60%, var(--ln-main));
+	--ln-nav-hover: lch(92.7 0 0);
+	--ln-nav-selected: lch(90.94 0 0);
+	--ln-checkbox: lch(52.04 0 282);
+	--ln-send: lch(100 0 282);
+	--ln-popover: lch(100 0 282);
+	--ln-popover-border: lch(91.9 0 282);
+	--ln-chip-border: lch(84.44 0 282);
+	--ln-card: lch(100 0 0);
+	--ln-card-border: lch(91.9 0 282);
+	--ln-comment-card: lch(100 0 0);
+	--ln-comment-card-border: lch(89 0 282);
+	--ln-activity-line: lch(84 0 282);
+	--ln-composer-placeholder: lch(64.64 1.25 282);
+	--ln-composer-send: lch(94 0.5 282);
+	--ln-pill-neutral: lch(40 1 282 / 0.1);
+	--ln-text: lch(18.94 0 0);
+	--ln-text-strong: lch(27.09 0 0);
+	--ln-text-header: lch(31.46 0 0);
+	--ln-text-muted: lch(44.82 0 0);
+	--ln-text-nav: lch(44.01 0 0);
+	--ln-icon-faint: lch(64.64 1.25 282);
+	--ln-focus: lch(47.6 59.33 288.74);
+	--ln-accent: lch(47.6 59.33 288.74);
+	--ln-accent-text: lch(100 0 0);
+	--ln-merge: lch(48 66 300);
+	--ln-merge-hover: lch(52 68 300);
+	--ln-inline-code-ring: lch(84.44 0 282);
+	--ln-state-draft: lch(57 1.25 282);
+	--ln-check-skipped: lch(64.64 1.25 282);
+	--ln-line-number: lch(64.64 1.25 282);
+	--ln-gap: lch(95.542 0.067 281.853);
+}
+
+:root.dark[data-dark-theme="indigo"] {
+	--ln-sidebar: lch(2.48 0.39 285.46);
+	--ln-main: lch(5.49 0.6 285.55);
+	--ln-main-border: lch(13.08 1.48 272);
+	--ln-header-rule: lch(13.18 1.52 266.51);
+	--ln-group: lch(9.232 0.85 272);
+	--ln-nav-hover: lch(9.5 1 272);
+	--ln-nav-selected: lch(13.845 1.3 272);
+	--ln-checkbox: lch(38 1 272);
+	--ln-send: lch(13.861 1.139 272);
+	--ln-popover: lch(12.72 0.85 272);
+	--ln-popover-border: lch(25.68 1.93 272);
+	--ln-tooltip: lch(12.77 0.7 285.88);
+	--ln-tooltip-border: lch(18.53 1.34 285.81);
+	--ln-key-border: lch(100 0 0 / 0.068);
+	--ln-dialog: lch(10.33 1.43 285.84);
+	--ln-dialog-backdrop: lch(0 0 0 / 0.38);
+	--ln-chip-border: lch(16.32 1.48 272);
+	--ln-card: lch(9.232 0.85 272);
+	--ln-card-border: lch(16.793 1.93 272);
+	--ln-comment-card: lch(9.29 0.72 285.84);
+	--ln-comment-card-border: lch(17.02 1.47 266.44);
+	--ln-activity-line: lch(27.15 1.26 285.84);
+	--ln-composer-placeholder: lch(37.88 1.19 285.9);
+	--ln-composer-send: lch(13.77 1.39 285.82);
+	--ln-pill-neutral: lch(63.304 1.425 272 / 0.1);
+	--ln-text: lch(100 0 272);
+	--ln-text-strong: lch(90.826 1.425 272);
+	--ln-text-header: lch(90.451 1.2 272);
+	--ln-text-muted: lch(61.803 1.2 272);
+	--ln-text-nav: lch(60.621 1.2 272);
+	--ln-icon-faint: lch(36.975 1.2 272);
+	--ln-focus: lch(47.6 59.33 288.74);
+	--ln-accent: lch(47.6 59.33 288.74);
+	--ln-accent-text: lch(100 0 0);
+	--ln-merge: lch(48 66 300);
+	--ln-merge-hover: lch(52 68 300);
+	--ln-inline-code-ring: lch(20 1.5 272);
+	--ln-state-draft: lch(56 1.2 272);
+	--ln-check-skipped: lch(50 1.2 272);
+	--ln-line-number: lch(36.975 1.2 272);
+	--ln-gap: lch(14.256 0.892 271.982);
+}
+
+/* Contribution graph levels: empty cells lean on the theme's text colour, the
+   rest climb a green ramp. */
+:root {
+	--contrib-level-0: color-mix(in oklch, var(--ln-text) 7%, transparent);
+	--contrib-level-1: oklch(0.84 0.1 150);
+	--contrib-level-2: oklch(0.72 0.16 150);
+	--contrib-level-3: oklch(0.58 0.2 150);
+	--contrib-level-4: oklch(0.42 0.19 150);
+}
+
+.dark {
+	--contrib-level-0: color-mix(in oklch, var(--ln-text) 6%, transparent);
+	--contrib-level-1: oklch(0.32 0.09 150);
+	--contrib-level-2: oklch(0.46 0.15 150);
+	--contrib-level-3: oklch(0.62 0.2 150);
+	--contrib-level-4: oklch(0.78 0.22 150);
+}
+
+/* File type icons: the hues Pierre's trees colours its icon set with. */
+:root {
+	--file-icon-blue: #1a85d4;
+	--file-icon-cyan: #1ca1c7;
+	--file-icon-gray: #84848a;
+	--file-icon-green: #199f43;
+	--file-icon-indigo: #693acf;
+	--file-icon-mauve: #594c5b;
+	--file-icon-orange: #d47628;
+	--file-icon-pink: #d32a61;
+	--file-icon-purple: #a631be;
+	--file-icon-red: #d52c36;
+	--file-icon-teal: #17a5af;
+	--file-icon-vermilion: #d5512f;
+	--file-icon-yellow: #d5a910;
+}
+
+.dark {
+	--file-icon-blue: #69b1ff;
+	--file-icon-cyan: #68cdf2;
+	--file-icon-gray: #adadb1;
+	--file-icon-green: #5ecc71;
+	--file-icon-indigo: #9d6afb;
+	--file-icon-mauve: #79697b;
+	--file-icon-orange: #ffa359;
+	--file-icon-pink: #ff678d;
+	--file-icon-purple: #d568ea;
+	--file-icon-red: #ff6762;
+	--file-icon-teal: #64d1db;
+	--file-icon-vermilion: #ff8c5b;
+	--file-icon-yellow: #ffd452;
+}
+
+/* Skeletons (skullet): tinted from the theme's own text and surface colours so
+   every colour theme gets matching bones. */
+:root {
+	--skullet-base: color-mix(in oklch, var(--ln-text) 7%, transparent);
+	--skullet-highlight: color-mix(in oklch, var(--ln-main) 60%, transparent);
+}
+
+.dark {
+	--skullet-base: color-mix(in oklch, var(--ln-text) 5%, transparent);
+	--skullet-highlight: color-mix(in oklch, var(--ln-text) 3%, transparent);
+}
+
+/* 2. shadcn variables, aliased onto the Linear tokens ----------------------
+   Declared for both scopes so a nested `.dark` re-resolves them. Existing
+   token names keep working; their values now come from the Linear set. */
+
+:root,
+.dark {
+	--background: var(--ln-main);
+	--foreground: var(--ln-text);
+	--card: var(--ln-comment-card);
+	--card-foreground: var(--ln-text);
+	--popover: var(--ln-popover);
+	--popover-foreground: var(--ln-text);
+	--primary: var(--ln-text);
+	--primary-foreground: var(--ln-main);
+	--secondary: var(--ln-ghost-hover);
+	--secondary-foreground: var(--ln-text);
+	--muted: var(--ln-group);
+	--muted-foreground: var(--ln-text-muted);
+	--accent: var(--ln-menu-hover);
+	--accent-foreground: var(--ln-text);
+	--destructive: lch(55 73 29);
+	--destructive-foreground: var(--ln-blocked);
+	--form-error-foreground: var(--ln-blocked);
+	--border: var(--ln-comment-card-border);
+	--input: var(--ln-chip-border);
+	--ring: var(--ln-focus);
+	--sidebar: var(--ln-sidebar);
+	--sidebar-foreground: var(--ln-text-nav);
+	--sidebar-primary: var(--ln-accent);
+	--sidebar-primary-foreground: var(--ln-accent-text);
+	--sidebar-accent: var(--ln-nav-selected);
+	--sidebar-accent-foreground: var(--ln-text);
+	--sidebar-border: var(--ln-header-rule);
+	--sidebar-ring: var(--ln-focus);
+	--container: var(--ln-sidebar);
+	/* Panel ladder: card white → quiet group fill → nav selected */
+	--surface-0: var(--ln-card);
+	--surface-1: var(--ln-group);
+	--surface-2: var(--ln-nav-selected);
+	--surface-3: var(--ln-card);
+	--input-surface: var(--ln-main);
+	--scrollbar-thumb: var(--ln-chip-border);
+}
+
+:root {
+	--chart-1: oklch(0.646 0.222 41.116);
+	--chart-2: oklch(0.6 0.118 184.704);
+	--chart-3: oklch(0.398 0.07 227.392);
+	--chart-4: oklch(0.828 0.189 84.429);
+	--chart-5: oklch(0.769 0.188 70.08);
+	/* 8px working radius: sm 4 / md 6 / lg 8 / xl 12 (menus, main pane) */
+	--radius: 0.5rem;
+	--color-green-500: oklch(0.62 0.194 149.214);
+	--brand: oklch(0.68 0.2 150);
+	--brand-dev: oklch(0.75 0.17 85);
+}
+
+.dark {
+	--chart-1: oklch(0.488 0.243 264.376);
+	--chart-2: oklch(0.696 0.17 162.48);
+	--chart-3: oklch(0.769 0.188 70.08);
+	--chart-4: oklch(0.627 0.265 303.9);
+	--chart-5: oklch(0.645 0.246 16.439);
+	--primary: var(--ln-text-strong);
+	--destructive: lch(47 66 29);
+	--brand: oklch(0.75 0.2 150);
+	--brand-dev: oklch(0.8 0.17 85);
+}
+
+/* 3. Tailwind theme ------------------------------------------------------- */
+
+@theme inline {
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-destructive-foreground: var(--destructive-foreground);
+	--color-form-error-foreground: var(--form-error-foreground);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+	--color-chart-1: var(--chart-1);
+	--color-chart-2: var(--chart-2);
+	--color-chart-3: var(--chart-3);
+	--color-chart-4: var(--chart-4);
+	--color-chart-5: var(--chart-5);
+	--radius-sm: calc(var(--radius) - 4px);
+	--radius-md: calc(var(--radius) - 2px);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) + 4px);
+	--color-sidebar: var(--sidebar);
+	--color-sidebar-foreground: var(--sidebar-foreground);
+	--color-sidebar-primary: var(--sidebar-primary);
+	--color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+	--color-sidebar-accent: var(--sidebar-accent);
+	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+	--color-sidebar-border: var(--sidebar-border);
+	--color-sidebar-ring: var(--sidebar-ring);
+	--color-container: var(--container);
+	--color-surface-0: var(--surface-0);
+	--color-surface-1: var(--surface-1);
+	--color-surface-2: var(--surface-2);
+	--color-surface-3: var(--surface-3);
+	--color-input-surface: var(--input-surface);
+	--color-brand: var(--brand);
+	--color-brand-dev: var(--brand-dev);
+
+	/* Linear surfaces: bg-shell (outer chrome), bg-main (the floating pane) */
+	--color-shell: var(--ln-sidebar);
+	--color-main: var(--ln-main);
+	--color-group: var(--ln-group);
+	--color-row-hover: var(--ln-row-hover);
+	--color-row-selected: var(--ln-row-selected);
+	--color-nav-hover: var(--ln-nav-hover);
+	--color-nav-selected: var(--ln-nav-selected);
+	--color-button: var(--ln-button);
+	--color-button-hover: var(--ln-button-hover);
+	--color-tab-selected: var(--ln-tab-selected);
+	--color-ghost-hover: var(--ln-ghost-hover);
+	--color-menu-hover: var(--ln-menu-hover);
+	--color-item-hover: var(--ln-item-hover);
+	--color-go-fill: var(--ln-go-fill);
+	--color-send: var(--ln-send);
+	--color-chip: var(--ln-chip);
+	--color-tooltip: var(--ln-tooltip);
+	--color-dialog: var(--ln-dialog);
+	--color-dialog-backdrop: var(--ln-dialog-backdrop);
+	--color-sheet-backdrop: var(--ln-sheet-backdrop);
+	--color-scrim: var(--ln-scrim);
+	--color-pill-neutral: var(--ln-pill-neutral);
+	--color-pill-ok: var(--ln-pill-ok);
+	--color-pill-blocked: var(--ln-pill-blocked);
+	--color-inline-code: var(--ln-inline-code);
+	/* Hairline / rule colors: border-rule, ring-chip-border, ... */
+	--color-rule: var(--ln-header-rule);
+	--color-chip-border: var(--ln-chip-border);
+	--color-popover-border: var(--ln-popover-border);
+	--color-key-border: var(--ln-key-border);
+	--color-ring-hairline: var(--ln-ring-color);
+	/* Text grays and state colors */
+	--color-text-strong: var(--ln-text-strong);
+	--color-text-header: var(--ln-text-header);
+	--color-icon-faint: var(--ln-icon-faint);
+	--color-indigo: var(--ln-accent);
+	--color-indigo-foreground: var(--ln-accent-text);
+	--color-success: var(--ln-success);
+	--color-warning: var(--ln-warning);
+	--color-merged: var(--ln-merged);
+	--color-merge: var(--ln-merge);
+	--color-merge-hover: var(--ln-merge-hover);
+	--color-danger: var(--ln-blocked);
+	--color-added: var(--ln-added);
+	--color-removed: var(--ln-removed);
+	--color-focus: var(--ln-focus);
+	--color-text-nav: var(--ln-text-nav);
+	--color-header-rule: var(--ln-header-rule);
+	--color-state-open: var(--ln-state-open);
+	--color-state-draft: var(--ln-state-draft);
+	--color-state-merged: var(--ln-state-merged);
+	--color-state-closed: var(--ln-state-closed);
+	--color-check-passed: var(--ln-check-passed);
+	--color-check-running: var(--ln-check-running);
+	--color-check-failed: var(--ln-check-failed);
+	--color-check-skipped: var(--ln-check-skipped);
+	--color-review-approved: var(--ln-review-approved);
+	--color-review-changes: var(--ln-review-changes);
+	--color-review-required: var(--ln-review-required);
+	--color-pill-merged: var(--ln-pill-merged);
+	--color-pill-warning: var(--ln-pill-warning);
+	--color-pill-ok-text: var(--ln-pill-ok-text);
+	--color-pill-merged-text: var(--ln-pill-merged-text);
+	--color-pill-blocked-text: var(--ln-pill-blocked-text);
+	--color-pill-warning-text: var(--ln-pill-warning-text);
+	--color-line-number: var(--ln-line-number);
+	--color-gap: var(--ln-gap);
+	--color-card-border: var(--ln-card-border);
+	--color-activity-line: var(--ln-activity-line);
+	--color-composer-placeholder: var(--ln-composer-placeholder);
+	--color-composer-send: var(--ln-composer-send);
+	--color-main-border: var(--ln-main-border);
+
+	--shadow-ring: var(--glass-chip);
+	--shadow-button: var(--ln-button-ring);
+	--shadow-solid: var(--glass-solid);
+	--shadow-tab-selected: var(--ln-tab-selected-ring);
+	--shadow-field: var(--glass-well);
+	--shadow-chip: var(--glass-chip);
+	--shadow-key: inset 0 0 0 0.5px var(--ln-key-border);
+	--shadow-main: 0 0 0 0.5px var(--ln-main-border), var(--ln-main-shadow);
+	--shadow-card: 0 0 0 0.5px var(--ln-card-border), var(--ln-main-shadow);
+	--shadow-popover:
+		inset 0 1px 0 0 var(--glass-edge), inset 0 0 0 1px var(--glass-rim),
+		var(--ln-popover-shadow);
+	--shadow-send: var(--ln-send-ring);
+	--shadow-tooltip:
+		0 0 0 0.5px var(--ln-tooltip-border), var(--ln-popover-shadow);
+
+	--ease-ln: var(--ln-ease);
+}
+
+@layer base {
+	* {
+		@apply border-border outline-ring/50;
+	}
+
+	body {
+		font-size: 13px;
+		font-weight: 450;
+		@apply bg-background text-foreground;
+	}
+
+	/* Inside the app shell only its own panes scroll. iOS sizes `100vh` to the
+	   toolbar-less viewport, so an unlocked document is taller than the shell and
+	   a drag on a fixed bar scrolls or bounces the page under it. */
+	html:has([data-app-shell]),
+	html:has([data-app-shell]) body {
+		height: 100%;
+		overflow: hidden;
+		overscroll-behavior: none;
+	}
+
+	code,
+	.font-mono {
+		font-weight: 450;
+		letter-spacing: -0.02em;
+	}
+
+	:focus-visible {
+		outline: 1px solid var(--ln-focus);
+		outline-offset: -1px;
+	}
+
+	:where(a, button, [role="button"], [role="menuitem"], [role="tab"]) {
+		transition-timing-function: var(--ln-ease);
+		transition-duration: var(--ln-duration);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}
+
+/* Custom scrollbar — thumb only, no track, overlays content */
+* {
+	scrollbar-color: var(--scrollbar-thumb) transparent;
+	scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+	background: var(--scrollbar-thumb);
+	border-radius: 9999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+	background: var(--ln-icon-faint);
+}
+
+.no-scrollbar {
+	scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+	display: none;
+}
+
+/* Stable scrollbar — auto-hides, no layout shift, inset thumb */
+.overflow-stable {
+	overflow-y: auto;
+	scrollbar-gutter: stable;
+	scrollbar-color: transparent transparent;
+	scrollbar-width: auto;
+}
+
+.overflow-stable::-webkit-scrollbar {
+	width: 20px;
+}
+
+.overflow-stable::-webkit-scrollbar-thumb {
+	background: transparent;
+	background-clip: padding-box;
+	border: 7px solid transparent;
+	border-radius: 9999px;
+	transition: background 0.2s;
+}
+
+.overflow-stable:hover::-webkit-scrollbar-thumb {
+	background: var(--scrollbar-thumb);
+	background-clip: padding-box;
+	border: 7px solid transparent;
+}
+
+.overflow-stable:hover::-webkit-scrollbar-thumb:hover {
+	background: var(--ln-icon-faint);
+	background-clip: padding-box;
+	border: 7px solid transparent;
+}
+
+/* Firefox — hide when not hovering */
+.overflow-stable:not(:hover) {
+	scrollbar-color: transparent transparent;
+}
+
+.overflow-stable:hover {
+	scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+input::-webkit-search-cancel-button {
+	width: 16px;
+	height: 16px;
+	-webkit-appearance: none;
+	appearance: none;
+	cursor: pointer;
+	background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='hsl(215.4 16.3% 46.9%)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><line x1='18' y1='6' x2='6' y2='18'></line><line x1='6' y1='6' x2='18' y2='18'></line></svg>");
+	background-size: 16px 16px;
+}
+
+.dark input::-webkit-search-cancel-button {
+	background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239E9FAA' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><line x1='18' y1='6' x2='6' y2='18'></line><line x1='6' y1='6' x2='18' y2='18'></line></svg>");
+}
+
+/* Registered so ScrollFade's edge fades can ease in and out. */
+@property --scroll-fade-start {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 0px;
+}
+
+@property --scroll-fade-end {
+	syntax: "<length>";
+	inherits: false;
+	initial-value: 0px;
+}
+
+[data-slot="scroll-fade"] {
+	transition:
+		--scroll-fade-start 150ms ease-out,
+		--scroll-fade-end 150ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	[data-slot="scroll-fade"] {
+		transition: none;
+	}
+}
+
+/* The lens sits up-left in the search glyph (the handle fills the other corner), so a
+   search icon alone in a box looks off-centre; centre it on the lens instead. 1/24 of
+   the icon, as the lens is one unit off the 24-unit grid's centre, less 1px tuned by eye. */
+svg[data-icon="search"]:only-child {
+	translate: calc(4.1667% - 1px) calc(4.1667% - 1px);
+}
+
+@utility search-icon-alone {
+	& svg[data-icon="search"] {
+		translate: calc(4.1667% - 1px) calc(4.1667% - 1px);
+	}
+}
+
+/* iOS zooms into inputs under 16px on focus. */
+@media (pointer: coarse) {
+	input[type="search"] {
+		font-size: 16px;
+	}
+}
+
+:root {
+	--syntax-comment: #666666;
+	--syntax-keyword: #c41562;
+	--syntax-string: #107d32;
+	--syntax-constant: #005ff2;
+	--syntax-function: #7d00cc;
+	--syntax-parameter: #aa4d00;
+	--syntax-type: #005ff2;
+	--syntax-plain: #171717;
+}
+
+.dark {
+	--syntax-comment: #a1a1a1;
+	--syntax-keyword: #ff4d8d;
+	--syntax-string: #00ca50;
+	--syntax-constant: #47a8ff;
+	--syntax-function: #c472fb;
+	--syntax-parameter: #ff9300;
+	--syntax-type: #47a8ff;
+	--syntax-plain: #ededed;
+}
+
+/* @pierre/diffs — use our monospace font */
+[data-diffs],
+diffs-container {
+	--diffs-font-family: var(--font-mono);
+	--diff-row-added: color-mix(in oklab, var(--ln-added) 62%, var(--ln-main));
+	--diff-row-removed: color-mix(
+		in oklab,
+		var(--ln-removed) 55%,
+		var(--ln-main)
+	);
+	--diffs-bg-addition-override: var(--diff-row-added);
+	--diffs-bg-addition-number-override: var(--diff-row-added);
+	--diffs-bg-addition-emphasis-override: color-mix(
+		in oklch,
+		var(--ln-added) 20%,
+		transparent
+	);
+	--diffs-bg-deletion-override: var(--diff-row-removed);
+	--diffs-bg-deletion-number-override: var(--diff-row-removed);
+	--diffs-bg-deletion-emphasis-override: color-mix(
+		in oklch,
+		var(--ln-removed) 18%,
+		transparent
+	);
+	--diffs-addition-color-override: var(--ln-added);
+	--diffs-deletion-color-override: var(--ln-removed);
+	--diffs-fg-number-override: var(--ln-line-number);
+}
+
+/* Shiki syntax highlighting — dual theme support */
+.shiki,
+.shiki span {
+	color: var(--shiki-light);
+}
+
+.shiki {
+	background-color: var(--background);
+}
+
+.dark .shiki.shiki,
+.dark .shiki .line span {
+	color: var(--shiki-dark);
+}
+
+.dark .shiki.shiki {
+	background-color: var(--ln-card);
+}
+
+/* Label pills: darker in light mode, vibrant in dark mode */
+.label-pill {
+	color: color-mix(in srgb, var(--label-color) 50%, black);
+	background-color: color-mix(in srgb, var(--label-color) 30%, transparent);
+}
+
+.dark .label-pill {
+	color: var(--label-color);
+	background-color: color-mix(in srgb, var(--label-color) 20%, transparent);
+}
+
+.label-pill-close-gradient {
+	background: linear-gradient(
+		to left,
+		color-mix(in srgb, var(--label-color) 30%, var(--background)) 50%,
+		transparent
+	);
+}
+.dark .label-pill-close-gradient {
+	background: linear-gradient(
+		to left,
+		color-mix(in srgb, var(--label-color) 20%, var(--background)) 50%,
+		transparent
+	);
+}
+
+/* GitHub-flavored markdown alerts */
+.markdown-alert {
+	padding: 0.625rem 0.875rem;
+	margin-bottom: 0.5rem;
+	background: color-mix(in srgb, var(--alert-color) 8%, transparent);
+	border-radius: var(--radius);
+	box-shadow: inset 0 0 0 0.5px
+		color-mix(in srgb, var(--alert-color) 32%, transparent);
+}
+
+.markdown-alert-title {
+	display: flex;
+	gap: 0.5rem;
+	align-items: center;
+	margin-bottom: 0.25rem;
+	font-size: 0.8125rem;
+	font-weight: 600;
+	color: var(--alert-color);
+}
+
+.markdown-alert-title .octicon {
+	flex-shrink: 0;
+	fill: var(--alert-color);
+}
+
+.markdown-alert-note {
+	--alert-color: oklch(0.55 0.15 255);
+}
+.markdown-alert-tip {
+	--alert-color: oklch(0.55 0.16 155);
+}
+.markdown-alert-important {
+	--alert-color: oklch(0.55 0.18 290);
+}
+.markdown-alert-warning {
+	--alert-color: oklch(0.65 0.16 75);
+}
+.markdown-alert-caution {
+	--alert-color: oklch(0.55 0.2 25);
+}
+
+.dark .markdown-alert-note {
+	--alert-color: oklch(0.7 0.15 255);
+}
+.dark .markdown-alert-tip {
+	--alert-color: oklch(0.7 0.16 155);
+}
+.dark .markdown-alert-important {
+	--alert-color: oklch(0.7 0.18 290);
+}
+.dark .markdown-alert-warning {
+	--alert-color: oklch(0.75 0.14 75);
+}
+.dark .markdown-alert-caution {
+	--alert-color: oklch(0.7 0.2 25);
+}
+
+/* @pierre/trees — outer styles on the host beat its :host defaults, and custom
+   properties inherit into its shadow root, so trees follow `.dark` and the
+   colour themes without re-rendering. */
+file-tree-container {
+	color-scheme: light;
+	--trees-font-family-override: var(--font-sans);
+	--trees-font-size-override: 13px;
+	--trees-bg-override: var(--ln-main);
+	--trees-fg-muted-override: var(--ln-text-muted);
+	--trees-border-radius-override: var(--radius-md);
+	--trees-padding-inline-override: 8px;
+	--trees-item-margin-x-override: 0px;
+	--trees-item-row-gap-override: 6px;
+	--trees-icon-nudge-override: 0px;
+	--trees-focus-ring-color-override: var(--ln-focus);
+	--trees-selected-focused-border-color-override: transparent;
+	--trees-scrollbar-thumb-override: var(--ln-icon-faint);
+	--trees-git-added-color-override: var(--ln-added);
+	--trees-git-deleted-color-override: var(--ln-removed);
+	--trees-git-modified-color-override: currentColor;
+	--trees-git-renamed-color-override: currentColor;
+	--trees-icon-blue: var(--file-icon-blue);
+	--trees-icon-cyan: var(--file-icon-cyan);
+	--trees-icon-gray: var(--file-icon-gray);
+	--trees-icon-green: var(--file-icon-green);
+	--trees-icon-indigo: var(--file-icon-indigo);
+	--trees-icon-mauve: var(--file-icon-mauve);
+	--trees-icon-orange: var(--file-icon-orange);
+	--trees-icon-pink: var(--file-icon-pink);
+	--trees-icon-purple: var(--file-icon-purple);
+	--trees-icon-red: var(--file-icon-red);
+	--trees-icon-teal: var(--file-icon-teal);
+	--trees-icon-vermilion: var(--file-icon-vermilion);
+	--trees-icon-yellow: var(--file-icon-yellow);
+	--tree-folder-fg: var(--muted-foreground);
+	--tree-hover-fg: var(--foreground);
+}
+
+.dark file-tree-container {
+	color-scheme: dark;
+}
+
+/* Inside a drawer the tree sits on the drawer's surface, not the page's. */
+[data-slot="drawer-content"] file-tree-container {
+	--trees-bg-override: var(--ln-popover);
+}
+
+file-tree-container[data-tree="review"] {
+	--trees-fg-override: var(--ln-text-nav);
+	--trees-font-weight-regular-override: 500;
+	--trees-border-radius-override: var(--radius-lg);
+	--trees-bg-muted-override: var(--ln-nav-hover);
+	--trees-selected-bg-override: var(--ln-nav-selected);
+	--trees-selected-fg-override: var(--foreground);
+	--tree-file-icon-size: 14px;
+	--tree-chevron-fg: var(--ln-icon-faint);
+	--tree-row-gap: 1px;
+}
+
+file-tree-container[data-tree="explorer"] {
+	--trees-fg-override: var(--ln-text-header);
+	--trees-font-weight-regular-override: 450;
+	--trees-bg-muted-override: var(--ln-item-hover);
+	--trees-selected-bg-override: var(--ln-item-hover);
+	--trees-selected-fg-override: var(--foreground);
+	--tree-file-icon-size: 16px;
+	--tree-chevron-fg: var(--muted-foreground);
+	--tree-chevron-lane: 16px;
+}

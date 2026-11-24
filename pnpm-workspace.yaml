@@ -1,3 +1,8 @@
 packages:
   - apps/*
   - packages/*
+# The hub's GitHub client and its test emulator are written against these
+# type versions; newer ones type ids as number | bigint.
+overrides:
+  '@octokit/openapi-types': 27.0.0
+  '@octokit/types': 16.0.0
