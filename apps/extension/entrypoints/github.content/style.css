@@ -3049,7 +3049,8 @@ html[data-geld-timeline='compact'] section:has(> [data-geld-folded] #overview-co
  * (`data-geld-top-card`, set before paint) and the page's own markup, so it holds from GitHub's first frame and
  * through the re-render that swaps the server-rendered boxes for React's, where attributes on the boxes were lost.
  */
-html[data-geld-top-card] [class*='CondensedForYouContainer']:has(> section[aria-label='Recommended action']):has(+ section:is([aria-label='Description'], [aria-labelledby]:has(> [class*='card'] > h2.sr-only:first-child))) {
+/* Inside `:has()` the new box is told by its `aria-labelledby` alone, since a `:has()` cannot hold another: next to the top card, or after the mini statuses, nothing else is. */
+html[data-geld-top-card] [class*='CondensedForYouContainer']:has(> section[aria-label='Recommended action']):has(+ section:is([aria-label='Description'], [aria-labelledby])) {
   border-bottom-left-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
 }
@@ -3080,8 +3081,8 @@ html[data-geld-top-card] section:is([aria-label='Description'], [aria-labelledby
  * wrapper left standing is a 1px box of border, a second line under the status row.
  */
 html[data-geld-top-card='folded'] [class*='CondensedForYouContainer'] > [class*='MiniStatusGrid'],
-html[data-geld-top-card='folded'] :has(~ section:is([aria-label='Description'], [aria-labelledby]:has(> [class*='card'] > h2.sr-only:first-child))) :is([class*='MiniStatusGrid'], [data-testid='mini-status']),
-html[data-geld-top-card='folded'] :has(~ section:is([aria-label='Description'], [aria-labelledby]:has(> [class*='card'] > h2.sr-only:first-child))) :has([class*='MiniStatusGrid'], [data-testid='mini-status']):not(:has(section[aria-label='Recommended action'])) {
+html[data-geld-top-card='folded'] :has(~ section:is([aria-label='Description'], [aria-labelledby])) :is([class*='MiniStatusGrid'], [data-testid='mini-status']),
+html[data-geld-top-card='folded'] :has(~ section:is([aria-label='Description'], [aria-labelledby])) :has([class*='MiniStatusGrid'], [data-testid='mini-status']):not(:has(section[aria-label='Recommended action'])) {
   display: none !important;
 }
 
