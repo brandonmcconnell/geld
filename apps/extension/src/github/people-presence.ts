@@ -5,6 +5,7 @@ import { removeDescriptionMenu, syncDescriptionMenu } from './description-menu';
 import { createElement, OWN_UI_ATTRIBUTE } from './dom';
 import { isMinimizedWrapper } from './review/edit-times';
 import { lookUpUnhideForms, markedOnGitHub, sendUnhide, unhideFormOf } from './review/hidden-people';
+import { OVERVIEW_DESCRIPTION } from './review/overview-page';
 import type { MarkedContent } from './review/hidden-people';
 import type { PersonCard } from './person-hovercard';
 import { removePersonHovercards, syncPersonHovercards } from './person-hovercard';
@@ -54,7 +55,7 @@ function isOwn(node: Element): boolean {
 
 /** The page's description, never folded: the pull request itself, not a comment on it. */
 function isDescription(node: Element): boolean {
-  if (node.closest('section[aria-label="Description"], [data-testid="issue-body"]') !== null) return true;
+  if (node.closest(`${OVERVIEW_DESCRIPTION}, [data-testid="issue-body"]`) !== null) return true;
   // A discussion's opening post (`#discussion-<id>`), not one of its comments (`#discussioncomment-<id>`).
   const post = node.closest('[id^="discussion-"]');
   if (post !== null && /^discussion-\d+$/.test(post.id) && node.closest('[id^="discussioncomment-"]') === null) return true;
@@ -202,7 +203,7 @@ function pageAuthor(): string | null {
 }
 
 function noticeHost(): Element | null {
-  return document.querySelector('section[aria-label="Description"]') ?? document.querySelector('.js-discussion') ?? document.querySelector('[data-testid="issue-body"]');
+  return document.querySelector(OVERVIEW_DESCRIPTION) ?? document.querySelector('.js-discussion') ?? document.querySelector('[data-testid="issue-body"]');
 }
 
 function syncNotice(blocked: ReadonlyMap<string, BlockedBy>, noun: string): void {

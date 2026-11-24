@@ -8,7 +8,11 @@
  * classic conversation matches it, so each helper answers null there.
  */
 
-export const OVERVIEW_DESCRIPTION = 'section[aria-label="Description"]';
+/**
+ * The description's box: `aria-label="Description"` until Nov 2026, then labelled by a visually hidden "Description"
+ * heading opening its card. Mirrored in the stylesheet, whose first-paint rules cannot wait for a script to mark it.
+ */
+export const OVERVIEW_DESCRIPTION = 'section:is([aria-label="Description"], [aria-labelledby]:has(> [class*="card"] > h2.sr-only:first-child))';
 export const OVERVIEW_FOR_YOU = '[class*="CondensedForYouContainer"]';
 /** The top card's row of three mini statuses (Checks, Comments, Approvals) under its status row. */
 export const OVERVIEW_MINI_STATUS = '[class*="MiniStatusGrid"]';
@@ -19,7 +23,14 @@ export const OVERVIEW_THREAD_FRAME = 'article:not([id])';
 const COMMENTS_HEADING = 'h2#overview-comments';
 
 export function overviewDescription(root: ParentNode = document): HTMLElement | null {
-  return root.querySelector<HTMLElement>(OVERVIEW_DESCRIPTION);
+  for (const box of root.querySelectorAll<HTMLElement>(OVERVIEW_DESCRIPTION)) if (labelOf(box) === 'Description') return box;
+  return null;
+}
+
+function labelOf(box: Element): string {
+  const by = box.getAttribute('aria-labelledby');
+  const heading = by === null ? null : box.ownerDocument.getElementById(by);
+  return (box.getAttribute('aria-label') ?? heading?.textContent ?? '').trim();
 }
 
 export function isOverviewPage(root: ParentNode = document): boolean {
@@ -31,7 +42,7 @@ export function isOverviewPage(root: ParentNode = document): boolean {
  * description's edge as on the conversation; null off the Overview.
  */
 export function overviewColumnGap(box: Element): string | null {
-  if (!box.matches(OVERVIEW_DESCRIPTION) || box.parentElement === null) return null;
+  if (!box.matches(OVERVIEW_DESCRIPTION) || labelOf(box) !== 'Description' || box.parentElement === null) return null;
   const gap = getComputedStyle(box.parentElement).rowGap;
   return /^\d/.test(gap) ? gap : null;
 }
