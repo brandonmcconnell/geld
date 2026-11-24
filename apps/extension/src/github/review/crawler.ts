@@ -1083,6 +1083,16 @@ function overviewSidebarReviewers(root: ParentNode): readonly SidebarReviewer[] 
   return out;
 }
 
+/** A check row as the page shows it: the run, plus what GitHub draws beside its name. */
+export interface CrawledCheckRun extends RawCheckRun {
+  /** The picture of the App that reported the check. */
+  readonly avatarUrl?: string;
+  /** The colour GitHub lays behind that picture, as written on the page. */
+  readonly avatarBackground?: string;
+  /** GitHub marks the check Required. Only its merge box says so, never the commit's status partial. */
+  readonly required?: true;
+}
+
 /**
  * The merge box's check rows as check runs, read from each row's state
  * glyph (GitHub's octicon names its state) and name, wherever the rows are
@@ -1095,8 +1105,8 @@ function overviewSidebarReviewers(root: ParentNode): readonly SidebarReviewer[] 
  * spinner (`CheckSpinner`), so the state is read from the leading visual
  * alone — the row's only octicon is then its ⋯ menu, which is no state.
  */
-export function crawlCheckRuns(root: ParentNode = document, headSha = ''): readonly RawCheckRun[] {
-  const out: RawCheckRun[] = [];
+export function crawlCheckRuns(root: ParentNode = document, headSha = ''): readonly CrawledCheckRun[] {
+  const out: CrawledCheckRun[] = [];
   const seen = new Set<string>();
   for (const row of root.querySelectorAll<HTMLElement>('li:has([class*="StatusCheckRow"]), .merge-status-item')) {
     const name = (row.querySelector('[class*="StatusCheckRow"] h4 a span, [class*="StatusCheckRow"] h4 a, .merge-status-item strong, .merge-status-item .text-emphasized')?.textContent ?? '').replace(/\s+/g, ' ').trim();
@@ -1136,9 +1146,23 @@ export function crawlCheckRuns(root: ParentNode = document, headSha = ''): reado
       ...(details === null ? {} : { detailsUrl: details.href }),
       ...(description === '' ? {} : { description }),
       ...(startedAt === null ? {} : { startedAt }),
+      ...checkRowLooks(row),
     });
   }
   return out;
+}
+
+/** What a check row shows beyond its state: the App's picture, the colour behind it, GitHub's "Required" label. */
+function checkRowLooks(row: HTMLElement): Pick<CrawledCheckRun, 'avatarUrl' | 'avatarBackground' | 'required'> {
+  const img = row.querySelector<HTMLImageElement>('.merge-status-item a[href*="/apps/"] img, img[data-testid="github-avatar"], img.avatar');
+  const src = img?.getAttribute('src') ?? '';
+  const background = img === null ? '' : img.style.backgroundColor || (img.closest<HTMLElement>('a[href*="/apps/"]')?.style.backgroundColor ?? '');
+  const required = [...row.querySelectorAll('[class*="requiredLabel"], [class*="Label"]')].some((label) => (label.textContent ?? '').trim().toLowerCase() === 'required');
+  return {
+    ...(src === '' ? {} : { avatarUrl: src }),
+    ...(background === '' ? {} : { avatarBackground: background }),
+    ...(required ? { required: true } : {}),
+  };
 }
 
 /** GitHub's octicon for a check row, as a run's status and conclusion; null for a glyph that is not a state. */

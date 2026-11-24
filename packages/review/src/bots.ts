@@ -343,7 +343,7 @@ export function botByCheckName(name: string): ReviewBot | null {
  * lists every check whether or not the merge box is expanded) for the rest.
  * Names are compared whole, case-insensitively.
  */
-export function mergeCheckRuns(primary: readonly RawCheckRun[], secondary: readonly RawCheckRun[]): readonly RawCheckRun[] {
+export function mergeCheckRuns<T extends RawCheckRun>(primary: readonly T[], secondary: readonly T[]): readonly T[] {
   const named = new Set(primary.map((check) => check.name.toLowerCase()));
   return [...primary, ...secondary.filter((check) => !named.has(check.name.toLowerCase()))];
 }
