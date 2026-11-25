@@ -1,0 +1,6 @@
+.cloudflare/
+.dev.vars*
+.env.*.local
+.vinext/
+dist/
+next-env.d.ts

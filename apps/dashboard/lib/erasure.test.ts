@@ -4,7 +4,10 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('server-only', () => ({}));
 let engine: PGlite;
 const sql = { query: async (text: string, values?: unknown[]) => engine.query(text, values) };
-vi.mock('./db', () => ({ database: () => ({ ...sql, connect: async () => ({ ...sql, release: () => undefined }) }) }));
+vi.mock('./db', () => ({
+  database: () => ({ ...sql, connect: async () => ({ ...sql, release: () => undefined }) }),
+  customerContentDatabase: () => null,
+}));
 vi.mock('./team-access', async (original) => ({
   ...(await original<typeof import('./team-access')>()),
   processGrantUnlocked: async () => false,

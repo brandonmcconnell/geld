@@ -81,7 +81,7 @@ export async function withTeamOperation<T>(
         renewing = null;
       });
   }, 30000);
-  timer.unref();
+  timer.unref?.();
   try {
     const value = await operations.run([...(operations.getStore() ?? []), { teamId, controller, check }], async () => {
       await assertTeamOperations();

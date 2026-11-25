@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 // Standalone is the self-hosted image's output (deploy/Dockerfile). Vercel's own build step fails on it.
 const output: Pick<NextConfig, 'output'> = process.env.VERCEL === '1' ? {} : { output: 'standalone' };
-const config: NextConfig = {
+const config = {
   cacheComponents: true,
   reactStrictMode: true,
   poweredByHeader: false,
@@ -35,5 +35,5 @@ const config: NextConfig = {
       },
     ];
   },
-};
+} satisfies NextConfig;
 export default config;

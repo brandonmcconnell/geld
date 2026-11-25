@@ -7,6 +7,7 @@ import { magicLink } from 'better-auth/plugins/magic-link';
 import type { GenericOAuthConfig } from 'better-auth/plugins/generic-oauth';
 import { genericOAuth } from 'better-auth/plugins/generic-oauth';
 import { z } from 'zod';
+import type { Pool } from 'pg';
 import { createApiTransport } from '@geld/github';
 import { database } from './db';
 import { configured, dashboardOrigin, isPreview } from './env';
@@ -52,11 +53,10 @@ function githubSubject({ profile }: { readonly profile: Record<string, unknown> 
   if (typeof profile.id !== 'string') throw new Error('Invalid GitHub identity');
   return profile.id;
 }
-function createAuth() {
-  const db = database();
+function createAuth(db: Pool) {
   const secret = configured(process.env.BETTER_AUTH_SECRET);
   const encryptionKey = configured(process.env.TOKEN_ENCRYPTION_KEY);
-  if (!db || !secret || secret.length < 32 || !encryptionKey || encryptionKey.length < 32 || isPreview()) return null;
+  if (!secret || secret.length < 32 || !encryptionKey || encryptionKey.length < 32) return null;
   const githubId = configured(process.env.GITHUB_IDENTITY_CLIENT_ID);
   const githubSecret = configured(process.env.GITHUB_IDENTITY_CLIENT_SECRET);
   const gitlabId = configured(process.env.GITLAB_CLIENT_ID);
@@ -227,8 +227,12 @@ function createAuth() {
     ],
   });
 }
-let auth: ReturnType<typeof createAuth> | undefined;
+const authByPool = new WeakMap<Pool, NonNullable<ReturnType<typeof createAuth>>>();
 export function getAuth() {
-  auth ??= createAuth();
+  if (isPreview()) return null;
+  const db = database();
+  if (!db) return null;
+  const auth = authByPool.get(db) ?? createAuth(db);
+  if (auth) authByPool.set(db, auth);
   return auth;
 }

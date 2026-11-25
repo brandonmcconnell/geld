@@ -1,11 +1,9 @@
 import 'server-only';
 import { assertTeamOperations } from './team-operation';
-import { Pool } from 'pg';
 import { z } from 'zod';
 import type { ReviewPlan } from '@geld/review/plan';
 import { reviewPlanSchema } from '@geld/review/plan';
-import { database } from './db';
-import { configured } from './env';
+import { customerContentDatabase, database } from './db';
 import { transaction, type SqlExecutor } from './transactions';
 import { decryptCredential, encryptCredential } from './crypto';
 export interface GeneratedContentStore {
@@ -23,23 +21,15 @@ export interface GeneratedContentStore {
   deleteTeam(teamId: string): Promise<void>;
   purgeExpired(): Promise<void>;
 }
-let customer: Pool | null = null;
 export function contentStore(): GeneratedContentStore {
-  const customerUrl = configured(process.env.CUSTOMER_CONTENT_DATABASE_URL);
-  if (customerUrl && !customer)
-    customer = new Pool({
-      connectionString: customerUrl,
-      max: 3,
-      connectionTimeoutMillis: 10000,
-      ssl: process.env.DATABASE_SSL === 'disable' ? false : { rejectUnauthorized: true },
-    });
+  const customer = customerContentDatabase();
   const primary = database();
-  const db = customerUrl ? customer : primary;
+  const db = customer ?? primary;
   if (!db || !primary) throw new Error('Generated content storage is not configured');
   return createGeneratedContentStore({
     sql: db,
     run: (work) => transaction(db, work),
-    customer: !!customerUrl,
+    customer: !!customer,
     primary: { sql: primary, run: (work) => transaction(primary, work) },
   });
 }

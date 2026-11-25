@@ -3,7 +3,7 @@ import nextVitals from 'eslint-config-next/core-web-vitals';
 import nextTs from 'eslint-config-next/typescript';
 
 export default defineConfig([
-  globalIgnores(['.next/**', 'out/**', 'next-env.d.ts']),
+  globalIgnores(['.next/**', '.cloudflare/**', '.vinext/**', 'dist/**', 'out/**', 'next-env.d.ts']),
   ...nextVitals,
   ...nextTs,
   {
