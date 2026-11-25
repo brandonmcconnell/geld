@@ -2,6 +2,9 @@ import 'server-only';
 
 import { SITE_URL } from '@/lib/site';
 
+const previewOrigin = process.env.GELD_SITE_PREVIEW_ORIGIN;
+const localOrigin = 'http://localhost:3000';
+
 /**
  * Sign-in configuration, read only on the server. All three values must be
  * present for sign-in to be offered; preview deployments deliberately have
@@ -31,6 +34,7 @@ export function authConfig(): AuthConfig | null {
   // App), so previews never offer sign-in even if the env vars were scoped to them.
   const vercelEnv = process.env.VERCEL_ENV;
   if (vercelEnv !== undefined && vercelEnv !== 'production') return null;
+  if (previewOrigin && (process.env.NODE_ENV !== 'development' || previewOrigin !== localOrigin)) return null;
   const clientId = nonEmpty(process.env.GELD_APP_CLIENT_ID);
   const clientSecret = nonEmpty(process.env.GELD_APP_CLIENT_SECRET);
   const secret = nonEmpty(process.env.AUTH_SECRET);
@@ -44,10 +48,10 @@ export function authConfig(): AuthConfig | null {
 /**
  * Where users land after sign-in and where cookies are judged Secure. Fixed
  * per environment, never derived from request headers: the canonical site
- * origin in production, the dev server locally.
+ * origin in production, or the configured preview or local origin.
  */
 export function authOrigin(): string {
-  return process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : SITE_URL;
+  return previewOrigin || (process.env.NODE_ENV === 'development' ? localOrigin : SITE_URL);
 }
 
 /**

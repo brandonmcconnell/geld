@@ -1,0 +1,102 @@
+import type { ImageResponse } from 'next/og';
+
+import { BrowserIcon } from '../components/browser-icons';
+import type { OpenGraphSources } from './brand-files';
+import { BROWSERS } from './downloads';
+import { HEADLINE, SUBHEADLINE } from './site';
+
+export const openGraphSize = { width: 1200, height: 630 };
+
+/**
+ * Wordmark, headline and the home page's short line on the left; on the right,
+ * the digest Geld makes of a pull request, captured from the home page's hero
+ * (`assets/screenshots/hero-digest.png`, 2×), so the picture is the idea rather
+ * than a GitHub screenshot. Re-capture it when the digest card changes.
+ */
+export function renderOpenGraphCard(
+  Image: typeof ImageResponse,
+  { wordmark, screenshot, sans, mono }: OpenGraphSources,
+) {
+  const wordmarkHeight = 64;
+  const wordmarkWidth = (wordmark.width / wordmark.height) * wordmarkHeight;
+  const shotWidth = 540;
+  const shotHeight = Math.round((screenshot.height / screenshot.width) * shotWidth);
+  // The card's own corner (rounded-xl at its natural 380px), scaled with it.
+  const shotRadius = Math.round((12 * shotWidth) / 380);
+
+  return new Image(
+    (
+      <div
+        style={{
+          position: 'relative',
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          overflow: 'hidden',
+          background: '#ffffff',
+          color: '#1f2328',
+          fontFamily: 'Geist',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 56,
+            width: 572,
+            // Stacked from the top, so the bottom left stays clear: X lays the link's domain over that corner.
+            padding: '64px 0 0 72px',
+          }}
+        >
+          <svg width={wordmarkWidth} height={wordmarkHeight} viewBox={wordmark.viewBox} fill="#000000">
+            {wordmark.paths.map((d) => (
+              <path key={d} d={d} />
+            ))}
+          </svg>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', fontSize: 46, fontWeight: 600, letterSpacing: -1.5, lineHeight: 1.08 }}>
+              {HEADLINE.map((line) => (
+                <span key={line}>{line}</span>
+              ))}
+            </div>
+            <div style={{ fontSize: 30, lineHeight: 1.35, color: '#59636e' }}>{SUBHEADLINE}</div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 36, fontSize: 24 }}>
+            <span style={{ fontFamily: 'Geist Mono', color: '#1f2328' }}>geld.sh</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              {BROWSERS.map((browser) => (
+                <BrowserIcon key={browser.id} browser={browser.id} width={28} height={28} fill="#59636e" />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div
+          style={{
+            position: 'absolute',
+            right: 48,
+            top: (openGraphSize.height - shotHeight) / 2,
+            display: 'flex',
+            width: shotWidth,
+            height: shotHeight,
+            overflow: 'hidden',
+            borderRadius: shotRadius,
+            boxShadow: '0 28px 70px rgba(31, 35, 40, 0.16)',
+            backgroundColor: '#ffffff',
+            backgroundImage: `url(${screenshot.src})`,
+            backgroundSize: '100% 100%',
+          }}
+        />
+      </div>
+    ),
+    {
+      ...openGraphSize,
+      fonts: [
+        { name: 'Geist', data: sans, weight: 600, style: 'normal' },
+        { name: 'Geist Mono', data: mono, weight: 500, style: 'normal' },
+      ],
+    },
+  );
+}

@@ -13,8 +13,11 @@ import { ACCOUNT_INIT_SCRIPT, THEME_INIT_SCRIPT } from '@/lib/theme';
 
 import './globals.css';
 
+const previewOrigin = process.env.GELD_SITE_PREVIEW_ORIGIN;
+const metadataOrigin = previewOrigin || SITE_URL;
+
 export const metadata: Metadata = {
-  metadataBase: new URL(SITE_URL),
+  metadataBase: new URL(metadataOrigin),
   title: {
     default: TAGLINE,
     template: `%s · ${SITE_NAME}`,
@@ -27,14 +30,14 @@ export const metadata: Metadata = {
     siteName: SITE_NAME,
     title: TAGLINE,
     description: DESCRIPTION,
-    url: SITE_URL,
+    url: metadataOrigin,
   },
   twitter: {
     card: 'summary_large_image',
     title: TAGLINE,
     description: DESCRIPTION,
   },
-  robots: { index: true, follow: true },
+  robots: previewOrigin ? { index: false, follow: false } : { index: true, follow: true },
   alternates: { canonical: '/' },
 };
 
