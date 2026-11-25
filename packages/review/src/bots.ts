@@ -316,6 +316,20 @@ export const REVIEW_BOTS: readonly ReviewBot[] = [
     configFiles: [],
     conversational: true,
   },
+  {
+    // Augment Code (augmentcode.com, `augmentcode[bot]`): a "PR Summary" comment that states no verdict, then a review
+    // whose body reads "Review completed. N suggestions posted." with each finding a thread graded "**Severity:
+    // medium**", or "No suggestions at this time." when it found nothing. `augment review` runs one; it posts no check
+    // run. Seen Nov 2026.
+    id: 'augment',
+    title: 'Augment Code',
+    appId: 185243770,
+    logins: ['augmentcode[bot]'],
+    checkNames: [],
+    triggers: ['augment review'],
+    configFiles: [],
+    conversational: true,
+  },
 ];
 
 const LOGIN_INDEX = new Map<string, ReviewBot>();
@@ -421,6 +435,8 @@ export function isReviewShaped(parsed: ParsedBotBody): boolean {
  *   on the rows since fixed.
  * - Entelligence: the "**Issues found:**" list under its scorecard; a
  *   scorecard with no such list found nothing.
+ * - Augment: "Review completed. N suggestions posted."; "No suggestions at this
+ *   time." is 0.
  * - CodeRabbit: "Actionable comments posted: N" counts its inline comments
  *   only; "Outside diff range comments (N)" and failed pre-merge checks are
  *   findings on top (a review can hold nothing else, geld#94); a review with
@@ -541,6 +557,11 @@ function countShapedBy(botId: string, text: string, reviewBody: boolean): number
       // together: "Overly broad … ▹ view ✅ Fix detected"); the badge image has no words of its own.
       const rows = text.split('\n').filter((line) => /\u25b9\s*\[?view\b/i.test(line));
       return rows.filter((line) => !/fix detected/i.test(line)).length;
+    }
+    case 'augment': {
+      const posted = /\b(\d+)[^\S\n]+suggestions?[^\S\n]+posted\b/i.exec(text);
+      if (posted?.[1] !== undefined) return Number.parseInt(posted[1], 10);
+      return /\bno suggestions at this time\b/i.test(text) ? 0 : null;
     }
     case 'entelligence': {
       if (!/review scorecard/i.test(text)) return null;
@@ -696,7 +717,8 @@ export function parseBotBody(body: string, botId: string, anchor?: string): Pars
   let count = countMatch?.[1] !== undefined ? Number.parseInt(countMatch[1], 10) : null;
   const shaped = countShapedBy(botId, text, reviewBody);
   // CodeRabbit counts only in its review's shape: "0 issues remain" in a chat reply is no count of its.
-  if (botId === 'coderabbit') count = shaped;
+  // Augment counts suggestions in its review alone: its PR Summary describes the change ("fixes 2 bugs").
+  if (botId === 'coderabbit' || botId === 'augment') count = shaped;
   else if (shaped !== null) count = shaped;
   // Greptile's summary (the one headed "Confidence Score: N/5") lists what it found under a "Findings" heading, one
   // bold title per finding ("1. **Review cards lack test coverage** ▶" raw, "**Review cards lack test coverage** ▶"

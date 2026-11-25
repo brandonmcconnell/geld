@@ -98,6 +98,7 @@ const properties = z
         'macroscope',
         'korbit',
         'entelligence',
+        'augment',
         'unknown',
       ])
       .optional(),
