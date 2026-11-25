@@ -10,6 +10,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "allowJs": false,
+    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -40,6 +41,7 @@
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
+    ".cloudflare/types",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],

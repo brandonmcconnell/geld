@@ -1,107 +1,22 @@
 import { ImageResponse } from 'next/og';
 
-import { BrowserIcon } from '@/components/browser-icons';
-import { loadGeistFont, loadScreenshot, loadWordmark } from '@/lib/brand';
-import { BROWSERS } from '@/lib/downloads';
-import { HEADLINE, SUBHEADLINE, TAGLINE } from '@/lib/site';
+import { loadOpenGraphSources } from '@/lib/brand';
+import { openGraphSize, renderOpenGraphCard } from '@/lib/open-graph-card';
+import { TAGLINE } from '@/lib/site';
+
+declare const __GELD_OPEN_GRAPH_PNG__: string | undefined;
 
 export const alt = TAGLINE;
-export const size = { width: 1200, height: 630 };
+export const size = openGraphSize;
 export const contentType = 'image/png';
 
-/**
- * Wordmark, headline and the home page's short line on the left; on the right,
- * the digest Geld makes of a pull request, captured from the home page's hero
- * (`assets/screenshots/hero-digest.png`, 2×), so the picture is the idea rather
- * than a GitHub screenshot. Re-capture it when the digest card changes.
- */
 export default async function OpenGraphImage() {
-  const [wordmark, screenshot, sans, mono] = await Promise.all([
-    loadWordmark(),
-    loadScreenshot('hero-digest.png'),
-    loadGeistFont('Geist-SemiBold.ttf'),
-    loadGeistFont('GeistMono-Medium.ttf'),
-  ]);
-  const wordmarkHeight = 64;
-  const wordmarkWidth = (wordmark.width / wordmark.height) * wordmarkHeight;
-  const shotWidth = 540;
-  const shotHeight = Math.round((screenshot.height / screenshot.width) * shotWidth);
-  // The card's own corner (rounded-xl at its natural 380px), scaled with it.
-  const shotRadius = Math.round((12 * shotWidth) / 380);
+  // A cold render can exceed the Workers CPU limit. The Vinext build renders the same card in Node.
+  if (typeof __GELD_OPEN_GRAPH_PNG__ !== 'undefined') {
+    return new Response(new Uint8Array(Buffer.from(__GELD_OPEN_GRAPH_PNG__, 'base64')), {
+      headers: { 'Content-Type': contentType, 'Cache-Control': 'public, max-age=0, must-revalidate' },
+    });
+  }
 
-  return new ImageResponse(
-    (
-      <div
-        style={{
-          position: 'relative',
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          overflow: 'hidden',
-          background: '#ffffff',
-          color: '#1f2328',
-          fontFamily: 'Geist',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 56,
-            width: 572,
-            // Stacked from the top, so the bottom left stays clear: X lays the link's domain over that corner.
-            padding: '64px 0 0 72px',
-          }}
-        >
-          <svg width={wordmarkWidth} height={wordmarkHeight} viewBox={wordmark.viewBox} fill="#000000">
-            {wordmark.paths.map((d) => (
-              <path key={d} d={d} />
-            ))}
-          </svg>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', fontSize: 46, fontWeight: 600, letterSpacing: -1.5, lineHeight: 1.08 }}>
-              {HEADLINE.map((line) => (
-                <span key={line}>{line}</span>
-              ))}
-            </div>
-            <div style={{ fontSize: 30, lineHeight: 1.35, color: '#59636e' }}>{SUBHEADLINE}</div>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 36, fontSize: 24 }}>
-            <span style={{ fontFamily: 'Geist Mono', color: '#1f2328' }}>geld.sh</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              {BROWSERS.map((browser) => (
-                <BrowserIcon key={browser.id} browser={browser.id} width={28} height={28} fill="#59636e" />
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div
-          style={{
-            position: 'absolute',
-            right: 48,
-            top: (size.height - shotHeight) / 2,
-            display: 'flex',
-            width: shotWidth,
-            height: shotHeight,
-            overflow: 'hidden',
-            borderRadius: shotRadius,
-            boxShadow: '0 28px 70px rgba(31, 35, 40, 0.16)',
-            background: '#ffffff',
-          }}
-        >
-          <img src={screenshot.src} width={shotWidth} height={shotHeight} alt="" />
-        </div>
-      </div>
-    ),
-    {
-      ...size,
-      fonts: [
-        { name: 'Geist', data: sans, weight: 600, style: 'normal' },
-        { name: 'Geist Mono', data: mono, weight: 500, style: 'normal' },
-      ],
-    },
-  );
+  return renderOpenGraphCard(ImageResponse, await loadOpenGraphSources());
 }

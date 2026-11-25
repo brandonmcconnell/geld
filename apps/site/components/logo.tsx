@@ -1,23 +1,28 @@
 import { cn } from 'cn';
 import type { ComponentProps } from 'react';
 
-/**
- * Brand assets live in `assets/brand/` at the repository root and are shared
- * with the extension. `new URL(..., import.meta.url)` lets the bundler copy
- * them into the static output with hashed names (and keeps them typed as
- * `URL` rather than the `any` the `*.svg` module declaration would give us).
- */
+import logo from '../../../assets/brand/geld-logo.svg';
+import logoWhite from '../../../assets/brand/geld-logo-white.svg';
+import logomark from '../../../assets/brand/geld-logomark.svg';
+import logomarkWhite from '../../../assets/brand/geld-logomark-white.svg';
+
+function assetSource(asset: unknown): string {
+  if (typeof asset === 'string') return asset;
+  if (asset !== null && typeof asset === 'object' && 'src' in asset && typeof asset.src === 'string') return asset.src;
+  throw new Error('Missing brand asset URL');
+}
+
 const WORDMARK = {
-  light: new URL('../../../assets/brand/geld-logo.svg', import.meta.url),
-  dark: new URL('../../../assets/brand/geld-logo-white.svg', import.meta.url),
+  light: assetSource(logo),
+  dark: assetSource(logoWhite),
   // viewBox of the SVG, for the intrinsic aspect ratio.
   width: 95,
   height: 25,
 };
 
 const LOGOMARK = {
-  light: new URL('../../../assets/brand/geld-logomark.svg', import.meta.url),
-  dark: new URL('../../../assets/brand/geld-logomark-white.svg', import.meta.url),
+  light: assetSource(logomark),
+  dark: assetSource(logomarkWhite),
   width: 24,
   height: 25,
 };
@@ -50,8 +55,8 @@ function BrandPicture({ asset, height, alt, className, priority }: BrandImagePro
   /* eslint-disable @next/next/no-img-element */
   return (
     <span data-brand-logo="" className={cn('inline-block leading-none', className)}>
-      <img src={asset.light.pathname} alt={text} className="dark:hidden" {...shared} />
-      <img src={asset.dark.pathname} alt={text} className="hidden dark:block" {...shared} />
+      <img src={asset.light} alt={text} className="dark:hidden" {...shared} />
+      <img src={asset.dark} alt={text} className="hidden dark:block" {...shared} />
     </span>
   );
   /* eslint-enable @next/next/no-img-element */
